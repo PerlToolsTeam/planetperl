@@ -54,6 +54,419 @@
         <div class="col-md-8">
           <div class="card">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2020/12/perl-weekly-challenge-89-gcd-sums-and-magic-squares.html">Perl Weekly Challenge 89: GCD Sums and Magic Squares</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 89 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-089/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<h2>Task 1: GCD Sums</h2>
+
+<p><em>You are given a positive integer <code>$N</code>.</em></p>
+
+<p><em>Write a script to sum GCD of all possible unique pairs between 1 and <code>$N</code>.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: 3
+Output: 3
+
+gcd(1,2) + gcd(1,3) + gcd(2,3)
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: 4
+Output: 7
+
+gcd(1,2) + gcd(1,3) + gcd(1,4) + gcd(2,3) + gcd(2,4) + gcd(3,4)
+</code></pre>
+
+<h3>GCD Sums in Raku</h3>
+
+<p>Raku has the <a href="https://docs.raku.org/routine/gcd">infix gcd</a> operator which computes the GCD for us. Thus, chaining the <a href="https://docs.raku.org/routine/combinations">compinations</a>, <code>gcd</code>, <code>map</code>, and <a href="https://docs.raku.org/routine/sum">sum</a> built-in routines yields a solution fitting in just one code line:</p>
+
+<pre><code>use v6;
+
+say (1..$_).combinations(2).map({$_[0] gcd $_[1]}).sum for 1..1..@*ARGS[0];
+</code></pre>
+
+<p>We could also use the <code>[]</code> reduction metaoparator with the <code>+</code> operator:</p>
+
+<pre><code>say (1..$_).combinations(2).map({[gcd] $_[0,1]}).sum for 1..1..@*ARGS[0];
+</code></pre>
+
+<p>Both solutions lead to the following output</p>
+
+<pre><code>$ raku gcd-sum.raku 10
+0
+1
+3
+7
+11
+20
+26
+38
+50
+67
+</code></pre>
+
+<h3>GCD Sums in Perl</h3>
+
+<p>We first implement a <code>gcd</code> subroutine that uses the Euclidean algorithm to compute the GCD of two numbers. We then use a doubly nested <code>for</code> loop to generate all pairs of numbers between 1 and the input ceiling parameter:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub gcd {
+        my ($i, $j) = sort { $a &lt;=&gt; $b } @_;
+        while ($j) {
+                ($i, $j) = ($j, $i % $j);
+        }
+        return $i;
+}
+my $n = shift;
+my $sum = 0;
+for my $i (1..$n) {
+    for my $j ($i+1..$n) {
+        $sum += gcd $i, $j;
+    }
+}
+say $sum;
+</code></pre>
+
+<h2>Task 2: Magical Matrix</h2>
+
+<p><em>Write a script to display matrix as below with numbers 1 - 9. Please make sure numbers are used once.</em></p>
+
+<pre><code>[ a b c ]
+[ d e f ]
+[ g h i ]
+</code></pre>
+
+<p><em>So that it satisfies the following:</em></p>
+
+<pre><code>a + b + c = 15
+d + e + f = 15
+g + h + i = 15
+a + d + g = 15
+b + e + h = 15
+c + f + i = 15
+a + e + i = 15
+c + e + g = 15
+</code></pre>
+
+<p>This is more commonly known as a <em>magic square</em>. A square array of numbers, usually positive integers, is called a <em>magic square</em> if the sums of the numbers in each row, each column, and both main diagonals are the same. Albrecht Dürer&#8217;s famous engraving <em>Melencolia I</em> (1514) includes an order 4 square with magic sum 34.</p>
+
+<p><img alt="Albrecht_Dürer_Melencolia_I.jpg" src="http://blogs.perl.org/users/laurent_r/Albrecht_D%C3%BCrer_Melencolia_I.jpg" width="555" height="578" class="mt-image-none" style="" /></p>
+
+<h3>Magic Square in Raku</h3>
+
+<p>I originally started to write a recursive subroutine to populate the square with all possible combinations of integers between 1 and 9 (or 1 and 126 for order 4 squares. This turned out to be a bit clumsy. I changed my mind and decided to use the <a href="https://docs.raku.org/routine/permutations">permutations</a> built-in routine to generate all possible lists of 9 integers (between 1 and 9) and only after that to transform them into squares of numbers and check whether they form a magic square.</p>
+
+<pre><code>use v6;
+constant \SIZE = 3;
+constant \MAX = SIZE - 1;
+constant \SUM = (([+] 1..SIZE*SIZE)/SIZE).Int;
+
+my ($count-perm, $count-mat) = 0, 0;
+
+sub print-matrix (@matrix) {
+    for @matrix -&gt; @row {
+        say '[', @row.fmt("%2i").join(" "), ' ]';
+    }
+    say " ";
+}
+sub col-sum (@matrix, Int $j) {
+    my $sum = 0;
+    $sum += @matrix[$_][$j] if defined @matrix[$_][$j] for 0..MAX;
+    return $sum;
+}
+sub cross_sum (@matrix) {
+    my $nw2se = 0;
+    $nw2se += @matrix[$_][$_] for 0..MAX;
+    my $ne2sw = 0;
+    $ne2sw += @matrix[$_][MAX-$_] for 0..MAX;
+    return $nw2se, $ne2sw;
+}
+sub is-valid (@matrix) {
+    for (0..MAX) -&gt; $k {
+        return False if (col-sum @matrix, $k) != SUM;
+    }
+    return True if SUM == all cross_sum @matrix;
+    return False;
+}
+
+sub find-matrices {
+    my @int-list = 1..9;
+    OUT: for @int-list.permutations -&gt; $perm {
+        $count-perm++;
+        my @matrix = gather {
+            for $perm.Array -&gt; $i, $j, $k {
+                next OUT unless $i + $j + $k == SUM;
+                take [ $i, $j, $k ];
+            }
+        }
+        $count-mat++;
+        next unless is-valid @matrix; 
+        print-matrix @matrix;
+        # last;
+    }
+}
+
+find-matrices;   
+say "Counters: $count-perm $count-mat";
+</code></pre>
+
+<p>Note that, for performance improvement, the <code>find-matrices</code> routine skips early on any matrix in which any line sum if not equal to the target sum. This way, instead of having to check 362,880 (9!) matrices, we need to verify only 2,592 of them (less than 1% of the total).</p>
+
+<p>This is the output displayed by this program:</p>
+
+<pre><code>$ raku magic-square2.raku
+[ 2  7  6 ]
+[ 9  5  1 ]
+[ 4  3  8 ]
+
+[ 2  9  4 ]
+[ 7  5  3 ]
+[ 6  1  8 ]
+
+[ 4  3  8 ]
+[ 9  5  1 ]
+[ 2  7  6 ]
+
+[ 4  9  2 ]
+[ 3  5  7 ]
+[ 8  1  6 ]
+
+[ 6  1  8 ]
+[ 7  5  3 ]
+[ 2  9  4 ]
+
+[ 6  7  2 ]
+[ 1  5  9 ]
+[ 8  3  4 ]
+
+[ 8  1  6 ]
+[ 3  5  7 ]
+[ 4  9  2 ]
+
+[ 8  3  4 ]
+[ 1  5  9 ]
+[ 6  7  2 ]
+
+Counters: 362880 2592
+</code></pre>
+
+<p>The implementation above is still way too complicated. It would be better to work all the way with one-dimension arrays, and to transform them into squares at the last moment. I don&#8217;t have time to refactor this program now, but the Perl implementation below uses this much simpler implementation (despite having no <code>permutations</code> built-in).</p>
+
+<h3>Magic Square in Perl</h3>
+
+<p>As noted above, this implementation does all the work on flat arrays of 9 integers, and transforms them into squares only when it is needed at the latest moment for the purpose of printing the squares that have been found to be magic.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use constant SUM =&gt; 15;
+
+my @in = 1..9;
+my @permutations;
+
+sub print_matrix {
+    my @matrix = ( [@{$_}[0..2]], [@{$_}[3..5]], [@{$_}[6..8]] );
+    for my $row (@matrix)  {
+        say "[", (map { sprintf "% 2i", $_ } @$row), " ]"; # for @$row;
+    }
+    say " ";
+}
+
+sub sum {
+    my $sum = 0;
+    $sum += $_ for @_;
+    return $sum;
+}
+
+sub permute {
+    my ($in, $left) = @_;
+    if (scalar @$left == 0) {
+        return 
+            # lines
+            if sum( @{$in}[0..2]) != SUM
+            or sum( @{$in}[3..5]) != SUM
+            or sum( @{$in}[6..8]) != SUM
+            # columns
+            or sum( @{$in}[0, 3, 6]) != SUM
+            or sum( @{$in}[1, 4, 7]) != SUM
+            or sum( @{$in}[2, 5, 8]) != SUM 
+            # diagonals
+            or sum( @{$in}[0, 4, 8]) != SUM 
+            or sum( @{$in}[2, 4, 6]) != SUM;
+        push @permutations, $in;
+        return;
+    }
+    for my $candidate (@$left) {
+        my @vals = @$in;
+        push @vals, $candidate;
+        permute(\@vals, [grep $_ != $candidate, @$left]);
+    }
+}
+
+permute [], \@in;
+print_matrix \$_ for @permutations;
+</code></pre>
+
+<p>This displays the following:</p>
+
+<pre><code>$ perl magic-square.pl
+[ 2 7 6 ]
+[ 9 5 1 ]
+[ 4 3 8 ]
+
+[ 2 9 4 ]
+[ 7 5 3 ]
+[ 6 1 8 ]
+
+[ 4 3 8 ]
+[ 9 5 1 ]
+[ 2 7 6 ]
+
+[ 4 9 2 ]
+[ 3 5 7 ]
+[ 8 1 6 ]
+
+[ 6 1 8 ]
+[ 7 5 3 ]
+[ 2 9 4 ]
+
+[ 6 7 2 ]
+[ 1 5 9 ]
+[ 8 3 4 ]
+
+[ 8 1 6 ]
+[ 3 5 7 ]
+[ 4 9 2 ]
+
+[ 8 3 4 ]
+[ 1 5 9 ]
+[ 6 7 2 ]
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, December 13, 2020. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+     on Sunday 06 December 2020 21:54</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2020/12/magic-square-and-magic-cube.html">CY's Brute-Force Take on Task 2 of PWC#089</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <div><div><p><i>If you want to challenge yourself on programming, especially on Perl and/or Raku, go to <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org</a>, code the latest challenge, submit codes on-time (via GitHub or email).</i></p></div></div><div><br /></div><div>(In a rush, sorry for the "raw" style this week.)<br /></div><div><br /></div>
+<pre>a b c
+d e f
+g h i
+
+<u>Statement</u>: The center term, "$e" , is 5.
+<u>Proof</u>:<br />Given the sum of each "segment" is 15.<br /><br />Consider<br />  sum of 2 outer rows - the middle column - sum of 2 diagonals <br />= (2-1-2)*15<br /><br />Then we have<br />(a+b+c + g+h+i) - (b+e+h) - (a+e+i + c+e+g) = (2-1-2)*15
+-3*e = -15
+e = 5  □
+
+
+Then loop the values of $a and $b over 1 to 9
+
+$i = 10-$a
+$c = 15-$a-$b
+$h = 10-$b
+$g = 10-$c
+$d = 15-$a-$g
+$f = 15-$c-$i
+</pre><div>
+
+Then check whether the value of variables match the 8 given equations and use every integer from 1 to 9 .<br /><br />I got 8 magic squares.</div><div><br /></div><div>---------------------- <br /></div><div><br /></div><div>The definition of "magic cube" as recorded on Wikipedia, early December 2020, is : "the sums of the numbers on each row [9 rows], on each column [9 columns], on each pillar [9 pillars] and on each of the four main space diagonals [4 space diagonals] are equal to the same number."
+
+And I think we may explore 3x3x3 cube in a similar fashion. <br /></div><div><br /></div><pre>first (top) layer
+a b c 
+d e f 
+g h i
+ 
+second (middle) layer
+j k l 
+m X n 
+o p q 
+
+third (bottom) layer
+r s t 
+u v w 
+x y z 
+
+
+1+2+3+..+27 = 27*28/2 = 27*14
+There are exactly 9 pillars composing the cube. 
+If the sums of each pillar are the same, we have 
+
+             27*14/9 = 42 ,
+
+as the sum of each "segment".
+
+
+<u>Statement</u>: The center term, "$X", is 42.
+<u>Proof</u>:<br /><br />&nbsp;Consider:<br /><br />&nbsp;(sum of 4 corner pillars)<br /> - (sum of 2 outer columns of the middle layer) + (m+X+n)<br />&nbsp;- (sum of 2 outer columns of the middle layer)<br />&nbsp;- (sum of 4 space diagonals)
+<br />
+  (4+2+1-2-4)*42 = a+j+r + c+l+t + i+q+z + x+o+g<br />               &nbsp;- (j+m+o) -(l+n+q) + m+X+n<br />                - (a+X+z) - (c+X+x) - (i+X+r) - (g+X+t) <br />= -3X
+<br />
+(A bit worry about making errors during cancelling terms? <br />Use a computer algebra system.)
+
+-42 = -3X
+X = 14  □
+<br />
+Then loop the values of $e,$a,$b,$g from 1 to 27
+
+$c = 42 - $a - $b
+$z = 28 - $a
+$x = 28 - $c
+$y = 42 - $x - $z
+$d = 42 - $a - $g
+$t = 28 - $g
+$w = 42 - $z - $t
+$h = 42 - $e - $b
+$p = 42 - $y - $h
+$f = 42 - $d - $e
+$i = 42 - $c - $f
+$r = 28 - $i
+$s = 42 - $t - $r
+$v = 42 - $y - $s
+$j = 42 - $a - $r
+$l = 42 - $c - $t
+$k = 42 - $j - $l
+$q = 42 - $z - $i
+$n = 42 - $l - $q
+$m = 28 - $n
+$o = 42 - $j - $m
+$u = 42 - $v - $w
+</pre>
+<br /><br /><div>I got 192 different magic cubes.</div><div><br /></div><div><br /></div><div>---</div><div><div><i>link for codes: 
+<tt><a href="https://github.com/E7-87-83/perlweeklychallenge-club/tree/master/challenge-089/cheok-yin-fung/perl/ch-1.pl">ch-1.pl</a></tt>
+, <tt><a href="https://github.com/E7-87-83/perlweeklychallenge-club/tree/master/challenge-089/cheok-yin-fung/perl/ch-2.pl">ch-2.pl</a></tt></i> <br /></div><div><br /></div></div><div><p><i>Do tell or correct me, if you have oppositions, want to discuss or give me advice!</i></p></div><div>Stay healthy! □</div><br />
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by C.-Y. Fung
+     on Sunday 06 December 2020 15:32</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2020_12_aoc_day_06.html">Advent of Code Day 6 - simple counting</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Today was rather easy (or at least I did not run of into the completely wrong direction like <a href="/perl/2020_12_aoc_day_05.html">yesterday</a>).</p>
@@ -1659,8 +2072,8 @@ because their survival depends on it."
 <h2>Get in touch</h2>
 
 <p>If you have questions, contact:
-- JJ Merelo <a href="&#109;&#x61;&#x69;l&#x74;&#111;:&#106;&#106;&#x6D;&#101;&#114;&#x65;&#x6C;o&#64;g&#109;&#97;&#105;&#108;.&#99;&#111;&#109;">&#106;&#106;&#x6D;&#101;&#114;&#x65;&#x6C;o&#64;g&#109;&#97;&#105;&#108;.&#99;&#111;&#109;</a> 
-- Stuart Mackintosh <a href="&#x6D;&#x61;&#x69;&#x6C;&#x74;&#x6F;:&#115;&#116;&#x75;&#x61;&#x72;&#116;&#64;&#x70;&#101;&#x72;&#108;&#102;&#111;&#117;&#110;&#x64;&#97;&#x74;&#105;o&#x6E;.or&#103;">&#115;&#116;&#x75;&#x61;&#x72;&#116;&#64;&#x70;&#101;&#x72;&#108;&#102;&#111;&#117;&#110;&#x64;&#97;&#x74;&#105;o&#x6E;.or&#103;</a>.</p>
+- JJ Merelo <a href="&#109;&#97;&#105;&#108;&#x74;&#111;:&#106;&#106;m&#101;&#x72;&#x65;&#108;&#x6F;&#64;g&#109;&#97;&#x69;l&#x2E;&#99;&#x6F;m">&#106;&#106;m&#101;&#x72;&#x65;&#108;&#x6F;&#64;g&#109;&#97;&#x69;l&#x2E;&#99;&#x6F;m</a> 
+- Stuart Mackintosh <a href="&#109;&#x61;&#105;&#x6C;t&#111;:&#x73;&#x74;&#117;&#x61;&#x72;&#116;&#64;p&#x65;&#114;&#x6C;&#x66;&#x6F;&#x75;&#110;&#x64;&#97;t&#105;&#x6F;&#110;&#46;&#x6F;&#114;&#x67;">&#x73;&#x74;&#117;&#x61;&#x72;&#116;&#64;p&#x65;&#114;&#x6C;&#x66;&#x6F;&#x75;&#110;&#x64;&#97;t&#105;&#x6F;&#110;&#46;&#x6F;&#114;&#x67;</a>.</p>
 
 <p>You can also get in touch with us:</p>
 
@@ -3509,309 +3922,6 @@ sample output 3:
           </div><!-- card -->
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/samir_parikh/2020/11/perl-weekly-challenge-088.html">Perl Weekly Challenge 088</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Despite the holiday week here in the U.S., I was able to tackle this week's <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-088/">Perl Weekly Challenge</a>.  I have to say that this week's challenge was the most satisfying for me as it allowed me to not only come up with a novel solution (for me!), but it also provided an opportunity for me to leverage two areas of Perl programming that have been a real challenge for me:  recursion and references.  The deadline to submit solutions for this challenge is <a href="https://www.timeanddate.com/countdown/generic?iso=20201129T2359&amp;p0=136&amp;msg=Perl+Weekly+Challenge+088+Deadline&amp;font=serif">fast approaching</a> so if you haven't solved it yourself yet, you may want to come back to this post later.</p>
-
-<h2>Task 1</h2>
-
-<p><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-088/#TASK1">Task #1</a>, "Array of Product", asks the following:</p>
-
-<blockquote>
-  <p>You are given an array of positive integers <code>@N</code>.</p>
-
-<p>Write a script to return an array <code>@M</code> where <code>$M[i]</code> is the product of all elements of <code>@N</code> except the index <code>$N[i]</code>.</p>
-
-<p>Example 1:</p>
-</blockquote>
-
-<pre><code>    Input:
-        @N = (5, 2, 1, 4, 3)
-    Output:
-        @M = (24, 60, 120, 30, 40)
-
-        $M[0] = 2 x 1 x 4 x 3 = 24
-        $M[1] = 5 x 1 x 4 x 3 = 60
-        $M[2] = 5 x 2 x 4 x 3 = 120
-        $M[3] = 5 x 2 x 1 x 3 = 30
-        $M[4] = 5 x 2 x 1 x 4 = 40
-</code></pre>
-
-<blockquote>
-  <p>Example 2:</p>
-</blockquote>
-
-<pre><code>    Input:
-        @N = (2, 1, 4, 3)
-    Output:
-        @M = (12, 24, 6, 8)
-
-        $M[0] = 1 x 4 x 3 = 12
-        $M[1] = 2 x 4 x 3 = 24
-        $M[2] = 2 x 1 x 3 = 6
-        $M[3] = 2 x 1 x 4 = 8
-</code></pre>
-
-<p>Like many of my prior solutions, I settled for using a brute force technique to solve this task.  I used an outer <code>for</code> loop iterating a variable <code>$i</code> which moves through each element in the input array <code>@N</code>.  An inner <code>for</code> loop using the variable <code>$j</code> does the same thing.  Both loops start at index <code>0</code> and go through the last index of the array.  An <code>if</code> statement checks to see whether or not <code>$i</code> and <code>$j</code> are equal.  If they are <em>not</em>, we update the running <code>$product</code> variable which is keeping track of our current product for <code>$M[0]</code>, <code>$M[1]</code>, etc. to satisfy the "product of all elements of <code>@N</code> except the index <code>$N[i]</code>" portion of the requirement.  If <code>i$</code> and <code>$j</code> are equal, we just move on to the next value of <code>$j</code>.  Once we are done executing the inner loop for a given value of <code>$i</code>, we update our output array <code>@M</code> by <code>push</code>ing the current value of <code>$product</code> into the end of the array <code>@M</code>.</p>
-
-<p>This was actually the easy part.</p>
-
-<p>The difficult part was formatting the output to match what was given in the challenge.  Not only do you have to print the summary of the products of the elements, e.g.:</p>
-
-<pre><code>@M = (24, 60, 120, 30, 40)
-</code></pre>
-
-<p>but you also have to print the individual products for each element of <code>@M</code>:</p>
-
-<pre><code>$M[0] = 2 x 1 x 4 x 3 = 24
-$M[1] = 5 x 1 x 4 x 3 = 60
-$M[2] = 5 x 2 x 4 x 3 = 120
-$M[3] = 5 x 2 x 1 x 3 = 30
-$M[4] = 5 x 2 x 1 x 4 = 40
-</code></pre>
-
-<p>The tricky part is you have to print the summary <strong>before</strong> the individual line items have been determined (i.e. you don't know what the final elements of the array <code>@M</code> are until you calculate them all).</p>
-
-<p>To solve this portion of the problem, I relied on two string variables:  <code>$m_string</code> and <code>$output_string</code>.  The former string contains each individual product equation for each element of the array <code>@M</code>:</p>
-
-<pre><code>$M[2] = 5 x 2 x 4 x 3 = 120
-</code></pre>
-
-<p>I update <code>$m_string</code> by "building it up" during each iteration of the inner <code>for my $j</code> loop by adding each element of the input array <code>@N</code> and the multiplication sign ("<code>x</code>").  The multiplication symbol is printed <em>before</em> each number and thus is not required for the first element, hence the <code>if ($first)</code> statement.  At the conclusion of the inner <code>for</code> loop, I update <code>$m_string</code> with the final product:</p>
-
-<pre><code>$m_string .= " = " . $product;
-</code></pre>
-
-<p>and then append the whole string to <code>$output_string</code> which contains the overall detailed line items:</p>
-
-<pre><code>$output_string .= "\t". $m_string . "\n";
-</code></pre>
-
-<p>Once we are done executing through both of our loops, I can then print the summary of the <code>@M</code> array followed by the detailed line items which are stored in <code>$output_string</code>.  I thought this was a pretty clever solution (for me) to storing the intermediate results before we had to print them.  Originally, I was going to write the intermediate results to a temporary file but then thought better of it.  Putting it all together, we come up with our solution:</p>
-
-<pre><code>use warnings;
-use strict;
-use diagnostics;
-use v5.10;
-
-# run program as:
-# $ ./ch-1.pl "100, 4, 50, 3, 2"
-my @N = split /, /, $ARGV[0];
-my @M;
-my $output_string = "";
-
-for (my $i = 0; $i &lt; scalar(@N); $i++) {
-    my $product = 1;
-    my $m_string = "\$M[" . $i . "] = ";
-    my $first = 1;
-    for (my $j = 0; $j &lt; scalar(@N); $j++) {
-        my $print_x;
-        if ($i != $j) {
-            $product = $product * $N[$j];
-            if ($first) {
-                $print_x = "";
-                $first = 0;
-            } else {
-                $print_x = " x ";
-            }
-            $m_string .= $print_x . $N[$j]; 
-        }
-    }
-    push (@M, $product);
-    $m_string .= " = " . $product;
-    $output_string .= "\t". $m_string . "\n";
-}
-
-say "Input:\n\t\@N = (", join(", ", @N), ")";
-say "Output:";
-say "\t\@M = (", join(", ", @M), ")\n";
-say "$output_string";
-</code></pre>
-
-<h2>Task 2</h2>
-
-<p><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-088/#TASK2">Task #2</a>, "Spiral Matrix", was the one I was both most looking forward to and dreading at the same time!  The task states: </p>
-
-<blockquote>
-  <p>You are given <code>m x n</code> matrix of positive integers.</p>
-
-<p>Write a script to print a spiral matrix as a list.</p>
-
-<p>Example 1:</p>
-</blockquote>
-
-<pre><code>    Input:
-        [ 1, 2, 3 ]
-        [ 4, 5, 6 ]
-        [ 7, 8, 9 ]
-    Output:
-        [ 1, 2, 3, 6, 9, 8, 7, 4, 5 ]
-</code></pre>
-
-<blockquote>
-  <p>Example 2:</p>
-</blockquote>
-
-<pre><code>    Input:
-        [  1,  2,  3,  4 ]
-        [  5,  6,  7,  8 ]
-        [  9, 10, 11, 12 ]
-        [ 13, 14, 15, 16 ]
-    Output:
-        [ 1, 2, 3, 4, 8, 12, 16, 15, 14, 13, 9, 5, 6, 7, 11, 10 ]
-</code></pre>
-
-<p>I was excited because I've solved similar spiral challenges like this before using Python, specifically <a href="https://projecteuler.net/problem=28">Problem 28</a> of the <a href="https://projecteuler.net/about">Project Euler</a> series of coding problems.  In my version, I used a series of <code>for</code> loops to work my way around a two-dimensional array.  But for this task of Challenge 088, I wanted to try my hand at using a recursive solution which has been a <a href="https://samirparikh.com/blog/permutations-and-recursion.html">pain point</a> for me.  I also got the sense that this problem would also require me to work with Perl references and multi-dimensional arrays, other areas where I've <a href="https://www.perlmonks.org/?node_id=11123691">been</a> <a href="https://www.perlmonks.org/?node_id=11124042">struggling</a>.  But despite these reservations, I plowed ahead and here is what I did.</p>
-
-<p>The main portion of the solution resides in the subroutine <code>return_spiral</code>.  I pass it a two-dimensional array, <code>@array</code>, which is formulated using the subroutine <code>define_matrix</code> which I've <a href="https://samirparikh.com/blog/perl-weekly-challenge-084.html">used</a> <a href="https://samirparikh.com/blog/perl-weekly-challenge-087.html">before</a>.  The purpose of <code>return_spiral</code> is to return an array, <code>@spiral</code>, comprised solely of those elements around the perimeter of <code>@array</code>, starting at the top-left corner and then moving in a clockwise fashion, plus the resulting two-dimensional matrix that remains.  For example, if we were to pass it the array <code>@array</code> in Example 2 from above:</p>
-
-<pre><code>[  1,  2,  3,  4 ]
-[  5,  6,  7,  8 ]
-[  9, 10, 11, 12 ]
-[ 13, 14, 15, 16 ]
-</code></pre>
-
-<p>the subroutine should return a simple array <code>@spiral</code>:</p>
-
-<pre><code>(1, 2, 3, 4, 8, 12, 16, 15, 14, 13, 9, 5)
-</code></pre>
-
-<p>and the remaining two-dimensional array:</p>
-
-<pre><code>[  6,  7 ]
-[ 10, 11 ]
-</code></pre>
-
-<p>which gets passed back to the subroutine in a recursive fashion.  To make it recursive, I'd need a statement like:</p>
-
-<pre><code>return ( @spiral, &amp;return_spiral(@array) );
-</code></pre>
-
-<p>To get the elements around the perimeter of the array, there are four steps (since there are four "sides" to the matrix):</p>
-
-<ol>
-<li>Get the elements in the first row using the statement <code>push ( @spiral, @{$array[0]} )</code>.</li>
-<li>Get the elements in the right column, going down, using the <code>for my $y</code> loop</li>
-<li>Get the elements of the last row (in reverse order) using the statement <code>push ( @spiral, reverse ( @{$array[$#array]} ) )</code>.</li>
-<li>Get the elements of the left column, going up, using the <code>for my $i</code> loop.</li>
-</ol>
-
-<p>All recursive functions need what is called a "base case", or terminating condition.  Otherwise, you'd end up in an endless loop.  For my subroutine, I actually came up with four base cases which would cause the subroutine to ultimately finish by just returning the spiral portion of the array.  Those four cases are:</p>
-
-<ol>
-<li>The array has just one row.</li>
-<li>The array has just one column.</li>
-<li>The array has just two rows.</li>
-<li>The array has just two columns. </li>
-</ol>
-
-<p>I check the first two conditions near the beginning of the subroutine.  Assuming that the array passed to <code>return_spiral</code> has at least two rows and two columns, I check the third and fourth terminating conditions after we've done one "lap" around the array to define <code>@spiral</code>.  The checks for the third and fourth base cases is done by the <code>if</code> statement:</p>
-
-<pre><code>if (scalar( @array ) == 2 || scalar ( @{$array[0]} ) == 2)
-</code></pre>
-
-<p>If that <code>if</code> statement is true, that means that the array that was originally passed to <code>return_spiral</code> only had two rows or two columns, in which case one "lap" around the array is all we need.</p>
-
-<p>If we haven't hit a base case, the subroutine "trims" off the peripheral elements we've populated in the array <code>@sprial</code> using a series of <code>shift</code> and <code>pop</code> statements and concludes with returning both the <code>@sprial</code> array (which contains all of the elements around the perimeter of the original array) and by recursively calling the subroutine itself with the remaining interior elements of <code>@array</code>.  The resulting script becomes:</p>
-
-<pre><code>use v5.10;
-use warnings;
-use strict;
-
-# assumptions:
-# matrix does not have to be square
-# spiral is clockwise
-
-sub define_matrix {
-    open (INPUT, '&lt;', $_[0]) or die "$!: could not open file $_[0]";
-    say "Input:";
-    my (@line, @matrix);
-    while (&lt;INPUT&gt;) {
-        chomp;
-        say $_;
-        s/\s+//g; # remove any whitespace
-        s/\[//;
-        s/\]//;
-        @line = split /,/, $_;
-        push (@matrix, [@line]);
-    }
-    close (INPUT) or die "$!: could not close file $_[0]";
-    return ( @matrix );
-}
-
-sub return_spiral {
-    my @array = @_;
-    my @spiral;
-# handle special cases
-# just one row
-    if (scalar(@array) == 1) {
-        return ( @{$array[0]} );
-# just one column
-    } elsif ( scalar ( @{$array[0]} ) == 1 ) {
-        for (my $i = 0; $i &lt; scalar(@array); $i++) {
-            push ( @spiral, @{$array[$i]}[0] );
-        }
-        return ( @spiral );
-# we have at least a 2 x 2 array
-    } else {
-# get first row
-        push ( @spiral, @{$array[0]} );
-# get right column
-        my $right_ci = scalar ( @{$array[0]} ) - 1;
-        for (my $y = 1; $y &lt; scalar ( @array ); $y++) {
-            push ( @spiral, @{$array[$y]}[$right_ci] );
-        }
-# remove last element from last row
-        pop ( @{$array[$#array]} );
-# get last row in reversed order
-        push ( @spiral, reverse ( @{$array[$#array]} ) );
-# get left column
-        for (my $i = ($#array - 1); $i &gt; 0; $i--) {
-            push ( @spiral, @{$array[$i]}[0] );
-        }
-# check if resulting array is empty (i.e. we were originally sent
-# just a two-row or two-column array to begin with
-        if (scalar( @array ) == 2 || scalar ( @{$array[0]} ) == 2) {
-            return ( @spiral );
-        } else {
-# trim array
-# trim top row:
-            shift @array;
-# trim bottom row:
-            pop @array;
-# remove first and last element from remaining rows
-            for (my $i = 0; $i &lt; scalar(@array); $i++) {
-                shift ( @{$array[$i]} );
-                pop   ( @{$array[$i]} );
-            }
-            return ( @spiral, &amp;return_spiral(@array) );
-        }
-    }
-}
-
-my @matrix = &amp;define_matrix($ARGV[0]);
-my @spiral2 = &amp;return_spiral(@matrix);
-say "Output:";
-say "[ ", join(", ", @spiral2), " ]";
-</code></pre>
-
-<p>I suppose that I could have combined the "trim" operations with the statements where I traverse the perimeter in the first place to populate <code>@spiral</code> to tighten up the script, but in the end, that wasn't an optimization I had the energy to pursue.</p>
-
-<p>As I said before, I really enjoyed working on this week's tasks and solving the programming and algorithmic challenges they presented.  I'm eager to see how others in the Perl Weekly Challenge community came up with their own solution as there is always so much to learn from them.  Until next time!</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Samir Parikh
-     on Sunday 29 November 2020 13:04</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card">
-            <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2020/11/cccxvii-9-cpan-great-modules-released.html">(cccxvii) 9 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/SKAJI/App-cpm-0.995' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::cpm</span></b></a> - a fast CPAN module installer <ul>  <li>Version: <strong>0.995</strong> on 2020-11-28</li>  <li>Votes: 49</li>  <li>Previous version: 0.994 was 21 days before</li></ul></li><li><a href='https://metacpan.org/release/DOMM/App-TimeTracker-3.005' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::TimeTracker</span></b></a> - time tracking for impatient and lazy command line lovers <ul>  <li>Version: <strong>3.005</strong> on 2020-11-22</li>  <li>Votes: 14</li>  <li>Previous version: 3.004 was 3 months, 12 days before</li></ul></li><li><a href='https://metacpan.org/release/MHX/Convert-Binary-C-0.84' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Convert::Binary::C</span></b></a> - Binary Data Conversion using C Types <ul>  <li>Version: <strong>0.84</strong> on 2020-11-23</li>  <li>Votes: 13</li>  <li>Previous version: 0.83 was 4 days before</li></ul></li><li><a href='https://metacpan.org/release/ETJ/Graph-0.9711' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Graph</span></b></a> - graph data structures and algorithms <ul>  <li>Version: <strong>0.9711</strong> on 2020-11-27</li>  <li>Votes: 20</li>  <li>Previous version: 0.9708 was 21 days before</li></ul></li><li><a href='https://metacpan.org/release/JBERGER/Mojo-JWT-0.09' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojo::JWT</span></b></a> - JSON Web Token the Mojo way <ul>  <li>Version: <strong>0.09</strong> on 2020-11-22</li>  <li>Votes: 14</li>  <li>Previous version: 0.08 was 1 year, 11 months, 18 days before</li></ul></li><li><a href='https://metacpan.org/release/HAARG/Moo-2.004004' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Moo</span></b></a> - Minimalist Object Orientation (with Moose compatibility) <ul>  <li>Version: <strong>2.004004</strong> on 2020-11-25</li>  <li>Votes: 277</li>  <li>Previous version: 2.004003 was 4 days before</li></ul></li><li><a href='https://metacpan.org/release/ETHER/Package-Stash-0.39' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Package::Stash</span></b></a> - Routines for manipulating stashes <ul>  <li>Version: <strong>0.39</strong> on 2020-11-22</li>  <li>Votes: 27</li>  <li>Previous version: 0.38 was 1 year, 10 months, 22 days before</li></ul></li><li><a href='https://metacpan.org/release/PEVANS/Syntax-Keyword-Try-0.20' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Syntax::Keyword::Try</span></b></a> - a try/catch/finally syntax for perl <ul>  <li>Version: <strong>0.20</strong> on 2020-11-24</li>  <li>Votes: 31</li>  <li>Previous version: 0.18 was 3 months, 23 days before</li></ul></li><li><a href='https://metacpan.org/release/CORION/WWW-Mechanize-Chrome-0.63' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>WWW::Mechanize::Chrome</span></b></a> - automate the Chrome browser <ul>  <li>Version: <strong>0.63</strong> on 2020-11-28</li>  <li>Votes: 14</li>  <li>Previous version: 0.61 was 25 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
@@ -3852,21 +3962,6 @@ This is a simple example showing how to do it.
      on Friday 27 November 2020 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://perlmaven.com/cpan-digger-dashboard-rocks">CPAN Digger - CPAN Dashboard - CPAN Rocks</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>
-CPAN Digger monitors the most recently uploaded distributions, CPAN Dashboard provides an overview to the authors, CPAN Rocks provides stats from Meta::CPAN.
-<p>
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
-
-              <p class="text-right"><small>Published by Gabor Szabo
-     on Thursday 26 November 2020 13:30</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
 
         </div><!-- col-md-8 -->
         <div class="col-md-2">
@@ -3885,7 +3980,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 06 December 2020 15:57 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 06 December 2020 17:11 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
