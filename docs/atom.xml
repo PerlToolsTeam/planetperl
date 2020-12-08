@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2020-12-08T21:56:51Z</updated>
+  <updated>2020-12-08T23:00:57Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -224,6 +224,162 @@ $ perl ethiopian-mult.pl 45 59
 
     </content>
 </entry>
+  <entry>
+    <title>Perl is dead simple with CBC Block Encryption</title>
+    <link rel="alternate" href="https://dev.to/scotticles/perl-is-dead-simple-with-cbc-block-encryption-3bld" type="text/html"/>
+    <content type="html">&lt;h1&gt;
+  &lt;a href="#intro" class="anchor"&gt;
+  &lt;/a&gt;
+  INTRO
+&lt;/h1&gt;
+
+&lt;p&gt;I hope this blog post will help someone with &lt;a href="https://metacpan.org/pod/CryptX"&gt;CryptX&lt;/a&gt;. &lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;My disclaimer:&lt;/strong&gt; I am not an expert in cryptography. &lt;/p&gt;
+
+&lt;p&gt;I first started using &lt;a href="https://metacpan.org/pod/Crypt::CBC"&gt;Crypt::CBC&lt;/a&gt; but I liked how CryptX had more modules, better maintained and it was faster. I moved my system over to CryptX. In Crypt, the CBC piece was done more for you, where &lt;a href="https://metacpan.org/pod/Crypt::Mode::CBC"&gt;Crypt::Mode::CBC&lt;/a&gt; requires a little more from the developer to configure it.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#why" class="anchor"&gt;
+  &lt;/a&gt;
+  WHY?
+&lt;/h1&gt;
+
+&lt;p&gt;I am designing a system and needed a way to take files uploaded by users and encrypt them before storing them until needed. S3 has it built it, I know but I didn't want to rely on that. I decided to use CBC block as my encryption method. I also had to encrypt text and store them in the database, I can use the same encryption methods for both tasks. If you plan on storing in a database, remember these are bytes and needs to be a blob type.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#how" class="anchor"&gt;
+  &lt;/a&gt;
+  HOW?
+&lt;/h1&gt;
+
+&lt;p&gt;Here is the Crypt::Mode::CBC snippet&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use Crypt::Mode::CBC;
+my $m = Crypt::Mode::CBC-&amp;gt;new('AES');
+
+#(en|de)crypt at once
+my $ciphertext = $m-&amp;gt;encrypt($plaintext, $key, $iv);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/Crypt::Mode::CBC"&gt;Crypt::Mode::CBC&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;It uses AES, requires a $key and a $iv. AES is one of the many Ciphers to use. The padding by default is PKCS5 padding.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://docs.microsoft.com/en-us/dotnet/standard/security/vulnerabilities-cbc-mode"&gt;vulnerabilities-cbc-mode - Extra Reading&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#what-the-heck-is-the-iv" class="anchor"&gt;
+  &lt;/a&gt;
+  What the heck is the IV?
+&lt;/h2&gt;
+
+&lt;p&gt;The IV is 'initialization vector'. To make each message unique, an initialization vector must be used in the first block. &lt;a href="https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_block_chaining_(CBC)"&gt;IV Resource&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;I generate a IV for each encrypted object and store it in the database for when decryption is needed.&lt;br&gt;
+&lt;a href="http://www.ciphersbyritter.com/NEWS6/CBCIV.HTM"&gt;IV Resource&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Here is a full example.&lt;br&gt;
+I use Mojo::File for file manipulation, it makes things easy.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Just to note, rand() is not cryptographically secure. Please see the doc for picking the right module, if you need a secure implementation. In this example I am using Math::Random::Secure that replaced the native rand()&lt;/strong&gt;&lt;br&gt;
+&lt;a href="https://perldoc.perl.org/functions/rand"&gt;https://perldoc.perl.org/functions/rand&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Requires Modules:&lt;/strong&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Crypt::Mode::CBC&lt;/li&gt;
+&lt;li&gt;Mojo::File&lt;/li&gt;
+&lt;li&gt;Modern::Perl&lt;/li&gt;
+&lt;li&gt;Crypt::Digest::SHA512_256&lt;/li&gt;
+&lt;li&gt;Math::Random::Secure
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use Crypt::Mode::CBC;
+use Mojo::File;
+use Modern::Perl;
+use warnings;
+use strict;
+use Crypt::Digest::SHA512_256 qw( sha512_256_hex );
+use Math::Random::Secure qw(rand);
+my $key =  sha512_256_hex(rand(1000));
+my $iv =  sha512_256_hex(rand(1000));
+
+# Lets print out the IV and KEY for fun.
+say $key;
+say substr($iv, 0, 32);
+
+my $cbc = Crypt::Mode::CBC-&amp;gt;new('AES');
+
+# Encrypt
+my $file = Mojo::File-&amp;gt;new('plainfile.txt');
+
+my $ciphertext = $cbc-&amp;gt;encrypt($file-&amp;gt;slurp, pack("H*", $key), pack("H*", substr($iv, 0, 32)));
+
+my $encFile = Mojo::File-&amp;gt;new('plainfile.txt.crypted');
+$encFile-&amp;gt;spurt($ciphertext);
+
+# Move the old file
+$file-&amp;gt;move_to('plainfile.txt.backup');
+$file-&amp;gt;new('plainfile.txt');
+
+# Decrypt
+
+my $plaintext = $cbc-&amp;gt;decrypt($encFile-&amp;gt;slurp, pack("H*", $key), pack("H*", substr($iv, 0, 32)));
+
+$file-&amp;gt;spurt($plaintext);
+# this should print out the data and if you cat the file plainfile.txt, it should print out the data.
+say $plaintext;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;If you run this, you will have a few files to look at.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Scotticles</name>
+    </author>
+    <id>https://dev.to/scotticles/perl-is-dead-simple-with-cbc-block-encryption-3bld</id>
+    <published>2020-12-08T22:25:38Z</published>
+    <updated>2020-12-08T22:25:38Z</updated>
+    <category term="perl"/>
+    <category term="encryption"/>
+    <category term="cbc"/>
+    <category term="cryptx"/>
+  </entry>
   <entry>
     <title>Advent of Code Day 8 - running code</title>
     <link href="http://domm.plix.at/perl/2020_12_aoc_day_08.html"/>
@@ -2639,640 +2795,5 @@ In verschiedenen Projekten setzen wir ein jeweils selbst gehostetes Gitlab ein. 
     <id>https://blog.perl-academy.de/2020-12-04-gitlab-umziehen</id>
     <published>2020-12-04T10:00:00Z</published>
     <updated>2020-12-04T10:00:00Z</updated>
-  </entry>
-  <entry>
-    <title>List of new CPAN distributions – Nov 2020</title>
-    <link rel="alternate" href="https://perlancar.wordpress.com/2020/12/04/list-of-new-cpan-distributions-nov-2020/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><table>
-<tr>
-<th>dist</th>
-<th>author</th>
-<th>version</th>
-<th>abstract</th>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Acme-CPANModules-ColorThemed-0.002">Acme-CPANModules-ColorThemed</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.002</td>
-<td>Modules that has color theme support</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Acme-CPANModules-Getopt-0.002">Acme-CPANModules-Getopt</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.002</td>
-<td>Modules that parse command-line options</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Acme-CPANModules-ModulesThatJustContainData-0.001">Acme-CPANModules-ModulesThatJustContainData</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Modules that just contain data</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/TOBYINK/Acme-Marvel-CinematicUniverse-Characters-0.001">Acme-Marvel-CinematicUniverse-Characters</a></td>
-<td><a href="https://metacpan.org/author/TOBYINK">TOBYINK</a></td>
-<td>0.001</td>
-<td>example of distributing instance data on CPAN</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/TOMOYAMA/Acme-TOMOYAMA-Utils-0.01">Acme-TOMOYAMA-Utils</a></td>
-<td><a href="https://metacpan.org/author/TOMOYAMA">TOMOYAMA</a></td>
-<td>0.01</td>
-<td>The great new Acme::TOMOYAMA::Utils!</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/DCANTRELL/Algorithm-Diff-JSON-1.000">Algorithm-Diff-JSON</a></td>
-<td><a href="https://metacpan.org/author/DCANTRELL">DCANTRELL</a></td>
-<td>1.000</td>
-<td>find the differences between two lists and report on them in JSON</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HUGMEIR/Alien-libavro_c-0.01">Alien-libavro_c</a></td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>0.01</td>
-<td>libavro_c, with alien</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HUGMEIR/Alien-libgraphqlparser-0.01">Alien-libgraphqlparser</a></td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>0.01</td>
-<td>libgraphqlparser, with alien</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HUGMEIR/Alien-libjansson-0.01">Alien-libjansson</a></td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>0.01</td>
-<td>libjansson, with alien</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HUGMEIR/Alien-libmariadbclient-0.01">Alien-libmariadbclient</a></td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>0.01</td>
-<td>libmariadbclient, with alien</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HUGMEIR/Alien-librdkafka-0.01">Alien-librdkafka</a></td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>0.01</td>
-<td>librdkafka, with alien</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HUGMEIR/Alien-libsnappy-0.01">Alien-libsnappy</a></td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>0.01</td>
-<td>libsnappy, with alien</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HUGMEIR/Alien-libzookeeper-0.02">Alien-libzookeeper</a></td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>0.02</td>
-<td>libzookeeper, with alien</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/JWRIGHT/Amazon-SNS-V4-1.4">Amazon-SNS-V4</a></td>
-<td><a href="https://metacpan.org/author/JWRIGHT">JWRIGHT</a></td>
-<td>1.4</td>
-<td>Amazon Simple Notification Service, V4 Signatures</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/TANIGUCHI/Amon2-Auth-Site-LINE-0.01">Amon2-Auth-Site-LINE</a></td>
-<td><a href="https://metacpan.org/author/TANIGUCHI">TANIGUCHI</a></td>
-<td>0.01</td>
-<td>LINE integration for Amon2</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/GRAVATTJ/Ansible-Util-0.001">Ansible-Util</a></td>
-<td><a href="https://metacpan.org/author/GRAVATTJ">GRAVATTJ</a></td>
-<td>0.001</td>
-<td>Utilities for interacting with Ansible.</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PEVANS/App-Device-Chip-UI-0.01">App-Device-Chip-UI</a></td>
-<td><a href="https://metacpan.org/author/PEVANS">PEVANS</a></td>
-<td>0.01</td>
-<td>Tickit-based UI for Device::Chip drivers</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/TOBYINK/App-GhaInstall-0.001">App-GhaInstall</a></td>
-<td><a href="https://metacpan.org/author/TOBYINK">TOBYINK</a></td>
-<td>0.001</td>
-<td>provides the gha-install command</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/TOBYINK/App-GhaProve-0.001">App-GhaProve</a></td>
-<td><a href="https://metacpan.org/author/TOBYINK">TOBYINK</a></td>
-<td>0.001</td>
-<td>provides gha-prove app</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/App-GrepUtils-0.001">App-GrepUtils</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>CLI utilities related to the Unix command 'grep'</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/App-Tables-CLI-0.003">App-Tables-CLI</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.003</td>
-<td>Manipulate Tables::* modules</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/UTASHIRO/App-ansicolumn-1.01">App-ansicolumn</a></td>
-<td><a href="https://metacpan.org/author/UTASHIRO">UTASHIRO</a></td>
-<td>1.01</td>
-<td>ANSI sequence aware column command</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/App-lcpan-CmdBundle-colortheme-0.001">App-lcpan-CmdBundle-colortheme</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>lcpan subcommands related to ColorTheme</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/SCHROEDER/App-lupapona-1">App-lupapona</a></td>
-<td><a href="https://metacpan.org/author/SCHROEDER">SCHROEDER</a></td>
-<td>1</td>
-<td>a simple static Gemini server</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/SCHROEDER/App-mokupona-2.01">App-mokupona</a></td>
-<td><a href="https://metacpan.org/author/SCHROEDER">SCHROEDER</a></td>
-<td>2.01</td>
-<td>a feed aggregator for Gopher, Gemini, RSS and Atom</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HKOBA/App-oo_modulino_zsh_completion_helper-0.01">App-oo_modulino_zsh_completion_helper</a></td>
-<td><a href="https://metacpan.org/author/HKOBA">HKOBA</a></td>
-<td>0.01</td>
-<td>provides zsh completion for OO-Modulinos</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/UTASHIRO/App-optex-xform-1.01">App-optex-xform</a></td>
-<td><a href="https://metacpan.org/author/UTASHIRO">UTASHIRO</a></td>
-<td>1.01</td>
-<td>data transform filter module for optex</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/SCHROEDER/App-phoebe-1.1">App-phoebe</a></td>
-<td><a href="https://metacpan.org/author/SCHROEDER">SCHROEDER</a></td>
-<td>1.1</td>
-<td>an app that serves a wiki as a Gemini and web site</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/GWILLIAMS/AtteanX-Store-LMDB-0.000_01">AtteanX-Store-LMDB</a></td>
-<td><a href="https://metacpan.org/author/GWILLIAMS">GWILLIAMS</a></td>
-<td>0.000_01</td>
-<td>LMDB-based RDF store</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/BRIANG/BRIANG-Dist-Perfect-0.01-TRIAL">BRIANG-Dist-Perfect</a></td>
-<td><a href="https://metacpan.org/author/BRIANG">BRIANG</a></td>
-<td>0.01</td>
-<td>A perfect distribution for a perfect year. Or perhaps not.</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Bencher-Scenario-AppSorted-0.001">Bencher-Scenario-AppSorted</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Benchmark sorted vs is-sorted</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Bencher-Scenario-StringSimpleEscape-0.001">Bencher-Scenario-StringSimpleEscape</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Benchmark String::SimpleEscape</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/SYBER/Config-MorePerl-1.2.0">Config-MorePerl</a></td>
-<td><a href="https://metacpan.org/author/SYBER">SYBER</a></td>
-<td>v1.2.0</td>
-<td>Convenient and flexible config loader in perl format.</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/VANSTYN/DBIx-Class-StateMigrations-0.001">DBIx-Class-StateMigrations</a></td>
-<td><a href="https://metacpan.org/author/VANSTYN">VANSTYN</a></td>
-<td>0.001</td>
-<td>Schema migrations via checksums instead of versions</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PEVANS/Device-Chip-TCS3472x-0.01">Device-Chip-TCS3472x</a></td>
-<td><a href="https://metacpan.org/author/PEVANS">PEVANS</a></td>
-<td>0.01</td>
-<td>chip driver for TCS3472x-family</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/SHLOMIF/File-ShouldUpdate-0.0.1">File-ShouldUpdate</a></td>
-<td><a href="https://metacpan.org/author/SHLOMIF">SHLOMIF</a></td>
-<td>0.0.1</td>
-<td>should files be rebuilt?</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/NHORNE/Genealogy-ObituaryDailyTimes-0.01">Genealogy-ObituaryDailyTimes</a></td>
-<td><a href="https://metacpan.org/author/NHORNE">NHORNE</a></td>
-<td>0.01</td>
-<td>Compare a Gedcom against the Obituary Daily Times</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Health-BladderDiary-GenTable-0.001">Health-BladderDiary-GenTable</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Create bladder diary table from entries</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/GRAVATTJ/Linux-Utils-0.001">Linux-Utils</a></td>
-<td><a href="https://metacpan.org/author/GRAVATTJ">GRAVATTJ</a></td>
-<td>0.001</td>
-<td>Miscellaneous utilities for Linux.</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Log-ger-Output-Test-Counter-0.001">Log-ger-Output-Test-Counter</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Increase internal counter</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Log-ger-UseDataDumperCompact-0.001">Log-ger-UseDataDumperCompact</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Use Data::Dumper::Compact to dump data structures</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/GRIBUSER/Minio-0.02">Minio</a></td>
-<td><a href="https://metacpan.org/author/GRIBUSER">GRIBUSER</a></td>
-<td>0.02</td>
-<td/>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/MONSTAR/Mojolicious-Plugin-MoreHelpers-0.02">Mojolicious-Plugin-MoreHelpers</a></td>
-<td><a href="https://metacpan.org/author/MONSTAR">MONSTAR</a></td>
-<td>0.02</td>
-<td>More helpers lacking in Mojolicious</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/MRDVT/Net-Camera-Sercomm-ICamera2-0.01">Net-Camera-Sercomm-ICamera2</a></td>
-<td><a href="https://metacpan.org/author/MRDVT">MRDVT</a></td>
-<td>0.01</td>
-<td>Perl Interface for Sercomm ICamera2 network camera</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/ARISTOTLE/Net-OAuth2Server-PKCE-0.001">Net-OAuth2Server-PKCE</a></td>
-<td><a href="https://metacpan.org/author/ARISTOTLE">ARISTOTLE</a></td>
-<td>0.001</td>
-<td>A PKCE extension for Net::OAuth2Server</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/GAISSMAI/Net-SNMP-Mixin-NXOSDot1dBase-0.01">Net-SNMP-Mixin-NXOSDot1dBase</a></td>
-<td><a href="https://metacpan.org/author/GAISSMAI">GAISSMAI</a></td>
-<td>0.01</td>
-<td>mixin class for some Bridge base values from NXOS switches.</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/GAISSMAI/Net-SNMP-Mixin-NXOSDot1dStp-0.01">Net-SNMP-Mixin-NXOSDot1dStp</a></td>
-<td><a href="https://metacpan.org/author/GAISSMAI">GAISSMAI</a></td>
-<td>0.01</td>
-<td>mixin class for 802.1D spanning tree information from Cisco NXOS devices.</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/GAISSMAI/Net-SNMP-Mixin-NXOSDot1qFdb-0.01">Net-SNMP-Mixin-NXOSDot1qFdb</a></td>
-<td><a href="https://metacpan.org/author/GAISSMAI">GAISSMAI</a></td>
-<td>0.01</td>
-<td>mixin class for 802.1-Q switch forwarding databases</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/ZMUGHAL/Orbital-Transfer-0.001">Orbital-Transfer</a></td>
-<td><a href="https://metacpan.org/author/ZMUGHAL">ZMUGHAL</a></td>
-<td>0.001</td>
-<td>Software project manager</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/MRDVT/Package-Role-ini-0.02">Package-Role-ini</a></td>
-<td><a href="https://metacpan.org/author/MRDVT">MRDVT</a></td>
-<td>0.02</td>
-<td>Perl role for "ini" object the returns a Config::IniFiles object</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/UTGWKK/Perl-Critic-Policy-ControlStructures-ProhibitReturnInDoBlock-0.01">Perl-Critic-Policy-ControlStructures-ProhibitReturnInDoBlock</a></td>
-<td><a href="https://metacpan.org/author/UTGWKK">UTGWKK</a></td>
-<td>0.01</td>
-<td>Do not "return" in "do" block</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/UTGWKK/Perl-Critic-Policy-ProhibitOrReturn-0.01">Perl-Critic-Policy-ProhibitOrReturn</a></td>
-<td><a href="https://metacpan.org/author/UTGWKK">UTGWKK</a></td>
-<td>0.01</td>
-<td>Do not use `or return`</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Perl-LineNumber-Comment-0.001">Perl-LineNumber-Comment</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Add line number to Perl source as comment</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HMBRAND/PerlIO-via-xz-0.02">PerlIO-via-xz</a></td>
-<td><a href="https://metacpan.org/author/HMBRAND">HMBRAND</a></td>
-<td>0.02</td>
-<td>PerlIO layer for XZ (de)compression</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/TEODESIAN/Playwright-0.001">Playwright</a></td>
-<td><a href="https://metacpan.org/author/TEODESIAN">TEODESIAN</a></td>
-<td>0.001</td>
-<td>Perl client for Playwright</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/CRAIGKAI/RT-Extension-ToggleTheme-0.02">RT-Extension-ToggleTheme</a></td>
-<td><a href="https://metacpan.org/author/CRAIGKAI">CRAIGKAI</a></td>
-<td>0.01</td>
-<td>RT-Extension-ToggleTheme Extension</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Require-Hook-Source-DzilBuild-0.003">Require-Hook-Source-DzilBuild</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.003</td>
-<td>Load module source code from Dist::Zilla build files</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Require-Hook-Source-MetaCPAN-0.002">Require-Hook-Source-MetaCPAN</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.002</td>
-<td>Load module source code from MetaCPAN</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Sah-Schemas-Tables-0.001">Sah-Schemas-Tables</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Sah schemas related to the Tables module family</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/DCANTRELL/String-Binary-Interpolation-1.0.0">String-Binary-Interpolation</a></td>
-<td><a href="https://metacpan.org/author/DCANTRELL">DCANTRELL</a></td>
-<td>v1.0.0</td>
-<td/>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/String-SimpleEscape-0.001">String-SimpleEscape</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Simple string escaping &amp; unescaping</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Tables-Quotes-JamesFT-0.001">Tables-Quotes-JamesFT</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Quotes from JamesFT github repository</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/Tables-WordList-0.001">Tables-WordList</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Table from a WordList module</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PEVANS/Test-ExpectAndCheck-0.01">Test-ExpectAndCheck</a></td>
-<td><a href="https://metacpan.org/author/PEVANS">PEVANS</a></td>
-<td>0.01</td>
-<td>expect/check-style unit testing with object methods</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PEVANS/Test-Future-IO-0.01">Test-Future-IO</a></td>
-<td><a href="https://metacpan.org/author/PEVANS">PEVANS</a></td>
-<td>0.01</td>
-<td>unit testing on Future::IO</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/UTASHIRO/Text-Conceal-0.99">Text-Conceal</a></td>
-<td><a href="https://metacpan.org/author/UTASHIRO">UTASHIRO</a></td>
-<td>0.99</td>
-<td>conceal and recover interface for text processing</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/ASB/Tk-Zinc-3.304">Tk-Zinc</a></td>
-<td><a href="https://metacpan.org/author/ASB">ASB</a></td>
-<td>3.304</td>
-<td>a canvas offering groups, tranformations, transparency, color gradient…</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/WordList-EN-Corncob-0.001">WordList-EN-Corncob</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Corncob word list</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/PERLANCAR/WordList-Phrase-EN-Quote-JamesFT-0.001">WordList-Phrase-EN-Quote-JamesFT</a></td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>0.001</td>
-<td>Famous quotes from JamesFT github repository</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/DMOL/XS-libpanda-backtrace-1.0.0">XS-libpanda-backtrace</a></td>
-<td><a href="https://metacpan.org/author/DMOL">DMOL</a></td>
-<td>v1.0.0</td>
-<td>C++ runtime backtraces library for XS</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/TOBYINK/Zydeco-Lite-App-0.001">Zydeco-Lite-App</a></td>
-<td><a href="https://metacpan.org/author/TOBYINK">TOBYINK</a></td>
-<td>0.001</td>
-<td>use Zydeco::Lite to quickly develop command-line apps</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/AWNCORP/notice-0.01">notice</a></td>
-<td><a href="https://metacpan.org/author/AWNCORP">AWNCORP</a></td>
-<td>0.01</td>
-<td>Breaking-Change Acknowledgement Enforcement</td>
-</tr>
-<tr>
-<td><a href="https://metacpan.org/release/HOCHSTEN/rdf-ldf-0.251">rdf-ldf</a></td>
-<td><a href="https://metacpan.org/author/HOCHSTEN">HOCHSTEN</a></td>
-<td>0.251</td>
-<td>Linked Data Fragments client</td>
-</tr>
-</table>
-<h3>Stats</h3>
-<p>Number of new CPAN distributions this period: <b>73</b></p>
-<p>Number of authors releasing new CPAN distributions this period: <b>32</b></p>
-<p>Authors by number of new CPAN distributions this period: </p>
-<table>
-<tr>
-<th>No</th>
-<th>Author</th>
-<th>Distributions</th>
-</tr>
-<tr>
-<td>1</td>
-<td><a href="https://metacpan.org/author/PERLANCAR">PERLANCAR</a></td>
-<td>20</td>
-</tr>
-<tr>
-<td>2</td>
-<td><a href="https://metacpan.org/author/HUGMEIR">HUGMEIR</a></td>
-<td>7</td>
-</tr>
-<tr>
-<td>3</td>
-<td><a href="https://metacpan.org/author/TOBYINK">TOBYINK</a></td>
-<td>4</td>
-</tr>
-<tr>
-<td>4</td>
-<td><a href="https://metacpan.org/author/PEVANS">PEVANS</a></td>
-<td>4</td>
-</tr>
-<tr>
-<td>5</td>
-<td><a href="https://metacpan.org/author/UTASHIRO">UTASHIRO</a></td>
-<td>3</td>
-</tr>
-<tr>
-<td>6</td>
-<td><a href="https://metacpan.org/author/SCHROEDER">SCHROEDER</a></td>
-<td>3</td>
-</tr>
-<tr>
-<td>7</td>
-<td><a href="https://metacpan.org/author/GAISSMAI">GAISSMAI</a></td>
-<td>3</td>
-</tr>
-<tr>
-<td>8</td>
-<td><a href="https://metacpan.org/author/DCANTRELL">DCANTRELL</a></td>
-<td>2</td>
-</tr>
-<tr>
-<td>9</td>
-<td><a href="https://metacpan.org/author/MRDVT">MRDVT</a></td>
-<td>2</td>
-</tr>
-<tr>
-<td>10</td>
-<td><a href="https://metacpan.org/author/UTGWKK">UTGWKK</a></td>
-<td>2</td>
-</tr>
-<tr>
-<td>11</td>
-<td><a href="https://metacpan.org/author/GRAVATTJ">GRAVATTJ</a></td>
-<td>2</td>
-</tr>
-<tr>
-<td>12</td>
-<td><a href="https://metacpan.org/author/SHLOMIF">SHLOMIF</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>13</td>
-<td><a href="https://metacpan.org/author/ASB">ASB</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>14</td>
-<td><a href="https://metacpan.org/author/SYBER">SYBER</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>15</td>
-<td><a href="https://metacpan.org/author/HMBRAND">HMBRAND</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>16</td>
-<td><a href="https://metacpan.org/author/ZMUGHAL">ZMUGHAL</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>17</td>
-<td><a href="https://metacpan.org/author/TOMOYAMA">TOMOYAMA</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>18</td>
-<td><a href="https://metacpan.org/author/DMOL">DMOL</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>19</td>
-<td><a href="https://metacpan.org/author/NHORNE">NHORNE</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>20</td>
-<td><a href="https://metacpan.org/author/BRIANG">BRIANG</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>21</td>
-<td><a href="https://metacpan.org/author/GRIBUSER">GRIBUSER</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>22</td>
-<td><a href="https://metacpan.org/author/ARISTOTLE">ARISTOTLE</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>23</td>
-<td><a href="https://metacpan.org/author/HKOBA">HKOBA</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>24</td>
-<td><a href="https://metacpan.org/author/GWILLIAMS">GWILLIAMS</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>25</td>
-<td><a href="https://metacpan.org/author/MONSTAR">MONSTAR</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>26</td>
-<td><a href="https://metacpan.org/author/AWNCORP">AWNCORP</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>27</td>
-<td><a href="https://metacpan.org/author/TANIGUCHI">TANIGUCHI</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>28</td>
-<td><a href="https://metacpan.org/author/CRAIGKAI">CRAIGKAI</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>29</td>
-<td><a href="https://metacpan.org/author/HOCHSTEN">HOCHSTEN</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>30</td>
-<td><a href="https://metacpan.org/author/VANSTYN">VANSTYN</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>31</td>
-<td><a href="https://metacpan.org/author/TEODESIAN">TEODESIAN</a></td>
-<td>1</td>
-</tr>
-<tr>
-<td>32</td>
-<td><a href="https://metacpan.org/author/JWRIGHT">JWRIGHT</a></td>
-<td>1</td>
-</tr>
-</table>
-</div>
-    </content>
-    <summary type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml">dist author version abstract Acme-CPANModules-ColorThemed PERLANCAR 0.002 Modules that has color theme support Acme-CPANModules-Getopt PERLANCAR 0.002 Modules that parse command-line options Acme-CPANModules-ModulesThatJustContainData PERLANCAR 0.001 Modules that just contain data Acme-Marvel-CinematicUniverse-Characters TOBYINK 0.001 example of distributing instance data on CPAN Acme-TOMOYAMA-Utils TOMOYAMA 0.01 The great new Acme::TOMOYAMA::Utils! Algorithm-Diff-JSON DCANTRELL 1.000 find the differences between two lists … <a href="https://perlancar.wordpress.com/2020/12/04/list-of-new-cpan-distributions-nov-2020/" class="more-link">Continue reading <span class="screen-reader-text">List of new CPAN distributions – Nov 2020</span></a></div>
-    </summary>
-    <author>
-      <name>perlancar</name>
-    </author>
-    <id>http://perlancar.wordpress.com/?p=1929</id>
-    <published>2020-12-04T09:47:51Z</published>
-    <updated>2020-12-04T09:47:51Z</updated>
-    <category term="cpan"/>
-    <category term="perl"/>
   </entry>
 </feed>
