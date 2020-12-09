@@ -7,9 +7,106 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2020-12-09T17:54:39Z</updated>
+  <updated>2020-12-09T19:00:53Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Strawberryperl.com - https any time soon?</title>
+    <link rel="alternate" type="text/html" href="http://blogs.perl.org/users/martin_mcgrath/2020/12/strawberryperlcom---https-any-time-soon.html"/>
+    <id>tag:blogs.perl.org,2020:/users/martin_mcgrath//2910.9986</id>
+
+    <published>2020-12-09T23:04:34Z</published>
+    <updated>2020-12-09T23:04:51Z</updated>
+
+    <summary>Throwing this one out to the wider community, if anyone can assist in adding https support to strawberryperl.com that'd be great, with browsers and corporate firewalls moving towards a stricter mode of operation. An existing issue is here, with some...</summary>
+    <author>
+        <name>Martin McGrath</name>
+        
+    </author>
+    
+    <category term="win32httpsstrawberryperl" label="win32 https strawberryperl" scheme="http://www.sixapart.com/ns/types#tag"/>
+    
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/martin_mcgrath/">
+        <![CDATA[<p>Throwing this one out to the wider community, if anyone can assist in adding https support to strawberryperl.com that'd be great, with browsers and corporate firewalls moving towards a stricter mode of operation. An existing issue is <a href="https://github.com/StrawberryPerl/strawberryperl.com/issues/11">here</a>, with some history for those interested. Thanks in advance.</p>]]>
+        
+    </content>
+</entry>
+  <entry>
+    <title>The story behind a new module</title>
+    <link rel="alternate" href="https://dev.to/davorg/the-story-behind-a-new-module-2gkp" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml"><p>I really like <a href="https://metacpan.org/pod/http_this"><code>http_this</code></a>. Whenever I'm working on a static site (or even <a href="https://dev.to/davorg/github-actions-for-semi-static-web-sites-597g">a semi-static site</a>) and I want to check how it looks, I can run a simple command-line program and have a local web server serving my site. And I don't have to worry about relative or absolute URLs - everything just works.</p>
+
+<p>Well, almost everything. There's one bit of <code>http_this</code> that always annoys me. It doesn't support <code>index.html</code>. If I request a directory that includes an <code>index.html</code> file, then I'd expect to see that file served to me, but instead, I get a directory listing. If I choose <code>index.html</code> from that list, then everything works as expected. But it's an annoying extra step.</p>
+
+<p>Recently, I'd had enough of this problem and I decided to do something about it.</p>
+
+<p>Digging into the code of <code>http_this</code>, I soon discovered that it was really just a thin layer over the standard Plack application <a href="https://metacpan.org/pod/Plack::App::Directory">Plack::App::Directory</a>. And I like Plack applications. They have a nice modular architecture that makes them easy to hack on.</p>
+
+<p>In my experience, the first thing to do when trying to find a solution to a Plack problem is to find a piece of middleware that addresses your problem. And, sure enough, there was <a href="https://metacpan.org/pod/Plack::Middleware::DirIndex">Plack::Middleware::DirIndex</a> which says that it does this:</p>
+
+<blockquote>
+<p>If <code>$env-&gt;{PATH_INFO}</code> ends with a '/' then we will append the dir_index value to it (defaults to index.html)</p>
+</blockquote>
+
+<p>And that sounds like exactly what we want. So I quickly hacked a solution using this into App::HTTPThis (the module that actually drives <code>http_this</code>). It took about five minutes.</p>
+
+<p>But on testing it, I realised there was a problem. Look at its description again. For any request where the path ends with a <code>/</code>, the middleware will add the index filename to the request. And that's subtly different to what we want (actually, I think it's subtly different to what anyone wants). If you send a request to a web server to view a directory (i.e. one where the path ends with '/') there are two things that might happen:</p>
+
+<ul>
+<li>If there is an <code>index.html</code> file in the directory, then you want to see the contents of that file</li>
+<li>If there is no <code>index.html</code> file,  then you want to see a directory listing</li>
+</ul>
+
+<p>The current behaviour of <code>http_this</code> is to always return a directory listing. Adding in Plack::Middleware::DirIndex means it will always look for <code>index.html</code>. And if there is no <code>index.html</code>, then you'll get a 404. I don't think that's very useful.</p>
+
+<p>So I moved on.</p>
+
+<p>Next, I looked at Plack::App::Directory itself. That is the module which provides the directory listing that <code>http_this</code> uses. What if I could add support for a directory index file to that module?</p>
+
+<p>That actually proved to be pretty simple. In half an hour or so, I had sent <a href="https://github.com/plack/Plack/pull/654">a pull request</a> that added support for an (optional) <code>dir_index</code> parameter. Without my new parameter, the module's behaviour is unchanged. But with it, the behaviour would be:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>IF we have a request for a directory
+  AND we have a dir_index configured
+  AND there is a dir_index file in the directory
+  THEN serve the dir_index file
+ELSE serve a directory listing
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>I think it's a reasonable patch, but it hasn't been addressed by the author yet. I got one comment from someone else, suggesting that I used Plack::Middleware::DirIndex - but I've already explained why I don't think that's a good solution.</p>
+
+<p>I guess I should wait to see if my patch is accepted into Plack::App::Directory, but it has been three weeks and I confess to being rather impatient.</p>
+
+<p>So I've ended up writing my own module. It's called <a href="https://metacpan.org/pod/Plack::App::DirectoryIndex">Plack::App::DirectoryIndex</a> and it's on CPAN now. It works exactly how I'd like it too, supporting both the situation where an <code>index.html</code> exists and the one where it doesn't. Perhaps you'll find it useful. Please let me know if you do (or if you find any bugs in it).</p>
+
+<p>Now, I just need to persuade the author of <code>http_this</code> to use my module in place of Plack::App::Directory :-)</p>
+
+</div>
+    </content>
+    <author>
+      <name>Dave Cross</name>
+    </author>
+    <id>https://dev.to/davorg/the-story-behind-a-new-module-2gkp</id>
+    <published>2020-12-09T18:04:00Z</published>
+    <updated>2020-12-09T18:04:00Z</updated>
+    <category term="perl"/>
+    <category term="plack"/>
+    <category term="directory"/>
+  </entry>
   <entry>
     <title>Perl Weekly Challenge 90: DNA Sequence and Ethiopian Multiplication</title>
     <link rel="alternate" type="text/html" href="http://blogs.perl.org/users/laurent_r/2020/12/perl-weekly-challenge-90-dna-sequence-and-ethiopian-multiplication.html"/>
@@ -2307,493 +2404,5 @@ say $valid;&lt;/code&gt;&lt;/pre&gt;
 &lt;li&gt;&lt;a href="https://github.com/domm/adventofcode2020"&gt;https://github.com/domm/adventofcode2020&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;</content>
     <category term="AdventOfCode"/>
-  </entry>
-  <entry>
-    <title>Japhs autopsies (2)</title>
-    <link rel="alternate" href="https://dev.to/thibaultduponchelle/japhs-autopsies-2-41jl" type="text/html"/>
-    <content type="html">&lt;h2&gt;
-  &lt;a href="#con-de-mime" class="anchor"&gt;
-  &lt;/a&gt;
-  Con de MIME
-&lt;/h2&gt;
-
-&lt;p&gt;This is a french joke 😃&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--5EiuE3mc--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_66%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/hzxl2wrlekteq65y8ky3.gif" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--5EiuE3mc--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_66%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/hzxl2wrlekteq65y8ky3.gif" alt="Barrez vous, cons de MIMES"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;This Japh is from &lt;strong&gt;Reynold Scem&lt;/strong&gt;&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;MIME::&lt;/span&gt;&lt;span class="nv"&gt;Base64&lt;/span&gt;&lt;span class="p"&gt;;(&lt;/span&gt;&lt;span class="nb"&gt;eval&lt;/span&gt; &lt;span class="nv"&gt;decode_base64&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;am9pbignJywobWFwe2NocigpfShncmVwL1xTLyxzcGxpdCgvKC4uLikvLCcwNzQxMTcxMTUxMTYwMzIwOTcxMTAxMTExMTYxMDQxMDExMTQwMzIwODAxMDExMTQxMDgwMzIxMDQwOTcwOTkxMDcxMDExMTQwNDQnKSkpKQ==&lt;/span&gt;&lt;span class="p"&gt;'))&lt;/span&gt;&lt;span class="o"&gt;=~&lt;/span&gt;&lt;span class="sr"&gt;/.*/&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;&lt;span class="k"&gt;print&lt;/span&gt;&lt;span class="vg"&gt;$&amp;amp;&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;This one... We can't guess what will happen when we eval this encoded string...&lt;/p&gt;
-
-&lt;p&gt;It uses actually 2 steps to produce the Japh, first &lt;strong&gt;base64 encoding&lt;/strong&gt;, that we can check with &lt;code&gt;base64 -d&lt;/code&gt; :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight shell"&gt;&lt;code&gt;&lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="s2"&gt;"am9pbignJywobWFwe2NocigpfShncmVwL1xTLyxzcGxpdCgvKC4uLikvLCcwNzQxMTcxMTUxMTYwMzIwOTcxMTAxMTExMTYxMDQxMDExMTQwMzIwODAxMDExMTQxMDgwMzIxMDQwOTcwOTkxMDcxMDExMTQwNDQnKSkpKQ=="&lt;/span&gt; | &lt;span class="nb"&gt;base64&lt;/span&gt; &lt;span class="nt"&gt;-d&lt;/span&gt;
-&lt;span class="nb"&gt;join&lt;/span&gt;&lt;span class="o"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;''&lt;/span&gt;,&lt;span class="o"&gt;(&lt;/span&gt;map&lt;span class="o"&gt;{&lt;/span&gt;chr&lt;span class="o"&gt;()}(&lt;/span&gt;&lt;span class="nb"&gt;grep&lt;/span&gt;/&lt;span class="se"&gt;\S&lt;/span&gt;/,split&lt;span class="o"&gt;(&lt;/span&gt;/&lt;span class="o"&gt;(&lt;/span&gt;...&lt;span class="o"&gt;)&lt;/span&gt;/,&lt;span class="s1"&gt;'074117115116032097110111116104101114032080101114108032104097099107101114044'&lt;/span&gt;&lt;span class="o"&gt;))))&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;From decoding I got the actual Perl code to evaluate and I feel a bit better now 😁&lt;/p&gt;
-
-&lt;p&gt;The code Japh string creation code looks like this :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;eval&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;join&lt;/span&gt;&lt;span class="p"&gt;('',&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nb"&gt;map&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nb"&gt;chr&lt;/span&gt;&lt;span class="p"&gt;()}&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nb"&gt;grep&lt;/span&gt;&lt;span class="sr"&gt;/\S/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;split&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="sr"&gt;/(...)/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;074117115116032097110111116104101114032080101114108032104097099107101114044&lt;/span&gt;&lt;span class="p"&gt;'))))&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Then in the perl code there is &lt;code&gt;map&lt;/code&gt;, &lt;code&gt;chr&lt;/code&gt; (convert value to char), &lt;code&gt;grep \S&lt;/code&gt; (match all non whitespace), &lt;code&gt;split(/(...)/,&lt;/code&gt; (split per 3 chars).&lt;/p&gt;
-
-&lt;p&gt;It's a nice showcase 😃 even if a lot of things are actually useless and only there to obfuscate the Perl code.&lt;/p&gt;
-
-&lt;p&gt;The Japh creation could be simply reduced to :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;join&lt;/span&gt;&lt;span class="p"&gt;('',&lt;/span&gt; &lt;span class="nb"&gt;map&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nb"&gt;chr&lt;/span&gt;&lt;span class="p"&gt;()}&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nb"&gt;split&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="sr"&gt;/(...)/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;074117115116032097110111116104101114032080101114108032104097099107101114044&lt;/span&gt;&lt;span class="p"&gt;')));&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;The &lt;code&gt;join&lt;/code&gt; seems useless but forces the &lt;strong&gt;string context&lt;/strong&gt;.&lt;/p&gt;
-
-&lt;p&gt;So here is the complete Japh unfolded :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;MIME::&lt;/span&gt;&lt;span class="nv"&gt;Base64&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="c1"&gt;# Base 64 encoding&lt;/span&gt;
-&lt;span class="c1"&gt;# am9pbignJywobWFwe2NocigpfShncmVwL1xTLyxzcGxpdCgvKC4uLikvLCcwNzQxMTcxMTUxMTYwMzIwOTcxMTAxMTExMTYxMDQxMDExMTQwMzIwODAxMDExMTQxMDgwMzIxMDQwOTcwOTkxMDcxMDExMTQwNDQnKSkpKQ==&lt;/span&gt;
-&lt;span class="c1"&gt;# join('',(map{chr()}(grep/\S/,split(/(...)/,'074117115116032097110111116104101114032080101114108032104097099107101114044'))))&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;eval&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;join&lt;/span&gt;&lt;span class="p"&gt;('',&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nb"&gt;map&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nb"&gt;chr&lt;/span&gt;&lt;span class="p"&gt;()}&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nb"&gt;grep&lt;/span&gt;&lt;span class="sr"&gt;/\S/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;split&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="sr"&gt;/(...)/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;074117115116032097110111116104101114032080101114108032104097099107101114044&lt;/span&gt;&lt;span class="p"&gt;'))))&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
-&lt;span class="c1"&gt;# Take 3 chars (...), do not keep space (\S), tranform to corresponding string representation, concat without space, eval (useless)&lt;/span&gt;
-
-&lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=~&lt;/span&gt; &lt;span class="sr"&gt;/.*/&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# Match everything&lt;/span&gt;
-&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="vg"&gt;$&amp;amp;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# The string matched by the last successful pattern match&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Maybe you noticed that there is also some fun with regex match and captured match print. It is just for fun ! 😃&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#open-format-write" class="anchor"&gt;
-  &lt;/a&gt;
-  Open Format Write
-&lt;/h2&gt;
-
-
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;open&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;P&lt;/span&gt;&lt;span class="p"&gt;,"&lt;/span&gt;&lt;span class="s2"&gt;|perl&lt;/span&gt;&lt;span class="p"&gt;");&lt;/span&gt;&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nv"&gt;P&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;format=&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s2"&gt;Just another Perl hacker,&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s2"&gt;.&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="s2"&gt;write&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;After some ordering, it looks like this :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;open&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;P&lt;/span&gt;&lt;span class="p"&gt;,"&lt;/span&gt;&lt;span class="s2"&gt;|perl&lt;/span&gt;&lt;span class="p"&gt;");&lt;/span&gt; 
-&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nv"&gt;P&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;
-format=
-Just another Perl hacker,
-.
-write&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;There are 2 tricks here :&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;The open filehandle to another perl process&lt;/li&gt;
-&lt;li&gt;The "format", an old Perl function that is less and less used nowadays &lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;It is actually the same than :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;format&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;
-&lt;span class="nv"&gt;Just&lt;/span&gt; &lt;span class="nv"&gt;another&lt;/span&gt; &lt;span class="nv"&gt;Perl&lt;/span&gt; &lt;span class="nv"&gt;hacker&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-&lt;span class="o"&gt;.&lt;/span&gt;
-&lt;span class="nb"&gt;write&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;h2&gt;
-  &lt;a href="#kisses" class="anchor"&gt;
-  &lt;/a&gt;
-  Kisses
-&lt;/h2&gt;
-
-&lt;p&gt;Here is a simple but interesting japh with some kisses inside ! 😘 😘 😘 😘&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="err"&gt;@&lt;/span&gt;&lt;span class="nv"&gt;_&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;Just another Perl hacker,&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="o"&gt;=~&lt;/span&gt; &lt;span class="sr"&gt;/(.*) (.*) (.*) (.*)/&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;&lt;span class="k"&gt;print&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--a9EjVF2O--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/82r897owzb3e1gdr6045.jpeg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--a9EjVF2O--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/82r897owzb3e1gdr6045.jpeg" alt="Kisses"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;This japh demonstrates default variable &lt;code&gt;@_&lt;/code&gt; and matching.&lt;/p&gt;
-
-&lt;p&gt;I think it can be rewritten like this :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Just another Perl hacker,&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;@a&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=~&lt;/span&gt; &lt;span class="sr"&gt;/(.*) (.*) (.*) (.*)/&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nb"&gt;join&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="p"&gt;",&lt;/span&gt; &lt;span class="nv"&gt;@a&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;.&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Perl developers should be comfortable with this form 😄&lt;/p&gt;
-
-&lt;p&gt;It's probably time to address &lt;em&gt;regex greediness&lt;/em&gt;.&lt;/p&gt;
-
-&lt;p&gt;This kind of greedy &lt;code&gt;.*&lt;/code&gt; matches is "dangerous" (depends what you want), because it will try to match as much as possible.&lt;/p&gt;
-
-&lt;p&gt;For instance &lt;code&gt;"Just another Perl 7 hacker,"&lt;/code&gt; with the greedy version will produce a string split like the following : &lt;/p&gt;
-
-&lt;p&gt;&lt;code&gt;Just another&lt;/code&gt; &lt;code&gt;Perl&lt;/code&gt; &lt;code&gt;7&lt;/code&gt; &lt;code&gt;hacker,&lt;/code&gt; (because the &lt;code&gt;.*&lt;/code&gt; happily eats also the space)&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#x25" class="anchor"&gt;
-  &lt;/a&gt;
-  x25
-&lt;/h2&gt;
-
-&lt;p&gt;Let's have a look at a simple japh using &lt;code&gt;printf&lt;/code&gt;, &lt;code&gt;x&lt;/code&gt; and ASCII conversion.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;printf&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;%c&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="mi"&gt;25&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;74&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;117&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;115&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;116&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;32&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;97&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;110&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;111&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;116&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;104&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;101&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;114&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;32&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;80&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;101&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;114&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;108&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;32&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;104&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;97&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;99&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;107&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;101&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;114&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;44&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;The operator &lt;code&gt;x&lt;/code&gt; is magic :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;printf&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;perl &lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="mi"&gt;10&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Will produce :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; &lt;span class="nv"&gt;perl&lt;/span&gt; 
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;In the japh, the &lt;code&gt;x 25&lt;/code&gt; is applied to &lt;code&gt;"%c"&lt;/code&gt;, therefore it can be translated like this :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;printf&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c&lt;/span&gt;&lt;span class="p"&gt;",&lt;/span&gt;&lt;span class="mi"&gt;74&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;117&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;115&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;116&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;32&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;97&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;110&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;111&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;116&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;104&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;101&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;114&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;32&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;80&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;101&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;114&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;108&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;32&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;104&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;97&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;99&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;107&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;101&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;114&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;44&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;h2&gt;
-  &lt;a href="#arrow-here" class="anchor"&gt;
-  &lt;/a&gt;
-  Arrow here
-&lt;/h2&gt;
-
-&lt;p&gt;Again a &lt;code&gt;printf "%c"&lt;/code&gt; but this time the input being in hexadecimal and the whole thing being stored in a string assignment :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="vg"&gt;$_&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&amp;lt;&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;-- &lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt; &lt;span class="sr"&gt;s/../printf "%c",hex($&amp;amp;)/g&lt;/span&gt;&lt;span class="nv"&gt;e&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="mi"&gt;4&lt;/span&gt;&lt;span class="nv"&gt;a75737420616e6f74686572205065726c206861636b65722c&lt;/span&gt;
-&lt;span class="o"&gt;--&lt;/span&gt; 
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;It starts with a &lt;a href="https://perldoc.perl.org/perlop#%3C%3CEOF"&gt;"here-doc"&lt;/a&gt; delimited by &lt;code&gt;--&lt;/code&gt; (dash + dash + space not represented by DevTo).&lt;/p&gt;
-
-&lt;p&gt;What is weird, is that the whole thing looks only like a string assignation...&lt;/p&gt;
-
-&lt;p&gt;Actually, the &lt;code&gt;printf&lt;/code&gt; inside the regex will print to stdout. At the end &lt;code&gt;$_&lt;/code&gt; does not even contains the string, but &lt;code&gt;sprintf&lt;/code&gt; would have done the job.&lt;/p&gt;
-
-&lt;p&gt;And what is exactly &lt;code&gt;s/../printf "%c",hex($&amp;amp;)/ge&lt;/code&gt; ?&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;
-&lt;code&gt;s///&lt;/code&gt; is for substitution.&lt;/li&gt;
-&lt;li&gt;
-&lt;code&gt;$&amp;amp;&lt;/code&gt; is what have been &lt;a href="(https://perldoc.perl.org/perlvar#%24&amp;amp;)"&gt;matched&lt;/a&gt;.&lt;/li&gt;
-&lt;li&gt;The &lt;code&gt;/e&lt;/code&gt; modifier allows the right part of the substitution to be actually executed as normal Perl code.&lt;/li&gt;
-&lt;li&gt;The &lt;code&gt;/g&lt;/code&gt; modifier is the "looping modifier" or "global modifier" and just repeats the match along the string !&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Finally, I propose this rewrite of the japh :&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;4a75737420616e6f74686572205065726c206861636b65722c&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-&lt;span class="k"&gt;while&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$str&lt;/span&gt; &lt;span class="o"&gt;=~&lt;/span&gt; &lt;span class="sr"&gt;/../g&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="c1"&gt;# Or $str =~ s/..//&lt;/span&gt;
-       &lt;span class="nb"&gt;printf&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;%c&lt;/span&gt;&lt;span class="p"&gt;",&lt;/span&gt; &lt;span class="nb"&gt;hex&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="vg"&gt;$&amp;amp;&lt;/span&gt;&lt;span class="p"&gt;));&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Cristal clear like this isn't it ?&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Tib</name>
-    </author>
-    <id>https://dev.to/thibaultduponchelle/japhs-autopsies-2-41jl</id>
-    <published>2020-12-04T11:27:22Z</published>
-    <updated>2020-12-04T11:27:22Z</updated>
-    <category term="japh"/>
-    <category term="perl"/>
-    <category term="obfuscation"/>
-  </entry>
-  <entry>
-    <title>Gitlab umziehen</title>
-    <link rel="alternate" href="https://blog.perl-academy.de/2020-12-04-gitlab-umziehen" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml">
-In verschiedenen Projekten setzen wir ein jeweils selbst gehostetes Gitlab ein. Gitlab bietet viel mehr als nur die Versionskontrolle. Gregor hat vor einiger Zeit schon einmal etwas dazu geschrieben, wie wir bei Perl-Services.de Gitlab benutzen.</div>
-    </content>
-    <id>https://blog.perl-academy.de/2020-12-04-gitlab-umziehen</id>
-    <published>2020-12-04T10:00:00Z</published>
-    <updated>2020-12-04T10:00:00Z</updated>
   </entry>
 </feed>
