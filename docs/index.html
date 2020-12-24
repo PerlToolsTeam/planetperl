@@ -54,6 +54,96 @@
         <div class="col-md-8">
           <div class="card">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2020/12/alles-in-ordnung.html">Alles in Ordnung</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Perl returns its hash values in a random order. Since 5.14 or so, the
+random order changes every time. So if you loop over your hash values,
+you get a different ordering each time.</p>
+
+<pre><code>for my $k (keys %hash) { }
+</code></pre>
+
+<p>No problem you say, I'll use sort to order my keys.</p>
+
+<pre><code>for my $k (sort keys %hash) { }
+</code></pre>
+
+<p>But what if you want to use a non-default order, like
+case-insensitive? Easy-peasy you claim.</p>
+
+<pre><code>for my $k (sort {uc ($a) cmp uc ($b)} keys %hash) { }
+</code></pre>
+
+<p>Now here's my problem. I'm using XS to loop through the hash, and I want to sort the keys in the hash according to the user's preference. </p>
+
+<p>Well, there must be a way to sort things with the Perl API mustn't there? Well, there
+is something called
+<a href="https://perldoc.perl.org/perlapi#sortsv_flags"><code>sortsv_flags</code></a> which
+wants a user-defined sorting routine of the type <code>SVCOMPARE_t</code>. So if I stuff the hash keys into
+an array of pointers, then I can sort them using Perl's default
+sorting if I use Per's default sorting routine, which is called
+<a href="https://metacpan.org/source/BKB/JSON-Create-0.28_04/json-create-perl.c#L1125"><code>Perl_sv_cmp</code></a>. So
+that is that "sorted".</p>
+
+<p>However, what if I want to allow a user-defined ordering in my XS
+program? I had a look with Google and with <a href="https://grep.metacpan.org/">grep
+cpan</a> but I couldn't find a lot of
+information, or an example of an XS module which does this. Writing a callback to call the Perl function from C is
+documented in <a href="https://perldoc.perl.org/perlcall">perlcall</a>, but it's
+not at all clear to me how I can set the user-defined function within
+my <code>SVCOMPARE_t</code> function, since there seems to be no way to pass my
+object into that.</p>
+
+<p>The way I would do this in C is by using <code>qsort_r</code>, which allows me to
+pass a pointer to a <code>void *</code> which I can fill with anything I want
+to. The easiest way to go seems to be to use that, but <code>qsort_r</code> is
+another can of worms, since it is not standardised.</p>
+
+<p><code>qsort_r</code> started out on BSD, then Gnu implemented it,
+but Gnu had a bright idea of putting the arguments in the opposite
+order to BSD. Then Bill Gates came along and thought he would
+implement it too for his "Windows" operating system, but he decided to
+call it <code>qsort_s</code>, but with some of the arguments in the same order as
+Gnu, and some of the arguments in the same order as BSD. 👷‍</p>
+
+<p>Some bright spark figured this all out though and made some macros,
+which you can find on github, which do it all for you and give you a
+universal <code>qsort_r</code>-like function. That would be great, except <a href="http://matrix.cpantesters.org/?dist=JSON-Create+0.28_02">the macros
+don't actually work on 🍓 Strawberry
+Perl</a>, since
+that looks too much like a Gnu environment, and changing the macros so
+that they give the correct definition of qsort_s, I then found out
+that <a href="http://matrix.cpantesters.org/?dist=JSON-Create+0.28_03">some versions of Windows don't even seem to have the <code>qsort_s</code>
+function</a>.</p>
+
+<p>Thankfully the 👑 Regents of the University of California 👑 have made
+their operating system open source, so what I did in the end is just
+to <a href="https://metacpan.org/source/BKB/JSON-Create-0.28_04/qsort-r.c">copy the BSD qsort_r source code into my
+module</a>,
+give it a different name, and voila, I <a href="https://metacpan.org/pod/release/BKB/JSON-Create-0.28_04/lib/JSON/Create.pm#cmp1">now have reliable user-defined
+sorting in the
+module</a>,
+and it <a href="http://matrix.cpantesters.org/?dist=JSON-Create+0.28_04">seems to work OK so
+far</a>.</p>
+
+<p>But is this really the best possible solution? Is there not some kind
+of clever trick that one can use to access the Perl sorting with a
+user-defined function from XS, and get all the <code>$a</code> and <code>$b</code> stuff
+too?</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Ben Bullock
+     on Wednesday 23 December 2020 09:52</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2020/12/perl-weekly-challenge-92.html">Perl weekly challenge 92</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -199,93 +289,6 @@ sub int_merge {<br />
 
               <p class="text-right"><small>Published by James Curtis-Smith
      on Tuesday 22 December 2020 20:01</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2020/12/alles-in-ordnung.html">Alles in Ordnung</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Perl returns its hash values in a random order. Since 5.14 or so, the
-random order changes every time. So if you loop over your hash values,
-you get a different ordering each time.</p>
-
-<pre><code>for my $k (keys %hash) { }
-</code></pre>
-
-<p>No problem you say, I'll use sort to order my keys.</p>
-
-<pre><code>for my $k (sort keys %hash) { }
-</code></pre>
-
-<p>But what if you want to use a non-default order, like
-case-insensitive? Easy-peasy you claim.</p>
-
-<pre><code>for my $k (sort {uc ($a) cmp uc ($b)} keys %hash) { }
-</code></pre>
-
-<p>Now here's my problem. I'm using XS to loop through the hash. Well
-there must be a way to compare things with XS mustn't there? Yes there
-is something called
-<a href="https://perldoc.perl.org/perlapi#sortsv_flags"><code>sortsv_flags</code></a> which
-wants an argument of <code>SVCOMPARE_t</code>. So if I stuff the hash keys into
-an array of pointers, then I can sort them using Perl's default
-sorting if I use something called
-<a href="https://metacpan.org/source/BKB/JSON-Create-0.28_04/json-create-perl.c#L1125"><code>Perl_sv_cmp</code></a>. So
-that is that "sorted".</p>
-
-<p>However, what if I want to allow a user-defined ordering in my XS
-program? I had a look with Google and with <a href="https://grep.metacpan.org/">grep
-cpan</a> but I couldn't find a lot of
-information. Writing a callback to call the Perl function from C is
-documented in <a href="https://perldoc.perl.org/perlcall">perlcall</a>, but it's
-not at all clear to me how I can set the user-defined function within
-my <code>SVCOMPARE_t</code> function, since there seems to be no way to pass my
-object into that.</p>
-
-<p>The way I would do this in C is by using <code>qsort_r</code>, which allows me to
-pass a pointer to a <code>void *</code> which I can fill with anything I want
-to. The easiest way to go seems to be to use that, but <code>qsort_r</code> is
-another can of worms. It started out on BSD, then Gnu implemented it,
-but Gnu had a bright idea of putting the arguments in the opposite
-order to BSD. Then Bill Gates came along and thought he would
-implement it too for his "Windows" operating system, but he decided to
-call it <code>qsort_s</code>, but with some of the arguments in the same order as
-Gnu, and some of the arguments in the same order as BSD. 👷‍</p>
-
-<p>Some bright spark figured this all out though and made some macros,
-which you can find on github, which do it all for you and give you a
-universal <code>qsort_r</code>-like function. That would be great, except <a href="http://matrix.cpantesters.org/?dist=JSON-Create+0.28_02">the macros
-don't actually work on 🍓 Strawberry
-Perl</a>, since
-that looks too much like a Gnu environment, and changing the macros so
-that they give the correct definition of qsort_s, I then found out
-that <a href="http://matrix.cpantesters.org/?dist=JSON-Create+0.28_03">some versions of Windows don't even seem to have the <code>qsort_s</code>
-function</a>.</p>
-
-<p>Thankfully the 👑 Regents of the University of California 👑 have made
-their operating system open source, so what I did in the end is just
-to <a href="https://metacpan.org/source/BKB/JSON-Create-0.28_04/qsort-r.c">copy the BSD qsort_r source code into my
-module</a>,
-give it a different name, and voila, I <a href="https://metacpan.org/pod/release/BKB/JSON-Create-0.28_04/lib/JSON/Create.pm#cmp1">now have reliable user-defined
-sorting in the
-module</a>,
-and it <a href="http://matrix.cpantesters.org/?dist=JSON-Create+0.28_04">seems to work OK so
-far</a>.</p>
-
-<p>But is this really the best possible solution? Is there not some kind
-of clever trick that one can use to access the Perl sorting with a
-user-defined function from XS, and get all the <code>$a</code> and <code>$b</code> stuff
-too?</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Ben Bullock
-     on Wednesday 23 December 2020 09:52</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card">
@@ -3172,7 +3175,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 23 December 2020 23:01 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 24 December 2020 00:00 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
