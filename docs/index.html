@@ -54,6 +54,159 @@
         <div class="col-md-8">
           <div class="card">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2020/12/perl-weekly-challenge-93.html">Perl weekly challenge 93</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 93 of the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a> organized by Mohammad S. Anwar.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days (January 3, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<p>I'm not a great blogger - but I will try and explain my solutions to the Perl weekly challenge each week. I always try and look for interesting solutions to the problems at hand.</p>
+
+<h1>Part 1</h1>
+
+<p>Not sure on the correct way to do this... I first looked at all the pairs of points - and looked to see what the direction was between the points. For those where the y-coordinates are different you can just use (x1-x2)/(y1-y2) to represent the slope. We also that flipping the order of the points gives the same value. For those canses where y is the same - the slop can be represented by an "infinity value" in my case i use "-"</p>
+
+<p>We now keep a list keyed by points and directions, with the value being the number of times that point/direction combination has been seen</p>
+
+<p>Finding the solution is simply finding the largest value in this list - this gives the max-number of points colinear to a single points</p>
+
+<p>The answer is then this value + 1</p>
+
+<p><small><pre></code><br />
+sub most_points_in_line {<br />
+  my @nodes = @_;<br />
+  my %lines;<br />
+  foreach my $i (0..(@nodes-2)) {<br />
+    foreach my $j (($i+1)..(@nodes-1)) {<br />
+      my $dir = $nodes[$i][1] == $nodes[$j][1]  ## Y values the same so division will fail<br />
+              ? '-'                             ## use "-" to represent infintiy.<br />
+              :  ($nodes[$i][0]-$nodes[$j][0])/($nodes[$i][1]-$nodes[$j][1]);<br />
+      $lines{$i.':'.$dir}++; ## Add 1 to both the two nodes { as swapping the nodes over<br />
+      $lines{$j.':'.$dir}++; ## makes no difference we don't need to compute twice<br />
+    }<br />
+  }<br />
+  my $max = 0; ## Now we just need to find the maximum value.<br />
+  foreach (values %lines) {<br />
+    $max = $_ if $_ > $max;<br />
+  }<br />
+  return $max+1;<br />
+}<br />
+</code></pre></small></p>
+
+<p><strong>Note:</strong> - this "trick" will fail if the direction calculation has rounding errors - in the examples this isn't the case - but care should be taken.</p>
+
+<p>If we take the assumption from the examples that all the points on the plane are in fact integers - we can remove some of the issues with rounding errors by returning a slope as a ratio of integers. We do this by computing the gcd of the two values, and dividing dx & dy by this value.
+</p>
+
+<p><small><pre><code><br />
+sub most_points_in_line {<br />
+  my @nodes = @_;<br />
+  my %lines;<br />
+  foreach my $i (0..(@nodes-2)) {<br />
+    foreach my $j (($i+1)..(@nodes-1)) {<br />
+      my $dir = '-';<br />
+      my( $dx,$dy) = ( $nodes[$i][0]-$nodes[$j][0], $nodes[$i][1]-$nodes[$j][1] );<br />
+      if( $dx && $dy ) {<br />
+        my $gcd = gcd( $dx,$dy );<br />
+        $dir = $dx/$gcd.'-'.$dy/$gcd;<br />
+      } else {<br />
+        $dir = $dx ? '-' : '|';<br />
+      }<br />
+      $lines{$i.':'.$dir}++;<br />
+      $lines{$j.':'.$dir}++;<br />
+    }<br />
+  }<br />
+  my $max = 0;<br />
+  foreach (values %lines) {<br />
+    $max = $_ if $_ > $max;<br />
+  }<br />
+  return $max+1;<br />
+}</p>
+
+<p>## Note this gcd function works when n & m can have -ve values<br />
+## We convert them to positive values and remember the sign of<br />
+## the differences.<br />
+sub gcd {<br />
+  my( $n,$m,$s ) = (@_,1);<br />
+  ($n,$m) = (-$n,-$m) if $n < 0;<br />
+  if( $m < 0 ) {<br />
+    $s = -1;<br />
+    $m = -$m;<br />
+  }<br />
+  ($n,$m) = ($m,$n) if $m>$n;<br />
+  ($n,$m) = ( $m, $n % $m ) while $n % $m;<br />
+  return $m*$s;<br />
+}<br />
+</code></pre></small></p>
+
+<h1>Part 2</h1>
+
+<p>Like last week I think Part 2 is easier than Part 1.</p>
+
+<p>Not really sure what the input should be - but will by representing the tree as a series of nodes:</p>
+<ul>
+  <li>Each node is an array consisting of up to 3 values;</li>
+  <li>The value of the node</li>
+  <li>The left and right sub-trees if they exists</li>
+</ul>
+
+<p>So for example 1 we have:</p>
+<pre>
+  [ 1,
+    [ 2,
+      [ 3 ],
+      [ 4 ],
+    ],
+  ];
+</pre>
+
+<p>and for example 2 we have:</p>
+
+<pre>
+  [ 1,
+    [ 2,
+      [ 4 ],
+    ]
+    [ 3,
+      [ 5 ],
+      [ 6 ],
+    ],
+  ];
+</pre>
+
+<p>To compute the sum of each route through the tree we start at the top, and work our way down the tree using recursion to find the sum of the sub-trees. As we work our way down the tree we remember the sum of the nodes that we have traversed through:</p>
+
+<p>So in example 1.</p>
+<ul>
+  <li>Start at node (1) - the sum of ancestors is 0</li>
+  <li>We then look at the child trees (2) - the sum of it's ancestors is 1</li>
+  <li>Then we look at the leaves (3) & (4) - the value they contribute are 6 and 7 respectively [the ancestor node total is 3 {1+2}]<li>
+</ul>
+
+<p>This is relatively easy to convert to a simple algorithm:</p>
+
+<p><small><pre><code><br />
+sub tree_sum {<br />
+  my ( $node,$sum ) = @_;<br />
+  $sum||=0;<br />
+  return $node->[0] + $sum if @{$node} < 2; ## This is a leaf!<br />
+  return tree_sum( $node->[1], $node->[0] + $sum ) + ## Left tree total<br />
+         ( @{$node} == 3 ? tree_sum( $node->[2], $node->[0] + $sum ) : 0 );<br />
+                                                     ## + right tree total if exists<br />
+}<br />
+</code></pre></small></p>
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by James Curtis-Smith
+     on Monday 28 December 2020 17:00</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/d6y">This Company is No Shop of Horrors. Perl role in Canberra, Australia</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">With a mission that includes developing cost-efficient genotyping technology and promoting the development of crops adapted to suit their environment, this is a company that cares about doing great things, and that level of dedication extends to their people. If you’re located within Australia and this role sounds too delicious to pass up, drop us an email.       </div><!-- card-text -->     </div>
@@ -1491,37 +1644,6 @@ sub int_merge {<br />
 
               <p class="text-right"><small>Published by James Curtis-Smith
      on Tuesday 22 December 2020 20:01</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/mithaldu/2020/12/first-perl-steering-council-elected-to-replace-pumpking-position.html">First Perl Steering Council elected to replace Pumpking position</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>The most important Perl Governance poll yet has concluded. The position of Pumpking is no more, and is instead now held by a shared 3 person Steering Council, as defined in perlgov.pod: <a href="https://github.com/Perl/perl5/pull/18357/files">https://github.com/Perl/perl5/pull/18357/files</a></p>
-
-<p>To quote RJBS:</p>
-
-<blockquote>
-Perl has two well-defined bodies involved in its governance: a core team of a few dozen and a steering council of three people. The core team sets the rules of Perl governance, votes on membership of the two groups, and delegates substantial decision making power to the steering council. The steering council has broad authority to make decisions about the development of the Perl language, the interpreter, and all other components, systems and processes that result in new releases of the language interpreter.
-
-<p>Right now, the core team has 25 members, although this may change over time.<br />
-</blockquote></p>
-
-<p>The new Perl Steering Council is now:</p>
-
-<p>RJBS + Neil Bowers + Sawyer X</p>
-
-<p>Thanks to all of them for stepping up and donating their efforts to the Perl community. :)</p>
-
-<p>Further information on these matters can be found on the <a href="https://www.nntp.perl.org/group/perl.perl5.porters/">p5p mailing list</a> and the <a href="https://perl.topicbox.com/latest">public perl core mailing lists</a>.</p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Mithaldu
-     on Tuesday 22 December 2020 21:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card">
@@ -4225,7 +4347,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 28 December 2020 11:53 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 28 December 2020 13:09 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
