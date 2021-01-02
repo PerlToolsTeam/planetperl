@@ -54,6 +54,414 @@
         <div class="col-md-8">
           <div class="card">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-93-max-points-and-sum-path.html">Perl Weekly Challenge 93: Max Points and Sum Path</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 93 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-093/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a day or so. This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Max Points</h2>
+
+<p><em>You are given set of co-ordinates <code>@N</code>.</em></p>
+
+<p><em>Write a script to count maximum points on a straight line when given co-ordinates plotted on 2-d plane.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>|
+|     x
+|   x
+| x
++ _ _ _ _
+
+Input: (1,1), (2,2), (3,3)
+Output: 3
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>|
+|
+| x       x
+|   x
+| x   x
++ _ _ _ _ _
+
+Input: (1,1), (2,2), (3,1), (1,3), (5,3)
+Output: 3
+</code></pre>
+
+<p>From the examples provided, it appears that the given co-ordinates will be integers, that the points of a straight line have to be immediate neighbors and that the lines can only be horizontal, vertical or diagonal. Because of that, I will not try to solve the task with math formulas, as it is somewhat impractical to deal with integers in geometric equations. Also, representing a vertical line with a math equation is a mess.</p>
+
+<h3>Max Points in Raku</h3>
+
+<p>With such a type of problem, the first thing I usually want to do is to make a graphical representation of the point cloud, so that I can visually verify the test results. This is done in the following <code>display-points</code> subroutine:</p>
+
+<pre><code>sub display-points (@points) {
+    my @sorted = reverse sort 
+        { $^a[0] &lt;=&gt; $^b[0] || $^b[1] &lt;=&gt; $^a[1] }, 
+        map { $_.reverse }, @points;
+    my $current = (@sorted.max({$_[0]}))[0];
+    my $max_length = (@sorted.max({$_[1]}))[1];
+    my $line = "";
+    my $pos = 0;
+    for @sorted -&gt; $item {
+        if $item[0] &lt; $current {
+            say $line;
+            $pos = 0;
+            $line = "";
+            $current--;
+        }
+        while $item[0] &lt; $current {
+            say "$current |"; 
+            $current--;
+        }
+        $line = "$current |" and $pos = 0 if $line eq "";
+        $line ~=  " " x ~ ($item[1] - $pos - 1) ~ "x";
+        $pos = $item[1];        
+    }
+    say $line;
+    while $current-- &gt; 0 { say "$current |" }; 
+    say "_" x ($max_length + 3), "\n";
+}
+</code></pre>
+
+<p>With the following set of points:</p>
+
+<pre><code>(1,1), (2,2), (5,2), (3,3), (3,1), (2,7);
+</code></pre>
+
+<p>the procedure first reverse sorts the points as well as their individual coordinates:</p>
+
+<pre><code>[(7 2) (3 3) (2 2) (2 5) (1 1) (1 3)]
+</code></pre>
+
+<p>This is the output of this subroutine:</p>
+
+<pre><code>7 | x
+6 |
+5 |
+4 |
+3 |  x
+2 | x  x
+1 |x x
+0 |
+________
+</code></pre>
+
+<p>For finding the alignments, I used a <em>dispatch table</em> (<code>%directions</code>) defining four directions in which to move in order to find the next point: North, North-East, East, and South-East (the other four directions are just symmetric and are not necessary, since we will look for straight lines starting from every point in the set. We also build a <code>%point-hash</code> hash to store all points in the form of a string containing the abscissa and ordinate of every point (separated by a semi-colon). Then we loop over every point in the data set and loop over each of the four directions, and find in the hash whether there is a new point in that direction. We count the number of points found in that direction and keep track of the maximum count (<code>$max-count</code>).</p>
+
+<pre><code>sub find-alignments (@points) {
+    my %directions = (
+        N  =&gt; { $^a, $^b + 1 },
+        NE =&gt; { $^a + 1, $^b + 1 },
+        E  =&gt; { $^a + 1, $^b },
+        SE =&gt; { $^a + 1, $^b - 1 }
+    );
+    my %point-hash = map { "$_[0];$_[1]" =&gt; True }, @points;
+    my $max-count = 0;
+    for @points -&gt; $point {
+        for %directions.keys -&gt; $dir {
+            my $count = 1;
+            my $p = %directions{$dir}(|$point);
+            while %point-hash{"$p[0];$p[1]"} {
+                $p = %directions{$dir}(|$p);
+                $count++;
+            }
+            $max-count = $count if $count &gt; $max-count;
+        }
+    }
+    say "Count: $max-count \n\n";          
+}
+</code></pre>
+
+<p>Note that the code to find the alignments (i.e. to actually solve the task) contains only 22 code lines, and is thus shorter that the code to display the points (but it may be argued that it uses slightly more advanced techniques). </p>
+
+<p>This is the full program:</p>
+
+<pre><code>use v6;
+
+my @tests = ((1,1), (2,2), (5, 5), (5,2), (3,3), (3,1), (2,7), (4, 4)), 
+            ((1,1), (2,2), (3,1), (1,3), (5,3)),
+            ((1,1), (4,2), (1,3), (2,2), (1,2), (5,1), (1,4));
+for @tests -&gt; @points {
+    display-points(@points);
+    find-alignments(@points);
+}
+
+sub display-points (@points) {
+    my @sorted = reverse sort 
+        { $^a[0] &lt;=&gt; $^b[0] || $^b[1] &lt;=&gt; $^a[1] }, 
+        map { $_.reverse }, @points;
+    my $current = (@sorted.max({$_[0]}))[0];
+    my $max_length = (@sorted.max({$_[1]}))[1];
+    my $line = "";
+    my $pos = 0;
+    for @sorted -&gt; $item {
+        if $item[0] &lt; $current {
+            say $line;
+            $pos = 0;
+            $line = "";
+            $current--;
+        }
+        while $item[0] &lt; $current {
+            say "$current |"; 
+            $current--;
+        }
+        $line = "$current |" and $pos = 0 if $line eq "";
+        $line ~=  " " x ~ ($item[1] - $pos - 1) ~ "x";
+        $pos = $item[1];        
+    }
+    say $line;
+    while $current-- &gt; 0 { say "$current |" }; 
+    say "_" x ($max_length + 3), "\n";
+}
+
+sub find-alignments (@points) {
+    my %directions = (
+        N  =&gt; { $^a, $^b + 1 },
+        NE =&gt; { $^a + 1, $^b + 1 },
+        E  =&gt; { $^a + 1, $^b },
+        SE =&gt; { $^a + 1, $^b - 1 }
+    );
+    my %point-hash = map { "$_[0];$_[1]" =&gt; True }, @points;
+    my $max-count = 0;
+    for @points -&gt; $point {
+        for %directions.keys -&gt; $dir {
+            my $count = 1;
+            my $p = %directions{$dir}(|$point);
+            while %point-hash{"$p[0];$p[1]"} {
+                $p = %directions{$dir}(|$p);
+                 $count++;
+            }
+            $max-count = $count if $count &gt; $max-count;
+        }
+    }
+    say "Count: $max-count \n\n";          
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku max-points.raku
+7 | x
+6 |
+5 |    x
+4 |   x
+3 |  x
+2 | x  x
+1 |x x
+0 |
+________
+
+Count: 5
+
+3 |x   x
+2 | x
+1 |x x
+0 |
+________
+
+Count: 3
+
+4 |x
+3 |x
+2 |xx x
+1 |x   x
+0 |
+________
+
+Count: 4
+</code></pre>
+
+<h3>Max Points in Perl</h3>
+
+<p>This is a port of the Raku program into Perl. Note that, for the sake of brevity, I will not show here the <code>display_points</code> subroutine as it is very similar to the equivalent code in Raku and is not very interesting. The test data sets are the same as in the Raku program, so you can look above to see the graphical representations of the point clouds. The <code>find_alignments</code> subroutine is similar to its counterpart in Raku and also uses a dispatch table with four directions in which to move to find the next point. Please refer to the Raku section above is you need additional explanations.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @tests = ( [[1,1], [2,2], [5, 5], [5,2], [3,3], [3,1], [2,7], [4, 4]], 
+              [[1,1], [2,2], [3,1], [1,3], [5,3]],
+              [[1,1], [4,2], [1,3], [2,2], [1,2], [5,1], [1,4]],
+            );
+for my $point_set (@tests) {
+    # display_points(@points);
+    find_alignments(@$point_set);
+}
+
+sub find_alignments  {
+    my @points = @_;
+    my %directions = (
+        N  =&gt; sub { $_[0]-&gt;[0]    ,  $_[0]-&gt;[1] + 1 },
+        NE =&gt; sub { $_[0]-&gt;[0] + 1,  $_[0]-&gt;[1] + 1 },
+        E  =&gt; sub { $_[0]-&gt;[0] + 1,  $_[0]-&gt;[1]     },
+        SE =&gt; sub { $_[0]-&gt;[0] + 1,  $_[0]-&gt;[1] - 1 }
+    );
+    my %point_hash = map { my @a = @$_; "$$_[0];$$_[1]" =&gt; 1 } @points;
+    my $max_count = 0;
+    for my $point (@points) {
+        for my $dir (keys %directions) {
+            my $count = 1;
+            my @p = $directions{$dir}-&gt;($point);
+            while ($point_hash{"$p[0];$p[1]"}) {
+                @p = $directions{$dir}-&gt;([@p]);
+                $count++;
+            }
+            $max_count = $count if $count &gt; $max_count;
+        }
+    }
+    say  join " ", map { "(@{$_})" } @points;
+    say "Count: $max_count \n";         
+}
+</code></pre>
+
+<p>This program displays the following results:</p>
+
+<pre><code>$ perl  max-points.pl
+(1 1) (2 2) (5 5) (5 2) (3 3) (3 1) (2 7) (4 4)
+Count: 5
+
+(1 1) (2 2) (3 1) (1 3) (5 3)
+Count: 3
+
+(1 1) (4 2) (1 3) (2 2) (1 2) (5 1) (1 4)
+Count: 4
+</code></pre>
+
+<h2>Task 2: Sum Path</h2>
+
+<p><em>You are given binary tree containing numbers 0-9 only.</em></p>
+
+<p><em>Write a script to sum all possible paths from root to leaf.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input:
+     1
+    /
+   2
+  / \
+ 3   4
+
+Output: 13
+as sum two paths (1-&gt;2-&gt;3) and (1-&gt;2-&gt;4)
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input:
+     1
+    / \
+   2   3
+  /   / \
+ 4   5   6
+
+Output: 26
+as sum three paths (1-&gt;2-&gt;4), (1-&gt;3-&gt;5) and (1-&gt;3-&gt;6)
+</code></pre>
+
+<h3>Sum Path in Raku</h3>
+
+<p>For this task, I also used a <code>display</code> subroutine, which uses itself a <code>bft</code> (breadth-first traversal) recursive subroutine, but that&#8217;s not what was asked in the task and I have already covered that, so I&#8217;ll omit that from this post (see <a href="http://blogs.perl.org/users/laurent_r/2020/04/perl-weekly-challenge-57-tree-inversion-and-shortest-unique-prefix.html">this blog post</a> for an example), and only detail the <code>dfs</code> (depth-first search) recursive subroutine which does the work of going through all the path through the tree. The <code>new-sum</code> variable keep tasks of the total sum so far through the path and, when we reach a leaf (no subtree), we update the <code>$*total-sum</code>. </p>
+
+<pre><code>use v6;
+
+my @tests = [1, [2, [3,], [4,]]], 
+            [1, [2, [4,]], [3, [5], [6]]],
+            [5, [4, [3, [7], [2]]], [8, [2], [9, [1]]]];
+
+for @tests -&gt; @tree {
+    my $*total-sum = 0;
+    say @tree;
+    dfs(@tree, 0);
+    say $*total-sum;
+}
+
+sub dfs (@node, $sum-so-far) {
+    my $new-sum = $sum-so-far + @node[0];
+    unless @node[1]:exists or @node[2]:exists {
+        $*total-sum += $new-sum;
+        return;
+    }
+    dfs(@node[1], $new-sum) 
+        if defined @node[1];
+    dfs(@node[2], $new-sum)
+        if defined @node[2];
+}
+</code></pre>
+
+<p>This produces the following output:</p>
+
+<pre><code>$ raku sum-path.raku
+[1 [2 [3] [4]]]
+13
+[1 [2 [4]] [3 [5] [6]]]
+26
+[5 [4 [3 [7] [2]]] [8 [2] [9 [1]]]]
+71
+</code></pre>
+
+<h3>Sum Path in Perl</h3>
+
+<p>This is a port to Perl of the Raku program above, also with a <code>dfs</code> (depth-first search) recursive subroutine.</p>
+
+<pre><code>#!/usr/bin/perl
+use strict;
+use warnings;
+use feature qw/say/;
+
+my @tests = ( [1, [2, [3,], [4,]]], 
+              [1, [2, [4,]], [3, [5], [6, ]]],
+              [5, [4, [3, [7], [2]]], [8, [2], [9, [1]]]]
+            );
+my $total_sum;
+for my $tree (@tests) {
+    $total_sum = 0;
+    dfs($tree, 0);
+    say $total_sum;
+}
+
+sub dfs {
+    my ($node, $sum_so_far) = @_;
+    my $new_sum = $sum_so_far + $node-&gt;[0];
+    unless (exists $node-&gt;[1] or exists $node-&gt;[2]) {
+        $total_sum += $new_sum;
+        return;
+    }
+    dfs($node-&gt;[1], $new_sum) 
+        if defined $node-&gt;[1];
+    dfs($node-&gt;[2], $new_sum)
+        if defined $node-&gt;[2];
+}
+</code></pre>
+
+<p>This yields the same results as the Raku program:</p>
+
+<pre><code>$ perl sum-path.pl
+13
+26
+71
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon and will end next year, a year that we all hope will be better than this year. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, January 10, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+     on Sunday 03 January 2021 02:33</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/10-best-perl-distributions-created-at.html">10 best perl distributions created at 2020 (metacpan rating)</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">10 best perl distributions created at 2020 (metacpan rating) <p>This list contains distributions created at 2020</p><ol><li><a href="https://metacpan.org/pod/Zydeco">Zydeco</a> (+20)</li><li><a href="https://metacpan.org/pod/Code::ART">Code::ART</a> (+8)</li><li><a href="https://metacpan.org/pod/Devel::Wherefore">Devel::Wherefore</a> (+6)</li><li><a href="https://metacpan.org/pod/Guacamole">Guacamole</a> (+6)</li><li><a href="https://metacpan.org/pod/SQL::Bind">SQL::Bind</a> (+6)</li><li><a href="https://metacpan.org/pod/MLPerl">MLPerl</a> (+5)</li><li><a href="https://metacpan.org/pod/Sub::MultiMethod">Sub::MultiMethod</a> (+5)</li><li><a href="https://metacpan.org/pod/TOML::Tiny">TOML::Tiny</a> (+5)</li><li><a href="https://metacpan.org/pod/Pepper">Pepper</a> (+4)</li><li><a href="https://metacpan.org/pod/RxPerl">RxPerl</a> (+4)</li></ol>       </div><!-- card-text -->     </div>
@@ -1756,159 +2164,6 @@ Auch in den letzten beiden Monaten dieses Jahres waren wir nicht ganz untätig �
 
               <p class="text-right"><small>Published
      on Tuesday 29 December 2020 10:00</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2020/12/perl-weekly-challenge-93.html">Perl weekly challenge 93</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 93 of the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a> organized by Mohammad S. Anwar.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days (January 3, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<p>I'm not a great blogger - but I will try and explain my solutions to the Perl weekly challenge each week. I always try and look for interesting solutions to the problems at hand.</p>
-
-<h1>Part 1</h1>
-
-<p>Not sure on the correct way to do this... I first looked at all the pairs of points - and looked to see what the direction was between the points. For those where the y-coordinates are different you can just use (x1-x2)/(y1-y2) to represent the slope. We also that flipping the order of the points gives the same value. For those canses where y is the same - the slop can be represented by an "infinity value" in my case i use "-"</p>
-
-<p>We now keep a list keyed by points and directions, with the value being the number of times that point/direction combination has been seen</p>
-
-<p>Finding the solution is simply finding the largest value in this list - this gives the max-number of points colinear to a single points</p>
-
-<p>The answer is then this value + 1</p>
-
-<p><small><pre></code><br />
-sub most_points_in_line {<br />
-  my @nodes = @_;<br />
-  my %lines;<br />
-  foreach my $i (0..(@nodes-2)) {<br />
-    foreach my $j (($i+1)..(@nodes-1)) {<br />
-      my $dir = $nodes[$i][1] == $nodes[$j][1]  ## Y values the same so division will fail<br />
-              ? '-'                             ## use "-" to represent infintiy.<br />
-              :  ($nodes[$i][0]-$nodes[$j][0])/($nodes[$i][1]-$nodes[$j][1]);<br />
-      $lines{$i.':'.$dir}++; ## Add 1 to both the two nodes { as swapping the nodes over<br />
-      $lines{$j.':'.$dir}++; ## makes no difference we don't need to compute twice<br />
-    }<br />
-  }<br />
-  my $max = 0; ## Now we just need to find the maximum value.<br />
-  foreach (values %lines) {<br />
-    $max = $_ if $_ > $max;<br />
-  }<br />
-  return $max+1;<br />
-}<br />
-</code></pre></small></p>
-
-<p><strong>Note:</strong> - this "trick" will fail if the direction calculation has rounding errors - in the examples this isn't the case - but care should be taken.</p>
-
-<p>If we take the assumption from the examples that all the points on the plane are in fact integers - we can remove some of the issues with rounding errors by returning a slope as a ratio of integers. We do this by computing the gcd of the two values, and dividing dx & dy by this value.
-</p>
-
-<p><small><pre><code><br />
-sub most_points_in_line {<br />
-  my @nodes = @_;<br />
-  my %lines;<br />
-  foreach my $i (0..(@nodes-2)) {<br />
-    foreach my $j (($i+1)..(@nodes-1)) {<br />
-      my $dir = '-';<br />
-      my( $dx,$dy) = ( $nodes[$i][0]-$nodes[$j][0], $nodes[$i][1]-$nodes[$j][1] );<br />
-      if( $dx && $dy ) {<br />
-        my $gcd = gcd( $dx,$dy );<br />
-        $dir = $dx/$gcd.'-'.$dy/$gcd;<br />
-      } else {<br />
-        $dir = $dx ? '-' : '|';<br />
-      }<br />
-      $lines{$i.':'.$dir}++;<br />
-      $lines{$j.':'.$dir}++;<br />
-    }<br />
-  }<br />
-  my $max = 0;<br />
-  foreach (values %lines) {<br />
-    $max = $_ if $_ > $max;<br />
-  }<br />
-  return $max+1;<br />
-}</p>
-
-<p>## Note this gcd function works when n & m can have -ve values<br />
-## We convert them to positive values and remember the sign of<br />
-## the differences.<br />
-sub gcd {<br />
-  my( $n,$m,$s ) = (@_,1);<br />
-  ($n,$m) = (-$n,-$m) if $n < 0;<br />
-  if( $m < 0 ) {<br />
-    $s = -1;<br />
-    $m = -$m;<br />
-  }<br />
-  ($n,$m) = ($m,$n) if $m>$n;<br />
-  ($n,$m) = ( $m, $n % $m ) while $n % $m;<br />
-  return $m*$s;<br />
-}<br />
-</code></pre></small></p>
-
-<h1>Part 2</h1>
-
-<p>Like last week I think Part 2 is easier than Part 1.</p>
-
-<p>Not really sure what the input should be - but will by representing the tree as a series of nodes:</p>
-<ul>
-  <li>Each node is an array consisting of up to 3 values;</li>
-  <li>The value of the node</li>
-  <li>The left and right sub-trees if they exists</li>
-</ul>
-
-<p>So for example 1 we have:</p>
-<pre>
-  [ 1,
-    [ 2,
-      [ 3 ],
-      [ 4 ],
-    ],
-  ];
-</pre>
-
-<p>and for example 2 we have:</p>
-
-<pre>
-  [ 1,
-    [ 2,
-      [ 4 ],
-    ]
-    [ 3,
-      [ 5 ],
-      [ 6 ],
-    ],
-  ];
-</pre>
-
-<p>To compute the sum of each route through the tree we start at the top, and work our way down the tree using recursion to find the sum of the sub-trees. As we work our way down the tree we remember the sum of the nodes that we have traversed through:</p>
-
-<p>So in example 1.</p>
-<ul>
-  <li>Start at node (1) - the sum of ancestors is 0</li>
-  <li>We then look at the child trees (2) - the sum of it's ancestors is 1</li>
-  <li>Then we look at the leaves (3) & (4) - the value they contribute are 6 and 7 respectively [the ancestor node total is 3 {1+2}]<li>
-</ul>
-
-<p>This is relatively easy to convert to a simple algorithm:</p>
-
-<p><small><pre><code><br />
-sub tree_sum {<br />
-  my ( $node,$sum ) = @_;<br />
-  $sum||=0;<br />
-  return $node->[0] + $sum if @{$node} < 2; ## This is a leaf!<br />
-  return tree_sum( $node->[1], $node->[0] + $sum ) + ## Left tree total<br />
-         ( @{$node} == 3 ? tree_sum( $node->[2], $node->[0] + $sum ) : 0 );<br />
-                                                     ## + right tree total if exists<br />
-}<br />
-</code></pre></small></p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by James Curtis-Smith
-     on Monday 28 December 2020 17:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card">
@@ -4324,7 +4579,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 02 January 2021 20:57 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 02 January 2021 21:59 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
