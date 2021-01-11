@@ -1,4 +1,13 @@
 $(document).ready(function() {
+
+  $('#show').click(function() {
+    $('.card-body').show();
+  });
+
+  $('#hide').click(function() {
+    $('.card-body').hide();
+  });
+
   $(document).keypress(function(e) {
     switch (e.which) {
       case 110:
