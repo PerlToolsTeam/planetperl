@@ -1,2 +1,2 @@
 # planetperl
-Perlanet configuration for a Perl Planet
+[Perlanet](https://github.com/davorg/perlanet) configuration for a Perl Planet
