@@ -55,6 +55,252 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://www.perl.com/article/extracting-the-list-of-o-reilly-animals/">Extracting the list of O'Reilly Animals</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+
+<p>Now I want to grab the entire list of O&rsquo;Reilly cover animals, and <a href="https://www.mojolicious.org">Mojolicious</a> is going to help me do that.</p>
+
+<p>O&rsquo;Reilly Media, who publishes most of my books, is distinctively known
+by the animals it chooses for their covers. Edie Freedman explains how she came up with the well-known design in <a href="https://www.oreilly.com/content/a-short-history-of-the-oreilly-animals/">A short history of the O’Reilly animals</a>. I think I first saw this design on the cover of <a href="https://shop.oreilly.com/product/9781565922259.do">sed &amp; awk</a>; those Slender Lorises (Lori?) are a bit creepy, but not creepy enough to keep me away from the command line.</p>
+
+<p><img src="https://www.perl.com/images/extracting-the-list-of-o-reilly-animals/sed.jpeg" alt="sed &amp; awk" /></p>
+
+<p>Not that a Perler should talk since Larry Wall choose a camel: it&rsquo;s ugly but it gets the job done under tough conditions. And, for <a href="https://www.intermediateperl.com">own of my own books</a>, the alpaca is a bit cuter, but they are nasty beasts as well.</p>
+
+<p>O&rsquo;Reilly <a href="https://www.oreilly.com/animals.csp">lists almost all of the animals</a> from their covers, even if &ldquo;animals&rdquo; is a bit of a loose term that encompasses &ldquo;Catholic Priests&rdquo; (<em><a href="https://shop.oreilly.com/product/0636920021872.do">Ethics of Big Data</a></em>) or &ldquo;Soldiers or rangers, with rifles&rdquo; (<em><a href="https://shop.oreilly.com/product/9780596007164.do">SELinux</a></em>). You can page through that list 20 results at a time, or search it. But, as with most lists I see online, I want to grab the entire list at once. Show me a paginated resources and I&rsquo;ll show you the program I automated to unpaginate it.</p>
+
+<p>Scraping a bunch of pages is no problem for Perl, especially with <a href="https://www.mojolicious.org">Mojolicious</a> (as I write about in <em><a href="https://leanpub.com/mojo_web_clients">Mojo Web Clients</a></em>). I whipped up a quick script and soon had <a href="https://gist.github.com/briandfoy/d68915eb425e1fc4932ceac5cdf2d60d">all of the animals in a JSON file</a>.</p>
+
+<p>There&rsquo;s nothing particularly fancy in my programming, although I do use <a href="https://docs.mojolicious.org/Mojo/Promise">Mojo::Promise</a> so I can make the requests concurrently. That wasn&rsquo;t something that I cared that much about, but I had just answered <a href="https://stackoverflow.com/q/64597755/2766176">a StackOverflow question about Promises</a> so it was on my mind. I set up all of the web requests but don&rsquo;t run them right away. Once I have all of them, I run them at once through the <code>all()</code> Promise:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-perl" data-lang="perl"><span style="color:#75715e">#!perl</span>
+<span style="color:#66d9ef">use</span> v5<span style="color:#ae81ff">.26</span>;
+<span style="color:#66d9ef">use</span> experimental <span style="color:#e6db74">qw(signatures)</span>;
+
+<span style="color:#66d9ef">use</span> Mojo::JSON <span style="color:#e6db74">qw(encode_json)</span>;
+<span style="color:#66d9ef">use</span> Mojo::Promise;
+<span style="color:#66d9ef">use</span> Mojo::UserAgent;
+<span style="color:#66d9ef">use</span> Mojo::Util <span style="color:#e6db74">qw(dumper)</span>;
+
+<span style="color:#66d9ef">my</span> @grand;
+<span style="color:#66d9ef">END</span> {
+	<span style="color:#75715e"># Since the results come out of order,</span>
+	<span style="color:#75715e"># sort by animal name then title</span>
+	@grand <span style="color:#f92672">=</span> sort {
+		$a<span style="color:#f92672">-&gt;</span>{animal} <span style="color:#f92672">cmp</span> $b<span style="color:#f92672">-&gt;</span>{animal}
+			<span style="color:#f92672">or</span>
+		$a<span style="color:#f92672">-&gt;</span>{title} <span style="color:#f92672">cmp</span> $b<span style="color:#f92672">-&gt;</span>{title}
+		} @grand;
+
+	<span style="color:#66d9ef">my</span> $json <span style="color:#f92672">=</span> encode_json( <span style="color:#f92672">\</span>@grand );
+	say $json;
+	}
+
+<span style="color:#66d9ef">my</span> $url <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;https://www.oreilly.com/animals.csp&#39;</span>;
+<span style="color:#66d9ef">my</span>( $start, $interval, $total );
+
+<span style="color:#66d9ef">my</span> $ua <span style="color:#f92672">=</span> Mojo::UserAgent<span style="color:#f92672">-&gt;</span><span style="color:#66d9ef">new</span>;
+
+<span style="color:#75715e"># We need to get the first request to get the total number of</span>
+<span style="color:#75715e"># requests. Note that that number is actually larger than the</span>
+<span style="color:#75715e"># number of results there will be, by about 80.</span>
+<span style="color:#66d9ef">my</span> $first_page_tx <span style="color:#f92672">=</span> $ua<span style="color:#f92672">-&gt;</span>get_p( $url )<span style="color:#f92672">-&gt;</span><span style="color:#66d9ef">then</span>(
+	<span style="color:#66d9ef">sub</span> ( $tx ) {
+		push @grand, parse_page( $tx )<span style="color:#f92672">-&gt;</span>@<span style="color:#960050;background-color:#1e0010">*;</span>
+		<span style="color:#960050;background-color:#1e0010">(</span> <span style="color:#960050;background-color:#1e0010">$</span>start, $interval, $total ) <span style="color:#f92672">=</span> get_pagination( $tx );
+		},
+	<span style="color:#66d9ef">sub</span> ( $tx ) { die <span style="color:#e6db74">&#34;Initial fetch failed!&#34;</span> }
+	)<span style="color:#f92672">-&gt;</span>wait;
+
+<span style="color:#66d9ef">my</span> @requests <span style="color:#f92672">=</span>
+	map {
+		<span style="color:#66d9ef">my</span> $page <span style="color:#f92672">=</span> $_;
+		$ua<span style="color:#f92672">-&gt;</span>get_p( $url <span style="color:#f92672">=&gt;</span> form <span style="color:#f92672">=&gt;</span> { <span style="color:#e6db74">&#39;x-o&#39;</span> <span style="color:#f92672">=&gt;</span> $page } )<span style="color:#f92672">-&gt;</span><span style="color:#66d9ef">then</span>(
+			<span style="color:#66d9ef">sub</span> ( $tx ) { push @grand, parse_page( $tx )<span style="color:#f92672">-&gt;</span>@<span style="color:#960050;background-color:#1e0010">*</span> <span style="color:#960050;background-color:#1e0010">}</span>,
+			<span style="color:#66d9ef">sub</span> ( $tx ) { warn <span style="color:#e6db74">&#34;Something is wrong&#34;</span> }
+			);
+		}
+	map {
+		$_ <span style="color:#f92672">*</span> $interval
+		}
+	<span style="color:#ae81ff">1</span> <span style="color:#f92672">..</span> ($total <span style="color:#f92672">/</span> $interval)
+	;
+
+Mojo::Promise<span style="color:#f92672">-&gt;</span>all( @requests )<span style="color:#f92672">-&gt;</span>wait;
+
+<span style="color:#66d9ef">sub</span> <span style="color:#a6e22e">get_pagination</span> ( $tx ) {
+	<span style="color:#75715e"># 1141 to 1160 of 1244</span>
+	<span style="color:#66d9ef">my</span> $pagination <span style="color:#f92672">=</span> $tx
+		<span style="color:#f92672">-&gt;</span>result
+		<span style="color:#f92672">-&gt;</span>dom
+		<span style="color:#f92672">-&gt;</span>at( <span style="color:#e6db74">&#39;span.cs-prevnext&#39;</span> )
+		<span style="color:#f92672">-&gt;</span>text;
+
+	<span style="color:#66d9ef">my</span>( $start, $interval, $total ) <span style="color:#f92672">=</span> $pagination <span style="color:#f92672">=~</span><span style="color:#e6db74"> /
+</span><span style="color:#e6db74">		(\d+) \h+ to \h+ (\d+) \h+ of \h+ (\d+) /x</span>;
+	}
+
+<span style="color:#66d9ef">sub</span> <span style="color:#a6e22e">parse_page</span> ( $tx ) {
+<span style="color:#75715e">=pod
+</span><span style="color:#75715e">
+</span><span style="color:#75715e">&lt;div class=&#34;animal-row&#34;&gt;
+</span><span style="color:#75715e">    &lt;a class=&#34;book&#34; href=&#34;...&#34; title=&#34;&#34;&gt;
+</span><span style="color:#75715e">      &lt;img class=&#34;book-cvr&#34; src=&#34;...&#34; /&gt;
+</span><span style="color:#75715e">      &lt;p class=&#34;book-title&#34;&gt;Perl 6 and Parrot Essentials&lt;/p&gt;
+</span><span style="color:#75715e">    &lt;/a&gt;
+</span><span style="color:#75715e">    &lt;p class=&#34;animal-name&#34;&gt;Aoudad, aka Barbary sheep&lt;/p&gt;
+</span><span style="color:#75715e">  &lt;/div&gt;
+</span><span style="color:#75715e">
+</span><span style="color:#75715e">=cut</span>
+
+	<span style="color:#66d9ef">my</span> $results <span style="color:#f92672">=</span> eval {
+		$tx
+			<span style="color:#f92672">-&gt;</span>result
+			<span style="color:#f92672">-&gt;</span>dom
+			<span style="color:#f92672">-&gt;</span>find( <span style="color:#e6db74">&#39;div.animal-row&#39;</span> )
+			<span style="color:#f92672">-&gt;</span>map( <span style="color:#66d9ef">sub</span> {
+				<span style="color:#66d9ef">my</span> %h;
+				$h{link}      <span style="color:#f92672">=</span> $_<span style="color:#f92672">-&gt;</span>at( <span style="color:#e6db74">&#39;a.book&#39;</span> )<span style="color:#f92672">-&gt;</span>attr( <span style="color:#e6db74">&#39;href&#39;</span> );
+				$h{cover_src} <span style="color:#f92672">=</span> $_<span style="color:#f92672">-&gt;</span>at( <span style="color:#e6db74">&#39;img.book-cvr&#39;</span> )<span style="color:#f92672">-&gt;</span>attr( <span style="color:#e6db74">&#39;src&#39;</span> );
+				$h{title}     <span style="color:#f92672">=</span> $_<span style="color:#f92672">-&gt;</span>at( <span style="color:#e6db74">&#39;p.book-title&#39;</span> )<span style="color:#f92672">-&gt;</span>text;
+				$h{animal}    <span style="color:#f92672">=</span> $_<span style="color:#f92672">-&gt;</span>at( <span style="color:#e6db74">&#39;p.animal-name&#39;</span> )<span style="color:#f92672">-&gt;</span>text;
+				<span style="color:#f92672">\</span>%h;
+				} )
+			<span style="color:#f92672">-&gt;</span>to_array
+		} <span style="color:#f92672">or</span> <span style="color:#66d9ef">do</span> {
+			warn <span style="color:#e6db74">&#34;Could not process a request!\n&#34;</span>;
+			<span style="color:#f92672">[]</span>;
+			};
+	}</code></pre></div>
+<p>Those concurrent requests make this program much faster than it would be if I did them individually one after the other, although it can really hammer a server if I&rsquo;m not careful. Most of the web request time is simply waiting and I get all of those requests to wait at the same time. Now, this isn&rsquo;t really parallelism because once one request has something to do, such as reading the data, the other requests still need to wait their turn. Perhaps I&rsquo;ll rewrite this program later to use <a href="https://docs.mojolicious.org/Minion">Minion</a>, the Mojo-based job queue that can do things in different processes.</p>
+
+<p>The rest of the program is data extraction. In <code>parse_page</code>, I have various <a href="https://docs.mojolicious.org/Mojo/DOM/CSS">CSS Selectors</a> to extract all of the <code>div.animal-row</code> and turn each animal into a hash (again, I have lots of examples in <em><a href="https://leanpub.com/mojo_web_clients">Mojo Web Clients</a></em>). Each Promise adds its results to the <code>@grand</code> array. At the end, I turn that into a JSON file, which I&rsquo;ve also uploaded as a <a href="https://gist.github.com/briandfoy/d68915eb425e1fc4932ceac5cdf2d60d">gist</a>.</p>
+
+<p>As someone who has been doing this sort of extraction for quite a while, I&rsquo;m always quite pleased how easy Mojolicious makes this. Everything I need is already there, uses the same idioms, and works together nicely. I get the page and select some elements. A long time ago, I would have had long series of substitutions, regexes, and other low-level text processing. Perl&rsquo;s certainly good at text processing, but that doesn&rsquo;t mean I want to work at that level in every program. Do something powerful a couple times and it doesn&rsquo;t seem so cool anymore, although the next step for Mojolicious might be <em>Minority Report</em>-style pre-fetching where it knows what I want before I do.</p>
+
+<h2 id="a-nifty-trick">A nifty trick</h2>
+
+<p>I do use a few interesting tricks just because I do. Lately in these sorts of programs I&rsquo;m collecting things into a data structure then presenting it at the end. Typically that means I do the setup at the top of the program file and the output at the end.  However, after I&rsquo;ve defined the <code>@grand</code> variable, I immediately define an <code>END</code> block to specify what to do with <code>@grand</code> once everything else has happened:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-perl" data-lang="perl"><span style="color:#66d9ef">my</span> @grand;
+<span style="color:#66d9ef">END</span> {
+	<span style="color:#75715e"># Since the results come out of order,</span>
+	<span style="color:#75715e"># sort by animal name then title</span>
+	@grand <span style="color:#f92672">=</span> sort {
+		$a<span style="color:#f92672">-&gt;</span>{animal} <span style="color:#f92672">cmp</span> $b<span style="color:#f92672">-&gt;</span>{animal}
+			<span style="color:#f92672">or</span>
+		$a<span style="color:#f92672">-&gt;</span>{title} <span style="color:#f92672">cmp</span> $b<span style="color:#f92672">-&gt;</span>{title}
+		} @grand;
+
+	<span style="color:#66d9ef">my</span> $json <span style="color:#f92672">=</span> encode_json( <span style="color:#f92672">\</span>@grand );
+	say $json;
+	}</code></pre></div>
+<p>That keeps the details of the data structure together. The entire point of the program is to get those data out to the JSON file.</p>
+
+<p>I could have just as easily kept that together with a normal Perl subroutine, but <code>END</code> is a subroutine that I don&rsquo;t need to call explicitly. This is merely something I&rsquo;ve been doing lately and I might change my mind later.</p>
+
+<h2 id="a-little-safari">A little safari</h2>
+
+<p>And I leave you with a little safari for your own amusement. My animals are the Llama, Alpaca, Vicuñas, Camel, and Hamadryas Butterfly. Search the O&rsquo;Reilly list (or my JSON) to find those titles. Some of them are missing and some have surprising results.</p>
+
+<p><img src="https://www.perl.com/images/extracting-the-list-of-o-reilly-animals/learning_perl.jpeg" alt="" /></p>
+
+<p>Here are some interesting <a href="https://stedolan.github.io/jq/">jq</a> commands to play with the <a href="https://gist.github.com/briandfoy/d68915eb425e1fc4932ceac5cdf2d60d">Animals JSON file</a>:</p>
+
+<pre><code># get all the title
+$ jq -r '.[].title' &lt; animals.json | sort | head -10
+.NET &amp; XML
+.NET Compact Framework Pocket Guide
+.NET Framework Essentials
+.NET Gotchas
+.NET Windows Forms in a Nutshell
+20 Recipes for Programming MVC 3
+20 Recipes for Programming PhoneGap
+21 Recipes for Mining Twitter
+25 Recipes for Getting Started with R
+50 Tips and Tricks for MongoDB Develope
+
+# tab-separated list of animals and titles
+$ jq -r '.[] | &quot;\(.animal) =&gt; \(.title)&quot;' &lt; animals.json | sort
+12-Wired Bird of Paradise	Mobile Design and Development
+3-Banded Armadillo	Windows PowerShell for Developers
+Aardvark	Jakarta Commons Cookbook
+Aardwolf	Clojure Cookbook
+Addax, aka Screwhorn Antelope	Ubuntu: Up and Running
+Adjutant (Storks)	Social eCommerce
+Aegina Citrea, narcomedusae, jellyfish	BioBuilder
+African Civet	JRuby Cookbook
+African Crowned Crane aka Grey Crowned Crane	C# 5.0 Pocket Reference
+African Crowned Crane aka Grey Crowned Crane	Programming C# 3.0
+
+# find a title by exact match of animal
+$ jq -r '.[] | select(.animal==&quot;Llama&quot;) | .title' &lt; animals.json
+Randal Schwartz on Learning Perl
+
+# find a title with a regex match against the animal
+$ jq -r '.[] | select(.animal|test(&quot;ama&quot;)) | .title' &lt; animals.json | sort
+Access Cookbook
+Access Database Design &amp; Programming
+ActionScript for Flash MX Pocket Reference
+ActionScript for Flash MX: The Definitive Guide
+Ajax on Java
+Appcelerator Titanium: Up and Running
+Embedding Perl in HTML with Mason
+Fluent Python
+Identity, Authentication, and Access Management in OpenStack
+Introduction to Machine Learning with Python
+Learning Perl 6
+PDF Explained
+Randal Schwartz on Learning Perl
+SQL Pocket Guide
+SQL Tuning
+Solaris 8 Administrator's Guide
+The Little Book on CoffeeScript
+Writing Game Center Apps in iOS
+
+# find an animal with a regex match against the title
+$ jq -r '.[] | select(.title|test(&quot;Perl&quot;)) | .animal' &lt; animals.json | sort
+Alpaca
+Aoudad, aka Barbary sheep
+Arabian Camel, aka Dromedary
+Arabian Camel, aka Dromedary
+Arabian Camel, aka Dromedary, Head
+Badger
+Bighorn Sheep
+Black Leopard
+Blesbok (African antelope)
+Camel, aka Dromedary
+Cheetah
+Emu, large and fluffy
+Emu, young
+Fan-footed Gecko, aka Wall Gecko
+Flying Dragon (lizard)
+Flying Dragon (lizard)
+Greater Honeyguide
+Green Monkey 1 (adult holding a baby)
+Hamadryas Baboon
+Hamadryas Butterfly
+Llama
+Mouse
+North American Bullfrog
+Proboscis Monkey
+Red Colobus Monkey
+Sea Otter
+Staghound
+Tadpole of a Greenfrog (sketch)
+Thread-winged Lacewing, aka Antlion
+White-tailed Eagle
+Wolf
+</code></pre>
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://perl.com/" class="badge badge-primary" style="float: left">perl.com</a>
+
+              <p class="text-right"><small>Published
+     on Monday 11 January 2021 18:02</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/01/you-think-youre-an-x-but-youre-only-a-y.html">You think you're an X, but you're only a Y</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -94,7 +340,7 @@
      on Monday 11 January 2021 11:46</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/j7i">Free Lunch? Yes, Please. Perl job in Vienna.</a></h2>
             </div> <!-- card-header -->
@@ -106,7 +352,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/9ta">Variety is the spice of life! Perl Developer role in Dubai!</a></h2>
             </div> <!-- card-header -->
@@ -118,7 +364,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/b3m">Frankenstein’s Monster is Just Misunderstood! Perl in Australia</a></h2>
             </div> <!-- card-header -->
@@ -130,7 +376,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/ftu">Just Another Day Working in Perl Paradise (Perl developer job in Malta)</a></h2>
             </div> <!-- card-header -->
@@ -142,7 +388,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/6bi">Business Casual has a Whole New Meaning. Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -154,7 +400,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -166,7 +412,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/charlotte-pm/events/275282889">Charlotte Perl Mongers - Using the ActiveState Platform</a></h2>
             </div> <!-- card-header -->
@@ -178,7 +424,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting - Atomic Operations in Unix (and Perl).</a></h2>
             </div> <!-- card-header -->
@@ -190,7 +436,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/events/jdxwsrycccbrb/">Derrick Talks renv - Purdue Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -202,7 +448,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/p/parallel-processing-in-perl">New Perl Course: Parallel processing in Perl</a></h2>
             </div> <!-- card-header -->
@@ -214,7 +460,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -226,7 +472,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://course.raku.org/essentials/">A Complete Course of the Raku programming language</a></h2>
             </div> <!-- card-header -->
@@ -238,7 +484,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=R00JE6QRbno">Advent of Code 2020 — Day 12 in Perl</a></h2>
             </div> <!-- card-header -->
@@ -250,7 +496,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-094-2d2h">Weekly Challenge 094</a></h2>
             </div> <!-- card-header -->
@@ -262,7 +508,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/01/Perl_Weekly_Challenge_94__Binary_Anagrams.html">Perl Weekly Challenge 94: Binary Anagrams</a></h2>
             </div> <!-- card-header -->
@@ -274,7 +520,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/01/04/PWC94/">Perl Weekly Challenge 94</a></h2>
             </div> <!-- card-header -->
@@ -286,7 +532,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/01/04/PerlWeeklyChallenge94.html">Perl Weekly Challenge 94: I’M (nearly) BACK!</a></h2>
             </div> <!-- card-header -->
@@ -298,7 +544,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-94-group-anagrams-and-binary-tree-to-linked-list.html">Perl Weekly Challenge 94: Group Anagrams and Binary Tree to Linked List</a></h2>
             </div> <!-- card-header -->
@@ -310,7 +556,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-94.html">Perl weekly challenge 94</a></h2>
             </div> <!-- card-header -->
@@ -322,7 +568,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://gugod.org/2021/01/pwc-094-en/">Solving Perl Weekly Challenge 094 -- Group Anagrams and Binary Tree to Linked List</a></h2>
             </div> <!-- card-header -->
@@ -334,7 +580,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/07/pwc094-binary-tree-to-linked-list/">PWC094 - Binary Tree to Linked List</a></h2>
             </div> <!-- card-header -->
@@ -346,7 +592,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/06/pwc094-group-anagrams/">PWC094 - Group Anagrams</a></h2>
             </div> <!-- card-header -->
@@ -358,7 +604,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/01/05/flattened-anagrams-perl-weekly-challenge-94.html">Flattened Anagrams: Perl Weekly Challenge #94</a></h2>
             </div> <!-- card-header -->
@@ -370,7 +616,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2021/01/cys-take-on-pwc094.html">CY's Take on PWC#094</a></h2>
             </div> <!-- card-header -->
@@ -382,7 +628,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/01/11/anagram-nut-clusters/">Anagram Nut Clusters</a></h2>
             </div> <!-- card-header -->
@@ -394,7 +640,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/binary-linked-anagrams.html">Binary Linked Anagrams with Raku</a></h2>
             </div> <!-- card-header -->
@@ -406,7 +652,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/10">Perl Weekly Challenge 094</a></h2>
             </div> <!-- card-header -->
@@ -418,7 +664,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-094/">Perl Weekly Challenge 94</a></h2>
             </div> <!-- card-header -->
@@ -430,7 +676,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-092">Perl Review - The Weekly Challenge - 092</a></h2>
             </div> <!-- card-header -->
@@ -442,7 +688,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-094">RECAP - The Weekly Challenge - 094</a></h2>
             </div> <!-- card-header -->
@@ -454,7 +700,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-095">The Weekly Challenge - 095</a></h2>
             </div> <!-- card-header -->
@@ -466,7 +712,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://brtastic.xyz/blog/article/perl-form-tiny">Not just another Perl form framework</a></h2>
             </div> <!-- card-header -->
@@ -478,7 +724,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.i-programmer.info/news/222-perl/14267-new-to-perl-what-do-you-need.html">New To Perl? What Do You Need?</a></h2>
             </div> <!-- card-header -->
@@ -490,7 +736,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/01/abc-mart.html">ABC Mart</a></h2>
             </div> <!-- card-header -->
@@ -502,7 +748,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/newperluserssurvey">Coding in Perl? What support do you need?</a></h2>
             </div> <!-- card-header -->
@@ -514,7 +760,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/bob/2021/01/sandiegopm-meeting-tuesday-january-12th-2021.html">SanDiego.pm Meeting, Tuesday, January 12th, 2021</a></h2>
             </div> <!-- card-header -->
@@ -526,7 +772,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/blog/perl-ci-cd-pipelines-for-github-actions/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=blog-perl-ci-cd-pipelines&utm_campaign=user-acquisition">Optimize GitHub Actions for Perl</a></h2>
             </div> <!-- card-header -->
@@ -538,7 +784,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/494.html">#494 - Perl Myths</a></h2>
             </div> <!-- card-header -->
@@ -564,7 +810,7 @@
      on Monday 11 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/10#pwc094">Perl Weekly Challenge 094</a></h2>
             </div> <!-- card-header -->
@@ -784,7 +1030,7 @@ $ perl -I. ch-2.pl
      on Sunday 10 January 2021 11:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2021/01/cys-take-on-pwc094.html">CY's Take on PWC#094</a></h2>
             </div> <!-- card-header -->
@@ -1054,7 +1300,7 @@ For those who may be interested in the meaning of those Chinese terms:<br />
      on Saturday 09 January 2021 13:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-94.html">Perl weekly challenge 94</a></h2>
             </div> <!-- card-header -->
@@ -1091,7 +1337,7 @@ example of simple OO coding.<br />
      on Saturday 09 January 2021 19:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxiii-16-cpan-great-modules-released.html">(cccxxiii) 16 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1103,7 +1349,7 @@ example of simple OO coding.<br />
      on Saturday 09 January 2021 22:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdxlix-metacpan-weekly-report.html">(cdxlix) metacpan weekly report - Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -1115,7 +1361,7 @@ example of simple OO coding.<br />
      on Saturday 09 January 2021 22:33</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlxxiii-stackoverflow-perl-report.html">(cdlxxiii) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -1127,7 +1373,7 @@ example of simple OO coding.<br />
      on Saturday 09 January 2021 22:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2020/12/magic-square-and-magic-cube.html">CY's Brute-Force Take on Task 2 of PWC#089</a></h2>
             </div> <!-- card-header -->
@@ -1239,7 +1485,7 @@ $u = 42 - $v - $w
      on Sunday 06 December 2020 15:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2020/11/cys-take-on-pwc088.html">CY's Take on PWC#088</a></h2>
             </div> <!-- card-header -->
@@ -1546,7 +1792,7 @@ sample output 3:
      on Sunday 29 November 2020 12:06</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/bevilaquabruno/scala-and-perl-in-2021-1mee">Scala and Perl in 2021</a></h2>
             </div> <!-- card-header -->
@@ -1562,7 +1808,7 @@ sample output 3:
      on Thursday 07 January 2021 12:09</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-06-git-hooks-mit-perl">Git-Hooks mit Perl</a></h2>
             </div> <!-- card-header -->
@@ -1575,7 +1821,7 @@ Git ist eine weit verbreitete Software zur Versionsverwaltung. Wir nutzen Git se
      on Wednesday 06 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-094-2d2h">Weekly Challenge 094</a></h2>
             </div> <!-- card-header -->
@@ -1700,7 +1946,7 @@ Git ist eine weit verbreitete Software zur Versionsverwaltung. Wir nutzen Git se
      on Tuesday 05 January 2021 12:07</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/davorg/archiving-cpan-logs-in-github-actions-2hfd">Archiving CPAN logs in GitHub Actions</a></h2>
             </div> <!-- card-header -->
@@ -1824,7 +2070,7 @@ Retry with --force to force install it.
      on Monday 04 January 2021 14:49</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/03#pwc093">Perl Weekly Challenge 093</a></h2>
             </div> <!-- card-header -->
@@ -1970,7 +2216,7 @@ $ perl perl/ch-2.pl
      on Sunday 03 January 2021 16:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_01_download_all_podcast_episodes.html">Bulk downloading all episodes of a podcast</a></h2>
             </div> <!-- card-header -->
@@ -2022,7 +2268,7 @@ for my $entry ( $feed-&gt;entries ) {
      on Sunday 03 January 2021 14:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/phishing-attack-on-cpan-authors">Phishing Attack on CPAN Authors</a></h2>
             </div> <!-- card-header -->
@@ -2048,7 +2294,7 @@ for my $entry ( $feed-&gt;entries ) {
      on Sunday 03 January 2021 10:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/01/03/cpan-vs-hackage-releases-part-1/">CPAN vs Hackage releases, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -2091,7 +2337,7 @@ COUNT
      on Sunday 03 January 2021 04:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/10-best-perl-distributions-created-at.html">10 best perl distributions created at 2020 (metacpan rating)</a></h2>
             </div> <!-- card-header -->
@@ -2103,7 +2349,7 @@ COUNT
      on Saturday 02 January 2021 15:17</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/metacpan-most-voted-distributions-in.html">metacpan most voted distributions in 2020</a></h2>
             </div> <!-- card-header -->
@@ -2115,7 +2361,7 @@ COUNT
      on Saturday 02 January 2021 15:08</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-01-frohes-neues-jahr">Frohes Neues Jahr 2021</a></h2>
             </div> <!-- card-header -->
@@ -2128,7 +2374,7 @@ Das in vielerlei Hinsicht ungewöhnliche Jahr 2020 ist vorbei. Wir wünschen all
      on Friday 01 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/01/01/list-of-new-cpan-distributions-dec-2020/">List of new CPAN distributions – Dec 2020</a></h2>
             </div> <!-- card-header -->
@@ -2853,7 +3099,7 @@ Das in vielerlei Hinsicht ungewöhnliche Jahr 2020 ist vorbei. Wir wünschen all
      on Friday 01 January 2021 00:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/xtrp/three-quick-programs-to-compute-trig-functions-in-python-javascript-perl-with-maclaurin-series-4ce9">Programs to Compute Trig Functions in Python, JavaScript, &amp; Perl (with Maclaurin Series)</a></h2>
             </div> <!-- card-header -->
@@ -3172,7 +3418,7 @@ i_start is the exponent and factorial base in the first term
      on Thursday 31 December 2020 21:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/newperluserssurvey">Coding in Perl? What support do you need?</a></h2>
             </div> <!-- card-header -->
@@ -3213,7 +3459,7 @@ i_start is the exponent and factorial base in the first term
      on Thursday 31 December 2020 12:16</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/evaluate-project">Evaluate Perl project for new client - assessment</a></h2>
             </div> <!-- card-header -->
@@ -3231,7 +3477,7 @@ These were almost always old projects that needed some new feature added.
      on Wednesday 30 December 2020 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-093-1dd9">Weekly Challenge 093</a></h2>
             </div> <!-- card-header -->
@@ -3386,7 +3632,7 @@ Paths: (1, 2, 4), (1, 3, 5), (1, 3, 6)
      on Tuesday 29 December 2020 11:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2020-12-29-cpan-update-november-dezember">CPAN-Updates November/Dezember 2020</a></h2>
             </div> <!-- card-header -->
@@ -3399,7 +3645,7 @@ Auch in den letzten beiden Monaten dieses Jahres waren wir nicht ganz untätig �
      on Tuesday 29 December 2020 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2020-12-28-gitlab-schulung">Teaser: Gitlab und Perl</a></h2>
             </div> <!-- card-header -->
@@ -3412,7 +3658,7 @@ Gitlab bietet viel Funktionalität, die für Perl-Projekte sinnvoll genutzt werd
      on Monday 28 December 2020 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/perl-core-development-fund">Perl Core Development Fund</a></h2>
             </div> <!-- card-header -->
@@ -3444,7 +3690,7 @@ Gitlab bietet viel Funktionalität, die für Perl-Projekte sinnvoll genutzt werd
      on Tuesday 22 December 2020 21:15</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/plack-app-cgibin">Running CGI sccript as a Plack application with Plack::App::CGIBin</a></h2>
             </div> <!-- card-header -->
@@ -3460,7 +3706,7 @@ Plackup using <a href="https://metacpan.org/pod/Plack::App::CGIBin">Plack::App::
      on Sunday 20 December 2020 16:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2020/12/rtcpanorg-sunset.html">rt.cpan.org will sunset on March 1st, 2021</a></h2>
             </div> <!-- card-header -->
@@ -3472,7 +3718,7 @@ Plackup using <a href="https://metacpan.org/pod/Plack::App::CGIBin">Plack::App::
      on Friday 04 December 2020 17:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlhacks.com/2020/12/replacing-cpan-rt/">Replacing CPAN RT</a></h2>
             </div> <!-- card-header -->
@@ -3503,7 +3749,7 @@ Plackup using <a href="https://metacpan.org/pod/Plack::App::CGIBin">Plack::App::
      on Wednesday 16 December 2020 17:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2020-12-15-einfuehrung-test-class-moose">Einführung in Test::Class::Moose</a></h2>
             </div> <!-- card-header -->
@@ -3516,7 +3762,7 @@ Mit Test::Class::Moose können Entwickler die Mittel von Moose nutzen, um ihre T
      on Tuesday 15 December 2020 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2020/12/13#pwc090">Perl Weekly Challenge 090</a></h2>
             </div> <!-- card-header -->
@@ -3608,7 +3854,7 @@ $ perl perl/ch-2.pl
      on Sunday 13 December 2020 18:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/closures-as-objects/">Closures as objects</a></h2>
             </div> <!-- card-header -->
@@ -3887,7 +4133,7 @@ moose-set   7886981/s         85%          0%          --
      on Sunday 13 December 2020 12:57</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/do">do</a></h2>
             </div> <!-- card-header -->
@@ -3911,7 +4157,7 @@ Here is how <b>do</b> reports problems.
      on Sunday 13 December 2020 10:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_74">
+          <div class="card" id="card_75">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2020_12_aoc_day_12.html">Advent of Code Day 12 - sailing to a pause</a></h2>
             </div> <!-- card-header -->
@@ -3993,115 +4239,6 @@ my $sc = 0;</code></pre>
      on Saturday 12 December 2020 22:28</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_75">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-11">Maintaining Perl 5 (Tony Cook): November 2020 Grant Report</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-     <p>This is a monthly report by Tony Cook on his grant under <a href="http://www.perlfoundation.org/perl_5_core_maintenance_fund">Perl 5 Core Maintenance Fund</a>.
-We thank the TPF sponsors to make this grant possible.</p>
-
-<pre>
-[Hours]         [Activity]
-  2.08          more win32 test noise, fix some, PR 377 for EU::MM,
-                File::Path bug report cpan#133671
-  1.32          #16825 research
-  4.43          #17296 find another issue, work on a test and fix
-                #17296 more fixes, make PR #18327
-  1.18          go through PRs, checking #17724 (ask sawyerx for a
-                comment), #17848 (comment), #17909 (some research), #17999
-                review and some testing
-  1.70          #17926 research
-                #17926 rebase, re-test and apply to blead, perldelta
-                updates
-  1.54          review notifications mostly #17999
-                #17999 comment
-                #17999 comment
- 10.58          #18005 more commit clean up, start a test run
-                #18005 review results, add Test::Harness fix, testing,
-                start a developer mode (symlinks enabled) test run
-                #18005 diagnose build failure (possibly from rebase), fix
-                and testing
-                #18005 rebase on recent fixes and testing
-                #18005 more testing, push for smoke-me
-                #18005 more re-work commits, minor fixes, testing, push
-                for smoke-me
-                #18005 review smoke results
-                #18005 more review smoke results, make PR 18306
-                #18005 re-work based on xenu’s comments
-                #18005 rebase win32-symlink code, make tests pass pre-
-                vista, including fixing a test bug
-  0.55          #18094 review and apply to blead
-  0.32          #18133 check and apply to blead
-  5.61          #18232 review some more, work up a erroneous case and
-                comment
-                #18232 review, work up a failing test case
-                #18232 debugging, testing, comment
-                #18232 testing, partly squash and apply to blead
-  3.56          review notifications,mostly #18256
-                #18256 code review, testing
-  0.80          #18262 review and briefly comment
-  0.47          #18272 rebase, squash and apply to blead
-  0.65          #18279 research and briefly comment
-  0.52          #18283 review and apply to blead
-  0.67          #18285 review, research and comment
-                #18285 comment
-  1.63          #18293 debug, work on a fix, add a test, make PR 18307
-  0.15          #18297 review and apply to blead
-  0.10          #18298 review and comment
-  1.35          #18308 review and comment
-                #18308 fix an unrelated failure
-  1.03          #18322 research and comment
-                #18322 comment
-  1.22          #18325 review, discussion with khw
-  1.08          #18337 revise IO documentation PR based on comments
-  0.45          #18339 review, test and apply to blead
-  0.12          #18341 check fix was merged and close
-  0.13          #18354 review, apply to blead
-  0.17          #18359 review and briefly comment
-  3.64          #18364 reproduce with gcc, try to figure out why MSVC
-                isn’t failing the same way
-                #18364 figure it out, discussion with khw
-                #18364 testing
-  1.93          look over OS X failures, reproduce and diagnose, work on
-                an EU::MM PR to fix it #379
-                my EU::MM #379: haarg made a better PR, close mine
-  0.95          :utf8  rebase
-  1.55          :utf8 more rebase
-  2.20          check other sysv ipc ops for UTF-8 issues, find one in
-                semop (test and fix), another in msgsnd/rcv (work on
-                tests)
-  2.23          document IO
-  1.45          dragonfly changes: review smokes, reproduce freebsd issue
-                (fixed in blead), rebase and apply to blead
-  1.07          fix msgsnd, fix msgrcv, fix shmwrite
-  2.30          fix read on close DATA, look at other test noise
-  0.17          list catchup
-  1.50          perldelta updates
-  0.40          review coverity results
-  0.43          review github notifications
-  0.45          review notifications
-  0.30          review trim discussion
-  2.63          track down Fedora sanitize failures, both internal libs
-                leaks
-  0.82          trim discussion, comment
-  0.60          win32-symlink: rebase, split out more pre-vista support
-  1.37          work on testing, fixes to the (non-symlink) Win32 build
-======
- 69.40 hours total
-</pre>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Matthias Bloch
-     on Saturday 12 December 2020 13:55</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
 
         </div><!-- col-md-8 -->
         <div class="col-md-2">
@@ -4120,7 +4257,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 12 January 2021 02:16 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 12 January 2021 03:29 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
