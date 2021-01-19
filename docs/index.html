@@ -55,6 +55,421 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-win32-gui-using-perl-and-win32-guitest-8bi">Automate Win32 GUI using Perl and Win32::GuiTest</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>We will be looking at how to automate windows application using Perl.<br>
+Again there are multiple ways to achieve this. Few of them are -</p>
+
+<ol>
+<li><a href="https://metacpan.org/pod/Win32::GuiTest">Win32::GuiTest</a></li>
+<li><a href="https://metacpan.org/pod/X11::GUITest">X11::GUITest</a></li>
+<li><a href="https://metacpan.org/pod/Win32::OLE">Win32::OLE</a></li>
+</ol>
+
+<p>There are other <a href="https://www.autohotkey.com/">autohotkey</a> and <a href="https://www.autoitscript.com/">autoitscript</a> which are quite good in windows automation. I encourage you to check them out.</p>
+
+<p>For this blog we will be using Win32::GuiTest for automating windows application.<br>
+We will start with the a small example which can later be extended.<br>
+Lets visit what we will be doing -</p>
+
+<ol>
+<li>We will open the given directory in windows explorer (Right now C:/Perl64/lib/)</li>
+<li>Search for a file or folder (e.g. strict.pm)</li>
+<li>Right-click on that particular file or folder(this is achieved using keyboard shortcuts)</li>
+<li>Select an option (right now 'Open with Notepad++')</li>
+<li>Wait for the action to be completed because of the selected option</li>
+<li>After the action is successful close it (close Notepad++)</li>
+<li>Close the windows explorer</li>
+</ol>
+
+<p>See, that quite simple thing we will be doing. We will take baby steps by starting with our first step.</p>
+<h2>
+  <a href="#1-creating-the-package-" class="anchor">
+  </a>
+  1. Creating the package -
+</h2>
+
+<p>We will be creating a package containing all our automation utilities(Win32Operations.pm).<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Win32Operations</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">new</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$class</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="p">{</span><span class="err">@</span><span class="nv">_</span><span class="p">};</span>
+    <span class="nb">bless</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$class</span><span class="p">;</span>
+    <span class="k">return</span> <span class="nv">$self</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<h2>
+  <a href="#2-starting-windows-explorer-operations-" class="anchor">
+  </a>
+  2. Starting Windows Explorer operations -
+</h2>
+
+<p>Now we have to open a dir in windows explorer. We will create a method for this.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">start_explorer_operations</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$root_directory</span><span class="p">,</span> <span class="nv">$filename_to_open</span><span class="p">,</span> <span class="nv">$max_retry_attempts</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+
+    <span class="c1"># Path to windows explorer. The Windows directory or SYSROOT(%windir%) is typically C:\Windows.</span>
+    <span class="k">my</span> <span class="nv">$explorer</span> <span class="o">=</span> <span class="p">"</span><span class="s2">%windir%</span><span class="se">\\</span><span class="s2">explorer.exe</span><span class="p">";</span>
+
+    <span class="c1"># Since we are on windows removed forward slash with backslashes</span>
+    <span class="nv">$root_directory</span> <span class="o">=~</span> <span class="sr">s/\//\\/g</span><span class="p">;</span>
+
+    <span class="c1"># seconds to spend between keyboard key presses</span>
+    <span class="k">my</span> <span class="nv">$key_press_delay</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+
+    <span class="c1"># this is the interval the tester sleeps before checking/closing</span>
+    <span class="c1"># any window; this is just for an eye effect so we can</span>
+    <span class="c1"># watch what happens</span>
+    <span class="k">my</span> <span class="nv">$wait_time_for_windows</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>
+
+    <span class="k">my</span> <span class="nv">$count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">while</span> <span class="p">(</span><span class="nv">$count</span> <span class="o">&lt;</span> <span class="nv">$max_retry_attempts</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nv">$count</span><span class="o">++</span><span class="p">;</span>
+        <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Opening dir: </span><span class="si">$root_directory</span><span class="s2"> in windows explorer</span><span class="p">");</span>
+        <span class="k">my</span> <span class="nv">$status_code</span> <span class="o">=</span> <span class="nb">system</span><span class="p">(</span><span class="nv">$explorer</span> <span class="p">,</span> <span class="p">"</span><span class="si">$root_directory</span><span class="p">");</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nv">$status_code</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">error</span><span class="p">(</span>
+                <span class="p">"</span><span class="s2">Unable to open 'explorer.exe' with mentioned dir : </span><span class="si">$root_directory</span><span class="s2">. Exited with return code :</span><span class="p">"</span><span class="o">.</span> <span class="nv">$status_code</span><span class="p">);</span>
+            <span class="k">next</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">elsif</span> <span class="p">(</span><span class="nv">$status_code</span> <span class="o">&amp;</span> <span class="mi">127</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">error</span><span class="p">("</span><span class="s2">Child died with signal : </span><span class="p">"</span> <span class="o">.</span> <span class="p">(</span><span class="nv">$status_code</span> <span class="o">&amp;</span> <span class="mi">127</span><span class="p">));</span>
+            <span class="k">next</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">else</span> <span class="p">{</span>
+            <span class="c1"># Windows explorer is opened hear and we are in the given dir</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>The comments are self explanatory. We will be opening windows explorer. It will retry for some  time in case it fails.<br>
+Also we have to cross check whether the open window is the location to our expected folder or not.<br>
+We will also give some time to system for this operation.<br>
+For this we will create a generalized method -<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">_wait_for</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$title</span><span class="p">,</span> <span class="nv">$wait_time</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$win</span><span class="p">;</span>
+    <span class="k">while</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1"># This will look for the window with the given title</span>
+        <span class="p">(</span><span class="nv">$win</span><span class="p">)</span> <span class="o">=</span> <span class="nv">FindWindowLike</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nv">$title</span><span class="p">);</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="nb">defined</span> <span class="nv">$win</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Found window with title : </span><span class="si">$title</span><span class="s2">.</span><span class="p">");</span>
+            <span class="k">last</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">else</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Unable to find window with title : </span><span class="si">$title</span><span class="s2">. Retrying...</span><span class="p">");</span>
+            <span class="nb">sleep</span> <span class="nv">$wait_time</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="nv">$win</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<h2>
+  <a href="#3-bringing-window-to-front-" class="anchor">
+  </a>
+  3. Bringing Window to front -
+</h2>
+
+<p>Now we are able to open the explorer windows and confirm that it is that window.<br>
+We will be trying to bring back that particular window to front. Reason being what if in between opening of explorer and starting our operation, our focus moved to somewhere else (someone clicked outside the explorer or open some other application). For this we will be creating another method -<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">_bring_window_to_front</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$window</span><span class="p">,</span> <span class="nv">$retry_attempts</span><span class="p">,</span> <span class="nv">$pause_between_operations</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$success</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$count</span>   <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">while</span> <span class="p">(</span><span class="nv">$count</span> <span class="o">&lt;</span> <span class="nv">$retry_attempts</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nv">$count</span><span class="o">++</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nv">SetActiveWindow</span><span class="p">(</span><span class="nv">$window</span><span class="p">))</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">* Successfully set the window id: </span><span class="si">$window</span><span class="s2"> active</span><span class="p">");</span>
+        <span class="p">}</span>
+        <span class="k">else</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nb">warn</span><span class="p">("</span><span class="s2">* Could not set the window id: </span><span class="si">$window</span><span class="s2"> active: $!</span><span class="p">");</span>
+            <span class="nv">$success</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nv">SetForegroundWindow</span><span class="p">(</span><span class="nv">$window</span><span class="p">))</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">* Window id: </span><span class="si">$window</span><span class="s2"> brought to foreground</span><span class="p">");</span>
+        <span class="p">}</span>
+        <span class="k">else</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nb">warn</span><span class="p">("</span><span class="s2">* Window id: </span><span class="si">$window</span><span class="s2"> could not be brought to foreground: $!</span><span class="p">");</span>
+            <span class="nv">$success</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="nb">sleep</span> <span class="nv">$pause_between_operations</span><span class="p">;</span>
+        <span class="k">my</span> <span class="nv">$foreground_window_id</span> <span class="o">=</span> <span class="nv">GetForegroundWindow</span><span class="p">();</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nv">$foreground_window_id</span> <span class="o">=~</span> <span class="sr">/$window/i</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">last</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">else</span> <span class="p">{</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">(</span>
+                <span class="p">"</span><span class="s2">Found - </span><span class="si">$foreground_window_id</span><span class="s2"> instead of expected - </span><span class="si">$window</span><span class="s2">. Will try again...</span><span class="p">");</span>
+            <span class="k">next</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="nv">$success</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>The system restricts which processes can set the foreground window. A process can set the foreground window only if one of the following conditions is true:</p>
+
+<ul>
+<li>The process is the foreground process.</li>
+<li>The process was started by the foreground process.</li>
+<li>The process received the last input event.</li>
+<li>There is no foreground process.</li>
+<li>The foreground process is being debugged.</li>
+<li>The foreground is not locked.</li>
+<li>The foreground lock time-out has expired.</li>
+<li>No menus are active.</li>
+</ul>
+
+<p>Please keep these in mind. Otherwise this method will fail.</p>
+
+<h2>
+  <a href="#4-opening-and-closing-in-notepad-" class="anchor">
+  </a>
+  4. Opening and closing in Notepad++ -
+</h2>
+
+<p>Now back to our 'else' part in 'start_explorer_operations' where we will be using these methods.<br>
+Now we have to search for our file, 'right-click' on it and select 'edit with Notepad++'.<br>
+After opening we will close it and close the explorer also.</p>
+
+<ol>
+<li>Searching file - We may have noticed that if we open explore and start typing our file name on our keyboard, window will automatically select that particular file. We will be using similar thing here.</li>
+<li>Right Click - we will be using <code>context menu key</code> on the keyboard (Another alternative - <strong>Shift + F10</strong>) for simulating right click.</li>
+<li>Open with Application - If you press <code>context menu key</code> or <code>Shift + F10</code>, you can see different options and each options have a underline on one of the characters. These are the shortcuts to select that particular option/ In our case the underline is under <code>N</code> meaning if we press <code>N</code> we will be selecting that option. After that we will press <code>Enter</code> to open it.</li>
+<li>Closing the application - We will be using the <code>close</code> command from the <code>System Menu</code> to close it. On the top of Notepad++ if you right click you can see the <code>System Menu</code>
+</li>
+</ol>
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">start_explorer_operations</span> <span class="p">{</span>
+    <span class="o">....</span>
+        <span class="p">}</span>
+        <span class="k">else</span> <span class="p">{</span>
+            <span class="k">my</span> <span class="nv">$window</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_wait_for</span><span class="p">(</span><span class="nv">basename</span><span class="p">(</span><span class="nv">$root_directory</span><span class="p">),</span> <span class="nv">$wait_time_for_windows</span><span class="p">);</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Opened 'explorer.exe'. Window id : </span><span class="si">$window</span><span class="p">");</span>
+
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_bring_window_to_front</span><span class="p">(</span><span class="nv">$window</span><span class="p">,</span> <span class="nv">$max_retry_attempts</span><span class="p">,</span> <span class="nv">$wait_time_for_windows</span><span class="p">);</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Opening the file in Notepad++...</span><span class="p">");</span>
+
+            <span class="c1"># This will use your keyboard to</span>
+            <span class="c1"># Write the 'filename' to search</span>
+            <span class="c1"># Right click on it(context menu) - {APP}</span>
+            <span class="c1"># Select 'N' for Notepad++ and press 'Enter' to open</span>
+            <span class="c1"># Replace 'N' with your own application shortcut if you are using something other application</span>
+            <span class="k">my</span> <span class="nv">@keys</span> <span class="o">=</span> <span class="p">("</span><span class="si">$filename_to_open</span><span class="p">",</span> <span class="p">"</span><span class="s2">{APP}</span><span class="p">",</span> <span class="p">"</span><span class="s2">N</span><span class="p">",</span> <span class="p">"</span><span class="s2">{ENTER}</span><span class="p">");</span>
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_keys_press</span><span class="p">(</span><span class="o">\</span><span class="nv">@keys</span><span class="p">,</span> <span class="nv">$key_press_delay</span><span class="p">);</span>
+
+            <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Opened the file in Notepad++. Closing it...</span><span class="p">");</span>
+            <span class="c1"># Checking wheteher we are actually able to open Notepad++ or not</span>
+            <span class="k">my</span> <span class="nv">$opened_explore_window</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_wait_for</span><span class="p">(</span><span class="nv">$filename_to_open</span><span class="p">,</span> <span class="nv">$wait_time_for_windows</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nv">$opened_explore_window</span><span class="p">)</span> <span class="p">{</span>
+                <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nb">warn</span><span class="p">("</span><span class="s2">Cannot find window with title/caption </span><span class="si">$filename_to_open</span><span class="p">");</span>
+                <span class="k">next</span><span class="p">;</span>
+            <span class="p">}</span>
+            <span class="k">else</span> <span class="p">{</span>
+               <span class="c1"># We will come here when we successfully opened the file in Notepad++</span>
+               <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span>
+                    <span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Window handle of </span><span class="si">$filename_to_open</span><span class="s2"> is </span><span class="p">"</span> <span class="o">.</span> <span class="nv">$opened_explore_window</span><span class="p">);</span>
+                <span class="k">print</span> <span class="nv">$opened_explore_window</span><span class="p">;</span>
+                <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_bring_window_to_front</span><span class="p">(</span><span class="nv">$opened_explore_window</span><span class="p">,</span> <span class="nv">$max_retry_attempts</span><span class="p">,</span>
+                    <span class="nv">$wait_time_for_windows</span><span class="p">);</span>
+                <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Closing Notepad++ window...</span><span class="p">");</span>
+                <span class="nv">MenuSelect</span><span class="p">("</span><span class="s2">&amp;Close</span><span class="p">",</span> <span class="mi">0</span><span class="p">,</span> <span class="nv">GetSystemMenu</span><span class="p">(</span><span class="nv">$opened_explore_window</span><span class="p">,</span> <span class="mi">0</span><span class="p">));</span>
+                <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Bringing Explorer window to front...</span><span class="p">");</span>
+                <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_bring_window_to_front</span><span class="p">(</span><span class="nv">$window</span><span class="p">,</span> <span class="nv">$max_retry_attempts</span><span class="p">,</span> <span class="nv">$wait_time_for_windows</span><span class="p">);</span>
+                <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">logger</span><span class="p">'}</span><span class="o">-&gt;</span><span class="nv">info</span><span class="p">("</span><span class="s2">Closing Explorer window...</span><span class="p">");</span>
+
+                <span class="c1"># There are different way to close windows File explorer -</span>
+                <span class="c1"># 1. Alt+F4 (Will close anything on the top - little risky)</span>
+                <span class="c1"># 2. Alt+F, then C</span>
+                <span class="c1"># 3. CTRL+w (only closes the current files you're working on but leaves the program open)</span>
+                <span class="nv">SendKeys</span><span class="p">("</span><span class="s2">^w</span><span class="p">");</span>
+                <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+<p>Again, the comments are self explanatory. Another thing to note here is that, there are various ways to close the application. One of the common one is <code>Alt + F4</code>. But is it also risky. Reason being it can close anything on the top, anything.<br>
+What if on top there is some other application which you don't want to close.<br>
+Better to use <code>context menu</code> or application defined close.</p>
+<h2>
+  <a href="#5-using-the-module-" class="anchor">
+  </a>
+  5. Using the module -
+</h2>
+
+<p>Now we have the module ready. Lets create a perl script and try to utilize the methods which we have created(Win32Operations.pm). We will be using <a href="https://metacpan.org/pod/Log::Log4perl">Log4perl</a> for our logging. You can use anyone of your choice.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Log::</span><span class="nv">Log4perl</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">Cwd</span> <span class="sx">qw( abs_path )</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">File::</span><span class="nv">Basename</span> <span class="sx">qw( dirname )</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">lib</span> <span class="nv">dirname</span><span class="p">(</span><span class="nv">abs_path</span><span class="p">(</span><span class="err">$</span><span class="mi">0</span><span class="p">));</span>
+
+<span class="k">use</span> <span class="nv">Win32Operations</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">initialize_logger</span> <span class="p">{</span>
+
+    <span class="c1"># initialize logger, you can put this in config file also</span>
+    <span class="k">my</span> <span class="nv">$conf</span> <span class="o">=</span> <span class="sx">qq(
+            log4perl.category                   = INFO, Logfile, Screen
+            log4perl.appender.Logfile           = Log::Log4perl::Appender::File
+            log4perl.appender.Logfile.filename  = win32op.log
+            log4perl.appender.Logfile.mode      = write
+            log4perl.appender.Logfile.autoflush = 1
+            log4perl.appender.Logfile.buffered  = 0
+            log4perl.appender.Logfile.layout    = Log::Log4perl::Layout::PatternLayout
+            log4perl.appender.Logfile.layout.ConversionPattern = [%d{ISO8601} %p] [%r] (%F{3} line %L)&gt; %m%n
+            log4perl.appender.Screen            = Log::Log4perl::Appender::Screen
+            log4perl.appender.Screen.stderr     = 0
+            log4perl.appender.Screen.layout     = Log::Log4perl::Layout::SimpleLayout
+        )</span><span class="p">;</span>
+    <span class="nn">Log::</span><span class="nv">Log4perl</span><span class="o">-&gt;</span><span class="nv">init</span><span class="p">(</span><span class="o">\</span><span class="nv">$conf</span><span class="p">);</span>
+    <span class="k">my</span> <span class="nv">$logger</span> <span class="o">=</span> <span class="nn">Log::</span><span class="nv">Log4perl</span><span class="o">-&gt;</span><span class="nv">get_logger</span><span class="p">;</span>
+    <span class="nv">$</span><span class="nn">Log::Log4perl::DateFormat::</span><span class="nv">GMTIME</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="k">return</span> <span class="nv">$logger</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">my</span> <span class="nv">$logger</span>    <span class="o">=</span> <span class="nv">initialize_logger</span><span class="p">();</span>
+<span class="k">my</span> <span class="nv">$win32_obj</span> <span class="o">=</span> <span class="nv">Win32Operations</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">("</span><span class="s2">logger</span><span class="p">"</span> <span class="o">=&gt;</span> <span class="nv">$logger</span><span class="p">);</span>
+
+<span class="c1"># This will open the given dir in windows explorer</span>
+<span class="c1"># Right click on the given filename and open it in Notepad++ and then close it.</span>
+<span class="k">my</span> <span class="nv">$input_dir</span>          <span class="o">=</span> <span class="p">"</span><span class="s2">C:/Program Files/Notepad++</span><span class="p">";</span>
+<span class="k">my</span> <span class="nv">$filename_to_open</span>   <span class="o">=</span> <span class="p">"</span><span class="s2">readme.txt</span><span class="p">";</span>
+<span class="k">my</span> <span class="nv">$max_retry_attempts</span> <span class="o">=</span> <span class="mi">5</span><span class="p">;</span>
+
+<span class="nv">$win32_obj</span><span class="o">-&gt;</span><span class="nv">start_explorer_operations</span><span class="p">(</span><span class="nv">$input_dir</span><span class="p">,</span> <span class="nv">$filename_to_open</span><span class="p">,</span> <span class="nv">$max_retry_attempts</span><span class="p">);</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>And we are done. You can run this script from your terminal and test this. The full code for reference is also available at <a href="https://github.com/rai-gaurav/perl-toolkit/tree/master/Win32">Github</a> for your reference.</p>
+
+<p>Perl onion logo taken from <a href="https://github.com/dnmfarrell/Perl-Icons/blob/master/Icons/Perl_Onion_Color.svg">here</a><br>
+Windows logo taken from <a href="https://docs.microsoft.com">here</a></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Gaurav Rai
+     on Tuesday 19 January 2021 16:44</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-19-geodaten-bilder-videos-exif">Geodaten in Bildern und Videos können viel über Nutzer verraten</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -66,7 +481,7 @@ Am vorvergangenen Wochenende (9./10. Januar 2021) gab es relativ viel Wirbel um 
      on Tuesday 19 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/scrapping-google-scholar-with-perl-and-mojo-4neg">Scrapping Google Scholar with Perl and Mojo</a></h2>
             </div> <!-- card-header -->
@@ -402,7 +817,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 15:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/vwg">If it was Good Enough for Mozart - Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -414,7 +829,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/zo0">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -426,7 +841,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xg1">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -438,7 +853,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/r3o">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -450,7 +865,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xgd">Big Dividends, Bigger Opportunity! Perl role with multiple location options</a></h2>
             </div> <!-- card-header -->
@@ -462,7 +877,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -474,7 +889,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -486,7 +901,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -498,7 +913,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -510,7 +925,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/charlotte-pm/events/275282889">Charlotte Perl Mongers - Using the ActiveState Platform</a></h2>
             </div> <!-- card-header -->
@@ -522,7 +937,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -534,7 +949,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/daily-activity.html">Daily Activity </a></h2>
             </div> <!-- card-header -->
@@ -546,7 +961,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/which-courses-to-record.html">Which courses to record?</a></h2>
             </div> <!-- card-header -->
@@ -558,7 +973,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -570,7 +985,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/p/parallel-processing-in-perl">New Course: Parallel programming in Perl</a></h2>
             </div> <!-- card-header -->
@@ -582,7 +997,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.linkedin.com/feed/update/urn:li:activity:6751738129025134592">In which subject in Perl do you feel you need better knowledge?</a></h2>
             </div> <!-- card-header -->
@@ -594,7 +1009,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/01/11/PWC95/">Perl Weekly Challenge 95.</a></h2>
             </div> <!-- card-header -->
@@ -606,7 +1021,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-095-2jkl">Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -618,7 +1033,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/01/Perl_Weekly_Challenge_95__Palindrome_Stack.html">Perl Weekly Challenge 95: Palindrome Stack</a></h2>
             </div> <!-- card-header -->
@@ -630,7 +1045,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/01/11/PerlWeeklyChallenge95.html">Perl Weekly Challenge 95: palindrome numbers and stacks</a></h2>
             </div> <!-- card-header -->
@@ -642,7 +1057,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-95-palindrome-numbers-and-demo-stack.html">Perl Weekly Challenge 95: Palindrome Numbers and Demo Stack</a></h2>
             </div> <!-- card-header -->
@@ -654,7 +1069,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/14/demo-stack/">PWC095 - Demo Stack</a></h2>
             </div> <!-- card-header -->
@@ -666,7 +1081,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/13/palindrome-number/">PWC095 - Palindrome Number</a></h2>
             </div> <!-- card-header -->
@@ -678,7 +1093,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-95.html">Perl weekly challenge 95</a></h2>
             </div> <!-- card-header -->
@@ -690,7 +1105,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://gugod.org/2021/01/pwc-095-en/">Solving Perl Weekly Challenge 095 -- Palindrome Number and Stack</a></h2>
             </div> <!-- card-header -->
@@ -702,7 +1117,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/01/16/judging-jenga-symmetries/">Judging Jenga Symmetries</a></h2>
             </div> <!-- card-header -->
@@ -714,7 +1129,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/palindromic-stack.html">Palindromic Stack with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -726,7 +1141,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/17">Perl Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -738,7 +1153,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/16/perl-weekly-challenge-95-part-2/">Perl Weekly Challenge 95, Part 2</a></h2>
             </div> <!-- card-header -->
@@ -750,7 +1165,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/14/perl-weekly-challenge-95-part-1/">Perl Weekly Challenge 95, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -762,7 +1177,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-chellanege-095/">Perl Weekly Challenge 95</a></h2>
             </div> <!-- card-header -->
@@ -774,7 +1189,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-093">Perl Review - Perl Weekly Challenge - 093</a></h2>
             </div> <!-- card-header -->
@@ -786,7 +1201,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-095">RECAP - The Weekly Challenge - 095</a></h2>
             </div> <!-- card-header -->
@@ -798,7 +1213,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-096">The Weekly Challenge - 096</a></h2>
             </div> <!-- card-header -->
@@ -810,7 +1225,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-12">Maintaining Perl 5 (Tony Cook): December 2020 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -822,7 +1237,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakucourse1">Raku Course January 2021 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -834,7 +1249,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126974">How to display a Tk window without waiting for user input</a></h2>
             </div> <!-- card-header -->
@@ -846,7 +1261,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126918">SSL certificate store for a Perlbrew install</a></h2>
             </div> <!-- card-header -->
@@ -858,7 +1273,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-firefox-browser-with-perl-5036">Automate Firefox browser with Perl</a></h2>
             </div> <!-- card-header -->
@@ -870,7 +1285,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/simple-live-chart-using-mojolicious-1iej">Simple live chart using Mojolicious </a></h2>
             </div> <!-- card-header -->
@@ -882,7 +1297,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/using-google-recaptcha-with-perl-49hd">Using google reCaptcha with Perl </a></h2>
             </div> <!-- card-header -->
@@ -894,7 +1309,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/extracting-the-list-of-o-reilly-animals/">Extracting the list of O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -906,7 +1321,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://courses.code-maven.com/p/testing-in-perl">Testing in Perl</a></h2>
             </div> <!-- card-header -->
@@ -918,7 +1333,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kwj92l/perl_steering_council_meeting_002_20210112/">Perl Steering Council, meeting #002, 2021-01-12</a></h2>
             </div> <!-- card-header -->
@@ -930,7 +1345,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxqbjk/in_which_subject_in_perl_do_you_feel_youd_need/">In which subject in Perl do you feel you'd need better knowledge?</a></h2>
             </div> <!-- card-header -->
@@ -942,7 +1357,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxy2zw/datetime_and_sunmoon_events_calculations_way/">Date-time and sun-moon events calculations way before epoch (libraries advice)</a></h2>
             </div> <!-- card-header -->
@@ -954,7 +1369,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxx4uw/perl_beginner_here_looking_for_guidance/">Perl Beginner Here, Looking for Guidance.</a></h2>
             </div> <!-- card-header -->
@@ -966,7 +1381,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/18/aoc2016-11-new-successors/">AoC 2016/11 - New successors</a></h2>
             </div> <!-- card-header -->
@@ -978,7 +1393,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/17/aoc2016-11-new-heuristic/">AoC 2016/11 - New heuristic</a></h2>
             </div> <!-- card-header -->
@@ -990,7 +1405,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/16/aoc2016-11-new-identifier/">AoC 2016/11 - New identifier</a></h2>
             </div> <!-- card-header -->
@@ -1002,7 +1417,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/15/aoc2016-11-new-parsing/">AoC 2016/11 - New parsing</a></h2>
             </div> <!-- card-header -->
@@ -1014,7 +1429,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/12/aoc2016-11-new-representation/">AoC 2016/11 - New representation</a></h2>
             </div> <!-- card-header -->
@@ -1026,7 +1441,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/11/aoc2016-11-new-algorithm/">AoC 2016/11 - New algorithm: A*</a></h2>
             </div> <!-- card-header -->
@@ -1038,7 +1453,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126847">First steps with Marpa::R2 and BNF</a></h2>
             </div> <!-- card-header -->
@@ -1050,7 +1465,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/refactoring-code-snippet">Refactoring code snippet</a></h2>
             </div> <!-- card-header -->
@@ -1062,7 +1477,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/fosdem_2021_speaker_guidance">FOSDEM 2021 - guidance for speakers</a></h2>
             </div> <!-- card-header -->
@@ -1074,7 +1489,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-49-of-perl-workflow-be2">Release 1.49 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -1086,7 +1501,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/stats.html">Blogs</a></h2>
             </div> <!-- card-header -->
@@ -1098,7 +1513,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/metacpan.html">CPAN uploads</a></h2>
             </div> <!-- card-header -->
@@ -1110,7 +1525,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/perl-532/?utm_source=Perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-532-ad&utm_campaign=user-acquisition">New Year. New Perl.</a></h2>
             </div> <!-- card-header -->
@@ -1127,7 +1542,7 @@ A new way to install, work with, and even <a href="https://www.activestate.com/p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/495.html">#495 - Collect O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -1144,7 +1559,7 @@ A new way to install, work with, and even <a href="https://www.activestate.com/p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/17#pwc095">Perl Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -1267,7 +1682,7 @@ $ perl -Iperl perl/ch-2.pl
      on Sunday 17 January 2021 14:49</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-firefox-browser-with-perl-5036">Automate Firefox browser with Perl</a></h2>
             </div> <!-- card-header -->
@@ -1451,7 +1866,7 @@ Firefox logo taken from <a href="https://www.mozilla.org/en-US/firefox/new/">her
      on Sunday 17 January 2021 17:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-095-2jkl">Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -1576,7 +1991,7 @@ Firefox logo taken from <a href="https://www.mozilla.org/en-US/firefox/new/">her
      on Sunday 17 January 2021 05:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-12">Maintaining Perl 5 (Tony Cook): December 2020 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -1649,7 +2064,7 @@ applied
      on Sunday 17 January 2021 01:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxiv-15-cpan-great-modules-released.html">(cccxxiv) 15 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1661,7 +2076,7 @@ applied
      on Saturday 16 January 2021 23:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdl-metacpan-weekly-report-mojolicious.html">(cdl) metacpan weekly report - Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -1673,7 +2088,7 @@ applied
      on Saturday 16 January 2021 23:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlxxiv-stackoverflow-perl-report.html">(cdlxxiv) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -1685,7 +2100,7 @@ applied
      on Saturday 16 January 2021 23:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_committee_expanded_role">Grants Committee Takes on Expanded Role in TPF</a></h2>
             </div> <!-- card-header -->
@@ -1725,7 +2140,7 @@ applied
      on Saturday 16 January 2021 18:55</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-49-of-perl-workflow-be2">Release 1.49 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -1844,405 +2259,6 @@ applied
 
               <p class="text-right"><small>Published by jonasbn
      on Saturday 16 January 2021 15:57</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_73">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/raigaurav/using-google-recaptcha-v3-with-perl-5506">Using google reCaptcha v3 with Perl</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>In the previous article <a href="https://dev.to/raigaurav/using-google-recaptcha-with-perl-49hd">Using google reCaptcha with Perl </a> we talked about reCAPTCHA v2. This time we will take the same example and try to use reCAPTCHA v3 instead.<br>
-So lets get started</p>
-<h2>
-  <a href="#1-sign-up-for-an-api-key-pair" class="anchor">
-  </a>
-  1. Sign up for an API key pair
-</h2>
-
-<p>We have to register our website at - <a href="https://www.google.com/recaptcha/admin/">https://www.google.com/recaptcha/admin/</a>. Provide it with the following parameters</p>
-
-<ul>
-<li>Label - Some name for this</li>
-<li>reCAPTCHA type - select v3.</li>
-<li>Domains - Your domain name (e.g. myname.com). For local host write "localhost". You can add multiple domain also.
-<img src="https://res.cloudinary.com/practicaldev/image/fetch/s--RHQYpO2Y--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/x308yxgb1mu6k2m253nx.PNG" alt="Alt Text">
-</li>
-</ul>
-
-<p>After submit you will get "Site Key" and "Secret Key".<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--F1frDuAq--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/ahh53g220ypzq3ex1zhs.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--F1frDuAq--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/ahh53g220ypzq3ex1zhs.PNG" alt="Alt Text"></a></p>
-
-<p>We will be using "Site key" on client side and "Secret key" on server side.</p>
-<h2>
-  <a href="#2-adding-the-widget-on-client-side" class="anchor">
-  </a>
-  2. Adding the widget on client side
-</h2>
-
-<p>We will be using the same example as we have done for v2. For now, I will be putting it on Login page but one advantage of v3 is it can be used on any page and will not interfere with the user. I encourage you to check out the reCAPTCHA v3 <a href="https://developers.google.com/recaptcha/docs/v3">documentation</a> for more info. <br>
-For using the reCAPTCHA in your web page we have to include the js file.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight html"><code><span class="nt">&lt;head&gt;</span>
-    <span class="nt">&lt;script </span><span class="na">src=</span><span class="s">"https://www.google.com/recaptcha/api.js?onload=onloadCallback&amp;render=&lt;Your Site Key&gt;"</span><span class="nt">&gt;&lt;/script&gt;&lt;/script&gt;</span>
-<span class="nt">&lt;/head&gt;</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>We will be adding below code in the web page. You can add these anywhere in your web page.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight html"><code>    <span class="nt">&lt;input</span> <span class="na">type=</span><span class="s">"hidden"</span> <span class="na">id=</span><span class="s">"g-recaptcha-response"</span> <span class="na">name=</span><span class="s">"g-recaptcha-response"</span><span class="nt">&gt;</span>
-    <span class="nt">&lt;input</span> <span class="na">type=</span><span class="s">"hidden"</span> <span class="na">name=</span><span class="s">"action"</span> <span class="na">value=</span><span class="s">"validate_captcha"</span><span class="nt">&gt;</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>As mentioned before, v3 doesn't interfere with user, instead it will give a score between 0.0 to 1.0 depending upon the user(Just like probability). 1.0 is very likely a good interaction, 0.0 is very likely a bot. Its up to the site owner to decide what they want to do when they encounter the bot. In v3 the decision making responsibility is with the site owner. Google reCAPTCHA v3 will not block anyone irrespective of user.</p>
-
-<p>Since the decision is up to site owner, you don't want to bind your action on a button click (where a user click on the button then you decide whether it is a bot or not). Instead you will be checking starting from page load and as soon as you came to know it is a bot you can take appropriate action (kicking him out of the page etc.). We will be using little bit of JavaScript for this check.</p>
-
-<p>Again, we will be using <a href="https://docs.mojolicious.org/Mojo/Template">Mojo::Template</a> and <a href="https://docs.mojolicious.org/Mojolicious/Plugin/TagHelpers">Mojolicious::Plugin::TagHelpers</a> to generate client side code.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="o">&lt;</span><span class="nv">html</span><span class="o">&gt;</span>
-    <span class="o">&lt;</span><span class="nv">head</span><span class="o">&gt;</span>
-        <span class="o">&lt;</span><span class="nv">script</span> <span class="nv">src</span><span class="o">=</span><span class="p">"</span><span class="s2">https://www.google.com/recaptcha/api.js?onload=onloadCallback&amp;render=&lt;Your Site Key&gt;</span><span class="p">"</span><span class="o">&gt;&lt;/</span><span class="nv">script</span><span class="o">&gt;</span>
-    <span class="o">&lt;/</span><span class="nv">head</span><span class="o">&gt;</span>
-    <span class="o">&lt;</span><span class="nv">body</span><span class="o">&gt;</span>
-        <span class="o">%=</span> <span class="nv">t</span> <span class="s">h1</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Login</span><span class="p">'</span>
-        <span class="o">%</span> <span class="k">if</span> <span class="p">(</span><span class="nv">flash</span><span class="p">('</span><span class="s1">error</span><span class="p">'))</span> <span class="p">{</span>
-            <span class="o">&lt;</span><span class="nv">h2</span> <span class="nv">style</span><span class="o">=</span><span class="p">"</span><span class="s2">color:red</span><span class="p">"</span><span class="o">&gt;&lt;%=</span> <span class="nv">flash</span><span class="p">('</span><span class="s1">error</span><span class="p">')</span> <span class="o">%&gt;&lt;/</span><span class="nv">h2</span><span class="o">&gt;</span>
-        <span class="o">%</span> <span class="p">}</span>
-        <span class="o">%=</span> <span class="nv">form_for</span> <span class="s">login</span> <span class="o">=&gt;</span> <span class="p">(</span><span class="s">method</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">post</span><span class="p">')</span> <span class="o">=&gt;</span> <span class="nv">begin</span>
-            <span class="o">&lt;</span><span class="nv">label</span><span class="o">&gt;</span><span class="nv">username:</span><span class="o">&lt;/</span><span class="nv">label</span><span class="o">&gt;</span> <span class="o">&lt;%=</span> <span class="nv">text_field</span> <span class="p">'</span><span class="s1">username</span><span class="p">'</span> <span class="o">%&gt;</span>
-        <span class="o">&lt;</span><span class="nv">br</span> <span class="sr">/&gt;&lt;br /</span><span class="o">&gt;</span>
-            <span class="o">&lt;</span><span class="nv">label</span><span class="o">&gt;</span><span class="nv">password:</span><span class="o">&lt;/</span><span class="nv">label</span><span class="o">&gt;</span> <span class="o">&lt;%=</span> <span class="nv">password_field</span> <span class="p">'</span><span class="s1">password</span><span class="p">'</span> <span class="o">%&gt;</span>
-        <span class="o">&lt;</span><span class="nv">br</span> <span class="sr">/&gt;&lt;br /</span><span class="o">&gt;</span>
-            <span class="o">&lt;</span><span class="nv">input</span> <span class="nv">type</span><span class="o">=</span><span class="p">"</span><span class="s2">hidden</span><span class="p">"</span> <span class="nv">id</span><span class="o">=</span><span class="p">"</span><span class="s2">g-recaptcha-response</span><span class="p">"</span> <span class="nv">name</span><span class="o">=</span><span class="p">"</span><span class="s2">g-recaptcha-response</span><span class="p">"</span><span class="o">&gt;</span>
-            <span class="o">&lt;</span><span class="nv">input</span> <span class="nv">type</span><span class="o">=</span><span class="p">"</span><span class="s2">hidden</span><span class="p">"</span> <span class="nv">name</span><span class="o">=</span><span class="p">"</span><span class="s2">action</span><span class="p">"</span> <span class="nv">value</span><span class="o">=</span><span class="p">"</span><span class="s2">validate_captcha</span><span class="p">"</span><span class="o">&gt;</span>
-        <span class="o">%=</span> <span class="nv">submit_button</span> <span class="p">'</span><span class="s1">Log in</span><span class="p">',</span> <span class="s">id</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">submit</span><span class="p">'</span>
-        <span class="o">%=</span> <span class="nv">end</span>
-        <span class="o">&lt;</span><span class="nv">script</span><span class="o">&gt;</span>
-            <span class="nv">function</span> <span class="nv">onloadCallback</span><span class="p">()</span> <span class="p">{</span>
-                <span class="nv">grecaptcha</span><span class="o">.</span><span class="nv">ready</span><span class="p">(</span><span class="nv">function</span><span class="p">()</span> <span class="p">{</span>
-                    <span class="nv">grecaptcha</span><span class="o">.</span><span class="nv">execute</span><span class="p">('</span><span class="s1">&lt;Your Site Key&gt;</span><span class="p">',</span> <span class="p">{</span><span class="nv">action:</span><span class="p">'</span><span class="s1">validate_captcha</span><span class="p">'})</span>
-                    <span class="o">.</span><span class="k">then</span><span class="p">(</span><span class="nv">function</span><span class="p">(</span><span class="nv">token</span><span class="p">)</span> <span class="p">{</span>
-                        <span class="nv">document</span><span class="o">.</span><span class="nv">getElementById</span><span class="p">('</span><span class="s1">g-recaptcha-response</span><span class="p">')</span><span class="o">.</span><span class="nv">value</span> <span class="o">=</span> <span class="nv">token</span><span class="p">;</span>
-                        <span class="sr">//</span> <span class="nv">Create</span> <span class="nv">an</span> <span class="nv">endpoint</span> <span class="nv">on</span> <span class="nv">your</span> <span class="nv">server</span> <span class="nv">to</span> <span class="nv">validate</span> <span class="nv">the</span> <span class="nv">token</span> <span class="ow">and</span> <span class="k">return</span> <span class="nv">the</span> <span class="nv">score</span>
-                        <span class="nv">fetch</span><span class="p">('</span><span class="s1">/recaptchav3-verify</span><span class="p">',</span> <span class="p">{</span>
-                            <span class="nv">method:</span> <span class="p">'</span><span class="s1">POST</span><span class="p">',</span>
-                            <span class="nv">headers:</span> <span class="p">{</span>
-                                <span class="p">'</span><span class="s1">Content-Type</span><span class="p">':</span> <span class="p">'</span><span class="s1">application/json</span><span class="p">',</span>
-                            <span class="p">},</span>
-                            <span class="nv">body:</span> <span class="nv">JSON</span><span class="o">.</span><span class="nv">stringify</span><span class="p">({'</span><span class="s1">token</span><span class="p">':</span> <span class="nv">token</span><span class="p">})</span>
-                        <span class="p">})</span>
-                        <span class="o">.</span><span class="k">then</span><span class="p">(</span><span class="s">response</span> <span class="o">=&gt;</span> <span class="nv">response</span><span class="o">.</span><span class="nv">json</span><span class="p">())</span>
-                        <span class="o">.</span><span class="k">then</span><span class="p">(</span><span class="s">data</span> <span class="o">=&gt;</span> <span class="p">{</span>
-                            <span class="k">if</span> <span class="p">(</span><span class="nv">data</span><span class="o">.</span><span class="nv">error</span> <span class="o">===</span> <span class="nv">true</span><span class="p">)</span> <span class="p">{</span>
-                                <span class="nv">alert</span><span class="p">(</span><span class="nv">data</span><span class="o">.</span><span class="nv">description</span> <span class="o">+</span> <span class="p">"</span><span class="s2"> Bot found.</span><span class="p">");</span>
-                            <span class="p">}</span>
-                            <span class="k">else</span> <span class="p">{</span>
-                                <span class="nv">console</span><span class="o">.</span><span class="nb">log</span><span class="p">('</span><span class="s1">reCaptcha verification : success</span><span class="p">');</span>
-                            <span class="p">}</span>
-                        <span class="p">})</span>
-                        <span class="o">.</span><span class="nv">catch</span><span class="p">((</span><span class="nv">error</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span>
-                            <span class="nv">console</span><span class="o">.</span><span class="nv">error</span><span class="p">('</span><span class="s1">Error:</span><span class="p">',</span> <span class="nv">error</span><span class="p">);</span>
-                        <span class="p">});</span>
-                    <span class="p">});</span>
-                <span class="p">});</span>
-            <span class="p">}</span>
-        <span class="o">&lt;/</span><span class="nv">script</span><span class="o">&gt;</span>
-    <span class="o">&lt;/</span><span class="nv">body</span><span class="o">&gt;</span>
-<span class="o">&lt;/</span><span class="nv">html</span><span class="o">&gt;</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>In summary, we are just creating a normal login form. One noted difference with the v2 version is - here we are calling endpoint <code>recaptchav3-verify</code> on page load only and based on json response, if it is normal user we will just write in console otherwise alert will appear saying its bot.</p>
-
-<h2>
-  <a href="#3-creating-server-side-and-validating" class="anchor">
-  </a>
-  3. Creating Server side and validating
-</h2>
-
-<p>We will just update the code we have written for v2<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Mojolicious::</span><span class="nv">Lite</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Mojo::</span><span class="nv">UserAgent</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">is_valid_captcha</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$c</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-
-    <span class="c1"># https://docs.mojolicious.org/Mojo/Message#json</span>
-    <span class="k">my</span> <span class="nv">$post_params</span> <span class="o">=</span> <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">req</span><span class="o">-&gt;</span><span class="nv">json</span><span class="p">;</span>
-    <span class="k">my</span> <span class="nv">$token</span>       <span class="o">=</span> <span class="nv">$post_params</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">token</span><span class="p">};</span>
-    <span class="k">my</span> <span class="nv">$captcha_url</span> <span class="o">=</span> <span class="p">'</span><span class="s1">https://www.google.com/recaptcha/api/siteverify</span><span class="p">';</span>
-    <span class="k">my</span> <span class="nv">$response</span>
-        <span class="o">=</span> <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">ua</span><span class="o">-&gt;</span><span class="nv">post</span><span class="p">(</span>
-        <span class="nv">$captcha_url</span> <span class="o">=&gt;</span> <span class="s">form</span> <span class="o">=&gt;</span> <span class="p">{</span><span class="s">response</span> <span class="o">=&gt;</span> <span class="nv">$token</span><span class="p">,</span> <span class="s">secret</span> <span class="o">=&gt;</span> <span class="nv">$ENV</span><span class="p">{'</span><span class="s1">CAPTCHA_V3_SECRET_KEY</span><span class="p">'}})</span>
-        <span class="o">-&gt;</span><span class="nv">result</span><span class="p">;</span>
-    <span class="k">if</span> <span class="p">(</span><span class="nv">$response</span><span class="o">-&gt;</span><span class="nv">is_success</span><span class="p">())</span> <span class="p">{</span>
-        <span class="k">my</span> <span class="nv">$out</span> <span class="o">=</span> <span class="nv">$response</span><span class="o">-&gt;</span><span class="nv">json</span><span class="p">;</span>
-
-        <span class="c1"># reCAPTCHA v3 returns a score -&gt; 1.0 is very likely a good interaction, 0.0 is very likely a bot</span>
-        <span class="k">if</span> <span class="p">(</span><span class="nv">$out</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">success</span><span class="p">}</span> <span class="o">&amp;&amp;</span> <span class="nv">$out</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">score</span><span class="p">}</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">)</span> <span class="p">{</span>
-            <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-        <span class="p">}</span>
-        <span class="k">else</span> <span class="p">{</span>
-            <span class="c1"># Its a bot</span>
-            <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-        <span class="p">}</span>
-    <span class="p">}</span>
-    <span class="k">else</span> <span class="p">{</span>
-        <span class="c1"># Connection to reCAPTCHA failed</span>
-        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-    <span class="p">}</span>
-<span class="p">}</span>
-
-<span class="c1"># Check for authentication</span>
-<span class="nv">helper</span> <span class="s">auth</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$c</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-
-    <span class="k">if</span> <span class="p">((</span><span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">param</span><span class="p">('</span><span class="s1">username</span><span class="p">')</span> <span class="ow">eq</span> <span class="p">'</span><span class="s1">admin</span><span class="p">')</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">param</span><span class="p">('</span><span class="s1">password</span><span class="p">')</span> <span class="ow">eq</span> <span class="p">'</span><span class="s1">admin</span><span class="p">'))</span> <span class="p">{</span>
-        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-    <span class="p">}</span>
-    <span class="k">else</span> <span class="p">{</span>
-        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-    <span class="p">}</span>
-<span class="p">};</span>
-
-<span class="nv">helper</span> <span class="s">ua</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$ua</span> <span class="o">=</span> <span class="nn">Mojo::</span><span class="nv">UserAgent</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">;</span>
-    <span class="nv">$ua</span><span class="o">-&gt;</span><span class="nv">transactor</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">('</span><span class="s1">Mozilla/5.0 (Windows NT 6.1; WOW64; rv:77.0) Gecko/20190101 Firefox/77.0</span><span class="p">');</span>
-    <span class="k">return</span> <span class="nv">$ua</span><span class="p">;</span>
-<span class="p">};</span>
-
-<span class="c1"># Different Routes</span>
-<span class="nv">get</span> <span class="p">'</span><span class="s1">/</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> 
-    <span class="k">my</span> <span class="nv">$c</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">render</span><span class="p">;</span>
-<span class="p">}</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">index</span><span class="p">';</span>
-
-<span class="nv">post</span> <span class="p">'</span><span class="s1">/login</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$c</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="k">if</span> <span class="p">(</span><span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">auth</span><span class="p">)</span> <span class="p">{</span>
-        <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">session</span><span class="p">(</span><span class="s">auth</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">);</span>
-        <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">flash</span><span class="p">(</span><span class="s">username</span> <span class="o">=&gt;</span> <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">param</span><span class="p">('</span><span class="s1">username</span><span class="p">'));</span>
-        <span class="k">return</span> <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">redirect_to</span><span class="p">('</span><span class="s1">home</span><span class="p">');</span>
-    <span class="p">}</span>
-    <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">flash</span><span class="p">('</span><span class="s1">error</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Wrong login/password</span><span class="p">');</span>
-    <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">redirect_to</span><span class="p">('</span><span class="s1">index</span><span class="p">');</span>
-<span class="p">}</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">login</span><span class="p">';</span>
-
-<span class="nv">post</span> <span class="p">'</span><span class="s1">/recaptchav3-verify</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$c</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="k">if</span> <span class="p">(</span><span class="nv">is_valid_captcha</span><span class="p">(</span><span class="nv">$c</span><span class="p">))</span> <span class="p">{</span>
-        <span class="k">return</span> <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">render</span><span class="p">(</span>
-            <span class="s">json</span> <span class="o">=&gt;</span> <span class="p">{</span>
-                      <span class="s">error</span> <span class="o">=&gt;</span> <span class="nn">Mojo::</span><span class="nv">JSON</span><span class="o">-&gt;</span><span class="nv">false</span>
-                    <span class="p">}</span>
-        <span class="p">);</span>
-    <span class="p">}</span>
-    <span class="k">else</span> <span class="p">{</span>
-        <span class="k">return</span> <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">render</span><span class="p">(</span>
-            <span class="s">json</span> <span class="o">=&gt;</span> <span class="p">{</span>
-                      <span class="s">error</span> <span class="o">=&gt;</span> <span class="nn">Mojo::</span><span class="nv">JSON</span><span class="o">-&gt;</span><span class="nv">true</span><span class="p">,</span>
-                      <span class="s">description</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Captcha verification failed.</span><span class="p">'</span>
-                    <span class="p">}</span>
-        <span class="p">);</span>
-    <span class="p">}</span>
-<span class="p">};</span>
-
-<span class="nv">get</span> <span class="p">'</span><span class="s1">/logout</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$c</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="nb">delete</span> <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">session</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">auth</span><span class="p">};</span>
-    <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">redirect_to</span><span class="p">('</span><span class="s1">index</span><span class="p">');</span>
-<span class="p">}</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">logout</span><span class="p">';</span>
-
-<span class="nv">under</span> <span class="k">sub </span><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$c</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="k">return</span> <span class="mi">1</span> <span class="k">if</span> <span class="p">(</span><span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">session</span><span class="p">('</span><span class="s1">auth</span><span class="p">')</span> <span class="sr">//</span> <span class="p">'')</span> <span class="ow">eq</span> <span class="p">'</span><span class="s1">1</span><span class="p">';</span>
-
-    <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">render</span><span class="p">('</span><span class="s1">denied</span><span class="p">');</span>
-<span class="p">};</span>
-
-<span class="nv">get</span> <span class="p">'</span><span class="s1">/home</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$c</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="nv">$c</span><span class="o">-&gt;</span><span class="nv">render</span><span class="p">();</span>
-<span class="p">}</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">home</span><span class="p">';</span>
-
-<span class="nv">app</span><span class="o">-&gt;</span><span class="nv">start</span><span class="p">;</span>
-
-<span class="cp">__DATA__
-
-@@ index.html.ep
-&lt;html&gt;
-    &lt;head&gt;
-        &lt;script src="https://www.google.com/recaptcha/api.js?onload=onloadCallback&amp;render=&lt;Your Site Key&gt;"&gt;&lt;/script&gt;
-    &lt;/head&gt;
-    &lt;body&gt;
-        ... as in Step 2
-    &lt;/body&gt;
-&lt;/html&gt;
-
-@@ home.html.ep
-%= t h1 =&gt; 'Home Page'
-&lt;h2 style="color:green"&gt;Hello &lt;%= flash('username') %&gt;&lt;/h2&gt;
-&lt;a href="&lt;%= url_for('logout') %&gt;"&gt;Logout&lt;/a&gt;
-
-@@ denied.html.ep
-%= t h2 =&gt; 'Access Denied'
-&lt;a href="&lt;%= url_for('index') %&gt;"&gt;Login&lt;/a&gt;
-</span></code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>Save the file and run below command on your terminal -<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code>morbo recaptcha_v2_verification.pl
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>One noticeable difference is addition of <code>recaptchav3-verify</code> route. We are just verifying the captcha by reading the post params and doing a post request on google api and checking the response for success. The response is a JSON object -<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="o">{</span>
-  <span class="s2">"success"</span>: <span class="nb">true</span>|false,      // whether this request was a valid reCAPTCHA token <span class="k">for </span>your site
-  <span class="s2">"score"</span>: number             // the score <span class="k">for </span>this request <span class="o">(</span>0.0 - 1.0<span class="o">)</span>
-  <span class="s2">"action"</span>: string            // the action name <span class="k">for </span>this request <span class="o">(</span>important to verify<span class="o">)</span>
-  <span class="s2">"challenge_ts"</span>: timestamp,  // timestamp of the challenge load <span class="o">(</span>ISO format yyyy-MM-dd<span class="s1">'T'</span>HH:mm:ssZZ<span class="o">)</span>
-  <span class="s2">"hostname"</span>: string,         // the <span class="nb">hostname </span>of the site where the reCAPTCHA was solved
-  <span class="s2">"error-codes"</span>: <span class="o">[</span>...]        // optional
-<span class="o">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>We are checking the score. If it is less than <strong>0.5</strong> we are considering it as bot. We are using the threshold as 0.5 here but you are free to choose depending upon whether you want to be strict or lenient.<br>
-From v3 <a href="https://developers.google.com/recaptcha/docs/v3">doc</a></p>
-
-<blockquote>
-<p>reCAPTCHA learns by seeing real traffic on your site. For this reason, scores in a staging environment or soon after implementing may differ from production. As reCAPTCHA v3 doesn't ever interrupt the user flow, you can first run reCAPTCHA without taking action and then decide on thresholds by looking at your traffic in the admin console</p>
-</blockquote>
-
-<p>After that we are returning a json response to client side. We are using <a href="https://docs.mojolicious.org/Mojo/JSON">Mojo::JSON</a> to convert the value into boolean <code>true</code> or <code>false</code>.<br>
-Go to browser and hit "<a href="http://localhost:3000">http://localhost:3000</a>". You can see your login page with reCAPTCHA widget on the bottom right.<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--c1iA6-bG--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/3e9fhyh3oxyuw8hymim2.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--c1iA6-bG--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/3e9fhyh3oxyuw8hymim2.PNG" alt="Alt Text"></a><br>
-For a successful verification you can see the <code>home</code> page<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--i1xf0QIQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/y9rfady44d9l630purc7.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--i1xf0QIQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/y9rfady44d9l630purc7.PNG" alt="Alt Text"></a><br>
-In case of bot access you can see an alert<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Ukqr2ryz--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/74ymswm1d0l4nmj169k4.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Ukqr2ryz--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/74ymswm1d0l4nmj169k4.PNG" alt="Alt Text"></a><br>
-Here I am just alerting when there is a bot, but you can choose what action you wan to do.<br>
-There is high chance where you will not see the bot alert initially even though a bot will access your page. But some frequent access in some time, v3 will learn and start alerting about it. <br>
-You can also look at your <a href="https://www.google.com/recaptcha/admin">admin console</a> over a time and look at overall traffic and suspicious requests.<br>
-Here is one such example - <br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--dAlknRa3--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/ayvidzouwoac9vxp48d6.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--dAlknRa3--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/ayvidzouwoac9vxp48d6.PNG" alt="Alt Text"></a><br>
-The complete example is also available at <a href="https://github.com/rai-gaurav/Data-Structures-and-Algorithms-Perl/blob/master/web_programming/recaptcha_verification/recaptcha_v3_verification.pl">Github</a><br>
-I hope this is helpful to you.</p>
-
-<p>Perl onion logo taken from <a href="https://github.com/dnmfarrell/Perl-Icons/blob/master/Icons/Perl_Onion_Color.svg">here</a><br>
-Mojolicious logo taken from <a href="https://github.com/mojolicious/mojo/blob/master/lib/Mojolicious/resources/public/mojo/logo.png">here</a><br>
-reCAPTCHA logo taken from <a href="https://www.google.com/recaptcha/about/">here</a></p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Gaurav Rai
-     on Saturday 16 January 2021 14:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_74">
@@ -4808,7 +4824,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 19 January 2021 16:21 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 19 January 2021 18:07 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
