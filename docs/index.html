@@ -137,6 +137,416 @@ I’m using that word inheritance a lot for a reason, one of the two ways I see 
           </div><!-- card -->
           <div class="card" id="card_2">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/raigaurav/sending-html-emails-using-perl-4b9b">Sending HTML Emails Using Perl</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>We will be looking at sending HTML emails with attachments using Perl.<br>
+As per Perl TIMTOWTDI philosophy there are multiple ways to send email. Few of them are -</p>
+
+<ol>
+<li>Using <a href="https://en.wikipedia.org/wiki/Sendmail">/usr/sbin/sendmail</a> utility - for linux</li>
+<li><a href="https://metacpan.org/pod/MIME::Lite">MIME::Lite</a></li>
+<li><a href="https://metacpan.org/pod/Email::Send">Email::Send</a></li>
+<li><a href="https://metacpan.org/release/Email-Sender">Email::Sender</a></li>
+</ol>
+
+<p>I remember when I started using Perl and when a day arrived where I have to send email, I found MIME::Lite. It was good for that time being and its gets the job done.<br>
+But as the time progress multiple alternative appears and also in current day MIME::Lite is not the recommended way to send email. From there documentation -</p>
+
+<blockquote>
+<p>MIME::Lite is not recommended by its current maintainer. There are a number of alternatives, like Email::MIME or MIME::Entity and Email::Sender, which you should probably use instead. MIME::Lite continues to accrue weird bug reports, and it is not receiving a large amount of refactoring due to the availability of better alternatives. Please consider using something else.</p>
+</blockquote>
+
+<p>Also, for Email::Send -</p>
+
+<blockquote>
+<p>Email::Send is going away... well, not really going away, but it's being officially marked "out of favor." It has API design problems that make it hard to usefully extend and rather than try to deprecate features and slowly ease in a new interface, we've released Email::Sender which fixes these problems and others. As of today, 2008-12-19, Email::Sender is young, but it's fairly well-tested. Please consider using it instead for any new work.</p>
+</blockquote>
+
+<p>I also got opportunity to work on some older codes and there were extensive use of MIME::Lite and sendmail (which is the Linux utility for sending emails) and I thought these are de-facto standards but as the time progress I realize there are more and better ways to send email. <br>
+Today we will be seeing one of those ways to end email which is recommended as of now - Email::Sender.</p>
+
+<p>Lets revisit few of the basic process of sending email-</p>
+
+<ol>
+<li>A mail template containing mail body in HTML format. In case you want to send plain text email you can ignore this.</li>
+<li>Creating mail with the subject, attachment and mail body created in Step 1.</li>
+<li>Send Email using SMTP server.</li>
+</ol>
+<h2>
+  <a href="#1-creating-the-email-package-" class="anchor">
+  </a>
+  1. Creating the Email package -
+</h2>
+
+<p>We will be creating a package containing all our email utilities(SendMail.pm).<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">SendMail</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">new</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span> <span class="nv">$class</span><span class="p">,</span> <span class="nv">@arguments</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="p">{</span><span class="nv">@arguments</span><span class="p">};</span>
+    <span class="nb">bless</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$class</span><span class="p">;</span>
+    <span class="k">return</span> <span class="nv">$self</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<h2>
+  <a href="#2-generating-mail-template-" class="anchor">
+  </a>
+  2. Generating Mail Template -
+</h2>
+
+<p>We will be creating a method for generating our mail template. You can use any library of your choice to generate this template. Few notable are -</p>
+
+<ul>
+<li><a href="https://metacpan.org/pod/Text::Template">Text::Template</a></li>
+<li><a href="https://metacpan.org/release/Template-Toolkit">Template::Toolkit</a></li>
+<li><a href="https://metacpan.org/pod/HTML::Template">HTML::Template</a></li>
+</ul>
+
+<p>I am using HTML::Template for this job as our scope is limited only to creating mail body and it is right tool for the job.<br>
+If you have some complex requirement you can check out other two (especially Text::Template).<br>
+Adding HTML::Template to the above code.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">HTML::</span><span class="nv">Template</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">generate_mail_template</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$filename</span><span class="p">,</span> <span class="nv">$parameters</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+
+    <span class="c1"># create mail body template. We don't want to die/exit if any of the parameters is missing</span>
+    <span class="k">my</span> <span class="nv">$template</span> <span class="o">=</span> <span class="nn">HTML::</span><span class="nv">Template</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span> <span class="s">filename</span> <span class="o">=&gt;</span> <span class="nv">$filename</span><span class="p">,</span> <span class="s">die_on_bad_params</span> <span class="o">=&gt;</span> <span class="mi">0</span> <span class="p">);</span>
+    <span class="nv">$template</span><span class="o">-&gt;</span><span class="nv">param</span><span class="p">(</span><span class="nv">$parameters</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nv">$template</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>This takes the absolute filename of the  template file and the parameters we will be substituting in that template file.<br>
+Right now I am using a simple template which can be extended based on requirement (template.html)<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight html"><code><span class="nt">&lt;html&gt;</span>
+    <span class="nt">&lt;head&gt;</span>
+        <span class="nt">&lt;title&gt;</span>Test Email Template<span class="nt">&lt;/title&gt;</span>
+    <span class="nt">&lt;/head&gt;</span>
+    <span class="nt">&lt;body&gt;</span>
+        My Name is <span class="nt">&lt;TMPL_VAR</span> <span class="na">NAME=</span><span class="s">NAME</span><span class="nt">&gt;</span>
+        My Location is <span class="nt">&lt;TMPL_VAR</span> <span class="na">NAME=</span><span class="s">LOCATION</span><span class="nt">&gt;</span>
+    <span class="nt">&lt;/body&gt;</span>
+<span class="nt">&lt;/html&gt;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<h2>
+  <a href="#3-creating-email-to-send-" class="anchor">
+  </a>
+  3. Creating Email to send -
+</h2>
+
+<p>Now comes the part where we will be creating our email with subject, attachment and body before sending.<br>
+But before that, we want to make the users to which we will be sending email configurable and for that we will be creating a config file.<br>
+Right now I am creating a json based config (config.json). But, you can create it in any format of you choice.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight json"><code><span class="p">{</span><span class="w">
+    </span><span class="nl">"mail"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+                </span><span class="nl">"mail_from"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s2">"test@xyz.com"</span><span class="p">,</span><span class="w">
+                </span><span class="nl">"mail_to"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"grai@xyz.com"</span><span class="p">],</span><span class="w">
+                </span><span class="nl">"mail_cc_to"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"grai@xyz.com"</span><span class="p">,</span><span class="w"> </span><span class="s2">"grai2@xyz.com"</span><span class="p">],</span><span class="w">
+                </span><span class="nl">"smtp_server"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s2">"abc.xyz"</span><span class="w">
+             </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>The key names are self explanatory.</p>
+
+<p>Now back to the part of creating email. We will create another method for this by adding to above code.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code>
+<span class="k">use</span> <span class="nn">Email::</span><span class="nv">MIME</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">File::</span><span class="nv">Basename</span> <span class="sx">qw( basename )</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">create_mail</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$file_attachments</span><span class="p">,</span> <span class="nv">$mail_subject</span><span class="p">,</span> <span class="nv">$mail_body</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+
+    <span class="k">my</span> <span class="nv">@mail_attachments</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nv">@$file_attachments</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">foreach</span> <span class="k">my</span> <span class="nv">$attachment</span> <span class="p">(</span><span class="nv">@$file_attachments</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">my</span> <span class="nv">$single_attachment</span> <span class="o">=</span> <span class="nn">Email::</span><span class="nv">MIME</span><span class="o">-&gt;</span><span class="nv">create</span><span class="p">(</span>
+                <span class="s">attributes</span> <span class="o">=&gt;</span> <span class="p">{</span>
+                    <span class="s">filename</span>     <span class="o">=&gt;</span> <span class="nv">basename</span><span class="p">(</span><span class="nv">$attachment</span><span class="p">),</span>
+                    <span class="s">content_type</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">application/json</span><span class="p">",</span>
+                    <span class="s">disposition</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">attachment</span><span class="p">',</span>
+                    <span class="s">encoding</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">base64</span><span class="p">',</span>
+                    <span class="s">name</span>         <span class="o">=&gt;</span> <span class="nv">basename</span><span class="p">(</span><span class="nv">$attachment</span><span class="p">)</span>
+                <span class="p">},</span>
+                <span class="s">body</span> <span class="o">=&gt;</span> <span class="nv">io</span><span class="o">-&gt;</span><span class="nv">file</span><span class="p">(</span><span class="nv">$attachment</span><span class="p">)</span><span class="o">-&gt;</span><span class="nv">all</span>
+            <span class="p">);</span>
+            <span class="nb">push</span><span class="p">(</span> <span class="nv">@mail_attachments</span><span class="p">,</span> <span class="nv">$single_attachment</span> <span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="c1"># Multipart message : It contains attachment as well as html body</span>
+    <span class="k">my</span> <span class="nv">@parts</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nv">@mail_attachments</span><span class="p">,</span>
+        <span class="nn">Email::</span><span class="nv">MIME</span><span class="o">-&gt;</span><span class="nv">create</span><span class="p">(</span>
+            <span class="s">attributes</span> <span class="o">=&gt;</span> <span class="p">{</span>
+                <span class="s">content_type</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">text/html</span><span class="p">',</span>
+                <span class="s">encoding</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">quoted-printable</span><span class="p">',</span>
+                <span class="s">charset</span>      <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">US-ASCII</span><span class="p">'</span>
+            <span class="p">},</span>
+            <span class="s">body_str</span> <span class="o">=&gt;</span> <span class="nv">$mail_body</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">);</span>
+
+    <span class="k">my</span> <span class="nv">$mail_to_users</span>    <span class="o">=</span> <span class="nb">join</span> <span class="p">'</span><span class="s1">, </span><span class="p">',</span> <span class="nv">@</span><span class="p">{</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">config</span><span class="p">}</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">mail_to</span><span class="p">}</span> <span class="p">};</span>
+    <span class="k">my</span> <span class="nv">$cc_mail_to_users</span> <span class="o">=</span> <span class="nb">join</span> <span class="p">'</span><span class="s1">, </span><span class="p">',</span> <span class="nv">@</span><span class="p">{</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">config</span><span class="p">}</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">mail_cc_to</span><span class="p">}</span> <span class="p">};</span>
+
+    <span class="k">my</span> <span class="nv">$email</span> <span class="o">=</span> <span class="nn">Email::</span><span class="nv">MIME</span><span class="o">-&gt;</span><span class="nv">create</span><span class="p">(</span>
+        <span class="s">header</span> <span class="o">=&gt;</span> <span class="p">[</span>
+            <span class="s">From</span>    <span class="o">=&gt;</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">config</span><span class="p">}</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">mail_from</span><span class="p">},</span>
+            <span class="s">To</span>      <span class="o">=&gt;</span> <span class="nv">$mail_to_users</span><span class="p">,</span>
+            <span class="s">Cc</span>      <span class="o">=&gt;</span> <span class="nv">$cc_mail_to_users</span><span class="p">,</span>
+            <span class="s">Subject</span> <span class="o">=&gt;</span> <span class="nv">$mail_subject</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s">parts</span> <span class="o">=&gt;</span> <span class="p">[</span><span class="nv">@parts</span><span class="p">],</span>
+    <span class="p">);</span>
+    <span class="k">return</span> <span class="nv">$email</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>This method will take list of attachments, subject and body and create a MIME part using <a href="https://metacpan.org/pod/Email::MIME">Email::MIME</a>.<br>
+Also there is <a href="https://metacpan.org/pod/Email::Stuffer">Email::Stuffer</a> which you can also use for similar part. But for now I am using Email::MIME.</p>
+<h2>
+  <a href="#4-sending-email-" class="anchor">
+  </a>
+  4. Sending Email -
+</h2>
+
+<p>Now our mail to ready for send. We will create another method for it in addition to above methods.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code>
+<span class="k">use</span> <span class="nn">Email::Sender::</span><span class="nv">Simple</span> <span class="sx">qw( sendmail )</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Email::Sender::Transport::</span><span class="nv">SMTP</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">send_mail</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$email</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$transport</span> <span class="o">=</span> <span class="nn">Email::Sender::Transport::</span><span class="nv">SMTP</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="s">host</span> <span class="o">=&gt;</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">config</span><span class="p">}</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">smtp_server</span><span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">);</span>
+    <span class="nb">eval</span> <span class="p">{</span> <span class="nv">sendmail</span><span class="p">(</span> <span class="nv">$email</span><span class="p">,</span> <span class="p">{</span> <span class="s">transport</span> <span class="o">=&gt;</span> <span class="nv">$transport</span> <span class="p">}</span> <span class="p">);</span> <span class="p">};</span>
+    <span class="k">if</span> <span class="p">(</span><span class="vg">$@</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="vg">$@</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">else</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>This method will just take the email  which we have created before and sent it to requested recipient.<br>
+Since our work is done here we will end the module with a true value.</p>
+<h2>
+  <a href="#5-using-the-module-" class="anchor">
+  </a>
+  5. Using the module -
+</h2>
+
+<p>Now we have the module ready. Lets create a perl script and try to utilize the methods which we have created(mail.pl).<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
+
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">JSON</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">Cwd</span> <span class="sx">qw( abs_path )</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">File::</span><span class="nv">Basename</span> <span class="sx">qw( dirname )</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">lib</span> <span class="nv">dirname</span><span class="p">(</span><span class="nv">abs_path</span><span class="p">(</span><span class="err">$</span><span class="mi">0</span><span class="p">));</span>
+<span class="k">use</span> <span class="nv">SendMail</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">read_json_file</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$json_file</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="k">print</span> <span class="p">"</span><span class="s2">Reading </span><span class="si">$json_file</span><span class="p">";</span>
+
+    <span class="nb">open</span> <span class="p">(</span><span class="k">my</span> <span class="nv">$in</span><span class="p">,</span> <span class="p">'</span><span class="s1">&lt;</span><span class="p">',</span> <span class="nv">$json_file</span><span class="p">)</span> <span class="ow">or</span> <span class="k">print</span> <span class="p">"</span><span class="s2">Unable to open file </span><span class="si">$json_file</span><span class="s2"> : $!</span><span class="p">";</span>
+    <span class="k">my</span> <span class="nv">$json_text</span> <span class="o">=</span> <span class="k">do</span> <span class="p">{</span> <span class="nb">local</span> <span class="vg">$/</span> <span class="o">=</span> <span class="nb">undef</span><span class="p">;</span> <span class="o">&lt;</span><span class="nv">$in</span><span class="o">&gt;</span><span class="p">;</span> <span class="p">};</span>
+    <span class="nb">close</span> <span class="p">(</span><span class="nv">$in</span><span class="p">)</span> <span class="ow">or</span> <span class="k">print</span> <span class="p">"</span><span class="s2">Unable to close file : $!</span><span class="p">";</span>
+
+    <span class="k">my</span> <span class="nv">$config_data</span> <span class="o">=</span> <span class="nv">decode_json</span><span class="p">(</span><span class="nv">$json_text</span><span class="p">);</span>
+    <span class="k">return</span> <span class="p">(</span><span class="nv">$config_data</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1"># Read the config file</span>
+<span class="k">my</span> <span class="nv">$config</span> <span class="o">=</span> <span class="nv">read_json_file</span><span class="p">("</span><span class="s2">config.json</span><span class="p">");</span>
+
+<span class="k">my</span> <span class="nv">$mail</span> <span class="o">=</span> <span class="nv">SendMail</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">("</span><span class="s2">config</span><span class="p">"</span> <span class="o">=&gt;</span> <span class="nv">$config</span><span class="o">-&gt;</span><span class="p">{'</span><span class="s1">mail</span><span class="p">'});</span>
+
+<span class="c1"># param which you want to substitute in mail template</span>
+<span class="k">my</span> <span class="nv">$mail_parameters</span> <span class="o">=</span> <span class="p">"</span><span class="s2">NAME =&gt; 'Gaurav', LOCATION =&gt; 'INDIA'</span><span class="p">";</span>
+
+<span class="c1"># path to mail attachments</span>
+<span class="k">my</span> <span class="nv">$attachments</span> <span class="o">=</span> <span class="p">["</span><span class="s2">abc.txt</span><span class="p">"];</span>
+
+<span class="c1"># path to mail template</span>
+<span class="k">my</span> <span class="nv">$mail_template</span> <span class="o">=</span> <span class="p">"</span><span class="s2">mail_template/template.html</span><span class="p">";</span>
+
+<span class="k">print</span> <span class="p">"</span><span class="s2">Generating HTML template for mail body</span><span class="p">";</span>
+<span class="k">my</span> <span class="nv">$template</span> <span class="o">=</span> <span class="nv">$mail</span><span class="o">-&gt;</span><span class="nv">generate_mail_template</span><span class="p">(</span><span class="nv">$mail_template</span><span class="p">,</span> <span class="nv">$mail_parameters</span><span class="p">);</span>
+
+<span class="k">print</span> <span class="p">"</span><span class="s2">Creating mail with body and attachments to send</span><span class="p">";</span>
+<span class="k">my</span> <span class="nv">$mail_subject</span> <span class="o">=</span> <span class="p">"</span><span class="s2">Test Mail</span><span class="p">";</span>
+<span class="k">my</span> <span class="nv">$email</span> <span class="o">=</span> <span class="nv">$mail</span><span class="o">-&gt;</span><span class="nv">create_mail</span><span class="p">(</span><span class="nv">$attachments</span><span class="p">,</span> <span class="nv">$mail_subject</span><span class="p">,</span> <span class="nv">$template</span><span class="o">-&gt;</span><span class="nv">output</span><span class="p">);</span>
+
+<span class="k">print</span> <span class="p">"</span><span class="s2">Sending email...</span><span class="p">";</span>
+<span class="k">my</span> <span class="p">(</span><span class="nv">$mail_return_code</span><span class="p">,</span> <span class="nv">$mail_exception</span><span class="p">)</span> <span class="o">=</span> <span class="nv">$mail</span><span class="o">-&gt;</span><span class="nv">send_mail</span><span class="p">(</span><span class="nv">$email</span><span class="p">);</span>
+
+<span class="k">if</span> <span class="p">(</span><span class="nb">defined</span> <span class="nv">$mail_exception</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">print</span> <span class="p">"</span><span class="s2">Exception while sending mail: </span><span class="si">$mail_exception</span><span class="p">";</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="k">else</span> <span class="p">{</span>
+    <span class="k">print</span> <span class="p">"</span><span class="s2">Mail Sent successfully</span><span class="p">";</span>
+    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>And we are done. You can run this script from your terminal and test this. The full code for reference is also available at <a href="https://github.com/sudo-batman/perl-toolkit/tree/master/Mail">Github</a> for your reference</p>
+
+<p>Perl onion logo taken from <a href="https://github.com/dnmfarrell/Perl-Icons/blob/master/Icons/Perl_Onion_Color.svg">here</a><br>
+Mail logo taken from <a href="https://fontawesome.com/icons/at?style=solid">here</a> and <a href="https://fontawesome.com/icons/envelope-open-text?style=solid">here</a></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Gaurav Rai
+     on Wednesday 20 January 2021 15:31</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/loop-controls-next-last">Loop controls: next, last, continue, break</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>
@@ -156,7 +566,7 @@ In most of the other languages the respective keywords are <span class="inline_c
      on Wednesday 20 January 2021 12:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-win32-gui-using-perl-and-win32-guitest-8bi">Automate Win32 GUI using Perl and Win32::GuiTest</a></h2>
             </div> <!-- card-header -->
@@ -571,7 +981,7 @@ Windows logo taken from <a href="https://docs.microsoft.com">here</a></p>
      on Tuesday 19 January 2021 16:44</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_jan_2021">Call for Grants (January 2021 Round)</a></h2>
             </div> <!-- card-header -->
@@ -607,7 +1017,7 @@ Windows logo taken from <a href="https://docs.microsoft.com">here</a></p>
      on Tuesday 19 January 2021 15:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-19-geodaten-bilder-videos-exif">Geodaten in Bildern und Videos können viel über Nutzer verraten</a></h2>
             </div> <!-- card-header -->
@@ -620,7 +1030,7 @@ Am vorvergangenen Wochenende (9./10. Januar 2021) gab es relativ viel Wirbel um 
      on Tuesday 19 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/scrapping-google-scholar-with-perl-and-mojo-4neg">Scrapping Google Scholar with Perl and Mojo</a></h2>
             </div> <!-- card-header -->
@@ -956,7 +1366,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 15:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/vwg">If it was Good Enough for Mozart - Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -968,7 +1378,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/zo0">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -980,7 +1390,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xg1">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -992,7 +1402,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/r3o">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1004,7 +1414,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xgd">Big Dividends, Bigger Opportunity! Perl role with multiple location options</a></h2>
             </div> <!-- card-header -->
@@ -1016,7 +1426,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -1028,7 +1438,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -1040,7 +1450,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1052,7 +1462,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1064,7 +1474,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/charlotte-pm/events/275282889">Charlotte Perl Mongers - Using the ActiveState Platform</a></h2>
             </div> <!-- card-header -->
@@ -1076,7 +1486,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1088,7 +1498,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/daily-activity.html">Daily Activity </a></h2>
             </div> <!-- card-header -->
@@ -1100,7 +1510,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/which-courses-to-record.html">Which courses to record?</a></h2>
             </div> <!-- card-header -->
@@ -1112,7 +1522,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1124,7 +1534,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/p/parallel-processing-in-perl">New Course: Parallel programming in Perl</a></h2>
             </div> <!-- card-header -->
@@ -1136,7 +1546,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.linkedin.com/feed/update/urn:li:activity:6751738129025134592">In which subject in Perl do you feel you need better knowledge?</a></h2>
             </div> <!-- card-header -->
@@ -1148,7 +1558,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/01/11/PWC95/">Perl Weekly Challenge 95.</a></h2>
             </div> <!-- card-header -->
@@ -1160,7 +1570,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-095-2jkl">Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -1172,7 +1582,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/01/Perl_Weekly_Challenge_95__Palindrome_Stack.html">Perl Weekly Challenge 95: Palindrome Stack</a></h2>
             </div> <!-- card-header -->
@@ -1184,7 +1594,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/01/11/PerlWeeklyChallenge95.html">Perl Weekly Challenge 95: palindrome numbers and stacks</a></h2>
             </div> <!-- card-header -->
@@ -1196,7 +1606,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-95-palindrome-numbers-and-demo-stack.html">Perl Weekly Challenge 95: Palindrome Numbers and Demo Stack</a></h2>
             </div> <!-- card-header -->
@@ -1208,7 +1618,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/14/demo-stack/">PWC095 - Demo Stack</a></h2>
             </div> <!-- card-header -->
@@ -1220,7 +1630,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/13/palindrome-number/">PWC095 - Palindrome Number</a></h2>
             </div> <!-- card-header -->
@@ -1232,7 +1642,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-95.html">Perl weekly challenge 95</a></h2>
             </div> <!-- card-header -->
@@ -1244,7 +1654,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://gugod.org/2021/01/pwc-095-en/">Solving Perl Weekly Challenge 095 -- Palindrome Number and Stack</a></h2>
             </div> <!-- card-header -->
@@ -1256,7 +1666,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/01/16/judging-jenga-symmetries/">Judging Jenga Symmetries</a></h2>
             </div> <!-- card-header -->
@@ -1268,7 +1678,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/palindromic-stack.html">Palindromic Stack with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -1280,7 +1690,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/17">Perl Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -1292,7 +1702,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/16/perl-weekly-challenge-95-part-2/">Perl Weekly Challenge 95, Part 2</a></h2>
             </div> <!-- card-header -->
@@ -1304,7 +1714,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/14/perl-weekly-challenge-95-part-1/">Perl Weekly Challenge 95, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -1316,7 +1726,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-chellanege-095/">Perl Weekly Challenge 95</a></h2>
             </div> <!-- card-header -->
@@ -1328,7 +1738,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-093">Perl Review - Perl Weekly Challenge - 093</a></h2>
             </div> <!-- card-header -->
@@ -1340,7 +1750,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-095">RECAP - The Weekly Challenge - 095</a></h2>
             </div> <!-- card-header -->
@@ -1352,7 +1762,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-096">The Weekly Challenge - 096</a></h2>
             </div> <!-- card-header -->
@@ -1364,7 +1774,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-12">Maintaining Perl 5 (Tony Cook): December 2020 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -1376,7 +1786,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakucourse1">Raku Course January 2021 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -1388,7 +1798,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126974">How to display a Tk window without waiting for user input</a></h2>
             </div> <!-- card-header -->
@@ -1400,7 +1810,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126918">SSL certificate store for a Perlbrew install</a></h2>
             </div> <!-- card-header -->
@@ -1412,7 +1822,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-firefox-browser-with-perl-5036">Automate Firefox browser with Perl</a></h2>
             </div> <!-- card-header -->
@@ -1424,7 +1834,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/simple-live-chart-using-mojolicious-1iej">Simple live chart using Mojolicious </a></h2>
             </div> <!-- card-header -->
@@ -1436,7 +1846,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/using-google-recaptcha-with-perl-49hd">Using google reCaptcha with Perl </a></h2>
             </div> <!-- card-header -->
@@ -1448,7 +1858,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/extracting-the-list-of-o-reilly-animals/">Extracting the list of O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -1460,7 +1870,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://courses.code-maven.com/p/testing-in-perl">Testing in Perl</a></h2>
             </div> <!-- card-header -->
@@ -1472,7 +1882,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kwj92l/perl_steering_council_meeting_002_20210112/">Perl Steering Council, meeting #002, 2021-01-12</a></h2>
             </div> <!-- card-header -->
@@ -1484,7 +1894,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxqbjk/in_which_subject_in_perl_do_you_feel_youd_need/">In which subject in Perl do you feel you'd need better knowledge?</a></h2>
             </div> <!-- card-header -->
@@ -1496,7 +1906,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxy2zw/datetime_and_sunmoon_events_calculations_way/">Date-time and sun-moon events calculations way before epoch (libraries advice)</a></h2>
             </div> <!-- card-header -->
@@ -1508,7 +1918,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxx4uw/perl_beginner_here_looking_for_guidance/">Perl Beginner Here, Looking for Guidance.</a></h2>
             </div> <!-- card-header -->
@@ -1520,7 +1930,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/18/aoc2016-11-new-successors/">AoC 2016/11 - New successors</a></h2>
             </div> <!-- card-header -->
@@ -1532,7 +1942,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/17/aoc2016-11-new-heuristic/">AoC 2016/11 - New heuristic</a></h2>
             </div> <!-- card-header -->
@@ -1544,7 +1954,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/16/aoc2016-11-new-identifier/">AoC 2016/11 - New identifier</a></h2>
             </div> <!-- card-header -->
@@ -1556,7 +1966,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/15/aoc2016-11-new-parsing/">AoC 2016/11 - New parsing</a></h2>
             </div> <!-- card-header -->
@@ -1568,7 +1978,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/12/aoc2016-11-new-representation/">AoC 2016/11 - New representation</a></h2>
             </div> <!-- card-header -->
@@ -1580,7 +1990,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/11/aoc2016-11-new-algorithm/">AoC 2016/11 - New algorithm: A*</a></h2>
             </div> <!-- card-header -->
@@ -1592,7 +2002,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126847">First steps with Marpa::R2 and BNF</a></h2>
             </div> <!-- card-header -->
@@ -1604,7 +2014,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/refactoring-code-snippet">Refactoring code snippet</a></h2>
             </div> <!-- card-header -->
@@ -1616,7 +2026,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/fosdem_2021_speaker_guidance">FOSDEM 2021 - guidance for speakers</a></h2>
             </div> <!-- card-header -->
@@ -1628,7 +2038,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-49-of-perl-workflow-be2">Release 1.49 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -1640,7 +2050,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/stats.html">Blogs</a></h2>
             </div> <!-- card-header -->
@@ -1652,7 +2062,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/metacpan.html">CPAN uploads</a></h2>
             </div> <!-- card-header -->
@@ -1664,7 +2074,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/perl-532/?utm_source=Perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-532-ad&utm_campaign=user-acquisition">New Year. New Perl.</a></h2>
             </div> <!-- card-header -->
@@ -1681,7 +2091,7 @@ A new way to install, work with, and even <a href="https://www.activestate.com/p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/495.html">#495 - Collect O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -1698,7 +2108,7 @@ A new way to install, work with, and even <a href="https://www.activestate.com/p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/17#pwc095">Perl Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -1821,7 +2231,7 @@ $ perl -Iperl perl/ch-2.pl
      on Sunday 17 January 2021 14:49</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-firefox-browser-with-perl-5036">Automate Firefox browser with Perl</a></h2>
             </div> <!-- card-header -->
@@ -2005,7 +2415,7 @@ Firefox logo taken from <a href="https://www.mozilla.org/en-US/firefox/new/">her
      on Sunday 17 January 2021 17:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-095-2jkl">Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -2130,7 +2540,7 @@ Firefox logo taken from <a href="https://www.mozilla.org/en-US/firefox/new/">her
      on Sunday 17 January 2021 05:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-12">Maintaining Perl 5 (Tony Cook): December 2020 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -2203,7 +2613,7 @@ applied
      on Sunday 17 January 2021 01:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxiv-15-cpan-great-modules-released.html">(cccxxiv) 15 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2215,7 +2625,7 @@ applied
      on Saturday 16 January 2021 23:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdl-metacpan-weekly-report-mojolicious.html">(cdl) metacpan weekly report - Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -2227,7 +2637,7 @@ applied
      on Saturday 16 January 2021 23:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_74">
+          <div class="card" id="card_75">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlxxiv-stackoverflow-perl-report.html">(cdlxxiv) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -2239,7 +2649,7 @@ applied
      on Saturday 16 January 2021 23:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_75">
+          <div class="card" id="card_76">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_committee_expanded_role">Grants Committee Takes on Expanded Role in TPF</a></h2>
             </div> <!-- card-header -->
@@ -2277,127 +2687,6 @@ applied
 
               <p class="text-right"><small>Published by Jason A. Crome
      on Saturday 16 January 2021 18:55</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_76">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-49-of-perl-workflow-be2">Release 1.49 of perl-workflow</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>2021 is off to a very energetic start. Around 9th. of January, <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a> an older project for which I am the current maintainer, received <a href="https://github.com/jonasbn/perl-workflow/issues/21">a bug report</a> about the error reporting section of the documentation not being up to date.</p>
-
-<p>For many Perl distributions this is most relevant as <a href="https://log.perl.org/2020/12/rtcpanorg-sunset.html">rt.cpan.org is being deactivated</a> after many years of service.</p>
-
-<p>I have already transferred most of my day to day handling of bugs, issues and TODOs to GitHub issues, but I have not documented it in <em>all</em> places - apparently.</p>
-
-<p>Before I could find the time to resolve this issue I received <a href="https://github.com/jonasbn/perl-workflow/pull/22">a PR adressing the issue</a> from <a href="https://github.com/ehuelsmann">Erik Huelsmann</a>.</p>
-
-<p>This was the beginning of a new invigorating period for <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a>. For the following days leading up to the release 1.49 of <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a>.</p>
-
-<ol>
-<li>I received 13 PRs addressing bug and small issues, both known an unknown bugs from <a href="https://github.com/ehuelsmann">Erik Huelsmann</a> - thanks <a href="https://github.com/ehuelsmann">Erik</a>
-</li>
-<li>An earlier contributor <em>chipped in</em> with comments on PRs and issues and things got moving - thanks <a href="https://github.com/oliwel">Oliver</a>
-</li>
-<li>We activated the Slack I use for my open source projects and discussion on development plans, road map, issues etc. really got going</li>
-</ol>
-
-<p>This all culminated in a maintenance and minor feature release of <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a>, for details see the change log below.</p>
-
-<p>The PRs, issues and discussion all contributed to <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a> evolving as a Perl distribution and software project.</p>
-
-<p><a href="https://github.com/ehuelsmann">Erik Huelsmann</a> is evaluating using <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a> for the <a href="https://ledgersmb.org/">LedgerSMB</a> project and <a href="https://github.com/oliwel">Oliver Welter</a> is using it for <a href="http://www.openxpki.org/">the OpenXPKI project</a> and expect more feature, bug fix and maintenance release to be shipped in 2021.</p>
-
-<p>And this leads an interesting aspect of software development.</p>
-
-<p>When I took over maintenance of <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a> from <a href="https://github.com/cwinters">Chris Winters</a>, I was very interested in the topic of workflows and state-machines.</p>
-
-<p>I had ideas for using <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a>, but for what, I can no longer remember.</p>
-
-<p>For several years and many releases the code evolved, especially based on contributions from the <a href="http://www.openxpki.org/">OpenXPKI</a> developers. The <a href="http://www.openxpki.org/">the OpenXPKI project</a> developers contributed to the codebase, since they has a use-case, which could be solved by <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a>.</p>
-
-<p>I simply acted as the maintainer, but lacking a use case as my own, but it kept me going, simply because it was very educational and fun to work on a project, which was more than just hobby project scope.</p>
-
-<p>As an author and even just a maintainer, knowing that somebody is using your software is what it is all about. Yes some projects are for scratching your own itch, but when somebody else has the same itch, collaboration is the way to go.</p>
-
-<p>I have over they years received many PRs for the projects and it has kept <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a> going and stable. But I had no idea if anybody was actually using it, as a maintainer you tend to expect that nobody does and as activity decline as no PRs or issues are raised.</p>
-
-<p><a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a> is not a project with a plethora of users and a gazillion stars, to me that does actually not matter. If I am not just scratching my own itch, having a single user will make it worthwhile to find the time to develop and maintain a project.</p>
-
-<p>Not all interaction with users is fruitful and I think I have atleast lost one user along the way when I had not discovered <a href="https://stackoverflow.com/questions/27921691/perl-workflow-module-with-validator/47498915#47498915">a question on StackOverflow</a> and I responded too late - but I guess, "win some, loose some" also counts for software and especially for open source.</p>
-
-<p>So remember to keep your open source maintainers active, by telling them you are using their software and report bugs and make contributions.</p>
-
-<p>In all this <em>activity</em> I completely forgot to thank <a href="https://github.com/djzort">Dean Hamstead</a> for opening <a href="https://github.com/jonasbn/perl-workflow/issues/21">the issue</a>, which seemed to <em>trigger</em> everything.</p>
-
-<p>So thanks <a href="https://github.com/djzort">Dean</a> also.</p>
-
-<h2>
-  <a href="#change-log" class="anchor">
-  </a>
-  Change Log
-</h2>
-
-<p>Change log entry for release 1.49 for <a href="https://github.com/jonasbn/perl-workflow">perl-workflow</a>, <a href="https://raw.githubusercontent.com/jonasbn/perl-workflow/master/Changes">original</a><br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>1.49 2021-01-12 Maintenance and minor feature release, update not required
-
-- Addressed an issue with return values from Workflow::Condition::GreedyOR's `evaluate_condition`, PR #50 from Erik Huelsmann
-
-- Fixed a bug in condition caching described in issue #9, PR #27 from Erik Huelsmann
-
-- Fixed a bug in Workflow::Condition::LazyAND with wrongful return values, PR #40 from Erik Huelsmann
-
-- Fixed a bug in Workflow::Validator::InEnumeratedType with wrongful naming, PR #33 from Erik Huelsmann
-
-- Updated Dist::Zilla configuration and added LICENSE file to repository based on generated from Dist::Zilla build, this should be automated like the README generation at some point
-
-- Improved internal handling for quoting in internal SQL statements, PR #30 from Erik Huelsmann
-
-- Improved the SQL used for database creation by adding referentiel integrity, PR #29 from Erik Huelsmann
-
-- Addressed a bug in initialization and improved the ability to handle a database handle, PR #32 from Erik Huelsmann
-
-- Improved loading of external of a few dependencies, improving error handling, PR #31 from Erik Huelsmann
-
-- Additions to test suite, WIP on better scoped condition caching, PR #26 from Erik Huelsmann
-
-- Minor feature addition addressing issue #5 with condition caching, PR #25 from Erik Huelsmann
-  Condition caching can be disabled by setting: 
-
-    $Workflow::Condition::CACHE_RESULTS = 0; # false
-
-  The default is 1, indicating true,
-
-- Improvements to test suite, moved from time to counter, speeding up the test, PR #24 from Erik Huelsmann
-
-- Documentation updates, PR #23 from Erik Huelsmann
-
-- Addressing issue #21 fixing broken URLs, PR #22 from Erik Huelsmann
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by jonasbn
-     on Saturday 16 January 2021 15:57</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_77">
@@ -4667,7 +4956,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 20 January 2021 15:14 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 20 January 2021 16:20 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->

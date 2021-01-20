@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-01-20T15:14:36Z</updated>
+  <updated>2021-01-20T16:20:51Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -92,6 +92,417 @@ I’m using that word inheritance a lot for a reason, one of the two ways I see 
         
     </content>
 </entry>
+  <entry>
+    <title>Sending HTML Emails Using Perl</title>
+    <link rel="alternate" href="https://dev.to/raigaurav/sending-html-emails-using-perl-4b9b" type="text/html"/>
+    <content type="html">&lt;p&gt;We will be looking at sending HTML emails with attachments using Perl.&lt;br&gt;
+As per Perl TIMTOWTDI philosophy there are multiple ways to send email. Few of them are -&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;Using &lt;a href="https://en.wikipedia.org/wiki/Sendmail"&gt;/usr/sbin/sendmail&lt;/a&gt; utility - for linux&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/MIME::Lite"&gt;MIME::Lite&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/Email::Send"&gt;Email::Send&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/release/Email-Sender"&gt;Email::Sender&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;I remember when I started using Perl and when a day arrived where I have to send email, I found MIME::Lite. It was good for that time being and its gets the job done.&lt;br&gt;
+But as the time progress multiple alternative appears and also in current day MIME::Lite is not the recommended way to send email. From there documentation -&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;MIME::Lite is not recommended by its current maintainer. There are a number of alternatives, like Email::MIME or MIME::Entity and Email::Sender, which you should probably use instead. MIME::Lite continues to accrue weird bug reports, and it is not receiving a large amount of refactoring due to the availability of better alternatives. Please consider using something else.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Also, for Email::Send -&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;Email::Send is going away... well, not really going away, but it's being officially marked "out of favor." It has API design problems that make it hard to usefully extend and rather than try to deprecate features and slowly ease in a new interface, we've released Email::Sender which fixes these problems and others. As of today, 2008-12-19, Email::Sender is young, but it's fairly well-tested. Please consider using it instead for any new work.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;I also got opportunity to work on some older codes and there were extensive use of MIME::Lite and sendmail (which is the Linux utility for sending emails) and I thought these are de-facto standards but as the time progress I realize there are more and better ways to send email. &lt;br&gt;
+Today we will be seeing one of those ways to end email which is recommended as of now - Email::Sender.&lt;/p&gt;
+
+&lt;p&gt;Lets revisit few of the basic process of sending email-&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;A mail template containing mail body in HTML format. In case you want to send plain text email you can ignore this.&lt;/li&gt;
+&lt;li&gt;Creating mail with the subject, attachment and mail body created in Step 1.&lt;/li&gt;
+&lt;li&gt;Send Email using SMTP server.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2&gt;
+  &lt;a href="#1-creating-the-email-package-" class="anchor"&gt;
+  &lt;/a&gt;
+  1. Creating the Email package -
+&lt;/h2&gt;
+
+&lt;p&gt;We will be creating a package containing all our email utilities(SendMail.pm).&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nv"&gt;SendMail&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;strict&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;warnings&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;new&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;@arguments&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;@arguments&lt;/span&gt;&lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="nb"&gt;bless&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;h2&gt;
+  &lt;a href="#2-generating-mail-template-" class="anchor"&gt;
+  &lt;/a&gt;
+  2. Generating Mail Template -
+&lt;/h2&gt;
+
+&lt;p&gt;We will be creating a method for generating our mail template. You can use any library of your choice to generate this template. Few notable are -&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/Text::Template"&gt;Text::Template&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/release/Template-Toolkit"&gt;Template::Toolkit&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/HTML::Template"&gt;HTML::Template&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;I am using HTML::Template for this job as our scope is limited only to creating mail body and it is right tool for the job.&lt;br&gt;
+If you have some complex requirement you can check out other two (especially Text::Template).&lt;br&gt;
+Adding HTML::Template to the above code.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;HTML::&lt;/span&gt;&lt;span class="nv"&gt;Template&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;generate_mail_template&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$filename&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$parameters&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# create mail body template. We don't want to die/exit if any of the parameters is missing&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$template&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;HTML::&lt;/span&gt;&lt;span class="nv"&gt;Template&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;filename&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$filename&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;die_on_bad_params&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$template&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;param&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$parameters&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$template&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This takes the absolute filename of the  template file and the parameters we will be substituting in that template file.&lt;br&gt;
+Right now I am using a simple template which can be extended based on requirement (template.html)&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight html"&gt;&lt;code&gt;&lt;span class="nt"&gt;&amp;lt;html&amp;gt;&lt;/span&gt;
+    &lt;span class="nt"&gt;&amp;lt;head&amp;gt;&lt;/span&gt;
+        &lt;span class="nt"&gt;&amp;lt;title&amp;gt;&lt;/span&gt;Test Email Template&lt;span class="nt"&gt;&amp;lt;/title&amp;gt;&lt;/span&gt;
+    &lt;span class="nt"&gt;&amp;lt;/head&amp;gt;&lt;/span&gt;
+    &lt;span class="nt"&gt;&amp;lt;body&amp;gt;&lt;/span&gt;
+        My Name is &lt;span class="nt"&gt;&amp;lt;TMPL_VAR&lt;/span&gt; &lt;span class="na"&gt;NAME=&lt;/span&gt;&lt;span class="s"&gt;NAME&lt;/span&gt;&lt;span class="nt"&gt;&amp;gt;&lt;/span&gt;
+        My Location is &lt;span class="nt"&gt;&amp;lt;TMPL_VAR&lt;/span&gt; &lt;span class="na"&gt;NAME=&lt;/span&gt;&lt;span class="s"&gt;LOCATION&lt;/span&gt;&lt;span class="nt"&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class="nt"&gt;&amp;lt;/body&amp;gt;&lt;/span&gt;
+&lt;span class="nt"&gt;&amp;lt;/html&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;h2&gt;
+  &lt;a href="#3-creating-email-to-send-" class="anchor"&gt;
+  &lt;/a&gt;
+  3. Creating Email to send -
+&lt;/h2&gt;
+
+&lt;p&gt;Now comes the part where we will be creating our email with subject, attachment and body before sending.&lt;br&gt;
+But before that, we want to make the users to which we will be sending email configurable and for that we will be creating a config file.&lt;br&gt;
+Right now I am creating a json based config (config.json). But, you can create it in any format of you choice.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight json"&gt;&lt;code&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="w"&gt;
+    &lt;/span&gt;&lt;span class="nl"&gt;"mail"&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="w"&gt;
+                &lt;/span&gt;&lt;span class="nl"&gt;"mail_from"&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="s2"&gt;"test@xyz.com"&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="w"&gt;
+                &lt;/span&gt;&lt;span class="nl"&gt;"mail_to"&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s2"&gt;"grai@xyz.com"&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;&lt;span class="w"&gt;
+                &lt;/span&gt;&lt;span class="nl"&gt;"mail_cc_to"&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s2"&gt;"grai@xyz.com"&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="s2"&gt;"grai2@xyz.com"&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;&lt;span class="w"&gt;
+                &lt;/span&gt;&lt;span class="nl"&gt;"smtp_server"&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="s2"&gt;"abc.xyz"&lt;/span&gt;&lt;span class="w"&gt;
+             &lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The key names are self explanatory.&lt;/p&gt;
+
+&lt;p&gt;Now back to the part of creating email. We will create another method for this by adding to above code.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Email::&lt;/span&gt;&lt;span class="nv"&gt;MIME&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;File::&lt;/span&gt;&lt;span class="nv"&gt;Basename&lt;/span&gt; &lt;span class="sx"&gt;qw( basename )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;create_mail&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$file_attachments&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$mail_subject&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$mail_body&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;@mail_attachments&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@$file_attachments&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="k"&gt;foreach&lt;/span&gt; &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$attachment&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@$file_attachments&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$single_attachment&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Email::&lt;/span&gt;&lt;span class="nv"&gt;MIME&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;create&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+                &lt;span class="s"&gt;attributes&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+                    &lt;span class="s"&gt;filename&lt;/span&gt;     &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;basename&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$attachment&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+                    &lt;span class="s"&gt;content_type&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;application/json&lt;/span&gt;&lt;span class="p"&gt;",&lt;/span&gt;
+                    &lt;span class="s"&gt;disposition&lt;/span&gt;  &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;attachment&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+                    &lt;span class="s"&gt;encoding&lt;/span&gt;     &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;base64&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+                    &lt;span class="s"&gt;name&lt;/span&gt;         &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;basename&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$attachment&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+                &lt;span class="p"&gt;},&lt;/span&gt;
+                &lt;span class="s"&gt;body&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;io&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;file&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$attachment&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;all&lt;/span&gt;
+            &lt;span class="p"&gt;);&lt;/span&gt;
+            &lt;span class="nb"&gt;push&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;@mail_attachments&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$single_attachment&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="p"&gt;}&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+    &lt;span class="c1"&gt;# Multipart message : It contains attachment as well as html body&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;@parts&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="nv"&gt;@mail_attachments&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+        &lt;span class="nn"&gt;Email::&lt;/span&gt;&lt;span class="nv"&gt;MIME&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;create&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+            &lt;span class="s"&gt;attributes&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+                &lt;span class="s"&gt;content_type&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;text/html&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+                &lt;span class="s"&gt;encoding&lt;/span&gt;     &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;quoted-printable&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+                &lt;span class="s"&gt;charset&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;US-ASCII&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt;
+            &lt;span class="p"&gt;},&lt;/span&gt;
+            &lt;span class="s"&gt;body_str&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$mail_body&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+        &lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="p"&gt;);&lt;/span&gt;
+
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mail_to_users&lt;/span&gt;    &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;join&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;, &lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="nv"&gt;@&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;config&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;mail_to&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$cc_mail_to_users&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;join&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;, &lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="nv"&gt;@&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;config&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;mail_cc_to&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$email&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Email::&lt;/span&gt;&lt;span class="nv"&gt;MIME&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;create&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="s"&gt;header&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;
+            &lt;span class="s"&gt;From&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;config&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;mail_from&lt;/span&gt;&lt;span class="p"&gt;},&lt;/span&gt;
+            &lt;span class="s"&gt;To&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$mail_to_users&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+            &lt;span class="s"&gt;Cc&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$cc_mail_to_users&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+            &lt;span class="s"&gt;Subject&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$mail_subject&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+        &lt;span class="p"&gt;],&lt;/span&gt;
+        &lt;span class="s"&gt;parts&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nv"&gt;@parts&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;
+    &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$email&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This method will take list of attachments, subject and body and create a MIME part using &lt;a href="https://metacpan.org/pod/Email::MIME"&gt;Email::MIME&lt;/a&gt;.&lt;br&gt;
+Also there is &lt;a href="https://metacpan.org/pod/Email::Stuffer"&gt;Email::Stuffer&lt;/a&gt; which you can also use for similar part. But for now I am using Email::MIME.&lt;/p&gt;
+&lt;h2&gt;
+  &lt;a href="#4-sending-email-" class="anchor"&gt;
+  &lt;/a&gt;
+  4. Sending Email -
+&lt;/h2&gt;
+
+&lt;p&gt;Now our mail to ready for send. We will create another method for it in addition to above methods.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Email::Sender::&lt;/span&gt;&lt;span class="nv"&gt;Simple&lt;/span&gt; &lt;span class="sx"&gt;qw( sendmail )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Email::Sender::Transport::&lt;/span&gt;&lt;span class="nv"&gt;SMTP&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;send_mail&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$email&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$transport&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Email::Sender::Transport::&lt;/span&gt;&lt;span class="nv"&gt;SMTP&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="s"&gt;host&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;config&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;smtp_server&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;
+        &lt;span class="p"&gt;}&lt;/span&gt;
+    &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nb"&gt;eval&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;sendmail&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$email&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;transport&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$transport&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="vg"&gt;$@&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="vg"&gt;$@&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+    &lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This method will just take the email  which we have created before and sent it to requested recipient.&lt;br&gt;
+Since our work is done here we will end the module with a true value.&lt;/p&gt;
+&lt;h2&gt;
+  &lt;a href="#5-using-the-module-" class="anchor"&gt;
+  &lt;/a&gt;
+  5. Using the module -
+&lt;/h2&gt;
+
+&lt;p&gt;Now we have the module ready. Lets create a perl script and try to utilize the methods which we have created(mail.pl).&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/env perl&lt;/span&gt;
+
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;strict&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;warnings&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;JSON&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;Cwd&lt;/span&gt; &lt;span class="sx"&gt;qw( abs_path )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;File::&lt;/span&gt;&lt;span class="nv"&gt;Basename&lt;/span&gt; &lt;span class="sx"&gt;qw( dirname )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;lib&lt;/span&gt; &lt;span class="nv"&gt;dirname&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;abs_path&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;));&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;SendMail&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;read_json_file&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$json_file&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Reading &lt;/span&gt;&lt;span class="si"&gt;$json_file&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+
+    &lt;span class="nb"&gt;open&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$in&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;&amp;lt;&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="nv"&gt;$json_file&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="ow"&gt;or&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Unable to open file &lt;/span&gt;&lt;span class="si"&gt;$json_file&lt;/span&gt;&lt;span class="s2"&gt; : $!&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$json_text&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="k"&gt;do&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;local&lt;/span&gt; &lt;span class="vg"&gt;$/&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt;&lt;span class="nv"&gt;$in&lt;/span&gt;&lt;span class="o"&gt;&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="nb"&gt;close&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$in&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="ow"&gt;or&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Unable to close file : $!&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$config_data&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;decode_json&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$json_text&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$config_data&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="c1"&gt;# Read the config file&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$config&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;read_json_file&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;config.json&lt;/span&gt;&lt;span class="p"&gt;");&lt;/span&gt;
+
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mail&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;SendMail&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;config&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$config&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{'&lt;/span&gt;&lt;span class="s1"&gt;mail&lt;/span&gt;&lt;span class="p"&gt;'});&lt;/span&gt;
+
+&lt;span class="c1"&gt;# param which you want to substitute in mail template&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mail_parameters&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;NAME =&amp;gt; 'Gaurav', LOCATION =&amp;gt; 'INDIA'&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+
+&lt;span class="c1"&gt;# path to mail attachments&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$attachments&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;["&lt;/span&gt;&lt;span class="s2"&gt;abc.txt&lt;/span&gt;&lt;span class="p"&gt;"];&lt;/span&gt;
+
+&lt;span class="c1"&gt;# path to mail template&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mail_template&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;mail_template/template.html&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+
+&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Generating HTML template for mail body&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$template&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$mail&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;generate_mail_template&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$mail_template&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$mail_parameters&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Creating mail with body and attachments to send&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mail_subject&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Test Mail&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$email&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$mail&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;create_mail&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$attachments&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$mail_subject&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$template&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;output&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Sending email...&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$mail_return_code&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$mail_exception&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$mail&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;send_mail&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$email&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;defined&lt;/span&gt; &lt;span class="nv"&gt;$mail_exception&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Exception while sending mail: &lt;/span&gt;&lt;span class="si"&gt;$mail_exception&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Mail Sent successfully&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And we are done. You can run this script from your terminal and test this. The full code for reference is also available at &lt;a href="https://github.com/sudo-batman/perl-toolkit/tree/master/Mail"&gt;Github&lt;/a&gt; for your reference&lt;/p&gt;
+
+&lt;p&gt;Perl onion logo taken from &lt;a href="https://github.com/dnmfarrell/Perl-Icons/blob/master/Icons/Perl_Onion_Color.svg"&gt;here&lt;/a&gt;&lt;br&gt;
+Mail logo taken from &lt;a href="https://fontawesome.com/icons/at?style=solid"&gt;here&lt;/a&gt; and &lt;a href="https://fontawesome.com/icons/envelope-open-text?style=solid"&gt;here&lt;/a&gt;&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Gaurav Rai</name>
+    </author>
+    <id>https://dev.to/raigaurav/sending-html-emails-using-perl-4b9b</id>
+    <published>2021-01-20T15:31:36Z</published>
+    <updated>2021-01-20T15:31:36Z</updated>
+    <category term="perl"/>
+    <category term="html"/>
+  </entry>
   <entry>
   <title>Loop controls: next, last, continue, break</title>
   <summary type="html"><![CDATA[<p>
@@ -2140,129 +2551,6 @@ applied
     ]]>
   </content>
 </entry>
-  <entry>
-    <title>Release 1.49 of perl-workflow</title>
-    <link rel="alternate" href="https://dev.to/jonasbn/release-1-49-of-perl-workflow-be2" type="text/html"/>
-    <content type="html">&lt;p&gt;2021 is off to a very energetic start. Around 9th. of January, &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt; an older project for which I am the current maintainer, received &lt;a href="https://github.com/jonasbn/perl-workflow/issues/21"&gt;a bug report&lt;/a&gt; about the error reporting section of the documentation not being up to date.&lt;/p&gt;
-
-&lt;p&gt;For many Perl distributions this is most relevant as &lt;a href="https://log.perl.org/2020/12/rtcpanorg-sunset.html"&gt;rt.cpan.org is being deactivated&lt;/a&gt; after many years of service.&lt;/p&gt;
-
-&lt;p&gt;I have already transferred most of my day to day handling of bugs, issues and TODOs to GitHub issues, but I have not documented it in &lt;em&gt;all&lt;/em&gt; places - apparently.&lt;/p&gt;
-
-&lt;p&gt;Before I could find the time to resolve this issue I received &lt;a href="https://github.com/jonasbn/perl-workflow/pull/22"&gt;a PR adressing the issue&lt;/a&gt; from &lt;a href="https://github.com/ehuelsmann"&gt;Erik Huelsmann&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;This was the beginning of a new invigorating period for &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt;. For the following days leading up to the release 1.49 of &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt;.&lt;/p&gt;
-
-&lt;ol&gt;
-&lt;li&gt;I received 13 PRs addressing bug and small issues, both known an unknown bugs from &lt;a href="https://github.com/ehuelsmann"&gt;Erik Huelsmann&lt;/a&gt; - thanks &lt;a href="https://github.com/ehuelsmann"&gt;Erik&lt;/a&gt;
-&lt;/li&gt;
-&lt;li&gt;An earlier contributor &lt;em&gt;chipped in&lt;/em&gt; with comments on PRs and issues and things got moving - thanks &lt;a href="https://github.com/oliwel"&gt;Oliver&lt;/a&gt;
-&lt;/li&gt;
-&lt;li&gt;We activated the Slack I use for my open source projects and discussion on development plans, road map, issues etc. really got going&lt;/li&gt;
-&lt;/ol&gt;
-
-&lt;p&gt;This all culminated in a maintenance and minor feature release of &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt;, for details see the change log below.&lt;/p&gt;
-
-&lt;p&gt;The PRs, issues and discussion all contributed to &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt; evolving as a Perl distribution and software project.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://github.com/ehuelsmann"&gt;Erik Huelsmann&lt;/a&gt; is evaluating using &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt; for the &lt;a href="https://ledgersmb.org/"&gt;LedgerSMB&lt;/a&gt; project and &lt;a href="https://github.com/oliwel"&gt;Oliver Welter&lt;/a&gt; is using it for &lt;a href="http://www.openxpki.org/"&gt;the OpenXPKI project&lt;/a&gt; and expect more feature, bug fix and maintenance release to be shipped in 2021.&lt;/p&gt;
-
-&lt;p&gt;And this leads an interesting aspect of software development.&lt;/p&gt;
-
-&lt;p&gt;When I took over maintenance of &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt; from &lt;a href="https://github.com/cwinters"&gt;Chris Winters&lt;/a&gt;, I was very interested in the topic of workflows and state-machines.&lt;/p&gt;
-
-&lt;p&gt;I had ideas for using &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt;, but for what, I can no longer remember.&lt;/p&gt;
-
-&lt;p&gt;For several years and many releases the code evolved, especially based on contributions from the &lt;a href="http://www.openxpki.org/"&gt;OpenXPKI&lt;/a&gt; developers. The &lt;a href="http://www.openxpki.org/"&gt;the OpenXPKI project&lt;/a&gt; developers contributed to the codebase, since they has a use-case, which could be solved by &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;I simply acted as the maintainer, but lacking a use case as my own, but it kept me going, simply because it was very educational and fun to work on a project, which was more than just hobby project scope.&lt;/p&gt;
-
-&lt;p&gt;As an author and even just a maintainer, knowing that somebody is using your software is what it is all about. Yes some projects are for scratching your own itch, but when somebody else has the same itch, collaboration is the way to go.&lt;/p&gt;
-
-&lt;p&gt;I have over they years received many PRs for the projects and it has kept &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt; going and stable. But I had no idea if anybody was actually using it, as a maintainer you tend to expect that nobody does and as activity decline as no PRs or issues are raised.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt; is not a project with a plethora of users and a gazillion stars, to me that does actually not matter. If I am not just scratching my own itch, having a single user will make it worthwhile to find the time to develop and maintain a project.&lt;/p&gt;
-
-&lt;p&gt;Not all interaction with users is fruitful and I think I have atleast lost one user along the way when I had not discovered &lt;a href="https://stackoverflow.com/questions/27921691/perl-workflow-module-with-validator/47498915#47498915"&gt;a question on StackOverflow&lt;/a&gt; and I responded too late - but I guess, "win some, loose some" also counts for software and especially for open source.&lt;/p&gt;
-
-&lt;p&gt;So remember to keep your open source maintainers active, by telling them you are using their software and report bugs and make contributions.&lt;/p&gt;
-
-&lt;p&gt;In all this &lt;em&gt;activity&lt;/em&gt; I completely forgot to thank &lt;a href="https://github.com/djzort"&gt;Dean Hamstead&lt;/a&gt; for opening &lt;a href="https://github.com/jonasbn/perl-workflow/issues/21"&gt;the issue&lt;/a&gt;, which seemed to &lt;em&gt;trigger&lt;/em&gt; everything.&lt;/p&gt;
-
-&lt;p&gt;So thanks &lt;a href="https://github.com/djzort"&gt;Dean&lt;/a&gt; also.&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#change-log" class="anchor"&gt;
-  &lt;/a&gt;
-  Change Log
-&lt;/h2&gt;
-
-&lt;p&gt;Change log entry for release 1.49 for &lt;a href="https://github.com/jonasbn/perl-workflow"&gt;perl-workflow&lt;/a&gt;, &lt;a href="https://raw.githubusercontent.com/jonasbn/perl-workflow/master/Changes"&gt;original&lt;/a&gt;&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;1.49 2021-01-12 Maintenance and minor feature release, update not required
-
-- Addressed an issue with return values from Workflow::Condition::GreedyOR's `evaluate_condition`, PR #50 from Erik Huelsmann
-
-- Fixed a bug in condition caching described in issue #9, PR #27 from Erik Huelsmann
-
-- Fixed a bug in Workflow::Condition::LazyAND with wrongful return values, PR #40 from Erik Huelsmann
-
-- Fixed a bug in Workflow::Validator::InEnumeratedType with wrongful naming, PR #33 from Erik Huelsmann
-
-- Updated Dist::Zilla configuration and added LICENSE file to repository based on generated from Dist::Zilla build, this should be automated like the README generation at some point
-
-- Improved internal handling for quoting in internal SQL statements, PR #30 from Erik Huelsmann
-
-- Improved the SQL used for database creation by adding referentiel integrity, PR #29 from Erik Huelsmann
-
-- Addressed a bug in initialization and improved the ability to handle a database handle, PR #32 from Erik Huelsmann
-
-- Improved loading of external of a few dependencies, improving error handling, PR #31 from Erik Huelsmann
-
-- Additions to test suite, WIP on better scoped condition caching, PR #26 from Erik Huelsmann
-
-- Minor feature addition addressing issue #5 with condition caching, PR #25 from Erik Huelsmann
-  Condition caching can be disabled by setting: 
-
-    $Workflow::Condition::CACHE_RESULTS = 0; # false
-
-  The default is 1, indicating true,
-
-- Improvements to test suite, moved from time to counter, speeding up the test, PR #24 from Erik Huelsmann
-
-- Documentation updates, PR #23 from Erik Huelsmann
-
-- Addressing issue #21 fixing broken URLs, PR #22 from Erik Huelsmann
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-</content>
-    <author>
-      <name>jonasbn</name>
-    </author>
-    <id>https://dev.to/jonasbn/release-1-49-of-perl-workflow-be2</id>
-    <published>2021-01-16T15:57:11Z</published>
-    <updated>2021-01-16T15:57:11Z</updated>
-    <category term="perl"/>
-    <category term="release"/>
-    <category term="opensource"/>
-  </entry>
   <entry>
     <title>Perl weekly challenge 95</title>
     <link rel="alternate" href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-95.html"/>
