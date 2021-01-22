@@ -55,6 +55,215 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-96.html">Perl weekly challenge 96</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>This week we had contrasting challenges.</p>
+
+<h3>Challenge 1 - Reverse Words</h3>
+
+<p>Take a string of words {with arbitrary white space around the words} and reverse the order of the words in the string and removing any redundant white space.</p>
+
+<p>This is a classic example of a 1-liner....</p>
+
+<pre><code>
+   join q( ), reverse grep {$_} split m{\s+}, $_[0];
+</code></pre>
+
+<h3>Challenge 2 - Edit Distance</h3>
+
+<p>I will provide 2 solutions here... one a less optimal solution which at the same time gives us a nice way of rendering the alignment - and then an more efficient "boiling down" of the first algorithm to just return the distance...</p>
+
+<p>I'm just going to add <em>"Another day job challenge!"</em></p>
+
+<p>To be able to make "nicer" output - rather than just keeping track of the edit distance of substrings - we will actually keep the alignment of the two words as a string of "operations" whether they be Indels or SNPs.</p>
+
+<p>One of my background is working with genomic data and this can be thought of as a simple alignment algorithm - and so I think of the three operations as Indels {inserts/deletes - remembering an insert into one sequence is just the same as a delete from the other} and SNPs - or single nucleotide polymorphisms.</p>
+
+<p>The simple alignment string representation we will use consists of:<br />
+<pre><br />
+  '|' - the letters are the same;<br />
+  'v' - insert<br />
+  '^' - delete<br />
+  ' ' - SNP/modify<br />
+</pre></p>
+
+<p>We can convert this to an edit distance by counting all the non-"|"s In perl we do this with tr/^v /^v / which returns the number of matches in scalar form. See {<tt>_edit_dist</tt> - function}</p>
+
+<p>Finally we include a nice way to render the alignment {edits} By showing the two words with appropriate inserts in each word and indicate where the letters match in each word via a the alignment string in the middle. See {<tt>render_alighnment</tt> function}</p>
+
+<pre>
+  kitten-    sunday    boat rid-ing
+   ||| |v      ||||    |^||||||v|||
+  sitting    monday    b-at ridding
+</pre>
+
+<p>Additional note - we "memoise" the alignment function - as it will be called with the same subseq of letters following different paths through the two sequences. This increases performance...</p>
+
+<p>From a "genomic" point of view this is known as the basis of the Smith-Waterman local alignment algorithm. Although Smith-Waterman has other features - including variable "penalties" for each type of edit {inserts, deletes, modifications}. Even having different penalties for certain changes {this is also similar to how typing correction software works - with assuming adjacent key typos are more likely.</p>
+
+<p>See:<br />
+ * https://en.wikipedia.org/wiki/Smith%E2%80%93Waterman_algorithm</p>
+
+<h4>Solution</h4>
+
+<p>We solve the recursively (stripping letters from one or both words each time). We have a number of options.</p>
+
+<p> * Either of the words has no-letters - so the alignment is either a set of inserts/deletes from the other string.<br />
+ * If the first character of each word is the same - we continue to the next letters {and an alignment is marked between the two words}<br />
+ * If they are not the same - we look to see which of the options insert, delete or snp makes has the lowest score...</p>
+
+<p>The other two helper functions render this string (given the two sequences) showing the gaps and alignments; and work out the edit distance from the alignment.</p>
+
+<pre><code>
+sub alignment_string {
+  my( $s, $t ) = @_;
+  $calls++;
+  my $key = "$s\t$t";
+  return $cache{$key} if exists $cache{$key};
+  $misses++;
+  ## Both strings are empty so reached end!
+  return $cache{$key}||=''              if $t eq q() && $s eq q();
+  ## Exhausted t so all edits are now deletes...
+  return $cache{$key}||='^' x length $s if $t eq q();
+  ## Exhausted s so all edits are now inserts...
+  return $cache{$key}||='v' x length $t if $s eq q();
+  ## First letters are the same so we just prepend the
+  ## match symbol (|) and continue...
+  return $cache{$key}||='|'.alignment_string(substr($s,1),substr($t,1))
+                                        if ord $s == ord $t;
+
+<p>  ## We now have three choices - "insert", "delete" or "SNP"<br />
+  my($d,$i,$m) = (<br />
+    '^'.alignment_string( substr($s,1), $t           ),<br />
+    'v'.alignment_string( $s,           substr($t,1) ),<br />
+    ' '.alignment_string( substr($s,1), substr($t,1) ),<br />
+  );<br />
+  return  $cache{$key}||=<br />
+        _edit_dist( $d ) < _edit_dist( $i )<br />
+    ? ( _edit_dist( $d ) < _edit_dist( $m ) ? $d : $m )<br />
+    : ( _edit_dist( $i ) < _edit_dist( $m ) ? $i : $m );<br />
+}</p>
+
+<p>sub edit_distance {<br />
+  return _edit_dist( alignment_string( @_ ) );<br />
+}</p>
+
+<p>sub _edit_dist { ## Count inserts(v), deletes(^) & mis-matches( )<br />
+  return $_[0] =~ tr/^v /^v /;<br />
+}</p>
+
+<p>sub render_alignment {<br />
+  my( $s, $t ) = @_;<br />
+  my $a = alignment_string( $s, $t );<br />
+  my( $top, $bot ) = ( '','' );<br />
+  foreach ( split m{}, $a ) {<br />
+    $top .= $_ eq 'v' ? '-' : substr $s, 0, 1, '';<br />
+    $bot .= $_ eq '^' ? '-' : substr $t, 0, 1, '';<br />
+  }<br />
+  return sprintf "%s\n%s (%d)\n%s\n",<br />
+    $top, $a, _edit_dist($a), $bot;<br />
+}<br />
+</code></pre></p>
+
+<p>If we are not interested in the "alignment" diagram we can simplify the code:</p>
+
+<pre><code>
+sub edit_distance_simple {
+  my( $s, $t ) = @_;
+  return $cache_x{"$s\t$t"}||=
+     $t eq q()          ? length $s
+   : $s eq q()          ? length $t
+   : (ord $s == ord $t) ? edit_distance(substr($s,1),substr($t,1))
+   :                      1+(sort { $a <=> $b }
+                            edit_distance(substr($s,1),$t),
+                            edit_distance($s,substr$t,1),
+                            edit_distance(substr($s,1),substr $t,1)
+                          )[0]
+   ;
+}
+</code></pre>
+
+<p>Note re-caches - these memoize the function - from trials the approximate hit is 50% - this matches up with the non recursive solution.</p>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by James Curtis-Smith
+     on Friday 22 January 2021 03:23</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2021/01/mood-lighting.html">Mood Lighting</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>The lighting in my bedroom uses <a href="https://en.wikipedia.org/wiki/Philips_Hue">Philips Hue bulbs</a> — specifically, the coloured ones. Last night, I decided it would be nice to set the three lights in my bedroom to cycle slowly through a set of warm colours using a script.</p>
+
+<p>I didn't want harsh transitions from one colour to the next, but for the lighting to fade from one colour to the next in a smooth gradient. Also, I didn't want the three bulbs to all be the exact same colour, but wanted each bulb to be at different stage in the cycle, like they're "chasing" each other through the colours.</p>
+
+<p>So I whipped up a quick script. It requires the command-line tool <a href="https://github.com/bahamas10/hueadm">hueadm</a> to be installed and set up before we start. You can run <kbd>hueadm lights</kbd> to get a list of available lights, and in particular, their ID numbers.</p>
+        <p>First step, we need to be able blend two colours together. This is necessary to be able to create smooth transitions between colours. I stole a little code from <a href="https://metacpan.org/release/Color-Fade/source/lib/Color/Fade.pm">Color::Fade</a> on CPAN to do this.</p>
+
+<script src="https://gist.github.com/tobyink/e9686777d150937f0b929de115fae695.js"></script>
+
+<p>Pretty simple averaging of two RGB values. You could arguably get a better effect by converting to HSL, averaging those values and then converting back to RGB, but in practice, using RGB seems fine.</p>
+
+<p>Now we can build the gradients. We want to take an array of colours and make it into a cycle by copying the first colour to the end, then create a new array, copying the colours into the new array, but inserting a blend of each pair between them, so our initial array of N colours grows to an array of 2N colours. Then repeat that process a few times.</p>
+
+<script src="https://gist.github.com/tobyink/e7f910b8d3947f3536483ed9a4fe23c3.js"></script>
+
+<p>Nice. Now we know what colours our lights should be.</p>
+
+<p>Here's a quick Moo class to control a lightbulb, given its ID. Nothing interesting to see here.</p>
+
+<script src="https://gist.github.com/tobyink/593316c89929cde61ce52a199633c2f8.js"></script>
+
+<p>Finally we can work on the logic. We have an array of colours; we need to pick an index in that array for each bulb. My array of colours (after being expanded into a gradient), ended up being 160 colours, so it seemed that a good starting point was to set my three bulbs initially to colours 0, 16, and 32 in the array. Something along these lines:</p>
+
+<script src="https://gist.github.com/tobyink/30a15fce9f03e493420ca72ded4955b1.js"></script>
+
+<p>Then pause for a second or two, then add one to each index (looping any that go over 160 back to 0) and repeat. Here's the full code for that:</p>
+
+<script src="https://gist.github.com/tobyink/e9462093b4830a8fd0216a8ff1cba0ca.js"></script>
+
+<p>Now let's test it out...</p>
+
+<script src="https://gist.github.com/tobyink/a7a01c4a362f40b685b54abd6afc706d.js"></script>
+
+<p>It works!</p>
+
+<p>The <a href="https://gist.github.com/tobyink/62a6d7a994573f3f7dc83acc5754d4d7">full script is on GitHub Gist</a>.</p>
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Toby Inkster
+     on Friday 22 January 2021 13:55</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/tobyink/mood-lighting-40lg">Mood Lighting</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Perl 5 script to cycle through a gradient of colours on a set of Philips Hue lightbulbs.</p>
+
+<p><a href="https://gist.github.com/tobyink/62a6d7a994573f3f7dc83acc5754d4d7">Full script on Gist</a></p>
+
+<p><a href="https://toby.ink/blog/2021/01/22/mood-lighting/">Explanation on my blog</a></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Toby Inkster
+     on Friday 22 January 2021 09:43</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_4">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/generate-checksum-in-perl-5af1">Generate checksum using Perl</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>In this article we will be looking at how to generate different type of <a href="https://en.wikipedia.org/wiki/Checksum">checksum</a> across Linux and Windows.</p>
@@ -179,7 +388,7 @@ Hash function image taken from <a href="https://en.wikipedia.org/wiki/Cryptograp
      on Thursday 21 January 2021 17:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/martin_mcgrath/2021/01/regarding-the-closure-of-rtcpan.html">Regarding the closure of rt.cpan.</a></h2>
             </div> <!-- card-header -->
@@ -224,7 +433,7 @@ unilaterally."<br />
      on Thursday 21 January 2021 13:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/joan_mimosinnet/2021/01/perl-weekly-challenge-096---raku.html">Perl weekly challenge 096 - Raku </a></h2>
             </div> <!-- card-header -->
@@ -299,7 +508,7 @@ While this may be similar to the other dynamic programming solutions provided, t
      on Thursday 21 January 2021 05:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jesse_shy/2021/01/roles-huh-what-are-they-good-for.html">Roles, h'uh, what are they good for?</a></h2>
             </div> <!-- card-header -->
@@ -381,7 +590,7 @@ I’m using that word inheritance a lot for a reason, one of the two ways I see 
      on Wednesday 20 January 2021 04:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/cli-tools-replace-snake-by-camel-in-a-text-file-2gdd">CLI tools: Replace snake by camel in a text file</a></h2>
             </div> <!-- card-header -->
@@ -502,7 +711,7 @@ There is a blue camel and a red camel here.
      on Wednesday 20 January 2021 18:12</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/sending-html-emails-using-perl-4b9b">Sending HTML Emails Using Perl</a></h2>
             </div> <!-- card-header -->
@@ -912,7 +1121,7 @@ Mail logo taken from <a href="https://fontawesome.com/icons/at?style=solid">here
      on Wednesday 20 January 2021 15:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/loop-controls-next-last">Loop controls: next, last, continue, break</a></h2>
             </div> <!-- card-header -->
@@ -933,7 +1142,7 @@ In most of the other languages the respective keywords are <span class="inline_c
      on Wednesday 20 January 2021 12:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-win32-gui-using-perl-and-win32-guitest-8bi">Automate Win32 GUI using Perl and Win32::GuiTest</a></h2>
             </div> <!-- card-header -->
@@ -1348,7 +1557,7 @@ Windows logo taken from <a href="https://docs.microsoft.com">here</a></p>
      on Tuesday 19 January 2021 16:44</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_jan_2021">Call for Grants (January 2021 Round)</a></h2>
             </div> <!-- card-header -->
@@ -1384,7 +1593,7 @@ Windows logo taken from <a href="https://docs.microsoft.com">here</a></p>
      on Tuesday 19 January 2021 15:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-19-geodaten-bilder-videos-exif">Geodaten in Bildern und Videos können viel über Nutzer verraten</a></h2>
             </div> <!-- card-header -->
@@ -1397,343 +1606,7 @@ Am vorvergangenen Wochenende (9./10. Januar 2021) gab es relativ viel Wirbel um 
      on Tuesday 19 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/raigaurav/scrapping-google-scholar-with-perl-and-mojo-4neg">Scrapping Google Scholar with Perl and Mojo</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Today we will learn about web scrapping in which Perl excels.<br>
-Again there are various tools and modules available in Perl which can perform this task.</p>
-
-<ol>
-<li>
-<a href="https://metacpan.org/pod/LWP::UserAgent">LWP::UserAgent</a> with <a href="https://metacpan.org/pod/XML::LibXML">XML::LibXML</a> or <a href="https://metacpan.org/pod/HTML::TreeBuilder">HTML::TreeBuilder</a>
-</li>
-<li>
-<a href="https://metacpan.org/pod/WWW::Mechanize">WWW::Mechanize</a> with <a href="https://metacpan.org/pod/XML::LibXML">XML::LibXML</a> or <a href="https://metacpan.org/pod/HTML::TreeBuilder">HTML::TreeBuilder</a>
-</li>
-<li>
-<a href="https://metacpan.org/pod/Mojo::UserAgent">Mojo::UserAgent</a> with <a href="https://metacpan.org/pod/Mojo::DOM">Mojo::DOM</a>
-</li>
-</ol>
-
-<p>All 3 are powerful and recommended. Its up to user preference and what he want to do.<br>
-In this article we will take a look at 2 items of Mojo stack - Mojo::UserAgent and Mojo::DOM</p>
-
-<p>So what is <a href="https://scholar.google.com/">Google Scholar</a>. According to there <a href="https://scholar.google.com/intl/en/scholar/about.html">about</a> page -</p>
-
-<blockquote>
-<p>Google Scholar provides a simple way to broadly search for scholarly literature. From one place, you can search across many disciplines and sources: articles, theses, books, abstracts and court opinions, from academic publishers, professional societies, online repositories, universities and other web sites. Google Scholar helps you find relevant work across the world of scholarly research.</p>
-</blockquote>
-
-<p>For our demo we will be scrapping the google scholar for the article of a particular author.<br>
-Lets get started with the basic code of fetching the data.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Mojo::</span><span class="nv">UserAgent</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">crawl_results</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$ua</span><span class="p">,</span> <span class="nv">$url</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="k">my</span> <span class="nv">$response</span> <span class="o">=</span> <span class="nv">$ua</span><span class="o">-&gt;</span><span class="nv">get</span><span class="p">(</span><span class="nv">$url</span><span class="p">)</span><span class="o">-&gt;</span><span class="nv">result</span><span class="p">;</span>
-
-    <span class="k">if</span> <span class="p">(</span><span class="nv">$response</span><span class="o">-&gt;</span><span class="nv">is_success</span><span class="p">)</span> <span class="p">{</span>
-        <span class="c1"># We are able to get the results</span>
-    <span class="p">}</span>
-    <span class="p">}</span>
-    <span class="k">else</span> <span class="p">{</span>
-        <span class="nv">croak</span> <span class="nv">$response</span><span class="o">-&gt;</span><span class="nv">message</span><span class="p">;</span>
-    <span class="p">}</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">main</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$base_url</span>    <span class="o">=</span> <span class="p">"</span><span class="s2">https://scholar.google.com/scholar</span><span class="p">";</span>
-    <span class="k">my</span> <span class="nv">$url</span>         <span class="o">=</span> <span class="nn">Mojo::</span><span class="nv">URL</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="nv">$base_url</span><span class="p">);</span>
-
-    <span class="c1"># Getting all the article for a paricular author</span>
-    <span class="nv">$url</span> <span class="o">=</span> <span class="nv">$url</span><span class="o">-&gt;</span><span class="nv">query</span><span class="p">({"</span><span class="s2">as_q</span><span class="p">"</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">author:</span><span class="se">\"</span><span class="s2">kshama Rai</span><span class="se">\"</span><span class="p">",</span> <span class="p">"</span><span class="s2">hl</span><span class="p">"</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">en</span><span class="p">"});</span>
-
-    <span class="k">my</span> <span class="nv">$ua</span> <span class="o">=</span> <span class="nn">Mojo::</span><span class="nv">UserAgent</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">;</span>
-    <span class="nv">$ua</span><span class="o">-&gt;</span><span class="nv">transactor</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">('</span><span class="s1">Mozilla/5.0</span><span class="p">');</span>
-    <span class="nv">crawl_results</span><span class="p">(</span><span class="nv">$ua</span><span class="p">,</span> <span class="nv">$url</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="nv">main</span><span class="p">();</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<ul>
-<li>Here we are building the url with the help of <a href="https://docs.mojolicious.org/Mojo/URL">Mojo::URL</a>
-</li>
-<li>Next we are adding the <code>query parameters</code> as hashref by using <a href="https://docs.mojolicious.org/Mojo/URL#query">query</a> function.
-There are various query parameters available. For simplicity purpose I have used only <code>as_q</code> but you can add more based upon your requirement. These are -
-</li>
-</ul>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>    <span class="p">{</span>
-        <span class="p">"</span><span class="s2">as_ylo</span><span class="p">"</span>          <span class="o">=&gt;</span> <span class="o">&lt;</span><span class="nv">Lowest</span> <span class="nv">year</span> <span class="nv">in</span> <span class="nv">year</span> <span class="nv">range</span><span class="o">&gt;</span><span class="p">,</span>
-        <span class="p">"</span><span class="s2">as_yhi</span><span class="p">"</span>          <span class="o">=&gt;</span> <span class="o">&lt;</span><span class="nv">Highest</span> <span class="nv">year</span> <span class="nv">in</span> <span class="nv">year</span> <span class="nv">range</span><span class="o">&gt;</span><span class="p">,</span>
-        <span class="p">"</span><span class="s2">as_vis</span><span class="p">"</span>          <span class="o">=&gt;</span> <span class="o">&lt;</span><span class="nv">Include</span> <span class="nv">citations</span><span class="p">(</span><span class="mi">0</span><span class="o">|</span><span class="mi">1</span><span class="p">)</span> <span class="p">(</span><span class="nv">Doesn</span><span class="p">'</span><span class="s1">t include citation is 1)&gt;,
-        "as_sdt"          =&gt; &lt;Include Patent(0|1) (Doesn</span><span class="p">'</span><span class="nv">t</span> <span class="nv">include</span> <span class="nv">patent</span> <span class="nv">is</span> <span class="mi">1</span><span class="p">)</span><span class="o">&gt;</span><span class="p">,</span>
-        <span class="p">"</span><span class="s2">scisbd</span><span class="p">"</span>          <span class="o">=&gt;</span> <span class="o">&lt;</span><span class="nv">Sort</span> <span class="nv">by</span> <span class="nv">date</span><span class="p">(</span><span class="mi">0</span><span class="o">|</span><span class="mi">1</span><span class="p">)</span><span class="o">&gt;</span>
-        <span class="p">"</span><span class="s2">as_publication</span><span class="p">"</span>  <span class="o">=&gt;</span> <span class="o">&lt;</span><span class="nv">Journal</span><span class="o">/</span><span class="nv">Source</span> <span class="nv">name</span><span class="o">&gt;</span>
-        <span class="p">"</span><span class="s2">hl</span><span class="p">"</span>              <span class="o">=&gt;</span> <span class="o">&lt;</span><span class="nv">Language</span> <span class="nv">of</span> <span class="nv">the</span> <span class="nv">result</span><span class="o">/</span><span class="nv">output</span><span class="p">,</span> <span class="p">"</span><span class="s2">en</span><span class="p">"</span> <span class="nv">means</span> <span class="nv">english</span><span class="o">&gt;</span><span class="p">,</span>
-        <span class="p">"</span><span class="s2">as_q</span><span class="p">"</span>            <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">&lt;Title of the article to search&gt; author:&lt;name&gt;</span><span class="p">"</span>
-    <span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<ul>
-<li>Next we are creating object of Mojo::Useragent for doing the request work. We are updating the user-agent string to look like we are coming from browser. More info - <a href="https://docs.mojolicious.org/Mojo/UserAgent/Transactor#name">Mojo::UserAgent::Transactor</a>
-</li>
-<li>After that we are doing the <code>get</code> request on the url and checking whether it get succeed or not.</li>
-</ul>
-
-<p>Now lets go to google scholar page and search for the author article and see what is the result.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Z2DSeexQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/hc5vrjy8lg15aoyflgzo.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Z2DSeexQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/hc5vrjy8lg15aoyflgzo.PNG" alt="Alt Text"></a><br>
-If we <strong>inspect element</strong> we can find more detail about the HTML tag and class.<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--BWhwdj5f--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/051g1uctptt3td9s3ha3.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--BWhwdj5f--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/i/051g1uctptt3td9s3ha3.PNG" alt="Alt Text"></a></p>
-
-<p>If we look in the inspector we can see -</p>
-
-<ul>
-<li>Each result is in the <code>div</code> having class name <code>gs_ri</code>. All the other element are embedded inside it.
-All the other results have there own <code>div</code> with the same class name i.e. <code>gs_ri</code>.</li>
-<li>
-<strong>Title</strong> and <strong>Link</strong> of the research paper is an <code>anchor</code> inside <code>h3</code> having class name <code>gs_rt</code>.</li>
-<li>
-<strong>Author</strong> and <strong>Journal</strong> name are inside <code>div</code> with class name <code>gs_a</code>.</li>
-<li>
-<strong>Abstract</strong> is inside <code>div</code> with class name <code>gs_rs</code> having line breaks.</li>
-<li>
-<strong>Citation</strong> is inside <code>div</code> with class name <code>gs_fl</code>
-</li>
-</ul>
-
-<p>Lets try to translate our finding into code.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Mojo::</span><span class="nv">UserAgent</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Data::</span><span class="nv">Dumper</span><span class="p">;</span>
-<span class="k">use</span> <span class="nb">open</span> <span class="p">'</span><span class="s1">:std</span><span class="p">',</span> <span class="p">'</span><span class="s1">:encoding(UTF-8)</span><span class="p">';</span>
-
-<span class="k">sub </span><span class="nf">crawl_results</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$ua</span><span class="p">,</span> <span class="nv">$url</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="k">my</span> <span class="nv">$response</span> <span class="o">=</span> <span class="nv">$ua</span><span class="o">-&gt;</span><span class="nv">get</span><span class="p">(</span><span class="nv">$url</span><span class="p">)</span><span class="o">-&gt;</span><span class="nv">result</span><span class="p">;</span>
-
-    <span class="k">if</span> <span class="p">(</span><span class="nv">$response</span><span class="o">-&gt;</span><span class="nv">is_success</span><span class="p">)</span> <span class="p">{</span>
-
-        <span class="c1"># https://docs.mojolicious.org/Mojo/DOM#find</span>
-        <span class="k">my</span> <span class="nv">$divs</span> <span class="o">=</span> <span class="nv">$response</span><span class="o">-&gt;</span><span class="nv">dom</span><span class="o">-&gt;</span><span class="nv">find</span><span class="p">('</span><span class="s1">div.gs_ri</span><span class="p">');</span>
-        <span class="k">my</span> <span class="nv">@publications</span><span class="p">;</span>
-        <span class="k">for</span> <span class="k">my</span> <span class="nv">$div</span> <span class="p">(</span><span class="nv">$divs</span><span class="o">-&gt;</span><span class="nb">each</span><span class="p">)</span> <span class="p">{</span>
-            <span class="c1"># For getting the title</span>
-            <span class="c1"># https://docs.mojolicious.org/Mojo/Collection#map</span>
-            <span class="c1"># https://docs.mojolicious.org/Mojo/Collection#join</span>
-            <span class="k">my</span> <span class="nv">$title</span>   <span class="o">=</span> <span class="nv">$div</span><span class="o">-&gt;</span><span class="nv">find</span><span class="p">('</span><span class="s1">h3.gs_rt a</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">map</span><span class="p">('</span><span class="s1">text</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">join</span><span class="p">("</span><span class="se">\n</span><span class="p">");</span>
-            <span class="k">if</span> <span class="p">(</span><span class="nb">defined</span> <span class="nv">$title</span> <span class="o">&amp;&amp;</span> <span class="nv">$title</span> <span class="ow">ne</span> <span class="p">"")</span> <span class="p">{</span>
-                <span class="k">my</span> <span class="nv">$article</span> <span class="o">=</span> <span class="p">{};</span>
-                <span class="nv">$article</span><span class="o">-&gt;</span><span class="p">{"</span><span class="s2">Title</span><span class="p">"}</span> <span class="o">=</span> <span class="p">"</span><span class="si">$title</span><span class="p">";</span>
-
-                <span class="k">my</span> <span class="nv">$anchor_link</span> <span class="o">=</span> <span class="nv">$div</span><span class="o">-&gt;</span><span class="nv">find</span><span class="p">('</span><span class="s1">h3.gs_rt a</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">map</span><span class="p">(</span><span class="s">attr</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">href</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">join</span><span class="p">("</span><span class="se">\n</span><span class="p">");</span>
-                <span class="k">if</span> <span class="p">(</span><span class="nb">defined</span> <span class="nv">$anchor_link</span> <span class="o">&amp;&amp;</span> <span class="nv">$anchor_link</span> <span class="ow">ne</span> <span class="p">"")</span> <span class="p">{</span>
-                    <span class="nv">$article</span><span class="o">-&gt;</span><span class="p">{"</span><span class="s2">Link</span><span class="p">"}</span> <span class="o">=</span> <span class="p">"</span><span class="si">$anchor_link</span><span class="p">";</span>
-                <span class="p">}</span>
-
-                <span class="c1"># For getting the abstract</span>
-                <span class="k">my</span> <span class="nv">$abstract</span> <span class="o">=</span> <span class="nv">$div</span><span class="o">-&gt;</span><span class="nv">find</span><span class="p">('</span><span class="s1">div.gs_rs</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">map</span><span class="p">('</span><span class="s1">text</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">join</span><span class="p">("</span><span class="se">\n</span><span class="p">");</span>
-                <span class="k">if</span> <span class="p">(</span><span class="nb">defined</span> <span class="nv">$abstract</span> <span class="o">&amp;&amp;</span> <span class="nv">$abstract</span> <span class="ow">ne</span> <span class="p">"")</span> <span class="p">{</span>
-                    <span class="nv">$article</span><span class="o">-&gt;</span><span class="p">{"</span><span class="s2">Abstract</span><span class="p">"}</span> <span class="o">=</span> <span class="p">"</span><span class="si">$abstract</span><span class="p">";</span>
-                <span class="p">}</span>
-
-                <span class="c1"># For getting the journal name</span>
-                <span class="k">my</span> <span class="nv">$journal</span> <span class="o">=</span> <span class="nv">$div</span><span class="o">-&gt;</span><span class="nv">find</span><span class="p">('</span><span class="s1">div.gs_a</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">map</span><span class="p">('</span><span class="s1">text</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">map</span><span class="p">(</span>
-                    <span class="c1"># Remove the '-' and extra space from start</span>
-                    <span class="k">sub </span><span class="p">{</span>
-                        <span class="k">my</span> <span class="p">(</span><span class="nv">$aut_name</span><span class="p">,</span> <span class="nv">$journal</span><span class="p">)</span> <span class="o">=</span> <span class="nb">split</span><span class="p">(</span><span class="sr">/-/</span><span class="p">,</span> <span class="vg">$_</span><span class="p">,</span> <span class="mi">2</span><span class="p">);</span>
-                        <span class="nv">$journal</span> <span class="o">=~</span> <span class="sr">s/^\s?//</span><span class="p">;</span>
-                        <span class="k">return</span> <span class="nv">$journal</span><span class="p">;</span>
-                    <span class="p">}</span>
-                <span class="p">)</span><span class="o">-&gt;</span><span class="nb">join</span><span class="p">("</span><span class="se">\n</span><span class="p">");</span>
-                <span class="k">if</span> <span class="p">(</span><span class="nb">defined</span> <span class="nv">$journal</span> <span class="o">&amp;&amp;</span> <span class="nv">$journal</span> <span class="ow">ne</span> <span class="p">"")</span> <span class="p">{</span>
-                    <span class="nv">$article</span><span class="o">-&gt;</span><span class="p">{"</span><span class="s2">Journal</span><span class="p">"}</span> <span class="o">=</span> <span class="p">"</span><span class="si">$journal</span><span class="p">";</span>
-                <span class="p">}</span>
-
-                <span class="c1"># For getting the citation</span>
-                <span class="c1"># https://docs.mojolicious.org/Mojo/Collection#grep</span>
-                <span class="k">my</span> <span class="nv">$citation</span> <span class="o">=</span> <span class="nv">$div</span><span class="o">-&gt;</span><span class="nv">find</span><span class="p">('</span><span class="s1">div.gs_fl a</span><span class="p">')</span><span class="o">-&gt;</span><span class="nb">grep</span><span class="p">(</span>
-                    <span class="c1"># It contain the string like 'Cited by 5'.</span>
-                    <span class="k">sub </span><span class="p">{</span> <span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">text</span> <span class="o">=~</span> <span class="sr">/Cited by/</span> <span class="p">}</span>
-                    <span class="p">)</span>
-                <span class="o">-&gt;</span><span class="nb">map</span><span class="p">('</span><span class="s1">text</span><span class="p">')</span>
-                <span class="o">-&gt;</span><span class="nb">join</span><span class="p">("</span><span class="se">\n</span><span class="p">");</span>
-                <span class="k">if</span> <span class="p">(</span><span class="nb">defined</span> <span class="nv">$citation</span> <span class="o">&amp;&amp;</span> <span class="nv">$citation</span> <span class="ow">ne</span> <span class="p">"")</span> <span class="p">{</span>
-                    <span class="nv">$article</span><span class="o">-&gt;</span><span class="p">{"</span><span class="s2">Citation</span><span class="p">"}</span> <span class="o">=</span> <span class="p">"</span><span class="si">$citation</span><span class="p">";</span>
-                <span class="p">}</span>
-                <span class="nb">push</span><span class="p">(</span><span class="nv">@publications</span><span class="p">,</span> <span class="nv">$article</span><span class="p">);</span>
-            <span class="p">}</span>
-        <span class="p">}</span>
-        <span class="k">return</span> <span class="o">\</span><span class="nv">@publications</span><span class="p">;</span>
-    <span class="p">}</span>
-    <span class="k">else</span> <span class="p">{</span>
-        <span class="nv">croak</span> <span class="nv">$response</span><span class="o">-&gt;</span><span class="nv">message</span><span class="p">;</span>
-    <span class="p">}</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">main</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$base_url</span>    <span class="o">=</span> <span class="p">"</span><span class="s2">https://scholar.google.com/scholar</span><span class="p">";</span>
-    <span class="k">my</span> <span class="nv">$url</span>         <span class="o">=</span> <span class="nn">Mojo::</span><span class="nv">URL</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="nv">$base_url</span><span class="p">);</span>
-
-    <span class="c1"># Getting all the article for a particular author</span>
-    <span class="nv">$url</span> <span class="o">=</span> <span class="nv">$url</span><span class="o">-&gt;</span><span class="nv">query</span><span class="p">({"</span><span class="s2">as_q</span><span class="p">"</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">author:</span><span class="se">\"</span><span class="s2">kshama Rai</span><span class="se">\"</span><span class="p">",</span> <span class="p">"</span><span class="s2">hl</span><span class="p">"</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">en</span><span class="p">"});</span>
-
-    <span class="k">my</span> <span class="nv">$ua</span> <span class="o">=</span> <span class="nn">Mojo::</span><span class="nv">UserAgent</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">;</span>
-    <span class="nv">$ua</span><span class="o">-&gt;</span><span class="nv">transactor</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">('</span><span class="s1">Mozilla/5.0</span><span class="p">');</span>
-    <span class="k">my</span> <span class="nv">$output</span> <span class="o">=</span> <span class="nv">crawl_results</span><span class="p">(</span><span class="nv">$ua</span><span class="p">,</span> <span class="nv">$url</span><span class="p">);</span>
-    <span class="k">print</span> <span class="nv">Dumper</span><span class="p">(</span><span class="nv">$output</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="nv">main</span><span class="p">();</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>I have added the comments for clarity. Have a look at those links for more info.<br>
-I have pushed the parsed data into array for dumping it on screen.<br>
-The output sometimes contains Unicode character. Hence, We are telling the Perl parser to allow UTF-8 in the program text in <code>use open</code>.<br>
-Save the file and run it. <br>
-You will get below output -<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="p">[</span>
-    <span class="p">{</span>
-        <span class="p">'</span><span class="s1">Link</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">https://link.springer.com/article/10.1007/s10646-019-02020-6</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Citation</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Cited by 5</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Title</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Role of supplemental UV-B in changing the level of ozone toxicity in two cultivars of sunflower: growth, seed yield and oil quality</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Journal</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Ecotoxicology, 2019 - Springer</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Abstract</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Abstract Ultraviolet-B radiation (UV-B) is inherent part of solar spectrum and tropospheric ozone (O 3) is a potent secondary air pollutant. Therefore the present study was conducted to evaluate the responses of Helianthus annuus L. cvs DRSF 108 and Sungold (sunflower)</span><span class="se">\x{a0}\x{2026}</span><span class="p">"</span>
-    <span class="p">},</span>
-    <span class="p">{</span>
-        <span class="p">'</span><span class="s1">Link</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">http://www.bhu.ac.in/research_pub/jsr61/_pdf_files/06.%20Ksharma%20Rai%20&amp;%20SB%20Agrawal.pdf</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Title</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Effects of UV-B radiation on morphological, physiological and biochemical aspects of plants: an overview</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Citation</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Cited by 11</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Abstract</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Origin of life was never be thought without considering the role of UV radiation but once the </span><span class="se">\x{201c}</span><span class="s2">boon</span><span class="se">\x{201d}</span><span class="s2">, is slowly becoming </span><span class="se">\x{201c}</span><span class="s2">curse</span><span class="se">\x{201d}</span><span class="s2"> for life. Plants are exposed to many factors but the problem of enhanced UV-B is created by the anthropogenic activities resulted in ozone layer</span><span class="se">\x{a0}\x{2026}</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Journal</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">J Sci Res, 2017 - bhu.ac.in</span><span class="p">'</span>
-    <span class="p">},</span>
-    <span class="p">{</span>
-        <span class="p">'</span><span class="s1">Journal</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Physiology and Molecular Biology of Plants, 2020 - Springer</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Abstract</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">In the present study sensitivity of a medicinal plant Eclipta alba L.(Hassk)(False daisy) was assessed under intermittent (IT) and continuous (CT) doses of elevated ultraviolet-B (eUV-B). Eclipta alba is rich in medicinally important phytochemical constituents, used against</span><span class="se">\x{a0}\x{2026}</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Title</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Effect on essential oil components and wedelolactone content of a medicinal plant Eclipta alba due to modifications in the growth and morphology under different</span><span class="se">\x{a0}\x{2026}</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Link</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">https://link.springer.com/content/pdf/10.1007/s12298-020-00780-8.pdf</span><span class="p">'</span>
-    <span class="p">},</span>
-    <span class="p">{</span>
-        <span class="p">'</span><span class="s1">Link</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">https://www.sciencedirect.com/science/article/pii/B9780128164839000050</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Abstract</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Climate change is associated to how weather patterns change over decades or longer due to natural and human influences. Since the industrial revolution, humans have contributed to climate change through the emission of greenhouse gases and aerosols as well as changes</span><span class="se">\x{a0}\x{2026}</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Journal</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Climate Change and Agricultural</span><span class="se">\x{a0}\x{2026}</span><span class="s2">, 2019 - Elsevier</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Citation</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Cited by 1</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Title</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Climate Change and Secondary Metabolism in Plants: Resilience to Disruption</span><span class="p">'</span>
-    <span class="p">},</span>
-    <span class="p">{</span>
-        <span class="p">'</span><span class="s1">Title</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">HOST PATHOGEN INTERACTIONS BETWEEN DROSOPHILA MELANOGASTER AND BEAUVERIA BASSIANA _ A Thesis Presented to the</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Journal</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">2019 - search.proquest.com</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Abstract</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Drosophila melanogaster is an established model organism for immunity as their immune system is similar to insect disease vectors and pests and also shares similarities with that of the mammalian innate immune system. Our study uses the entomopathogenic fungus</span><span class="se">\x{a0}\x{2026}</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Link</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">http://search.proquest.com/openview/868d2826bca7969ea2c29d15273af87b/1.pdf?pq-origsite=gscholar&amp;cbl=18750&amp;diss=y</span><span class="p">'</span>
-    <span class="p">},</span>
-    <span class="p">{</span>
-        <span class="p">'</span><span class="s1">Title</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Low weight gain as a predictor for development of retinopathy of prematurity</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Abstract</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Page 1. i </span><span class="se">\x{201c}</span><span class="s2">LOW WEIGHT GAIN AS A PREDICTOR FOR DEVELOPMENT OF RETINOPATHY OF PREMATURITY</span><span class="se">\x{201d}</span><span class="s2"> By Dr. KSHAMA RAI MBBS Dissertation Submitted to the Rajiv Gandhi University of Health Sciences, Karnataka, Bangalore In partial fulfilment of the requirements</span><span class="se">\x{a0}\x{2026}</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Journal</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">2018 - 112.133.228.240</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Link</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">http://112.133.228.240/xmlui/bitstream/handle/123456789/1156/Synopsis.pdf?sequence=1</span><span class="p">'</span>
-    <span class="p">},</span>
-    <span class="p">{</span>
-        <span class="p">'</span><span class="s1">Title</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Use of High Resolution Remote Sensing Data and GIS Techniques for Monitoring Of </span><span class="se">\'</span><span class="s1">U</span><span class="se">\'</span><span class="s1">Shaped Wetland At GB Nagar District, Uttar Pradesh</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Journal</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">gyanvihar.org</span><span class="p">',</span>
-        <span class="p">'</span><span class="s1">Abstract</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">In developing countries of the world, the ever increasing population and to fulfill its need for housing and other economic activities almost urban fringe are getting encroached and our surrounding environment and natural wetlands, water bodies and other biological cycles are</span><span class="se">\x{a0}\x{2026}</span><span class="p">",</span>
-        <span class="p">'</span><span class="s1">Link</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">https://www.gyanvihar.org/researchjournals/c3w/Chapter-2%20Use%20Of%20High%20Resolution%20Remote%20Sensing%20Data%20And%20GIS%20Techniques%20For%20Monitoring%20Of%20_U_%20Shaped%20Wetland%20At%20G.B.%20Nagar%20District,%20Uttar%20Pradesh.pdf</span><span class="p">'</span>
-    <span class="p">}</span>
-<span class="p">];</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>Perl onion logo taken from <a href="https://github.com/dnmfarrell/Perl-Icons/blob/master/Icons/Perl_Onion_Color.svg">here</a><br>
-Mojolicious logo taken from <a href="https://github.com/mojolicious/mojo/blob/master/lib/Mojolicious/resources/public/mojo/logo.png">here</a><br>
-Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Gaurav Rai
-     on Monday 18 January 2021 15:41</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/vwg">If it was Good Enough for Mozart - Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -1745,7 +1618,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/zo0">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -1757,7 +1630,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xg1">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -1769,7 +1642,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/r3o">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1781,7 +1654,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xgd">Big Dividends, Bigger Opportunity! Perl role with multiple location options</a></h2>
             </div> <!-- card-header -->
@@ -1793,7 +1666,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -1805,7 +1678,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -1817,7 +1690,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1829,7 +1702,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1841,7 +1714,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/charlotte-pm/events/275282889">Charlotte Perl Mongers - Using the ActiveState Platform</a></h2>
             </div> <!-- card-header -->
@@ -1853,7 +1726,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1865,7 +1738,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/daily-activity.html">Daily Activity </a></h2>
             </div> <!-- card-header -->
@@ -1877,7 +1750,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/which-courses-to-record.html">Which courses to record?</a></h2>
             </div> <!-- card-header -->
@@ -1889,7 +1762,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1901,7 +1774,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/p/parallel-processing-in-perl">New Course: Parallel programming in Perl</a></h2>
             </div> <!-- card-header -->
@@ -1913,7 +1786,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.linkedin.com/feed/update/urn:li:activity:6751738129025134592">In which subject in Perl do you feel you need better knowledge?</a></h2>
             </div> <!-- card-header -->
@@ -1925,7 +1798,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/01/11/PWC95/">Perl Weekly Challenge 95.</a></h2>
             </div> <!-- card-header -->
@@ -1937,7 +1810,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-095-2jkl">Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -1949,7 +1822,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/01/Perl_Weekly_Challenge_95__Palindrome_Stack.html">Perl Weekly Challenge 95: Palindrome Stack</a></h2>
             </div> <!-- card-header -->
@@ -1961,7 +1834,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/01/11/PerlWeeklyChallenge95.html">Perl Weekly Challenge 95: palindrome numbers and stacks</a></h2>
             </div> <!-- card-header -->
@@ -1973,7 +1846,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-95-palindrome-numbers-and-demo-stack.html">Perl Weekly Challenge 95: Palindrome Numbers and Demo Stack</a></h2>
             </div> <!-- card-header -->
@@ -1985,7 +1858,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/14/demo-stack/">PWC095 - Demo Stack</a></h2>
             </div> <!-- card-header -->
@@ -1997,7 +1870,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/13/palindrome-number/">PWC095 - Palindrome Number</a></h2>
             </div> <!-- card-header -->
@@ -2009,7 +1882,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-95.html">Perl weekly challenge 95</a></h2>
             </div> <!-- card-header -->
@@ -2021,7 +1894,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://gugod.org/2021/01/pwc-095-en/">Solving Perl Weekly Challenge 095 -- Palindrome Number and Stack</a></h2>
             </div> <!-- card-header -->
@@ -2033,7 +1906,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/01/16/judging-jenga-symmetries/">Judging Jenga Symmetries</a></h2>
             </div> <!-- card-header -->
@@ -2045,7 +1918,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/palindromic-stack.html">Palindromic Stack with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -2057,7 +1930,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/17">Perl Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -2069,7 +1942,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/16/perl-weekly-challenge-95-part-2/">Perl Weekly Challenge 95, Part 2</a></h2>
             </div> <!-- card-header -->
@@ -2081,7 +1954,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/14/perl-weekly-challenge-95-part-1/">Perl Weekly Challenge 95, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -2093,7 +1966,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-chellanege-095/">Perl Weekly Challenge 95</a></h2>
             </div> <!-- card-header -->
@@ -2105,7 +1978,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-093">Perl Review - Perl Weekly Challenge - 093</a></h2>
             </div> <!-- card-header -->
@@ -2117,7 +1990,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-095">RECAP - The Weekly Challenge - 095</a></h2>
             </div> <!-- card-header -->
@@ -2129,7 +2002,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-096">The Weekly Challenge - 096</a></h2>
             </div> <!-- card-header -->
@@ -2141,7 +2014,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-12">Maintaining Perl 5 (Tony Cook): December 2020 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -2153,7 +2026,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakucourse1">Raku Course January 2021 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -2165,7 +2038,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126974">How to display a Tk window without waiting for user input</a></h2>
             </div> <!-- card-header -->
@@ -2177,7 +2050,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126918">SSL certificate store for a Perlbrew install</a></h2>
             </div> <!-- card-header -->
@@ -2189,7 +2062,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/automate-firefox-browser-with-perl-5036">Automate Firefox browser with Perl</a></h2>
             </div> <!-- card-header -->
@@ -2201,7 +2074,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/simple-live-chart-using-mojolicious-1iej">Simple live chart using Mojolicious </a></h2>
             </div> <!-- card-header -->
@@ -2213,7 +2086,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/using-google-recaptcha-with-perl-49hd">Using google reCaptcha with Perl </a></h2>
             </div> <!-- card-header -->
@@ -2225,7 +2098,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/extracting-the-list-of-o-reilly-animals/">Extracting the list of O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -2237,7 +2110,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://courses.code-maven.com/p/testing-in-perl">Testing in Perl</a></h2>
             </div> <!-- card-header -->
@@ -2249,7 +2122,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kwj92l/perl_steering_council_meeting_002_20210112/">Perl Steering Council, meeting #002, 2021-01-12</a></h2>
             </div> <!-- card-header -->
@@ -2261,7 +2134,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxqbjk/in_which_subject_in_perl_do_you_feel_youd_need/">In which subject in Perl do you feel you'd need better knowledge?</a></h2>
             </div> <!-- card-header -->
@@ -2273,7 +2146,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxy2zw/datetime_and_sunmoon_events_calculations_way/">Date-time and sun-moon events calculations way before epoch (libraries advice)</a></h2>
             </div> <!-- card-header -->
@@ -2285,7 +2158,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/kxx4uw/perl_beginner_here_looking_for_guidance/">Perl Beginner Here, Looking for Guidance.</a></h2>
             </div> <!-- card-header -->
@@ -2297,7 +2170,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/18/aoc2016-11-new-successors/">AoC 2016/11 - New successors</a></h2>
             </div> <!-- card-header -->
@@ -2309,7 +2182,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/17/aoc2016-11-new-heuristic/">AoC 2016/11 - New heuristic</a></h2>
             </div> <!-- card-header -->
@@ -2321,7 +2194,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/16/aoc2016-11-new-identifier/">AoC 2016/11 - New identifier</a></h2>
             </div> <!-- card-header -->
@@ -2333,7 +2206,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/15/aoc2016-11-new-parsing/">AoC 2016/11 - New parsing</a></h2>
             </div> <!-- card-header -->
@@ -2345,7 +2218,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/12/aoc2016-11-new-representation/">AoC 2016/11 - New representation</a></h2>
             </div> <!-- card-header -->
@@ -2357,7 +2230,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/11/aoc2016-11-new-algorithm/">AoC 2016/11 - New algorithm: A*</a></h2>
             </div> <!-- card-header -->
@@ -2369,7 +2242,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmonks.org/?node_id=11126847">First steps with Marpa::R2 and BNF</a></h2>
             </div> <!-- card-header -->
@@ -2381,7 +2254,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/refactoring-code-snippet">Refactoring code snippet</a></h2>
             </div> <!-- card-header -->
@@ -2393,7 +2266,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/fosdem_2021_speaker_guidance">FOSDEM 2021 - guidance for speakers</a></h2>
             </div> <!-- card-header -->
@@ -2405,7 +2278,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-49-of-perl-workflow-be2">Release 1.49 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -2417,7 +2290,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/stats.html">Blogs</a></h2>
             </div> <!-- card-header -->
@@ -2429,7 +2302,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/metacpan.html">CPAN uploads</a></h2>
             </div> <!-- card-header -->
@@ -2441,7 +2314,7 @@ Google scholar logo taken from <a href="https://scholar.google.com/">here</a></p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/perl-532/?utm_source=Perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-532-ad&utm_campaign=user-acquisition">New Year. New Perl.</a></h2>
             </div> <!-- card-header -->
@@ -2458,7 +2331,7 @@ A new way to install, work with, and even <a href="https://www.activestate.com/p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/495.html">#495 - Collect O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -2475,7 +2348,130 @@ A new way to install, work with, and even <a href="https://www.activestate.com/p
      on Monday 18 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_75">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/17#pwc095">Perl Weekly Challenge 095</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p><em>The examples used here are from the weekly challenge problem statement and demonstrate the working solution.</em></p>
+<h2 id="part-1">Part 1</h2>
+<p><em>You are given a number $N. Write a script to figure out if the given number is a Palindrome. Print 1 if true, otherwise 0.</em></p>
+<h3 id="solution">Solution</h3>
+<pre><code class="perl">
+use strict;
+use warnings;
+
+use boolean;
+
+sub is_palindrome{
+    my($n) = @_;
+    return false if $n < 0;
+    my @digits = split(//, $n);
+    if(@digits % 2 == 0){
+        do{
+            my $a = shift @digits;
+            my $b = pop @digits;
+            return false if $a != $b;
+        }while(@digits);
+        return true;
+    }
+    while(@digits != 1){
+        my $a = shift @digits;
+        my $b = pop @digits;
+        return false if $a != $b;
+    };
+    return true;
+}
+
+MAIN:{
+    print is_palindrome(1221);
+    print "\n";
+    print is_palindrome(-101);
+    print "\n";
+    print is_palindrome(90);
+    print "\n";
+}
+</code></pre>
+<h3 id="sample-run">Sample Run</h3>
+<pre><code class="shell">
+$ perl perl/ch-1.pl
+1
+0
+0
+</code></pre>
+<h3 id="notes">Notes</h3>
+<p>One assumption is made and that is that the input is a valid integer.</p>
+<p>My approach here is straightforward iteration and matches what one might do manually: work inwards from both ends and if at any point there is not a match of the two elements being compared then return false. If we make it all the way to the middle then return true. Here the middle is either an empty array, in the case of an even number of elements or, in the case of an odd number of elements, an array of length 1.</p>
+<p>The case of a single digit has no special handling, if the number has an odd number of digits but that odd number happens to be 1 then the loop is not entered and we just return true.</p>
+<h2 id="part-2">Part 2</h2>
+<p><em>Write a script to demonstrate Stack operations.</em></p>
+<h3 id="solution-1">Solution</h3>
+<pre><code class="perl">
+use strict;
+use warnings;
+
+use Stack;
+
+my $stack = new Stack();
+$stack->push(2);
+$stack->push(-1);
+$stack->push(0);
+$stack->pop;       
+print $stack->top . "\n"; 
+$stack->push(0);
+print $stack->min . "\n"; 
+</code></pre>
+<p>The Stack module used is of my own making. The next listing is that code.</p>
+<pre><code class="perl">
+use strict;
+use warnings;
+package Stack{
+    use boolean;
+    use Class::Struct;
+
+    struct(
+        data => q/@/
+    );
+
+    sub push{
+        my($self, $n) = @_;
+        push @{$self->data()}, $n;
+    }
+
+    sub pop{
+        my($self, $n) = @_;
+        pop @{$self->data()};
+    }
+
+    sub top{
+        my($self, $n) = @_;
+        @{$self->data()}[@{$self->data()} - 1];
+    }
+    
+    sub min{
+        my($self, $n) = @_;
+        my @sorted = sort {$a <=> $b} @{$self->data()};
+        return $sorted[0];
+    }
+    true;
+}  
+</code></pre>
+<h3 id="sample-run-1">Sample Run</h3>
+<pre><code class="shell">
+$ perl -Iperl perl/ch-2.pl
+-1
+-1
+</code></pre>
+<h3 id="notes-1">Notes</h3>
+<p>Like <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/10">last week’s LinkedList module</a> I use <a href="https://perldoc.perl.org/Class/Struct.html">Class::Struct</a> to create the Stack module.</p>
+<p>Class::Struct creates accessors for all the class variables automatically. In this way, by calling <code>$self-&gt;data()</code>, we get a reference to the internal array <code>data</code> and perform the required Stack operations.</p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
+
+              <p class="text-right"><small>Published
+     on Sunday 17 January 2021 14:49</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_76">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-12">Maintaining Perl 5 (Tony Cook): December 2020 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -2548,7 +2544,7 @@ applied
      on Sunday 17 January 2021 01:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_74">
+          <div class="card" id="card_77">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxiv-15-cpan-great-modules-released.html">(cccxxiv) 15 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2560,7 +2556,7 @@ applied
      on Saturday 16 January 2021 23:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_75">
+          <div class="card" id="card_78">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdl-metacpan-weekly-report-mojolicious.html">(cdl) metacpan weekly report - Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -2572,7 +2568,7 @@ applied
      on Saturday 16 January 2021 23:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_76">
+          <div class="card" id="card_79">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlxxiv-stackoverflow-perl-report.html">(cdlxxiv) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -2584,7 +2580,7 @@ applied
      on Saturday 16 January 2021 23:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_77">
+          <div class="card" id="card_80">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_committee_expanded_role">Grants Committee Takes on Expanded Role in TPF</a></h2>
             </div> <!-- card-header -->
@@ -2624,422 +2620,7 @@ applied
      on Saturday 16 January 2021 18:55</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_78">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-95.html">Perl weekly challenge 95</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <h3>Palindromic numbers</h3>
-
-<p>You are given a number <code>$N</code>. Write a script to figure out if the given number is Palindrome. Print 1 if true otherwise 0.</p>
-
-<p>There is an easy solution to this - to use "reverse" in string context to reverse the number and comparing the two strings:</p>
-
-<pre><code>
-sub is_palindrome_rev {
-  return ( $_[0] eq reverse $_[0]) ? 1 : 0;
-}
-</code></pre>
-
-<p>But this just seems a touch too easy - so let's see if we can find an alternative solution. Something that will potentially work in any base - not just base 10!</p>
-
-<pre><code>
-sub is_palindrome_array {
-  my($n,$radix) = @_;
-  $radix||=10;
-  return 0 if $n < 0;
-  my @digits  = $n%$radix;
-  push @digits, $n%$radix while $n = int ($n/$radix);
-  while( @digits>1 ) {
-    return 0 if shift @digits != pop @digits;
-  }
-  return 1;
-}
-</code></pre>
-<ul>
-  <li>Bail out if the number is negative;</li>
-  <li>Chop the number of digits (in our "base").
-  <ul><li>Push the number (module the radix) onto an array of digits, repeatedly dividing by the radix until we have nothing left.</li><li>Technically this returns the digits in the reverse order (push is more efficient than unshift), but as we are interested in palindromes that isn't an issue.</li></ul>
-  </li>
- <li>Then we work through the array and seeing if the first and last digits are the same {if the array has only 1 entry then the first and the last digits are the same!}. Use pop/shift to return the numbers and take them from the array...</li>
-</ul>
-
-<h3>Stack</h3>
-
-<p>This is a simple case of creating a Stack object - basic OO coding. As this is a stack though we don't need to use a hashref as we would normally use - we can just bless an arrayref</p>
-
-<p>Just a few notes on this one - mainly about good practice</p>
-
-<ul>
-<li>We wish to use the standard names push/pop for the stack - but these are built-ins for clarity in the code we use CORE::push & CORE::pop to make certain we are using the built-in push and pop commands</li>
-<li>Care needs to be taken as we may have an empty stack when making calls so should check for this in cases such as pop/min/top...</li>
-</ul>
-
-<p>You can see my code on github at:</p>
-<ul><li>https://github.com/drbaggy/perlweeklychallenge-club/tree/master/challenge-095/james-smith/</li></ul>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by James Curtis-Smith
-     on Friday 15 January 2021 14:27</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_79">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-95-palindrome-numbers-and-demo-stack.html">Perl Weekly Challenge 95: Palindrome Numbers and Demo Stack</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 95 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-095/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days (January 17, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Palindrome Numbers</h2>
-
-<p><em>You are given a number <code>$N</code>.</em></p>
-
-<p><em>Write a script to figure out if the given number is Palindrome. Print 1 if true otherwise 0.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: 1221
-Output: 1
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: -101
-Output: 0, since -101 and 101- are not the same.
-</code></pre>
-
-<p><em>Example 3:</em></p>
-
-<pre><code>Input: 90
-Output: 0
-</code></pre>
-
-<p>A palindrome is a word, number, phrase, or other sequence of characters which reads the same backward as forward, like &#8220;noon&#8221;, &#8220;madam&#8221;, or &#8220;redivider&#8221;.</p>
-
-<h2>Palindrome Numbers in Raku</h2>
-
-<p>This is fairly simple. We just compare the input with its reversed version:</p>
-
-<pre><code>use v6;
-
-my $num = @*ARGS[0] // 1221;
-say "$num: ", +($num eq $num.flip);
-</code></pre>
-
-<p>Note that the <code>+</code> sign in the second code line is aimed at <em>numifying</em> the value of the Boolean expression <code>$num eq $num.flip</code> (<code>False</code> or <code>True</code>) into 0 or 1.</p>
-
-<p>This is the output with a few input values:</p>
-
-<pre><code>$ raku palindrome.raku
-1221: 1
-
-$ raku palindrome.raku 7337
-7337: 1
-
-$ raku palindrome.raku 8765
-8765: 0
-
-$ raku palindrome.raku -1221
--1221: 0
-</code></pre>
-
-<p>This is so simple that we can also do it as a one-liner script:</p>
-
-<pre><code>$ raku -e 'my $n = @*ARGS[0]; say "$n: ", +($n eq $n.flip);' 7337
-7337: 1
-</code></pre>
-
-<h2>Palindrome Numbers in Perl</h2>
-
-<p>Again, we just compare the input with its reversed version:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-my $num = shift // 1221;
-say "$num: ", $num eq (reverse $num) ? 1 : 0;
-</code></pre>
-
-<p>This is the output with a few input values:</p>
-
-<pre><code>$ perl palindrome.pl
-1221: 1
-
-$ perl palindrome.pl 7337
-7337: 1
-
-$ perl palindrome.pl 5678
-5678: 0
-
-$ perl palindrome.pl -101
--101: 0
-</code></pre>
-
-<p>We can also do a Perl one-liner:</p>
-
-<pre><code>$ perl -E '$n = shift; say "$n: ", $n eq (reverse $n) ? 1 : 0;' 1221
-1221: 1
-</code></pre>
-
-<h2>Palindrome Numbers in Scala</h2>
-
-<p>The Scala version uses essentially the same idea:</p>
-
-<pre><code>object Main {
-  def main(args: Array[String]): Unit = {
-    val num = args(0).toString
-    if (num == num.reverse) {
-      println(1)
-    } else {
-      println(0)
-    }
-  }
-}
-</code></pre>
-
-<p>This Scala program produces the same results as the above Raku and Perl programs.</p>
-
-<h2>Task 2: Demo Stack</h2>
-
-<p><em>Write a script to demonstrate Stack operations like below:</em></p>
-
-<pre><code>push($n) - add $n to the stack
-pop() - remove the top element
-top() - get the top element
-min() - return the minimum element
-</code></pre>
-
-<p><em>Example:</em></p>
-
-<pre><code>my $stack = Stack-&gt;new;
-$stack-&gt;push(2);
-$stack-&gt;push(-1);
-$stack-&gt;push(0);
-$stack-&gt;pop;       # removes 0
-print $stack-&gt;top; # prints -1
-$stack-&gt;push(0);
-print $stack-&gt;min; # prints -1
-</code></pre>
-
-<p>There are already <code>push</code> and <code>pop</code> built-in functions in both Raku and Perl, so we will give our stack operations different names. The stack will be implemented as a simple array with the relevant stack operations.</p>
-
-<h3>Demo Stack in Raku</h3>
-
-<h4>Functional Implementation</h4>
-
-<p>Implementing a stack is typical of a job for object-oriented programming. However, I will start with a more functional approach (as I prefer that). The <code>push</code> and <code>pop</code> stack operations are renamed <code>put-in-stack</code> and <code>take-from-stack</code>:</p>
-
-<pre><code>use v6;
-
-sub put-in-stack (@stack, *@new-items) {
-    push @stack, |@new-items;
-}
-sub take-from-stack (@stack where @stack.elems &gt; 0) {
-    return pop @stack;
-}
-sub top (@stack where @stack.elems &gt; 0) {
-    return @stack.tail;
-}
-sub minimum (@stack where @stack.elems &gt; 0) {
-    return @stack.min;
-}
-my @a-stack = 1..5;
-say @a-stack;
-put-in-stack @a-stack, 6..8;
-say @a-stack;
-say "Min: ", minimum @a-stack; 
-say "Top: ", top @a-stack;
-say "Take: ", take-from-stack @a-stack;
-say @a-stack;
-</code></pre>
-
-<p>This displays the following output:</p>
-
-<pre><code>$ raku stack_oo.raku
-[1 2 3 4 5]
-[1 2 3 4 5 6 7 8]
-Min: 1
-Top: 8
-Take: 8
-[1 2 3 4 5 6 7]
-</code></pre>
-
-<h4>Object-Oriented Implementation</h4>
-
-<p>If you prefer an object-oriented version, it could look like this:</p>
-
-<pre><code>use v6;
-
-class Stack {
-    has @.stack is rw;
-    method is-empty {
-        @!stack.elems &gt; 0 ?? False !! True;
-    }
-    method put-in-stack (*@new-items) {
-        push @!stack, |@new-items;
-    }
-    method take-from-stack {
-        return pop @!stack;
-    }
-    method top {
-        return @!stack.tail;
-    }
-    method minimum {
-        return @!stack.min;
-    }
-}
-my $a-stack = Stack.new( stack =&gt; 1..5);
-say $a-stack.stack;
-$a-stack.put-in-stack: 6..8;
-say $a-stack.stack;
-say "Min: ", $a-stack.minimum; 
-say "Top: ", $a-stack.top;
-say "Take: ", $a-stack.take-from-stack ;
-say $a-stack.stack;
-</code></pre>
-
-<p>The code using the <code>Stack</code> class should really check that the stack is not empty (with the <code>is-empty</code> method) before calling the <code>take-from-stack</code>, <code>top</code>, or <code>minimum</code> methods to avoid an unhandled exception, and we may in that case raise an ad-hoc exception or print an error message or do something else, but since we have no specification on what to do in such a case, this is left as an exercise to the reader.</p>
-
-<p>Output:</p>
-
-<pre><code>$ raku  stack_oo.raku
-[1 2 3 4 5]
-[1 2 3 4 5 6 7 8]
-Min: 1
-Top: 8
-Take: 8
-[1 2 3 4 5 6 7]
-</code></pre>
-
-<h3>Demo Stack in Perl</h3>
-
-<p>In Perl, we will implement only the functional version:</p>
-
-<pre><code>#!/usr/bin/perl
-use strict;
-use warnings;
-use feature qw/say/;
-
-sub is_empty {
-    my $stack = shift;
-    return @$stack &gt; 0 ? 0 : 1;
-}
-
-sub put_in_stack {
-    my ($stack, @new_items) = @_;
-    push @$stack, @new_items;
-}
-sub take_from_stack  {
-    my $stack = shift;
-    return undef if is_empty $stack;
-    return pop @$stack;
-}
-sub top {
-    my $stack = shift;
-    return undef if is_empty $stack;
-    return $stack-&gt;[-1];
-}
-sub minimum {  # assuming stack of numeric values
-    my $stack = shift;
-    return undef if is_empty $stack;
-    my $min = $stack-&gt;[0];
-    for my $item (@$stack) {
-        $min = $item if $item &lt; $min;
-    }
-    return $min;
-}
-my $a_stack = [1..5];
-say "@$a_stack";
-put_in_stack $a_stack, 6..8;
-say "@$a_stack";
-say "Min: ", minimum $a_stack; 
-say "Top: ", top $a_stack;
-say "Take: ", take_from_stack $a_stack;
-say "@$a_stack";
-</code></pre>
-
-<p>This displays the following output:</p>
-
-<pre><code>$ perl stack.pl
-1 2 3 4 5
-1 2 3 4 5 6 7 8
-Min: 1
-Top: 8
-Take: 8
-1 2 3 4 5 6 7
-</code></pre>
-
-<h3>Demo Stack in Scala</h3>
-
-<p>Being a beginner in Scala, I don&#8217;t yet master passing function parameters by value or by reference. So I&#8217;ll make my stack a global variable to enable in-place modification. You don&#8217;t need to tell me it&#8217;s bad, I know. At this point, I&#8217;m only trying to make a program that works properly, I&#8217;ll hopefully implement better practices and write more idiomatic Scala code in a few months from now.</p>
-
-<pre><code>object stack extends App {
-  var stack = Array(1, 2, 3, 4, 5)
-  print_stack("Original stack") 
-  push(Array(6, 7, 8))
-  print_stack("Pushed stack")
-  val popped = pop
-  println(s"Popped: $popped")
-  print_stack("Popped stack")
-  val topped = top
-  println(s"Top: $topped")
-  val minimum = min
-  println(s"Min: $minimum")
-  def print_stack(caption: String) : Unit = {
-    print(s"$caption: "); println( stack.mkString(" "))
-  }
-  def push(newItems: Array[Int]): Unit = {
-    stack ++= newItems
-  }
-  def pop: Int = {
-    val lastItem = stack.last
-    stack = stack.dropRight(1)
-    return lastItem
-  }
-  def top: Int = {
-    return stack.last
-  }
-  def min: Int = {
-    var min = stack(0);
-    for (i &lt;- 1 to (stack.length - 1)) {
-      if (stack(i) &lt; min) min = stack(i)
-    }
-    return min
-  }
-}
-</code></pre>
-
-<p>This displays the following output:</p>
-
-<pre><code>Original stack: 1 2 3 4 5
-Pushed stack: 1 2 3 4 5 6 7 8
-Popped: 8
-Popped stack: 1 2 3 4 5 6 7
-Top: 7
-Min: 1
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, January 17, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
-     on Friday 15 January 2021 04:35</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_80">
+          <div class="card" id="card_81">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakucourse1">Raku Course January 2021 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -3112,7 +2693,7 @@ If you missed it, have a look at the online course at <a href="https://course.ra
      on Wednesday 13 January 2021 18:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_81">
+          <div class="card" id="card_82">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/refactoring-code-snippet">Refactoring code snippet</a></h2>
             </div> <!-- card-header -->
@@ -3129,7 +2710,7 @@ Let me show a quick refactoring of it:
      on Wednesday 13 January 2021 10:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_82">
+          <div class="card" id="card_83">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/fosdem_2021_speaker_guidance">FOSDEM 2021 - guidance for speakers</a></h2>
             </div> <!-- card-header -->
@@ -3264,7 +2845,7 @@ Let me show a quick refactoring of it:
      on Wednesday 13 January 2021 03:28</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_83">
+          <div class="card" id="card_84">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/extracting-the-list-of-o-reilly-animals/">Extracting the list of O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -3510,7 +3091,227 @@ Wolf
      on Monday 11 January 2021 18:02</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_84">
+          <div class="card" id="card_85">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/10#pwc094">Perl Weekly Challenge 094</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h2 id="part-1">Part 1</h2>
+<p><em>You are given an array of strings <span class="citation" data-cites="S">@S</span>. Write a script to group Anagrams together in any random order.</em></p>
+<h3 id="solution">Solution</h3>
+<pre><code class="perl">
+use strict;
+use warnings;
+my %letter_factor = (
+    e => 2,
+    t => 3,
+    a => 5,
+    o => 7,
+    i => 11,
+    n => 13,
+    s => 17,
+    h => 19,
+    r => 23,
+    d => 29,
+    l => 31,
+    c => 37,
+    u => 41,
+    m => 43,
+    w => 47,
+    f => 53,
+    g => 59,
+    y => 61,
+    p => 67,
+    b => 71,
+    v => 73,
+    k => 79,
+    j => 83,
+    x => 89,
+    q => 97,
+    z => 101  
+);  
+
+MAIN:{
+    my $word;
+    my %anagrams;
+    while($word = <DATA>){
+        chomp($word); 
+        my @letters = split(//, $word);
+        my $word_product = 1;
+        map {$word_product *= $_} map{$letter_factor{$_}} @letters;
+        push @{$anagrams{$word_product}} , $word if $anagrams{$word_product};  
+        $anagrams{$word_product} = [$word] unless $anagrams{$word_product};  
+    }  
+    close(DATA);
+    print "Organized anagrams:\n";
+    for my $key (keys %anagrams){
+        print "  "; 
+        for my $word (@{$anagrams{$key}}){
+            print "$word ";
+        }
+        print "\n";
+    }   
+}   
+
+__DATA__
+opt
+bat
+saw
+tab
+pot
+top
+was
+</code></pre>
+<h3 id="sample-run">Sample Run</h3>
+<pre><code class="shell">
+$ perl ch-1.pl
+Organized anagrams:
+  saw was 
+  bat tab 
+  opt pot top 
+</code></pre>
+<h3 id="notes">Notes</h3>
+<ul>
+<li><p>I am using the same mathematical trick that I have used for anagrams in the past, starting with <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2019/04/26">Challenge 005</a>. The By the <strong>Fundamental Theorem of Arithmetic</strong> <em>every integer greater than 1 is either a prime number itself or can be represented as the unique product of prime numbers.</em> We use that to our advantage by having a prime number associated with each letter. Each word is a product of these numbers and words with the same product are anagrams.</p></li>
+<li><p>In this way we build a hash keyed by word product whose values are list of anagrams. After constructing this data structure we then just print out the contents of all the lists.</p></li>
+<li><p>The choice of letters and prime numbers is based on the <em>Lewand Ordering</em> and it isn’t at all necessary but it does little harm so I left it in anyway.</p></li>
+</ul>
+<h2 id="part-2">Part 2</h2>
+<p><em>You are given a binary tree. Write a script to represent the given binary tree as an object and flatten it to a linked list object. Finally, print the linked list object.</em></p>
+<h3 id="solution-1">Solution</h3>
+<pre><code class="perl">
+use strict;
+use warnings;
+
+use Graph;
+use LinkedList;
+
+sub build_linked_list{ 
+    my($tree) = @_;
+    my $linked_list = new LinkedList(); 
+    my @paths = build_paths($tree);
+    my $root = $paths[0]->[0]; 
+    my $next = $linked_list->insert($root, undef); 
+    for my $path (@paths){
+        for my $node (@{$path}){
+            $next = $linked_list->insert($node, $next) if !$linked_list->in_list($node);    
+        }
+    } 
+    return $linked_list;
+}
+
+sub build_paths {
+   my ($graph) = @_;
+   my @paths;
+   local *_helper = sub{
+      my $v = $_[-1];
+      my @successors = $graph->successors($v);
+      if(@successors){
+         _helper(@_, $_) for @successors;
+      } 
+      else{
+         unshift @paths, [@_];
+      }
+   };
+   _helper($_) for $graph->source_vertices();
+   return @paths;
+}
+
+MAIN:{
+    my $Tree;
+    $Tree = new Graph();
+    $Tree->add_vertices(1, 2, 3, 4, 5, 6, 7);
+    $Tree->add_edge(1, 2);
+    $Tree->add_edge(1, 3);
+    $Tree->add_edge(2, 4);
+    $Tree->add_edge(2, 5);
+    $Tree->add_edge(5, 6);
+    $Tree->add_edge(5, 7);
+    print build_linked_list($Tree)->stringify();
+}
+</code></pre>
+<p>The LinkedList module used is of my own making. I am using a somewhat modified version of the LinkedList module I made for <a href="https://adamcrussell.livejournal.com/16202.html">Challenge 059</a>. Next is what that code looks like.</p>
+<pre><code class="perl">
+use strict;
+use warnings;
+package LinkedList{
+    use boolean;
+    use Tie::RefHash;
+    use Class::Struct;
+    package Node{
+        use Class::Struct;
+
+        struct(
+            data => q/$/,
+            next => q/Node/
+        );
+    }
+
+    struct(
+        head => q/Node/
+    );
+
+    sub stringify{
+        my($self) = @_;
+        my $s = "";
+        my $next = $self->head()->next();
+        while($next && $next->next()){
+            $s .= " -> " if $s; 
+            $s = $s . $next->data();
+            $next = $next->next();
+        }
+        $s = $s . " -> " . $next->data() if $next->data();
+        $s .= "\n"; 
+        return $s;
+    }
+
+    sub insert{
+        my($self, $data, $previous) = @_;
+        if(!$previous){
+            $previous=new Node(data => undef, next => undef);
+            $self->head($previous);
+        }
+        my $next=new Node(data => $data, next => undef);
+        $previous->next($next);
+        return $next;
+    }
+
+    sub in_list{
+        my($self, $k) = @_;
+        my $previous = $self->head();
+        my $next = $self->head()->next();
+        tie my %node_value, "Tie::RefHash";
+        while($next){
+            return true if($next->data() == $k); 
+            $next = $next->next(); 
+        }
+        return false;
+    }
+    true;
+}
+</code></pre>
+<h3 id="sample-run-1">Sample Run</h3>
+<pre><code class="shell">
+$ perl -I. ch-2.pl
+1 -> 2 -> 4 -> 5 -> 6 -> 7 -> 3
+</code></pre>
+<h3 id="notes-1">Notes</h3>
+<ul>
+<li><p>The Depth First Search (DFS) code for building the paths is the same as <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/03">last week</a>.</p></li>
+<li><p>After the DFS returns all the paths they are simply inserted into the list.</p></li>
+<li><p>My LinkedList module is one of my favorite uses of <a href="https://perldoc.perl.org/Class/Struct.html">Class::Struct</a>.</p></li>
+<li><p>My write up for <a href="https://adamcrussell.livejournal.com/16202.html">Challenge 059</a> has some more notes on this LinkedList.pm.</p></li>
+</ul>
+<h2 id="references">References</h2>
+<p><a href="https://en.wikipedia.org/wiki/Letter_frequency">Lewand Ordering</a></p>
+<p><a href="https://mathworld.wolfram.com/FundamentalTheoremofArithmetic.html">Fundamental Theorem of Arithmetic</a></p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
+
+              <p class="text-right"><small>Published
+     on Sunday 10 January 2021 11:29</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_86">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxiii-16-cpan-great-modules-released.html">(cccxxiii) 16 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -3522,7 +3323,7 @@ Wolf
      on Saturday 09 January 2021 22:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_85">
+          <div class="card" id="card_87">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdxlix-metacpan-weekly-report.html">(cdxlix) metacpan weekly report - Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -3534,7 +3335,7 @@ Wolf
      on Saturday 09 January 2021 22:33</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_86">
+          <div class="card" id="card_88">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-06-git-hooks-mit-perl">Git-Hooks mit Perl</a></h2>
             </div> <!-- card-header -->
@@ -3547,7 +3348,153 @@ Git ist eine weit verbreitete Software zur Versionsverwaltung. Wir nutzen Git se
      on Wednesday 06 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_87">
+          <div class="card" id="card_89">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/03#pwc093">Perl Weekly Challenge 093</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h2 id="part-1">Part 1</h2>
+<p><em>You are given set of co-ordinates <span class="citation" data-cites="N">@N</span>. Write a script to count maximum points on a straight line when given co-ordinates plotted on 2-d plane.</em></p>
+<h3 id="solution">Solution</h3>
+<pre><code class="perl">
+use strict;
+use warnings;
+##
+# You are given set of co-ordinates @N.
+# Write a script to count maximum points 
+# on a straight line when given co-ordinates 
+# plotted on 2-d plane.
+##
+sub triangle_area{
+    my($i, $j, $k) = @_;
+    return ($i->[0] * ($j->[1] - $k->[1])) 
+         + ($j->[0] * ($k->[1] - $i->[1]))
+         + ($k->[0] * ($i->[1] - $j->[1]));
+}
+
+sub collinear_points{
+    my(@points) = @_;
+    my @collinear;
+    for my $i (@points){
+        for my $j (@points){
+            for my $k (@points){
+                if(triangle_area($i, $j, $k) == 0){
+                    my $i_string = join(",", @{$i});
+                    my $j_string = join(",", @{$j});
+                    my $k_string = join(",", @{$k});
+                    if(($i_string ne $j_string) && ($i_string ne $k_string) && ($j_string ne $k_string)){
+                        my $has_i = grep { $i_string eq join(",", @{$_}) } @collinear;
+                        push @collinear, $i if !$has_i;
+                        my $has_j = grep { $j_string eq join(",", @{$_}) } @collinear;
+                        push @collinear, $j if !$has_j;
+                        my $has_k = grep { $k_string eq join(",", @{$_}) } @collinear;
+                        push @collinear, $k if !$has_k;
+                    }
+                }
+            }
+        }
+    }
+    return @collinear;
+}
+
+MAIN:{
+    my @N;
+    @N = ([5,3], [1,1], [2,2], [3,1], [1,3]);
+    my @collinear = collinear_points(@N);
+    print "There are a maximum of " . @collinear . " collinear points.\n"
+}
+</code></pre>
+<h3 id="sample-run">Sample Run</h3>
+<pre><code class="shell">
+$ perl perl/ch-1.pl
+There are a maximum of 3 collinear points.
+</code></pre>
+<h3 id="notes">Notes</h3>
+<p>Keep in mind that any two points determine a line. Therefore to consider all possible non-trivial lines we need to review all triples of points. This method will work in the most general case when the starting data may contain multiple lines with a larger number of points.</p>
+<p>In determining collinearity I calculate the area of a triangle using the triple of points. If the area is zero we know that all the points lay on the same line.</p>
+<h2 id="part-2">Part 2</h2>
+<p><em>You are given a binary tree containing only the numbers 0-9. Write a script to sum all possible paths from root to leaf.</em></p>
+<h3 id="solution-1">Solution</h3>
+<pre><code class="perl">
+use strict;
+use warnings;
+##
+# You are given a binary tree containing 
+# only the numbers 0-9.
+# Write a script to sum all possible paths 
+# from root to leaf.
+##
+use Graph;
+
+sub travserse_sum{
+    my($tree) = @_;
+    my @paths = build_paths($tree);
+    my $path_sum = 0;
+    for my $path (@paths){
+        $path_sum +=  unpack("%32C*", pack("C*", @{$path})); 
+    }
+    return $path_sum;
+}
+
+sub build_paths {
+   my ($graph) = @_;
+   my @paths;
+   local *_helper = sub{
+      my $v = $_[-1];
+      my @successors = $graph->successors($v);
+      if(@successors){
+         _helper(@_, $_) for @successors;
+      } 
+      else{
+         push @paths, [@_];
+      }
+   };
+   _helper($_) for $graph->source_vertices();
+   return @paths;
+}
+
+MAIN:{
+    my $Tree;
+    $Tree = new Graph();
+    $Tree->add_vertices(1, 2, 3, 4);
+    $Tree->add_edge(1, 2);
+    $Tree->add_edge(2, 3);
+    $Tree->add_edge(2, 4);
+    print travserse_sum($Tree) . "\n";
+    
+    $Tree = new Graph();
+    $Tree->add_vertices(1, 2, 3, 4, 5, 6);
+    $Tree->add_edge(1, 2);
+    $Tree->add_edge(1, 3);
+    $Tree->add_edge(2, 4);
+    $Tree->add_edge(3, 5);
+    $Tree->add_edge(3, 6);
+    print travserse_sum($Tree) . "\n";
+}
+</code></pre>
+<h3 id="sample-run-1">Sample Run</h3>
+<pre><code class="shell">
+$ perl perl/ch-2.pl
+13
+26
+</code></pre>
+<h3 id="notes-1">Notes</h3>
+<p>This is straightforward enough, at a high level anyway: (1) Get all paths and then (2) sum all the nodes on the paths.</p>
+<ul>
+<li>I am always happy to have a chance to use the <a href="https://metacpan.org/pod/distribution/Graph/lib/Graph.pod">Graph module</a>!</li>
+<li>The Graph module has a bunch of nice algorithms implemented but what we want here is not a <em>shortest path</em> but <em>all paths</em>. The Graph module doesn’t have anything for us to use for that. Implementing a recursive <em>Depth First Search</em> and collecting all the paths is not such a hard thing to do, but in the <strong>Holiday Spirit</strong> (i.e. laziness) I just re-used <a href="https://www.perlmonks.org/?node_id=381608">Ikegami</a>’s code. See the References section.</li>
+<li>I first used the pack/unpack trick for summing array back in <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2019/05/09">Challenge 007</a>.</li>
+</ul>
+<h2 id="references">References</h2>
+<p><a href="https://mathworld.wolfram.com/Collinear.html">Collinear Points</a></p>
+<p><a href="https://stackoverflow.com/a/41646812/4705722">All Paths</a></p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
+
+              <p class="text-right"><small>Published
+     on Sunday 03 January 2021 16:37</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_90">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_01_download_all_podcast_episodes.html">Bulk downloading all episodes of a podcast</a></h2>
             </div> <!-- card-header -->
@@ -3599,7 +3546,7 @@ for my $entry ( $feed-&gt;entries ) {
      on Sunday 03 January 2021 14:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_88">
+          <div class="card" id="card_91">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/01/03/cpan-vs-hackage-releases-part-1/">CPAN vs Hackage releases, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -3642,7 +3589,7 @@ COUNT
      on Sunday 03 January 2021 04:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_89">
+          <div class="card" id="card_92">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-01-frohes-neues-jahr">Frohes Neues Jahr 2021</a></h2>
             </div> <!-- card-header -->
@@ -3655,7 +3602,7 @@ Das in vielerlei Hinsicht ungewöhnliche Jahr 2020 ist vorbei. Wir wünschen all
      on Friday 01 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_90">
+          <div class="card" id="card_93">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/01/01/list-of-new-cpan-distributions-dec-2020/">List of new CPAN distributions – Dec 2020</a></h2>
             </div> <!-- card-header -->
@@ -4380,7 +4327,7 @@ Das in vielerlei Hinsicht ungewöhnliche Jahr 2020 ist vorbei. Wir wünschen all
      on Friday 01 January 2021 00:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_91">
+          <div class="card" id="card_94">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/evaluate-project">Evaluate Perl project for new client - assessment</a></h2>
             </div> <!-- card-header -->
@@ -4398,7 +4345,7 @@ These were almost always old projects that needed some new feature added.
      on Wednesday 30 December 2020 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_92">
+          <div class="card" id="card_95">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2020-12-29-cpan-update-november-dezember">CPAN-Updates November/Dezember 2020</a></h2>
             </div> <!-- card-header -->
@@ -4411,7 +4358,7 @@ Auch in den letzten beiden Monaten dieses Jahres waren wir nicht ganz untätig �
      on Tuesday 29 December 2020 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_93">
+          <div class="card" id="card_96">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2020-12-28-gitlab-schulung">Teaser: Gitlab und Perl</a></h2>
             </div> <!-- card-header -->
@@ -4442,7 +4389,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 22 January 2021 09:28 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 22 January 2021 10:31 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
