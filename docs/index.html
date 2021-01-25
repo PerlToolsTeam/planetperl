@@ -78,6 +78,81 @@
           </div><!-- card -->
           <div class="card" id="card_2">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://www.perl.com/article/the-trouble-with-reference-counting/">The Trouble with Reference Counting</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+
+<p>Perl uses a simple form of garbage collection (GC) called <a href="https://en.wikipedia.org/wiki/Reference_counting">reference counting</a>. Every variable created by a Perl program has a <a href="https://perldoc.perl.org/perlguts#Reference-Counts-and-Mortality">refcnt</a> associated with it. If the program creates a reference to the variable, Perl increments its <code>refcnt</code>. Whenever Perl exits a block it reclaims any variables that belong to the block scope. If any are references, their referenced values&rsquo; <code>refcnt</code> are either decremented or they&rsquo;re reclaimed as well if no other references to them remain.</p>
+
+<h2 id="benefits">Benefits</h2>
+
+<p>Reference counting has some nice properties. As GC is deterministic, it is usually not a cause of variable program performance from run-to-run. Whenever Perl leaves a subroutine or a block, it will check for variables to reclaim. This spreads the cost of GC over program runtime, keeping Perl responsive.</p>
+
+<p>Another benefit of timely reclamation is it minimizes memory fragmentation as variables created in the same scope tend to be reclaimed at the same time, allowing Perl to more efficiently reuse the memory (it exhibits good <a href="https://en.wikipedia.org/wiki/Locality_of_reference#Spatial_and_temporal_locality_usage">spatial locality of reference</a>).</p>
+
+<p>Predictable and timely GC provides a useful mechanism for destructors. A popular example is that &ldquo;lexical&rdquo; filehandles are automatically closed when they go out scope; Perl programs do not need to call <a href="https://perldoc.perl.org/functions/close">close</a> on filehandles themselves, and because the filehandle is closed immediately, there is no risk of contention from a new filehandle being opened on the same file before the original is reclaimed.</p>
+
+<h2 id="how-expensive-is-reference-counting">How expensive is reference counting?</h2>
+
+<p>Different reference counting operations have different costs. Consider the following Perl subroutine:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-perl" data-lang="perl"><span style="color:#66d9ef">sub</span> <span style="color:#a6e22e">update_customer</span> {
+  <span style="color:#66d9ef">my</span> ($customer, $values) <span style="color:#f92672">=</span> @_;
+  <span style="color:#f92672">...</span>
+}</code></pre></div>
+<p>It&rsquo;s called with two arguments; a customer object and a hashref of values. The <code>my</code> declaration causes Perl to add the lexical variables <code>$customer</code> and <code>$values</code> to the savestack (here it performs an optimization, adding them as one group entry instead of two). Each variable is initialized with a <code>refcnt</code> of 1. Each argument is then assigned to its corresponding lexical variable which increments the <code>refcnt</code> of the reference&rsquo;s corresponding value. This is cheap as the Perl interpreter just increments the value&rsquo;s <code>refcnt</code> in its header struct.</p>
+
+<p>When the subroutine returns a scope exit occurs, and <code>$customer</code> and <code>$values</code> must be reclaimed. Their group is popped off the savestack. Perl fetches the <code>refcnt</code> of <code>$customer</code>, saves it to a local variable, and tests it to see if it is greater than 1. As the <code>refcnt</code> of <code>$customer</code> is 1, it must be reclaimed. Here Perl performs another optimization, essentially doing <code>undef $customer</code> leaving it ready to be reused next time the subroutine is called. As <code>$customer</code> is a reference, the referenced customer object&rsquo;s <code>refcnt</code> must also be fetched and tested. In this case it&rsquo;s greater than 1, so Perl decrements the local <code>refcnt</code> and stores it back in the customer object&rsquo;s header struct. Perl then performs the same decrement routine for <code>$values</code>.</p>
+
+<p>We don&rsquo;t have any data on how long each operation takes, or estimates of how long Perl spends on reference counting activities during the course of a program. Nor is such data available for other reference counting dynamic languages like Python and PHP. Some research has shown that reference counting increases GC runtime by 30% compared to tracing<sup>1, 2</sup>, but it&rsquo;s not clear how representative that is of Perl&rsquo;s optimized routines.</p>
+
+<h2 id="drawbacks">Drawbacks</h2>
+
+<p>Reference counting scales linearly insofar as every variable created increases the GC overhead. In programming we can usually do better than that, for example by using tricks like minimizing the number of function calls via batch processing.</p>
+
+<p>Only objects that have a <a href="https://perldoc.perl.org/perlobj#Destructors">DESTROY</a> method need timely reclamation, yet Perl  treats <em>every</em> variable like it needs it, incrementing and decrementing reference counts live. Whenever Perl exits a block it must check for and clean up any unreferenced variables.</p>
+
+<p>Reference counting usually spreads the cost of GC over runtime, however deterministic and timely reclamation means that the potential cost of any given scope exit is unbounded. Imagine Perl returning from a subroutine which reclaims the final reference to a <em>huge</em> graph of data, triggering an avalanche of reclamation&rsquo;s. Perl <em>has</em> to clean it all up immediately; a tracing GC could choose not to.</p>
+
+<p>Reference counts increase memory use a little as every variable has a <code>refcnt</code> integer associated with it. Compared to tracing schemes, reference counting actually saves memory by not requiring a larger heap to avoid thrashing<sup>3</sup>. However circular references can increase memory use a lot via memory leaks (if detected the developer can <a href="https://metacpan.org/pod/Scalar::Util#weaken">weaken</a> the reference to fix this).</p>
+
+<p>Reference counts can trigger unneeded <a href="https://en.wikipedia.org/wiki/Copy-on-write">Copy-On-Write</a>. Imagine a sub-process loops through a data set it inherited from its parent: <code>for my $foo (@foos) { ... }</code>. This temporarily increments each element&rsquo;s <code>refcnt</code>, triggering a memory copy. This isn&rsquo;t quite as calamitous as it sounds as each variable&rsquo;s header struct  is 16 bytes. Since a page is usually 4KB, only one copy is needed per 296 objects (assuming they&rsquo;re contiguous). The copy can also be avoided by not creating the lexical reference by accessing each member directly: <code>for my $i (0..$#foos) { $foos[$i] ... }</code>.</p>
+
+<p>Speculating a little, reference counting may increase cache misses as the frequent changes in counts displace valuable data.</p>
+
+<h2 id="opportunity">Opportunity?</h2>
+
+<p>At first glance it seems like Perl can save runtime by switching to a tracing GC scheme and not checking or updating reference counts, but periodically reclaiming unused variables. Observe that most variables are <a href="https://en.wikipedia.org/wiki/Tracing_garbage_collection#Generational_GC_(ephemeral_GC)">short-lived</a>; therefore the cost of tracing should scale better than linearly (as only long-lived variables are traceable).</p>
+
+<p>However to avoid breaking a lot of code, Perl would still need to honor timely reclamation of objects with <code>DESTROY</code> methods. Perhaps it could follow a hybrid model, reference counting only those objects that need it, but that would reduce the performance benefits of tracing GC, and it complexifies the interpreter adding conditional branches for reference-counted variables. As objects may gain or lose a<code>DESTROY</code> method during runtime, the interpreter would also need to be able promote and demote variables from the reference counting scheme.</p>
+
+<p>A further wrinkle is that references to objects with <code>DESTROY</code> methods must <em>also</em> be reference counted (and references to those references and so on). Imagine an array of database handles: the array itself must be reference counted so that when it is reclaimed, Perl can decrement the database handles&rsquo; <code>refcnt</code> and possibly reclaim them as well.</p>
+
+<p>A more promising line of inquiry may be to review Perl&rsquo;s reference counting code for further optimization opportunities. Common techniques for improving reference counting are well known<sup>4</sup> and research has shown that the aforementioned 30% runtime gap can be closed<sup>2</sup>.</p>
+
+<p>Before starting that effort, we should collect data on how much time Perl is spending on GC. Two Perl core developers, Todd Rinaldo and Tony Cook have told me they think Perl spends very little time on GC relative to other operations like memory allocation, IO and so on. If 2% of the runtime is spent on GC, reducing it by 30% is nothing to brag about. It may be the case that for Perl at least, better opportunities lie elsewhere.</p>
+
+<p></p>
+
+<p>Thanks to Tony Cook, Dave Mitchell and Todd Rinaldo for their insights on Perl&rsquo;s GC behavior.</p>
+
+<h2 id="references">References</h2>
+
+<ol>
+<li><a href="https://dl.acm.org/doi/10.1145/1005686.1005693">Myths and Realities: The Performance Impact of Garbage Collection</a>, Blackburn, Cheng &amp; McKinley 2004.</li>
+<li><a href="https://dl.acm.org/doi/10.1145/2258996.2259008">Down for the Count? Getting Reference Counting Back in the Ring</a>, Shahriyar, Blackburn &amp; Frampton 2012.</li>
+<li><a href="https://www.cs.kent.ac.uk/people/staff/rej/gcbook/">Garbage Collection: Algorithms For Automatic Dynamic Memory Management</a>, Jones &amp; Lins 1999 pp 43.</li>
+<li>Ibid. pp 44-74.</li>
+</ol>
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://perl.com/" class="badge badge-primary" style="float: left">perl.com</a>
+
+              <p class="text-right"><small>Published
+     on Monday 25 January 2021 12:05</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/74d">Free Lunch? Yes, Please. Perl job in Vienna.</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">One of the largest product and price comparison platforms in German-speaking countries is on the hunt for a Perl programmer who wants to use their skills to eradicate inflated prices. The successful candidate will relish the chance to join a team that attributes nearly two decades of success to an uncompromising commitment to transparency, objectivity, and quality content.       </div><!-- card-text -->     </div>
@@ -88,7 +163,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/kgm">We aren’t Mal-teasing—this is the Perl job you’ve been waiting for! Perl in Malta</a></h2>
             </div> <!-- card-header -->
@@ -100,7 +175,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/b1n">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -112,7 +187,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xkq">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -124,7 +199,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/o8c">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -136,7 +211,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -148,7 +223,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -160,7 +235,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -172,7 +247,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -184,7 +259,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -196,7 +271,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/charlotte-pm/events/275282889">Charlotte Perl Mongers - Using the ActiveState Platform</a></h2>
             </div> <!-- card-header -->
@@ -208,7 +283,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://courses.code-maven.com/p/testing-in-perl">Testing in Perl course</a></h2>
             </div> <!-- card-header -->
@@ -220,7 +295,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/24/aoc2016-19-josephus/">AoC 2016/19 - Josephus problem</a></h2>
             </div> <!-- card-header -->
@@ -232,7 +307,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/23/aoc2016-15-crt-again/">AoC 2016/15 - Chinese Reminder Theorem - again!</a></h2>
             </div> <!-- card-header -->
@@ -244,7 +319,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/22/aoc2016-11-optimization/">AoC 2016/11 - Optimization</a></h2>
             </div> <!-- card-header -->
@@ -256,7 +331,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/19/aoc2016-11-part2-solution/">AoC 2016/11 - Part 2 solution</a></h2>
             </div> <!-- card-header -->
@@ -268,7 +343,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -280,7 +355,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/01/18/2021-03-course-topped/">2021.03 Course Topped</a></h2>
             </div> <!-- card-header -->
@@ -292,7 +367,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/loop-controls-next-last">Loop controls: next, last, continue, break</a></h2>
             </div> <!-- card-header -->
@@ -304,7 +379,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/01/18/PWC096/">Perl Weekly Challenge 96</a></h2>
             </div> <!-- card-header -->
@@ -316,7 +391,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/01/Perl_Weekly_Challenge_96__Reverse_Distance.html">Perl Weekly Challenge 96: Reverse Distance</a></h2>
             </div> <!-- card-header -->
@@ -328,7 +403,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/joan_mimosinnet/2021/01/perl-weekly-challenge-096---raku.html">Perl weekly challenge 096 - Raku</a></h2>
             </div> <!-- card-header -->
@@ -340,7 +415,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/01/18/PerlWeeklyChallenge96.html">Perl Weekly Challenge 96: Levenshtein distance</a></h2>
             </div> <!-- card-header -->
@@ -352,7 +427,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-96-reverse-words-and-edit-distance-and-decorators-in-perl.html">Perl Weekly Challenge 96: Reverse Words and Edit Distance (and Decorators in Perl)</a></h2>
             </div> <!-- card-header -->
@@ -364,7 +439,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.kiwi/tales/2021/01/22/perl-weekly-challenge/">Perl Weekly Challenge</a></h2>
             </div> <!-- card-header -->
@@ -376,7 +451,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/21/pwc096-edit-distance/">PWC096 - Edit Distance</a></h2>
             </div> <!-- card-header -->
@@ -388,7 +463,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/20/pwc096-reverse-words/">PWC096 - Reverse Words</a></h2>
             </div> <!-- card-header -->
@@ -400,7 +475,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://gugod.org/2021/01/pwc-096-en/">Solving Perl Weekly Challenge 096 -- Reverse Words and Edit distance.</a></h2>
             </div> <!-- card-header -->
@@ -412,7 +487,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/01/19/going-the-distance-perl-weekly-challenge-96.html">Going The Distance: Perl Weekly Challenge #96</a></h2>
             </div> <!-- card-header -->
@@ -424,7 +499,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/01/25/the-wagner-fischer-price-backwards/">The Wagner–Fischer-Price, Backwards</a></h2>
             </div> <!-- card-header -->
@@ -436,7 +511,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/reversed-distance.html">Reversed Distance with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -448,7 +523,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/24">Perl Weekly Challenge 096</a></h2>
             </div> <!-- card-header -->
@@ -460,7 +535,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/23/perl-weekly-challenge-96-edit-distance/">Perl Weekly Challenge 96: Edit Distance</a></h2>
             </div> <!-- card-header -->
@@ -472,7 +547,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/22/perl-weekly-challenge-96-reverse-words/">Perl Weekly Challenge 96: Reverse Words</a></h2>
             </div> <!-- card-header -->
@@ -484,7 +559,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-096/">Perl Weekly Challenge 96</a></h2>
             </div> <!-- card-header -->
@@ -496,7 +571,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-094">Perl Review - Perl Weekly Challenge - 094</a></h2>
             </div> <!-- card-header -->
@@ -508,7 +583,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-096">RECAP - The Weekly Challenge - 096</a></h2>
             </div> <!-- card-header -->
@@ -520,7 +595,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-097">The Weekly Challenge - 097</a></h2>
             </div> <!-- card-header -->
@@ -532,7 +607,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-report-uv-2020-12">UV Grant Report for 2020-12</a></h2>
             </div> <!-- card-header -->
@@ -544,7 +619,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/martin_mcgrath/2021/01/regarding-the-closure-of-rtcpan.html">Regarding the closure of rt.cpan</a></h2>
             </div> <!-- card-header -->
@@ -556,7 +631,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/01/msg258817.html">Perl Steering Council, meeting #003</a></h2>
             </div> <!-- card-header -->
@@ -568,7 +643,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://kyzn.org/posts/prc-2020-report/">Pull Request Club 2020 Report</a></h2>
             </div> <!-- card-header -->
@@ -580,7 +655,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jesse_shy/2021/01/roles-huh-what-are-they-good-for.html">Roles, h'uh, what are they good for?</a></h2>
             </div> <!-- card-header -->
@@ -592,7 +667,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2021/01/mood-lighting.html">Mood Lighting</a></h2>
             </div> <!-- card-header -->
@@ -604,7 +679,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/index.php/2021/01/23/debugging-a-web-application-in-perl/">Debugging a web application in Perl</a></h2>
             </div> <!-- card-header -->
@@ -616,7 +691,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/01/msg258879.html">Perl 5.34.0 *will be released* in May</a></h2>
             </div> <!-- card-header -->
@@ -628,7 +703,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/stats.html">Blogs</a></h2>
             </div> <!-- card-header -->
@@ -640,7 +715,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/metacpan.html">CPAN uploads</a></h2>
             </div> <!-- card-header -->
@@ -652,7 +727,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/blog/activestates-new-perl-ecosystem/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=blog-perl-eco-system&utm_campaign=user-acquisition">A Replacement for PPM - ActiveState's New Perl Ecosystem</a></h2>
             </div> <!-- card-header -->
@@ -664,7 +739,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/496.html">#496 - Statocles vs Hugo</a></h2>
             </div> <!-- card-header -->
@@ -684,7 +759,7 @@
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/24#pwc096">&lt;p&gt;Perl Weekly Challenge 096&lt;/p&gt;</a></h2>
             </div> <!-- card-header -->
@@ -790,7 +865,7 @@ $ perl perl/ch-2.pl
      on Sunday 24 January 2021 01:26</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxv-17-cpan-great-modules-released.html">(cccxxv) 17 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -802,7 +877,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 23:28</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdli-metacpan-weekly-report-lwp.html">(cdli) metacpan weekly report - LWP</a></h2>
             </div> <!-- card-header -->
@@ -814,7 +889,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 23:25</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlxxv-stackoverflow-perl-report.html">(cdlxxv) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -826,7 +901,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 23:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/debugging-a-web-application-in-perl-34pm">Debugging a web application in Perl</a></h2>
             </div> <!-- card-header -->
@@ -852,7 +927,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 16:14</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-rakuast-2020-12">Grant Report: RakuAST 2020-12 by Jonathan Worthington</a></h2>
             </div> <!-- card-header -->
@@ -891,7 +966,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 05:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-report-uv-2020-12">UV Grant Report for 2020-12</a></h2>
             </div> <!-- card-header -->
@@ -948,7 +1023,7 @@ filesystem ones: <a href="https://trello.com/c/ypnmhsbc/6-add-request-types">htt
      on Saturday 23 January 2021 05:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-96-reverse-words-and-edit-distance-and-decorators-in-perl.html">Perl Weekly Challenge 96: Reverse Words and Edit Distance (and Decorators in Perl)</a></h2>
             </div> <!-- card-header -->
@@ -1512,7 +1587,7 @@ sys     0m0,062s
      on Friday 22 January 2021 23:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-96.html">Perl weekly challenge 96</a></h2>
             </div> <!-- card-header -->
@@ -1654,7 +1729,7 @@ sub edit_distance_simple {
      on Friday 22 January 2021 03:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2021/01/mood-lighting.html">Mood Lighting</a></h2>
             </div> <!-- card-header -->
@@ -1703,7 +1778,7 @@ sub edit_distance_simple {
      on Friday 22 January 2021 13:55</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/tobyink/mood-lighting-40lg">Mood Lighting</a></h2>
             </div> <!-- card-header -->
@@ -1721,7 +1796,7 @@ sub edit_distance_simple {
      on Friday 22 January 2021 09:43</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/generate-checksum-in-perl-5af1">Generate checksum using Perl</a></h2>
             </div> <!-- card-header -->
@@ -1847,7 +1922,7 @@ Hash function image taken from <a href="https://en.wikipedia.org/wiki/Cryptograp
      on Thursday 21 January 2021 17:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/martin_mcgrath/2021/01/regarding-the-closure-of-rtcpan.html">Regarding the closure of rt.cpan.</a></h2>
             </div> <!-- card-header -->
@@ -1892,7 +1967,7 @@ unilaterally."<br />
      on Thursday 21 January 2021 13:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/joan_mimosinnet/2021/01/perl-weekly-challenge-096---raku.html">Perl weekly challenge 096 - Raku </a></h2>
             </div> <!-- card-header -->
@@ -1967,7 +2042,7 @@ While this may be similar to the other dynamic programming solutions provided, t
      on Thursday 21 January 2021 05:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/cli-tools-replace-snake-by-camel-in-a-text-file-2gdd">CLI tools: Replace snake by camel in a text file</a></h2>
             </div> <!-- card-header -->
@@ -2088,7 +2163,7 @@ There is a blue camel and a red camel here.
      on Wednesday 20 January 2021 18:12</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/loop-controls-next-last">Loop controls: next, last, continue, break</a></h2>
             </div> <!-- card-header -->
@@ -2109,7 +2184,7 @@ In most of the other languages the respective keywords are <span class="inline_c
      on Wednesday 20 January 2021 12:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_jan_2021">Call for Grants (January 2021 Round)</a></h2>
             </div> <!-- card-header -->
@@ -2145,7 +2220,7 @@ In most of the other languages the respective keywords are <span class="inline_c
      on Tuesday 19 January 2021 15:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-19-geodaten-bilder-videos-exif">Geodaten in Bildern und Videos können viel über Nutzer verraten</a></h2>
             </div> <!-- card-header -->
@@ -2158,7 +2233,7 @@ Am vorvergangenen Wochenende (9./10. Januar 2021) gab es relativ viel Wirbel um 
      on Tuesday 19 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/17#pwc095">Perl Weekly Challenge 095</a></h2>
             </div> <!-- card-header -->
@@ -2281,7 +2356,7 @@ $ perl -Iperl perl/ch-2.pl
      on Sunday 17 January 2021 14:49</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-20-12">Maintaining Perl 5 (Tony Cook): December 2020 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -2354,7 +2429,7 @@ applied
      on Sunday 17 January 2021 01:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxiv-15-cpan-great-modules-released.html">(cccxxiv) 15 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2366,7 +2441,7 @@ applied
      on Saturday 16 January 2021 23:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdl-metacpan-weekly-report-mojolicious.html">(cdl) metacpan weekly report - Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -2378,7 +2453,7 @@ applied
      on Saturday 16 January 2021 23:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_74">
+          <div class="card" id="card_75">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_committee_expanded_role">Grants Committee Takes on Expanded Role in TPF</a></h2>
             </div> <!-- card-header -->
@@ -2418,7 +2493,7 @@ applied
      on Saturday 16 January 2021 18:55</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_75">
+          <div class="card" id="card_76">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/refactoring-code-snippet">Refactoring code snippet</a></h2>
             </div> <!-- card-header -->
@@ -2435,7 +2510,7 @@ Let me show a quick refactoring of it:
      on Wednesday 13 January 2021 10:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_76">
+          <div class="card" id="card_77">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/extracting-the-list-of-o-reilly-animals/">Extracting the list of O'Reilly Animals</a></h2>
             </div> <!-- card-header -->
@@ -2681,7 +2756,7 @@ Wolf
      on Monday 11 January 2021 18:02</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_77">
+          <div class="card" id="card_78">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/10#pwc094">Perl Weekly Challenge 094</a></h2>
             </div> <!-- card-header -->
@@ -2901,7 +2976,7 @@ $ perl -I. ch-2.pl
      on Sunday 10 January 2021 11:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_78">
+          <div class="card" id="card_79">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-06-git-hooks-mit-perl">Git-Hooks mit Perl</a></h2>
             </div> <!-- card-header -->
@@ -2914,7 +2989,7 @@ Git ist eine weit verbreitete Software zur Versionsverwaltung. Wir nutzen Git se
      on Wednesday 06 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_79">
+          <div class="card" id="card_80">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/03#pwc093">Perl Weekly Challenge 093</a></h2>
             </div> <!-- card-header -->
@@ -3060,7 +3135,7 @@ $ perl perl/ch-2.pl
      on Sunday 03 January 2021 16:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_80">
+          <div class="card" id="card_81">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_01_download_all_podcast_episodes.html">Bulk downloading all episodes of a podcast</a></h2>
             </div> <!-- card-header -->
@@ -3112,7 +3187,7 @@ for my $entry ( $feed-&gt;entries ) {
      on Sunday 03 January 2021 14:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_81">
+          <div class="card" id="card_82">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/01/03/cpan-vs-hackage-releases-part-1/">CPAN vs Hackage releases, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -3155,7 +3230,7 @@ COUNT
      on Sunday 03 January 2021 04:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_82">
+          <div class="card" id="card_83">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-01-frohes-neues-jahr">Frohes Neues Jahr 2021</a></h2>
             </div> <!-- card-header -->
@@ -3168,7 +3243,7 @@ Das in vielerlei Hinsicht ungewöhnliche Jahr 2020 ist vorbei. Wir wünschen all
      on Friday 01 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_83">
+          <div class="card" id="card_84">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/01/01/list-of-new-cpan-distributions-dec-2020/">List of new CPAN distributions – Dec 2020</a></h2>
             </div> <!-- card-header -->
@@ -3893,7 +3968,7 @@ Das in vielerlei Hinsicht ungewöhnliche Jahr 2020 ist vorbei. Wir wünschen all
      on Friday 01 January 2021 00:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_84">
+          <div class="card" id="card_85">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/evaluate-project">Evaluate Perl project for new client - assessment</a></h2>
             </div> <!-- card-header -->
@@ -3911,7 +3986,7 @@ These were almost always old projects that needed some new feature added.
      on Wednesday 30 December 2020 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_85">
+          <div class="card" id="card_86">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2020-12-29-cpan-update-november-dezember">CPAN-Updates November/Dezember 2020</a></h2>
             </div> <!-- card-header -->
@@ -3924,7 +3999,7 @@ Auch in den letzten beiden Monaten dieses Jahres waren wir nicht ganz untätig �
      on Tuesday 29 December 2020 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_86">
+          <div class="card" id="card_87">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2020-12-28-gitlab-schulung">Teaser: Gitlab und Perl</a></h2>
             </div> <!-- card-header -->
@@ -3955,7 +4030,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 25 January 2021 16:18 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 25 January 2021 18:10 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
