@@ -55,6 +55,267 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-97-caesar-cypher-and-binary-substrings.html">Perl Weekly Challenge 97: Caesar Cipher and Binary Substrings</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 97 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-097/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<h2>Task 1: Caesar Cipher</h2>
+
+<p><em>You are given string <code>$S</code> containing only the letters <code>A..Z</code> and a number <code>$N</code>.</em></p>
+
+<p><em>Write a script to encrypt the given string <code>$S</code> using a <a href="https://en.wikipedia.org/wiki/Caesar_cipher">Caesar Cipher</a> with left shift of size <code>$N</code>.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $S = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG", $N = 3
+Output: "QEB NRFZH YOLTK CLU GRJMP LSBO QEB IXWV ALD"
+
+Plain:    ABCDEFGHIJKLMNOPQRSTUVWXYZ
+Cipher:   XYZABCDEFGHIJKLMNOPQRSTUVW
+
+Plaintext:  THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG
+Ciphertext: QEB NRFZH YOLTK CLU GRJMP LSBO QEB IXWV ALD
+</code></pre>
+
+<p>A Caesar cypher is a weak form of encryption that involves &#8220;rotating&#8221; each letter of the input string by a fixed number of places. To rotate a letter means to shift it through the alphabet, wrapping around to the end if necessary. In the movie 2001: A Space Odyssey, the spaceship&#8217;s computer is called HAL, which is IBM left rotated by 1.</p>
+
+<p>Note that the task description says that the input string contains only the letters <code>A..Z</code>, but the example provided also contains spaces which are not in the encrypted solution. So we need to handle spaces as a special case. Depending on the language, my solutions will either handle spaces as one special case, or decide not to convert any letter outside of the <code>A..Z</code> range in order, for example, to preserve also punctuation marks).</p>
+
+<h3>Caesar Cipher in Raku</h3>
+
+<p>I decided to implement the solution in a functional style (to make the porting to Scala easier). So almost everything is made in a <code>map</code> block that processes each letter in turn and returns a stream of converted letters that are then join into the cypher string. Note that in the Raku solution, we convert only the letters the <code>A..Z</code> range.</p>
+
+<pre><code>use v6;
+constant $default = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG";
+constant $min = 'A'.ord;
+constant $max = 'Z'.ord;
+
+sub MAIN (Str $in-string = $default, Int $shift = 3) {
+    say rotate($in-string.uc, $shift);
+    #say $out;
+}
+sub rotate ($in, $shift) {
+    return join "", 
+        map { my $let= $_ - $shift; 
+              $let +=  26 if $let &lt; $min; 
+              $min &lt;= $_ &lt;= $max ?? $let.chr !! $_.chr; 
+            }, $in.comb&gt;&gt;.ord;
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ raku caesar.raku
+QEB NRFZH YOLTK CLU GRJMP LSBO QEB IXWV ALD
+</code></pre>
+
+<p>Note that there is a special case of Caesar cipher called <em>ROT13</em>, where each letter is rotated by 13 places. Since 13 is half of the number of letters in our alphabet, applying ROT13 twice returns the original string, so that the same code may be used to encode and decode a string. ROT13 was commonly used on the Internet to weakly hide potentially offensive jokes or solutions to puzzles. With a fixed shift of 13, the code might be much simpler and can be contained in a simple one-liner:</p>
+
+<pre><code>$ raku -e 'my $w = @*ARGS[0]; $w ~~ tr/A..MN..Z/N..ZA..M/; say $w;' FOOBAR
+SBBONE
+
+$ raku -e 'my $w = @*ARGS[0]; $w ~~ tr/A..MN..Z/N..ZA..M/; say $w;' SBBONE
+FOOBAR
+</code></pre>
+
+<h3>Caesar Cipher in Perl</h3>
+
+<p>This is essentially a port to Perl of the Raku program, except that, here, only the space character is handled differently:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use constant MIN =&gt; ord 'A';
+
+my $in_string = shift // "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG";
+my $shift = shift // 3;
+say rotate(uc $in_string, $shift);
+
+sub rotate {
+    my ($in, $shift) = @_;
+    return join "", 
+        map { my $let = ord($_) - $shift; 
+              $let +=  26 if $let &lt; MIN; 
+              $_ eq " " ? " " : chr $let 
+            } split "", $in;
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl  caesar.pl
+QEB NRFZH YOLTK CLU GRJMP LSBO QEB IXWV ALD
+</code></pre>
+
+<p>In the specific case of <em>ROT13</em> (Caesar cipher with a shift of 13 letters), we can also use a simple Perl one-liner: </p>
+
+<pre><code>$ perl -E '$w = shift; $w =~ tr/A-MN-Z/N-ZA-M/; say $w;' FOOBAR
+SBBONE
+
+$ perl -E '$w = shift; $w =~ tr/A-MN-Z/N-ZA-M/; say $w;' SBBONE
+FOOBAR
+</code></pre>
+
+<h3>Caesar Cipher in Scala</h3>
+
+<p>This a simple port to Scala of the Raku and Perl programs above.</p>
+
+<pre><code>object caesar extends App {
+  val test = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG"
+  val shift = 3
+  println( test.map(convert(_, shift)))
+
+  def convert(c: Char, shift: Int): Char = {
+    val min = 'A'.toByte
+    val asc = c.toByte - shift;
+    val conv = if (asc &lt; min) asc + 26 else asc
+    return if (c == ' ') ' ' else conv.toChar
+  }
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>QEB NRFZH YOLTK CLU GRJMP LSBO QEB IXWV ALD
+</code></pre>
+
+<h3>Caesar Cipher in Python</h3>
+
+<p>Again, a port to Python of the Raku and Perl programs above. Except that functional programming is much less easy in Python, so we use a more conventional procedural approach.  Since Python makes it possible to chain comparison operators, it makes it simple  to convert only the letters the <code>A..Z</code> range.</p>
+
+<pre><code>ALPHA_COUNT = 26
+MIN = ord('A')
+
+input_string = "THE QUICK BROWN FOR JUMPS OVER THE LAZY DOG"
+shift = 3
+out = ""
+for char in input_string:
+    if 'A' &lt;= char &lt;= 'Z':
+        asc_code = ord(char) - shift
+        if asc_code &lt; MIN:
+            asc_code += ALPHA_COUNT
+        out += chr(asc_code)
+    else:
+        out += char
+print(out)
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ python3 caesar.py
+QEB NRFZH YOLTK CLO GRJMP LSBO QEB IXWV ALD
+</code></pre>
+
+<h2>Task #2: Binary Substrings</h2>
+
+<p><em>You are given a binary string <code>$B</code> and an integer <code>$S</code>.</em></p>
+
+<p><em>Write a script to split the binary string <code>$B</code> into substrings of size <code>$S</code> and then find the minimum number of flips required to make all substrings the same.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $B = “101100101”, $S = 3
+Output: 1
+
+Binary Substrings:
+    "101": 0 flip
+    "100": 1 flip to make it "101"
+    "101": 0 flip
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input $B = “10110111”, $S = 4
+Output: 2
+
+Binary Substrings:
+    "1011": 0 flip
+    "0111": 2 flips to make it "1011"
+</code></pre>
+
+<p>It isn&#8217;t really necessary to actually split the input string. We can iterate over the substrings and, for each position, find the number of 1s (or 0s, it&#8217;s your draw). So, in each position, we sum the minimum of the number of 1s and the number of 0s.</p>
+
+<h2>Binary Substrings in Raku</h2>
+
+<p>With the above explanations, this is hopefully clear:</p>
+
+<pre><code>use v6;
+subset Binstr of Str where /^&lt;[01]&gt;*$/;
+
+sub MAIN (Binstr $in-string,  Int $size) {
+    my $sub-str-len = $in-string.chars / $size;
+    my $flips = 0;
+    for 0..^$sub-str-len -&gt; $i {
+        my $ones = 0;
+        for 0..^$size -&gt; $j {
+            my $idx = $j * $sub-str-len + $i;
+            $ones++ if substr($in-string, $idx, 1) == 1
+        }
+        my $zeroes = $size - $ones;
+        $flips += min ($zeroes, $ones)
+    }
+    say $flips;
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ ./raku bin-substrings.raku  101100101 3
+1
+
+$ ./raku bin-substrings.raku  10110111 4
+2
+</code></pre>
+
+<h2>Binary Substrings in Perl</h2>
+
+<p>This is the same idea as above for the Perl version:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature qw/say/;
+
+my ($in_string, $size) = @ARGV;
+my $sub_str_len = length($in_string) / $size;
+my $flips = 0;
+for my $i (0 .. $sub_str_len - 1) {
+    my $ones = 0;
+    for my $j (0 .. $size - 1) {
+        my $idx = $j * $sub_str_len + $i;
+        $ones++ if substr ($in_string, $idx, 1) == 1;
+    }
+    my $zeroes = $size - $ones;
+    $flips += $zeroes &gt; $ones ? $ones : $zeroes;
+}
+say $flips;
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ perl  bin-substrings.pl 101100101 3
+1
+
+$ perl  bin-substrings.pl  10110111 4
+2
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, February 7, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+     on Monday 01 February 2021 03:25</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/31#pwc097">Perl Weekly Challenge 097</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p><em>The examples used here are from the weekly challenge problem statement and demonstrate the working solution.</em></p>
@@ -155,7 +416,7 @@ $ perl perl/ch-2.pl
      on Sunday 31 January 2021 11:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-097-3ag8">Weekly Challenge 097</a></h2>
             </div> <!-- card-header -->
@@ -299,7 +560,7 @@ THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG
      on Sunday 31 January 2021 13:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/meeting-2020-12">TPF Meeting Minutes for December 2020</a></h2>
             </div> <!-- card-header -->
@@ -541,7 +802,7 @@ THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG
      on Sunday 31 January 2021 11:27</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-97.html">Perl weekly challenge 97</a></h2>
             </div> <!-- card-header -->
@@ -643,7 +904,7 @@ sub min_flips {
      on Saturday 30 January 2021 09:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/perl.com-registry-attack">Perl.com registry attack</a></h2>
             </div> <!-- card-header -->
@@ -663,7 +924,7 @@ sub min_flips {
      on Saturday 30 January 2021 14:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/01/perlcom-hijacked.html">perl.com hijacked </a></h2>
             </div> <!-- card-header -->
@@ -675,7 +936,7 @@ sub min_flips {
      on Wednesday 27 January 2021 20:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxvi-17-cpan-great-modules-released.html">(cccxxvi) 17 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -687,7 +948,7 @@ sub min_flips {
      on Saturday 30 January 2021 16:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlii-metacpan-weekly-report-perl.html">(cdlii) metacpan weekly report - perl</a></h2>
             </div> <!-- card-header -->
@@ -699,7 +960,7 @@ sub min_flips {
      on Saturday 30 January 2021 16:08</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlxxvi-stackoverflow-perl-report.html">(cdlxxvi) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -711,7 +972,7 @@ sub min_flips {
      on Saturday 30 January 2021 16:05</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-50-of-perl-workflow-2a1h">Release 1.50 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -752,7 +1013,7 @@ sub min_flips {
      on Saturday 30 January 2021 12:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposals_recap_jan_2021">Grant Proposal Recap: January 2021</a></h2>
             </div> <!-- card-header -->
@@ -775,7 +1036,7 @@ sub min_flips {
      on Thursday 28 January 2021 22:38</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_raku_ci_integration_bot">Grant Proposal: Raku CI integration bot</a></h2>
             </div> <!-- card-header -->
@@ -959,7 +1220,7 @@ sub min_flips {
      on Thursday 28 January 2021 22:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/dave-report-2020-december">Maintaining the Perl 5 Core (Dave Mitchell): Grant Report for December 2020</a></h2>
             </div> <!-- card-header -->
@@ -994,7 +1255,7 @@ SUMMARY:
      on Thursday 28 January 2021 14:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-28-user-story-mapping-teil1">User Story Mapping Teil 1</a></h2>
             </div> <!-- card-header -->
@@ -1007,7 +1268,7 @@ In der agilen Software-Entwicklung wird oft die formale Korrektheit von User Sto
      on Thursday 28 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/better-perl-with-subroutine-signatures-and-type-validation-2bck">Better Perl with subroutine signatures and type validation</a></h2>
             </div> <!-- card-header -->
@@ -1404,7 +1665,7 @@ In der agilen Software-Entwicklung wird oft die formale Korrektheit von User Sto
      on Wednesday 27 January 2021 22:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/01/dancer2-0300005-released.html">Dancer2 0.300005 Released</a></h2>
             </div> <!-- card-header -->
@@ -1457,7 +1718,7 @@ In der agilen Software-Entwicklung wird oft die formale Korrektheit von User Sto
      on Wednesday 27 January 2021 02:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/replace-a-column-in-a-csv-file">How to replace a column in a CSV file using Perl</a></h2>
             </div> <!-- card-header -->
@@ -1483,7 +1744,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Tuesday 26 January 2021 11:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/takakd/mockgen-helper-perl-script-1g5l">Perl - mockgen helper perl script</a></h2>
             </div> <!-- card-header -->
@@ -1506,7 +1767,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 12:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/74d">Free Lunch? Yes, Please. Perl job in Vienna.</a></h2>
             </div> <!-- card-header -->
@@ -1518,7 +1779,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/kgm">We aren’t Mal-teasing—this is the Perl job you’ve been waiting for! Perl in Malta</a></h2>
             </div> <!-- card-header -->
@@ -1530,7 +1791,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/b1n">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -1542,7 +1803,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/xkq">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -1554,7 +1815,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/o8c">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1566,7 +1827,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -1578,7 +1839,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1590,7 +1851,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -1602,7 +1863,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1614,7 +1875,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1626,7 +1887,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/charlotte-pm/events/275282889">Charlotte Perl Mongers - Using the ActiveState Platform</a></h2>
             </div> <!-- card-header -->
@@ -1638,7 +1899,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://courses.code-maven.com/p/testing-in-perl">Testing in Perl course</a></h2>
             </div> <!-- card-header -->
@@ -1650,7 +1911,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/24/aoc2016-19-josephus/">AoC 2016/19 - Josephus problem</a></h2>
             </div> <!-- card-header -->
@@ -1662,7 +1923,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/23/aoc2016-15-crt-again/">AoC 2016/15 - Chinese Reminder Theorem - again!</a></h2>
             </div> <!-- card-header -->
@@ -1674,7 +1935,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/22/aoc2016-11-optimization/">AoC 2016/11 - Optimization</a></h2>
             </div> <!-- card-header -->
@@ -1686,7 +1947,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/19/aoc2016-11-part2-solution/">AoC 2016/11 - Part 2 solution</a></h2>
             </div> <!-- card-header -->
@@ -1698,7 +1959,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1710,7 +1971,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/01/18/2021-03-course-topped/">2021.03 Course Topped</a></h2>
             </div> <!-- card-header -->
@@ -1722,7 +1983,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/loop-controls-next-last">Loop controls: next, last, continue, break</a></h2>
             </div> <!-- card-header -->
@@ -1734,7 +1995,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/01/18/PWC096/">Perl Weekly Challenge 96</a></h2>
             </div> <!-- card-header -->
@@ -1746,7 +2007,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/01/Perl_Weekly_Challenge_96__Reverse_Distance.html">Perl Weekly Challenge 96: Reverse Distance</a></h2>
             </div> <!-- card-header -->
@@ -1758,7 +2019,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/joan_mimosinnet/2021/01/perl-weekly-challenge-096---raku.html">Perl weekly challenge 096 - Raku</a></h2>
             </div> <!-- card-header -->
@@ -1770,7 +2031,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/01/18/PerlWeeklyChallenge96.html">Perl Weekly Challenge 96: Levenshtein distance</a></h2>
             </div> <!-- card-header -->
@@ -1782,7 +2043,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-96-reverse-words-and-edit-distance-and-decorators-in-perl.html">Perl Weekly Challenge 96: Reverse Words and Edit Distance (and Decorators in Perl)</a></h2>
             </div> <!-- card-header -->
@@ -1794,7 +2055,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.kiwi/tales/2021/01/22/perl-weekly-challenge/">Perl Weekly Challenge</a></h2>
             </div> <!-- card-header -->
@@ -1806,7 +2067,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/21/pwc096-edit-distance/">PWC096 - Edit Distance</a></h2>
             </div> <!-- card-header -->
@@ -1818,7 +2079,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/20/pwc096-reverse-words/">PWC096 - Reverse Words</a></h2>
             </div> <!-- card-header -->
@@ -1830,7 +2091,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://gugod.org/2021/01/pwc-096-en/">Solving Perl Weekly Challenge 096 -- Reverse Words and Edit distance.</a></h2>
             </div> <!-- card-header -->
@@ -1842,7 +2103,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/01/19/going-the-distance-perl-weekly-challenge-96.html">Going The Distance: Perl Weekly Challenge #96</a></h2>
             </div> <!-- card-header -->
@@ -1854,7 +2115,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/01/25/the-wagner-fischer-price-backwards/">The Wagner–Fischer-Price, Backwards</a></h2>
             </div> <!-- card-header -->
@@ -1866,7 +2127,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/reversed-distance.html">Reversed Distance with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -1878,7 +2139,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/24">Perl Weekly Challenge 096</a></h2>
             </div> <!-- card-header -->
@@ -1890,7 +2151,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/23/perl-weekly-challenge-96-edit-distance/">Perl Weekly Challenge 96: Edit Distance</a></h2>
             </div> <!-- card-header -->
@@ -1902,7 +2163,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/22/perl-weekly-challenge-96-reverse-words/">Perl Weekly Challenge 96: Reverse Words</a></h2>
             </div> <!-- card-header -->
@@ -1914,7 +2175,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-096/">Perl Weekly Challenge 96</a></h2>
             </div> <!-- card-header -->
@@ -1926,7 +2187,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-094">Perl Review - Perl Weekly Challenge - 094</a></h2>
             </div> <!-- card-header -->
@@ -1938,7 +2199,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-096">RECAP - The Weekly Challenge - 096</a></h2>
             </div> <!-- card-header -->
@@ -1950,7 +2211,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-097">The Weekly Challenge - 097</a></h2>
             </div> <!-- card-header -->
@@ -1962,7 +2223,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-report-uv-2020-12">UV Grant Report for 2020-12</a></h2>
             </div> <!-- card-header -->
@@ -1974,7 +2235,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/martin_mcgrath/2021/01/regarding-the-closure-of-rtcpan.html">Regarding the closure of rt.cpan</a></h2>
             </div> <!-- card-header -->
@@ -1986,7 +2247,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/01/msg258817.html">Perl Steering Council, meeting #003</a></h2>
             </div> <!-- card-header -->
@@ -1998,7 +2259,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://kyzn.org/posts/prc-2020-report/">Pull Request Club 2020 Report</a></h2>
             </div> <!-- card-header -->
@@ -2010,7 +2271,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jesse_shy/2021/01/roles-huh-what-are-they-good-for.html">Roles, h'uh, what are they good for?</a></h2>
             </div> <!-- card-header -->
@@ -2022,7 +2283,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2021/01/mood-lighting.html">Mood Lighting</a></h2>
             </div> <!-- card-header -->
@@ -2034,7 +2295,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/index.php/2021/01/23/debugging-a-web-application-in-perl/">Debugging a web application in Perl</a></h2>
             </div> <!-- card-header -->
@@ -2046,7 +2307,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/01/msg258879.html">Perl 5.34.0 *will be released* in May</a></h2>
             </div> <!-- card-header -->
@@ -2058,7 +2319,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/stats.html">Blogs</a></h2>
             </div> <!-- card-header -->
@@ -2070,7 +2331,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/metacpan.html">CPAN uploads</a></h2>
             </div> <!-- card-header -->
@@ -2082,7 +2343,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/blog/activestates-new-perl-ecosystem/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=blog-perl-eco-system&utm_campaign=user-acquisition">A Replacement for PPM - ActiveState's New Perl Ecosystem</a></h2>
             </div> <!-- card-header -->
@@ -2094,7 +2355,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/496.html">#496 - Statocles vs Hugo</a></h2>
             </div> <!-- card-header -->
@@ -2114,7 +2375,7 @@ how can we replace the 4th column to contain the value 'CIF' in every line?
      on Monday 25 January 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/24#pwc096">&lt;p&gt;Perl Weekly Challenge 096&lt;/p&gt;</a></h2>
             </div> <!-- card-header -->
@@ -2220,7 +2481,7 @@ $ perl perl/ch-2.pl
      on Sunday 24 January 2021 01:26</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxv-17-cpan-great-modules-released.html">(cccxxv) 17 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2232,7 +2493,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 23:28</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdli-metacpan-weekly-report-lwp.html">(cdli) metacpan weekly report - LWP</a></h2>
             </div> <!-- card-header -->
@@ -2244,7 +2505,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 23:25</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/debugging-a-web-application-in-perl-34pm">Debugging a web application in Perl</a></h2>
             </div> <!-- card-header -->
@@ -2270,7 +2531,7 @@ $ perl perl/ch-2.pl
      on Saturday 23 January 2021 16:14</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-96-reverse-words-and-edit-distance-and-decorators-in-perl.html">Perl Weekly Challenge 96: Reverse Words and Edit Distance (and Decorators in Perl)</a></h2>
             </div> <!-- card-header -->
@@ -2834,7 +3095,7 @@ sys     0m0,062s
      on Friday 22 January 2021 23:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_74">
+          <div class="card" id="card_75">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-96.html">Perl weekly challenge 96</a></h2>
             </div> <!-- card-header -->
@@ -2974,55 +3235,6 @@ sub edit_distance_simple {
 
               <p class="text-right"><small>Published by James Curtis-Smith
      on Friday 22 January 2021 03:23</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_75">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2021/01/mood-lighting.html">Mood Lighting</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>The lighting in my bedroom uses <a href="https://en.wikipedia.org/wiki/Philips_Hue">Philips Hue bulbs</a> — specifically, the coloured ones. Last night, I decided it would be nice to set the three lights in my bedroom to cycle slowly through a set of warm colours using a script.</p>
-
-<p>I didn't want harsh transitions from one colour to the next, but for the lighting to fade from one colour to the next in a smooth gradient. Also, I didn't want the three bulbs to all be the exact same colour, but wanted each bulb to be at different stage in the cycle, like they're "chasing" each other through the colours.</p>
-
-<p>So I whipped up a quick script. It requires the command-line tool <a href="https://github.com/bahamas10/hueadm">hueadm</a> to be installed and set up before we start. You can run <kbd>hueadm lights</kbd> to get a list of available lights, and in particular, their ID numbers.</p>
-        <p>First step, we need to be able blend two colours together. This is necessary to be able to create smooth transitions between colours. I stole a little code from <a href="https://metacpan.org/release/Color-Fade/source/lib/Color/Fade.pm">Color::Fade</a> on CPAN to do this.</p>
-
-<script src="https://gist.github.com/tobyink/e9686777d150937f0b929de115fae695.js"></script>
-
-<p>Pretty simple averaging of two RGB values. You could arguably get a better effect by converting to HSL, averaging those values and then converting back to RGB, but in practice, using RGB seems fine.</p>
-
-<p>Now we can build the gradients. We want to take an array of colours and make it into a cycle by copying the first colour to the end, then create a new array, copying the colours into the new array, but inserting a blend of each pair between them, so our initial array of N colours grows to an array of 2N colours. Then repeat that process a few times.</p>
-
-<script src="https://gist.github.com/tobyink/e7f910b8d3947f3536483ed9a4fe23c3.js"></script>
-
-<p>Nice. Now we know what colours our lights should be.</p>
-
-<p>Here's a quick Moo class to control a lightbulb, given its ID. Nothing interesting to see here.</p>
-
-<script src="https://gist.github.com/tobyink/593316c89929cde61ce52a199633c2f8.js"></script>
-
-<p>Finally we can work on the logic. We have an array of colours; we need to pick an index in that array for each bulb. My array of colours (after being expanded into a gradient), ended up being 160 colours, so it seemed that a good starting point was to set my three bulbs initially to colours 0, 16, and 32 in the array. Something along these lines:</p>
-
-<script src="https://gist.github.com/tobyink/30a15fce9f03e493420ca72ded4955b1.js"></script>
-
-<p>Then pause for a second or two, then add one to each index (looping any that go over 160 back to 0) and repeat. Here's the full code for that:</p>
-
-<script src="https://gist.github.com/tobyink/e9462093b4830a8fd0216a8ff1cba0ca.js"></script>
-
-<p>Now let's test it out...</p>
-
-<script src="https://gist.github.com/tobyink/a7a01c4a362f40b685b54abd6afc706d.js"></script>
-
-<p>It works!</p>
-
-<p>The <a href="https://gist.github.com/tobyink/62a6d7a994573f3f7dc83acc5754d4d7">full script is on GitHub Gist</a>.</p>
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Toby Inkster
-     on Friday 22 January 2021 13:55</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_76">
@@ -4429,7 +4641,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 31 January 2021 21:54 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 31 January 2021 23:00 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
