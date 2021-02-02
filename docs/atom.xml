@@ -7,9 +7,137 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-02-02T14:53:03Z</updated>
+  <updated>2021-02-02T15:57:52Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl weekly challenge 98</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-98.html"/>
+    <id>tag:blogs.perl.org,2021:/users/james_curtis-smith//3569.10073</id>
+    <published>2021-02-02T19:47:38Z</published>
+    <updated>2021-02-02T20:24:17Z</updated>
+    <author>
+        <name>James Curtis-Smith</name>
+        <uri>https://jamessmith.me.uk</uri>
+    </author>
+    <category term="pwc" label="PWC" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/james_curtis-smith/">
+        <![CDATA[<p>Here are solutions to this weeks challenges from the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a>.</p>
+
+<p>You can find my full code on
+<a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-098/james-smith/perl">Github</a></p>
+
+<h3>Challenge 1</h3>
+
+<p>You are given file <tt>$FILE</tt>.</p>
+
+<p>Create subroutine <tt>readN($FILE, $number)</tt> returns the first <em>n</em>-characters and moves the pointer to the (<em>n</em>+1)th character.</p>
+
+<h4>Solution</h4>
+
+<p>Rather than turning this into an object which was the first idea - I decided to keep the code clean by making it a function call, and to also make it work with multiple file handles open simultaneously. </p>
+
+<p>To achieve this without an object - we will need to use a global hash to contain the opened file handles - so that when we re-call the function we don't re-open the file.</p>
+
+<p><em>Aside - note if we were only reading these files once in a while - an alternative approach would be to keep an array of file-positions rather than file-handles, and then at each invocation - re-open the file - seek to the location and return the bytes before closing it again - this would cut down the resources associated with the script.</em></p>
+
+<p>We could use a <tt>state</tt> variable declaration here {but that would mean that we couldn't add extra code to be able to clean up data later}.</p>
+
+<p>In our function we use one of the "lower-level" file functions, read, which reads a given number of bytes into a scalar variable - note it has to be initialised before the function call.</p>
+
+<p>If read returns "false" then that means that there was no content in the file at that point.</p>
+
+<pre><code>
+sub readN {
+  my( $fn, $bytes ) = @_;
+
+<p>  ## Create a file handle if we don't already have one<br />
+  unless( exists $handles{$fn} ) {<br />
+    open $handles{$fn}, '<', $fn;<br />
+  }</p>
+
+<p>  ## Create a buffer for the return value<br />
+  my $t = '';</p>
+
+<p>  ## Use "read" to read the $bytes bytes - these are put into 2nd parameter<br />
+  ## If read returns undef it means it has reached the end of the file...<br />
+  warn "Reached end of file $fn\n" unless read ${$handles{$fn}}, $t, $bytes;</p>
+
+<p>  ## Return string<br />
+  return $t;<br />
+}<br />
+</code></pre></p>
+
+<p>The additional cleanup code is used to forcibly close the file handles before the end of the script - this is why we could not rely on using <strong>state</strong> variables.</p>
+
+<pre><code>
+sub cleanup {
+  ## For neatness close all handles
+  ## delete returns the value of the has deleted
+  ## if filenames are passed then only those are cleaned up
+  close delete $handles{$_} foreach @_ ? grep { exists $handles{$_} } @_ : keys %handles;
+}
+
+<p>sub show_open {<br />
+  ## Return a list of open filenames<br />
+  return keys %handles;<br />
+}<br />
+</code></pre></p>
+
+<h3>Challenge 2</h3>
+
+<p>You are given a sorted array of distinct integers <tt>@N</tt> and a target <tt>$N</tt>.</p>
+
+<p>Write a script to return the index of the given target if found otherwise place the target in the sorted array and return the index.</p>
+
+<h4>Solution</h4>
+
+<p>This is a much simpler problem than the previous one - we have to find the index of the number (or where to insert it)</p>
+
+<p>Once we know where that is we check to see if we need to insert or not (using the 4 parameter version of <tt>splice</tt>) and to return the value.</p>
+
+<pre><code>
+sub insert_pos {
+  my( $t, $l, $val ) = (0,@_);
+
+<p>  ## Repeat unless we have got to end of list or the new entry is greater than val<br />
+  $t++ while $t < @{$l} && $l->[$t] < $val;</p>
+
+<p>  ## If we are after the end of the list (to avoid warning) OR<br />
+  ## If we haven't found the entry then we use splice to insert it<br />
+  splice @{$l},$t,0,$val if $t == @{$l} || $l->[$t] != $val;</p>
+
+<p>    ## Warn to show splice has worked...<br />
+    warn ">> $t ( @{$l} )\n"; ## Demonstrate splice</p>
+
+<p>  ## Return the index of the number!<br />
+  return $t;<br />
+}<br />
+</code></pre></p>
+
+<p>If we aren't interested in doing the actual insert into the list then we can avoid the splice and so the code reduces to this.</p>
+
+<pre><code>
+sub insert_pos {
+  my( $t, $l, $val ) = (0,@_);
+  $t++ while $t < @{$l} && $l->[$t] < $val;
+  return $t;
+}
+</code></pre>
+
+<p>You could easily run this code with simpler function...</p>
+
+<pre><code>
+sub insert_pos {
+  my( $l, $val ) = @_;
+  return scalar grep { $_ < $val } @{$l};
+}
+</code></pre>
+
+<p>But using our own loop is "optimal" if the number being inserted is near the start of the list - as the numbers increase numerically then we only need to check up to (or as far) as the number itself rather than the whole list. {you could use firstidx from List::MoreUtils}</p>]]>
+        
+    </content>
+</entry>
   <entry>
     <title>Monthly Report - January</title>
     <link rel="alternate" href="http://blogs.perl.org/users/mohammad_s_anwar/2021/02/monthly-report---january-2.html"/>
@@ -3124,60 +3252,6 @@ In der agilen Software-Entwicklung wird oft die formale Korrektheit von User Sto
     <category term="types"/>
   </entry>
   <entry>
-    <title>Dancer2 0.300005 Released</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/jason_a_crome/2021/01/dancer2-0300005-released.html"/>
-    <id>tag:blogs.perl.org,2021:/users/jason_a_crome//712.10061</id>
-    <published>2021-01-27T02:11:45Z</published>
-    <updated>2021-01-27T02:27:02Z</updated>
-    <author>
-        <name>Jason A. Crome</name>
-        <uri>https://cromedome.net</uri>
-    </author>
-    <category term="dancer" label="dancer" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/jason_a_crome/">
-        <![CDATA[<p>Well, it&#8217;s been a hot minute since the last release, hasn&#8217;t it? Dancer2 0.300005 has landed on CPAN and features a number of bug fixes, enhancements, and doc patches:</p>
-
-<pre><code>0.300005  2021-01-26 15:57:41-05:00 America/New_York
-
-[ BUG FIXES ]
-* GH #1546: Add MIME type for all files served from public (Russell 
-  @veryrusty Jenkins)
-* GH #1555: Remove all leftovers of warnings config setting (Sergiy 
-  Borodych)
-* GH #1557: Remove HTTP::XSCookies workaround (Alexander Pankoff)
-* GH #1564: Add script_name to redirects beginning with / (Nigel Gregoire)
-* GH #1567: Fix CSS so errors do not display ourside of &lt;pre&gt; HTML
-  element (Elliot Holden)
-* GH #1568: Serializer::Mutable doesn't auto-load other serializers
-  (Russell @veryrusty Jenkins)
-* GH #1579: Fix missing push_header method in Response::Delayed 
-  (Paul Clements)
-
-[ ENHANCEMENTS ]
-* GH #1552: Update jQuery (Sergiy Borodych)
-* GH #1558: Test to make sure uploads aren't discarded after the
-  forward keyword is used (Alexander Pankoff)
-* GH #1571: Add GitHub Actions support (Gabor Szabo)
-* GH #1572: Install Dancer2::Session::Cookie in order to run the test 
-  t/issues/gh-811.t (racke)
-
-[ DOCUMENTATION ]
-* GH #1490: Document Dancer2::Core::App-&gt;template() (Steve Dondley)
-* GH #1551: Fix pod for cookie same site attribute (Sergiy Borodych)
-* GH #1562: Fix links, missing code in Tutorial (cloveistaken)
-</code></pre>
-
-<p>I have already lined up a number of issues for inclusion into the next release, which should be landing in early February (as of now).</p>
-
-<p>Thanks for your patience with the long break between the releases, we (hopefully) won&#8217;t do that to you again.</p>
-
-<p>Happy Dancing! See you in February!</p>
-]]>
-        
-
-    </content>
-</entry>
-  <entry>
   <title>How to replace a column in a CSV file using Perl</title>
   <summary type="html"><![CDATA[<p>
 Given a CSV file, how can we replace the values in one of the columns?
@@ -4054,7 +4128,7 @@ COUNT
     <id>http://perlancar.wordpress.com/?p=1933</id>
     <published>2021-01-03T04:40:59Z</published>
     <updated>2021-01-03T04:40:59Z</updated>
-    <category term="cpan"/>
     <category term="perl"/>
+    <category term="cpan"/>
   </entry>
 </feed>
