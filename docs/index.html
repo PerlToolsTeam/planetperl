@@ -55,6 +55,454 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/brtastic/shuffling-my-playlist-with-perl-and-quantum-mechanics-4e0f">Shuffling my playlist with Perl and quantum mechanics </a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h1>
+  <a href="#introduction" class="anchor">
+  </a>
+  Introduction
+</h1>
+
+<p>There are handful of reasons one might want to set up their own radio. A common playlist for a group of friends is one of them. Another one is having a fine-grained control over the logic behind the shuffling mechanism. Thankfully, setting up your own radio is easy now with <a href="https://metacpan.org/pod/Audio%3A%3AStreamGenerator">Audio::StreamGenerator</a> Perl module - and you get to utilize all the other great modules written for the language.</p>
+
+<p>The module I'm using for shuffling is not great at all in terms of popularity, but it is my own creation and I'm having a lot of fun replacing some tedious random number generation and array operations with it. The module takes some general laws of quantum physics - the phenomenon of a state of superposition, to be exact - and applies them to Perl variables. I'm not a physicist at all so don't expect it to be very accurate - the goal here is to allow for some very neat operations right in the code.</p>
+
+<p>The normal usage of the module is creating a superposition of values - an object that tries to act as if it had all these values at once, like an array on steroids - and then collapsing it to get one of the states randomly. It makes choosing a random element out of a group of elements very easy, and is more declarative way of doing it, rather than imperative. Of course, it is one of the less exciting features of the module - I will talk about more exciting stuff a bit later.</p>
+
+<p>The module is called <a href="https://metacpan.org/pod/Quantum%3A%3ASuperpositions%3A%3ALazy">Quantum::Superpositions::Lazy</a> (that's a fairly long name, so we'll call it by its alias - Q::S::L) and is more or less a rewrite of a very old <a href="https://metacpan.org/pod/Quantum%3A%3ASuperpositions">Quantum::Superpositions</a> module by Damian Conway - a famous Perl programmer. I decided to develop a new module not only because the old one was no longer developed, but also because it was lacking some crucial features that I was interested in, like:</p>
+
+<ul>
+<li>It was not able assign to weights to states - all states had the same chance of occuring.</li>
+<li>It always kept all states and performed all the operations right away. Hence the <em>::Lazy</em> part of my module, as it tries to perform operations as late as possible.</li>
+<li>It contained a lot of black magic, and was (in my opinion) a bit hard to handle due to that.</li>
+</ul>
+
+<h1>
+  <a href="#setting-up-a-playlist" class="anchor">
+  </a>
+  Setting up a playlist
+</h1>
+
+<p>A playlist will be just a filesystem directory with subdirectories categorizing the tracks, which are simply stored as <em>mp3</em> files. Each category (or genre) will have a different chance of getting selected for the next song. To keep randomness in check, the same track from a category cannot be played before all tracks from the same category were played. This creates a rare situation where a track can be played twice in a row if it is selected as the last one and then the first one from a category - fixing it would require an additional condition, but the situation should be rare enough that we're not going to worry about it.</p>
+
+<p>Since categories will be played based on a fixed chance - no matter how many songs are in them - the playlist must be hand crafted to meet one's needs. Assigning a high chance to a small category will cause the songs from it to have a very high chance of getting selected. Lets look at an example:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>playlist
+| - category_a
+    | - song_1
+    | - song_2
+| - category_b
+    | - song_3
+    | - song_4
+    | - song_5
+    | - song_6
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>If we set weight of <em>category_a</em> to be <code>10</code> and the weight of <em>category_b</em> to <code>5</code>, the chances of songs playing will be as follows:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>weight sum: 15
+
+category_a, songs: 2, weight: 10
+    song chance: (10 / 15) / 2 * 100% = 33.(3)%
+category_a, songs: 4, weight: 5
+    song chance: (5 / 15) / 4 * 100% = 8.(3)%
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Each individual song from <em>category_a</em> will be played four times as often as each individual song from <em>category_b</em>, but a careless programmer may have thought that they will only be twice as frequent. All in all, categories will be played exactly how was specified, but one will feel that they listen to only two songs most of the time.</p>
+
+<h1>
+  <a href="#quantumlike-shuffling" class="anchor">
+  </a>
+  Quantum-like shuffling
+</h1>
+
+<p>Now that we have a plan for a playlist, it is time to write code that will shuffle it. For this short presentation, we will only implement the <code>get_next_file</code> function, which will return the name of a file that got selected. If you want to see the code in full or without my interruptions, please refer to <a href="https://github.com/brtastic/perl-radio/blob/master/radio.pl">the file in my Github repository</a>. Code between the repository and this article may differ a little, since I try to make it more readable here.</p>
+
+<p>Lets start with pragmas, imports and common variables that are required:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use v5.24;
+use warnings;
+use Q::S::L qw(:all);
+use Path::Tiny;
+
+# current directory
+my $current = path(__FILE__)-&gt;dirname;
+
+# configuration
+my $config = {
+    genres =&gt; {
+        category_a =&gt; 10,
+        category_b =&gt; 5,
+    }
+};
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>The function will keep some state with the <code>state</code> Perl keyword, which causes a variable to only be initiazed on the first function call and to keep the state throughout the calls. We also define a superposition with <code>my $shuffle</code> and then call <code>-&gt;collapse</code> on it to get a single state randomly. Before returning the result, we also push the randomed state to the <code>$last</code> array:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub get_next_file
+{
+    state $last = []; # only initialized once
+
+    my $shuffle = do { ... };
+
+    my $choice = $shuffle-&gt;collapse;
+    push @$last, $choice;
+
+    return $choice;
+}
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Now to implement the <code>...</code> part, we need to create a superposition that will read all the categories and tracks in each of them. We will use the category (genre) config defined above:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>my @arr;
+my $last_files = superpos($last-&gt;@*);
+for my $genre (keys $config-&gt;{genres}-&gt;%*) {
+    my @all_files = glob "$current/radio/$genre/*.mp3";
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p><code>$last_files</code> is a superposition that will be used to obtain a list of songs that have not yet been played this turn. <code>@all_files</code> should contain a list of all the <em>mp3</em> files within the category. We can now create a narrowed list of files for the category:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>my $pos = superpos(@all_files);
+$pos = fetch_matches {
+    every_state { $pos ne $last_files }
+};
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Okay, this one is much more complex, so lets spend a little while here.</p>
+
+<p>In the inner block, we compare two superpositions with <code>ne</code>, which in Perl means not equal when comparing as strings:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$pos ne $last_files
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>This causes every state of <code>$pos</code> to be compared with <code>ne</code> against every state of <code>$last_files</code>. If <code>$pos</code> contains <code>[track1, track2, track3]</code> and <code>$last_files</code> contain <code>[track1, track3]</code>, then the following comparisons will be performed:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>track1 ne track1
+track1 ne track3
+track2 ne track1
+track2 ne track3
+track3 ne track1
+track3 ne track3
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Now, to obtain a result from these comparisons, we need to join them somehow. I call this a reduction strategy, and there are currently three of them - <em>"any"</em>, <em>"all"</em> and <em>"one"</em>. By default, <em>"any"</em> strategy is used, which would create the following operation:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>track1 ne track1 ||
+track1 ne track3 ||
+track2 ne track1 ||
+track2 ne track3 ||
+track3 ne track1 ||
+track3 ne track3
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Can you see the problem here?</p>
+
+<p>Using <code>ne</code> with <em>"any"</em> strategy is often a mistake. It will work if both superpositions have a single element, but if we have two in either of them, it will always be true that one is not equal to the other. <code>track1 ne track3</code> is enough to cause the entire operation to return true, even though an <code>eq</code> operation (which is the opposite of <code>ne</code>) will also return true. I'm considering introducing an exception to the <em>"any by default"</em> rule in the module, but for now I have decided to keep it as it is.</p>
+
+<p>Thankfully we can control the reduction strategy by wrapping the operation in a function call:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>every_state { $pos ne $last_files }
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Now <em>"all"</em> strategy will be used, which will produce the following operation, which is correct:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>track1 ne track1 &amp;&amp;
+track1 ne track3 &amp;&amp;
+track2 ne track1 &amp;&amp;
+track2 ne track3 &amp;&amp;
+track3 ne track1 &amp;&amp;
+track3 ne track3
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Now, lets move on to the next wrapper, which is <code>fetch_states</code>. Normally, <code>ne</code> operation between two superpositions would return a boolean value. In this case we don't want a boolean value, but we'd rather like to know which states from the first superposition meet the <code>ne</code> condition.</p>
+
+<p>This is exactly what <code>fetch_states</code> is doing. A return value of it is a new superposition filled with states that matched. For a state to be included, it requires to meet the condition like the above, but a bit different:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>track1 will be included if:
+    track1 ne track1 &amp;&amp;
+    track1 ne track3
+
+track2 will be included if:
+    track2 ne track1 &amp;&amp;
+    track2 ne track3
+
+track3 will be included if:
+    track3 ne track1 &amp;&amp;
+    track3 ne track3
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>From this example, only <code>track2</code> will be included, which is what was expected.</p>
+
+<p>With that out of the way, lets come back to the creation of <code>$shuffle</code> superposition. At this stage, it should look like this:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>my @arr;
+my $last_files = superpos($last-&gt;@*);
+for my $genre (keys $config-&gt;{genres}-&gt;%*) {
+    my @all_files = glob "$current/radio/$genre/*.mp3";
+
+    my $pos = superpos(@all_files);
+    $pos = fetch_matches {
+        every_state { $pos ne $last_files }
+    };
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>The <code>$pos</code> superposition for the current genre is more or less ready to be added to <code>@arr</code> which holds the states of the entire superposition, but we must first take care of clearing <code>$last</code> of files if all tracks were already played. This code will take care of that:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>    if (!$pos-&gt;states-&gt;@*) {
+        $pos = superpos(@all_files);
+        $last = [grep { every_state { $_ ne $pos } } $last-&gt;@*];
+    }
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>The <code>-&gt;states</code> method returns a complete list of states for the superposition. If this is empty, we create it anew from the files found and remove all the files in this category from the last played files.</p>
+
+<p>The last step is to populate the <code>@arr</code> array, and create a new superposition out of it outside the loop:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>    push @arr, [$config-&gt;{genres}{$genre}, $pos];
+}
+superpos(\@arr);
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+<p>Populating <code>@arr</code> is done with an array reference, which contains two elements. The first one is the weight of the state, and the second one is value, in this case the superposition we just created. The module is smart enough to collapse positions recursively, so collapsing the parent superposition will also collapse the nested superpositions.</p>
+
+<h1>
+  <a href="#conclusion" class="anchor">
+  </a>
+  Conclusion
+</h1>
+
+<p>With relatively short code we have achieved, in my opinion, quite a complex shuffling mechanism which includes:</p>
+
+<ul>
+<li>pure randomness within categories</li>
+<li>categories selected according to their weight</li>
+<li>playback history and avoiding duplications until all tracks are played</li>
+</ul>
+
+<p>Capabilities of the module does not end here. It contains a built in statistics module, which can provide information on most probable states, median state and even expected deviation (if the data is numeric). It can also mutate superpositions with mathematical operations, string operations and even a custom, user-specified function. I am also actively developing it, so it should get better with every release.</p>
+
+<p>(this article is also available on my <a href="https://brtastic.xyz/blog/article/shuffling-playlist">my personal blog</a>)</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by brtastic
+     on Friday 05 February 2021 09:40</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl">Exploring BDD in Perl - using Test::BDD::Cucumber</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>
@@ -69,7 +517,7 @@ using <a href="https://metacpan.org/pod/Test::BDD::Cucumber">Test::BDD::Cucumber
      on Thursday 04 February 2021 20:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/02/i-found-the-truth-about-gamestop-qanon-the-biden-adminstration-and-the-british-royal-family.html">I found the truth about GameStop, Qanon, the Biden adminstration, and the British Royal Family</a></h2>
             </div> <!-- card-header -->
@@ -96,7 +544,7 @@ Q found out that reincarnation is true and he has been imprisoned in The Pentago
      on Monday 01 February 2021 13:53</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-02-03-perl-anwendungen-fail2ban">Sicherheit für Perl-Anwendungen: fail2ban</a></h2>
             </div> <!-- card-header -->
@@ -109,7 +557,7 @@ Ist eine Webanwendung öffentlich erreichbar, wird es nicht lange dauern und irg
      on Wednesday 03 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-98.html">Perl weekly challenge 98</a></h2>
             </div> <!-- card-header -->
@@ -236,7 +684,7 @@ sub insert_pos {
      on Tuesday 02 February 2021 19:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/02/monthly-report---january-2.html">Monthly Report - January</a></h2>
             </div> <!-- card-header -->
@@ -386,7 +834,7 @@ sub insert_pos {
      on Tuesday 02 February 2021 10:52</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/perl-workflow-release-1-51-4ieo">Release 1.51 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -460,7 +908,7 @@ sub insert_pos {
      on Tuesday 02 February 2021 18:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/create-excel-file-using-perl-from-json-data-me5">Create Excel file using Perl from JSON data</a></h2>
             </div> <!-- card-header -->
@@ -1161,7 +1609,7 @@ JSON logo taken from <a href="https://www.json.org/json-en.html">here</a></p>
      on Tuesday 02 February 2021 17:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_maintaining_perl">Grant Proposal: Maintaining Perl</a></h2>
             </div> <!-- card-header -->
@@ -1314,7 +1762,7 @@ handling, to portability fixes.</p>
      on Tuesday 02 February 2021 17:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/01/perlcom-hijacked.html">perl.com hijacked </a></h2>
             </div> <!-- card-header -->
@@ -1326,7 +1774,7 @@ handling, to portability fixes.</p>
      on Wednesday 27 January 2021 20:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/rx9">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -1338,7 +1786,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/b5a">Big Dividends, Bigger Opportunity! Perl role with multiple location options</a></h2>
             </div> <!-- card-header -->
@@ -1350,7 +1798,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/rlz">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1362,7 +1810,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/j6m">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -1374,7 +1822,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/hu4">Mad Men (and women) of London. Perl in London</a></h2>
             </div> <!-- card-header -->
@@ -1386,7 +1834,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -1398,7 +1846,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1410,7 +1858,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1422,7 +1870,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -1434,7 +1882,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1446,7 +1894,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/report-2021-01.html">Gabor self reporting for 2021.01</a></h2>
             </div> <!-- card-header -->
@@ -1458,7 +1906,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/what-to-do-now.html">What to do now?</a></h2>
             </div> <!-- card-header -->
@@ -1470,7 +1918,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://courses.code-maven.com/p/perl">Perl Courses</a></h2>
             </div> <!-- card-header -->
@@ -1482,7 +1930,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1494,7 +1942,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.urth.org/2021/01/29/2020-predictions-reviewed/">2020 Predictions Reviewed</a></h2>
             </div> <!-- card-header -->
@@ -1506,7 +1954,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/replace-a-column-in-a-csv-file">How to replace a column in a CSV file using Perl</a></h2>
             </div> <!-- card-header -->
@@ -1518,7 +1966,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/01/25/PWC097/">Perl Weekly Challenge 97</a></h2>
             </div> <!-- card-header -->
@@ -1530,7 +1978,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-097-3ag8">Weekly Challenge 097</a></h2>
             </div> <!-- card-header -->
@@ -1542,7 +1990,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/01/Perl_Weekly_Challenge_97__Caesar_Substrings.html">Perl Weekly Challenge 97: Caesar Substrings</a></h2>
             </div> <!-- card-header -->
@@ -1554,7 +2002,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/01/25/PerlWeeklyChallenge97.html">Perl Weekly Challenge 97: flipping and swapping</a></h2>
             </div> <!-- card-header -->
@@ -1566,7 +2014,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-97-caesar-cypher-and-binary-substrings.html">Perl Weekly Challenge 97: Caesar Cipher and Binary Substrings</a></h2>
             </div> <!-- card-header -->
@@ -1578,7 +2026,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.kiwi/tales/2021/01/30/perl-weekly-challenge-097/">Perl Weekly Challenge 097</a></h2>
             </div> <!-- card-header -->
@@ -1590,7 +2038,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/28/pwc097-binary-substrings/">PWC097 - Binary Substrings</a></h2>
             </div> <!-- card-header -->
@@ -1602,7 +2050,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/27/pwc097-caesar-cipher/">PWC097 - Caesar Cipher</a></h2>
             </div> <!-- card-header -->
@@ -1614,7 +2062,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-97.html">Perl weekly challenge 97</a></h2>
             </div> <!-- card-header -->
@@ -1626,7 +2074,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/01/25/binary-substrings-and-caesar-cyphers-perl-weekly-challenge-97.html">Binary Substrings and Caesar ciphers: Perl Weekly Challenge 97</a></h2>
             </div> <!-- card-header -->
@@ -1638,7 +2086,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/01/29/et-tu-brute-mit-dem-ausflippen/">Et tu Brute? Mit dem Ausflippen?</a></h2>
             </div> <!-- card-header -->
@@ -1650,7 +2098,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/caesarean-substrings.html">Caesarean Substrings with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -1662,7 +2110,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/30/perl-weekly-challenge-97-binary-substrings/">Perl Weekly Challenge 97: Binary Substrings</a></h2>
             </div> <!-- card-header -->
@@ -1674,7 +2122,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/01/30/perl-weekly-challenge-97-ceasar-cipher/">Perl Weekly Challenge 97: Ceasar Cipher</a></h2>
             </div> <!-- card-header -->
@@ -1686,7 +2134,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/01/31">Perl Weekly Challenge 097</a></h2>
             </div> <!-- card-header -->
@@ -1698,7 +2146,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-097/">Perl Weekly Challenge 97</a></h2>
             </div> <!-- card-header -->
@@ -1710,7 +2158,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-097">RECAP - The Weekly Challenge - 097</a></h2>
             </div> <!-- card-header -->
@@ -1722,7 +2170,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-098">The Weekly Challenge - 098</a></h2>
             </div> <!-- card-header -->
@@ -1734,7 +2182,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/dave-report-2020-december">Maintaining the Perl 5 Core (Dave Mitchell): Grant Report for December 2020</a></h2>
             </div> <!-- card-header -->
@@ -1746,7 +2194,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_raku_ci_integration_bot">Grant Proposal: Raku CI integration bot</a></h2>
             </div> <!-- card-header -->
@@ -1758,7 +2206,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposals_recap_jan_2021">Grant Proposal Recap: January 2021</a></h2>
             </div> <!-- card-header -->
@@ -1770,7 +2218,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/31/aoc2016-24-tsp-brutal/">AoC 2016/24 - Brute-force for a Traveling-Salesman-like problem</a></h2>
             </div> <!-- card-header -->
@@ -1782,7 +2230,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/30/permutations-iterator/">Iterator-based implementation of Permutations</a></h2>
             </div> <!-- card-header -->
@@ -1794,7 +2242,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/29/permutations-algorithm/">Permutations with Heap's Algorithm</a></h2>
             </div> <!-- card-header -->
@@ -1806,7 +2254,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/26/aoc2016-19-dynamic-josephus/">AoC 2016/19 - Dynamic Josephus</a></h2>
             </div> <!-- card-header -->
@@ -1818,7 +2266,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/01/25/aoc2016-19-halving-josephus/">AoC 2016/19 - Halving Josephus</a></h2>
             </div> <!-- card-header -->
@@ -1830,7 +2278,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/takakd/mockgen-helper-perl-script-1g5l">Perl - mockgen helper perl script</a></h2>
             </div> <!-- card-header -->
@@ -1842,7 +2290,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perldotcom.perl.org/article/the-trouble-with-reference-counting/">The Trouble with Reference Counting</a></h2>
             </div> <!-- card-header -->
@@ -1854,7 +2302,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/index.php/2021/01/27/better-perl-with-subroutine-signatures-and-type-validation/">Better Perl with subroutine signatures and type validation</a></h2>
             </div> <!-- card-header -->
@@ -1866,7 +2314,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-50-of-perl-workflow-2a1h">Release 1.50 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -1878,7 +2326,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/01/dancer2-0300005-released.html">Dancer2 0.300005 Released</a></h2>
             </div> <!-- card-header -->
@@ -1890,7 +2338,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/01/perlcom-hijacked.html">perl.com hijacked</a></h2>
             </div> <!-- card-header -->
@@ -1902,7 +2350,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/blog/perl-ci-cd-pipelines-for-github-actions/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=blog-perl-ci-cd-pipelines&utm_campaign=user-acquisition">Optimize GitHub Actions for Perl</a></h2>
             </div> <!-- card-header -->
@@ -1914,7 +2362,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/497.html">#497 - perl.com was hijacked</a></h2>
             </div> <!-- card-header -->
@@ -1931,7 +2379,7 @@ handling, to portability fixes.</p>
      on Monday 01 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/01/perl-weekly-challenge-97-caesar-cypher-and-binary-substrings.html">Perl Weekly Challenge 97: Caesar Cipher and Binary Substrings</a></h2>
             </div> <!-- card-header -->
@@ -2192,7 +2640,7 @@ $ perl  bin-substrings.pl  10110111 4
      on Monday 01 February 2021 03:25</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/02/01/list-of-new-cpan-distributions-jan-2021/">List of new CPAN distributions – Jan 2021</a></h2>
             </div> <!-- card-header -->
@@ -2967,7 +3415,7 @@ $ perl  bin-substrings.pl  10110111 4
      on Monday 01 February 2021 00:53</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/meeting-2020-12">TPF Meeting Minutes for December 2020</a></h2>
             </div> <!-- card-header -->
@@ -3209,7 +3657,7 @@ $ perl  bin-substrings.pl  10110111 4
      on Sunday 31 January 2021 11:27</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/01/31#pwc097">Perl Weekly Challenge 097</a></h2>
             </div> <!-- card-header -->
@@ -3311,7 +3759,7 @@ $ perl perl/ch-2.pl
      on Sunday 31 January 2021 11:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-097-3ag8">Weekly Challenge 097</a></h2>
             </div> <!-- card-header -->
@@ -3455,7 +3903,7 @@ THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG
      on Sunday 31 January 2021 13:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/01/perl-weekly-challenge-97.html">Perl weekly challenge 97</a></h2>
             </div> <!-- card-header -->
@@ -3557,7 +4005,7 @@ sub min_flips {
      on Saturday 30 January 2021 09:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cccxxvi-17-cpan-great-modules-released.html">(cccxxvi) 17 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -3569,7 +4017,7 @@ sub min_flips {
      on Saturday 30 January 2021 16:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlii-metacpan-weekly-report-perl.html">(cdlii) metacpan weekly report - perl</a></h2>
             </div> <!-- card-header -->
@@ -3581,7 +4029,7 @@ sub min_flips {
      on Saturday 30 January 2021 16:08</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/01/cdlxxvi-stackoverflow-perl-report.html">(cdlxxvi) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -3593,7 +4041,7 @@ sub min_flips {
      on Saturday 30 January 2021 16:05</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/perl.com-registry-attack">Perl.com registry attack</a></h2>
             </div> <!-- card-header -->
@@ -3613,7 +4061,7 @@ sub min_flips {
      on Saturday 30 January 2021 14:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-50-of-perl-workflow-2a1h">Release 1.50 of perl-workflow</a></h2>
             </div> <!-- card-header -->
@@ -3654,7 +4102,7 @@ sub min_flips {
      on Saturday 30 January 2021 12:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposals_recap_jan_2021">Grant Proposal Recap: January 2021</a></h2>
             </div> <!-- card-header -->
@@ -3678,7 +4126,7 @@ sub min_flips {
      on Thursday 28 January 2021 22:38</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_raku_ci_integration_bot">Grant Proposal: Raku CI integration bot</a></h2>
             </div> <!-- card-header -->
@@ -3862,7 +4310,7 @@ sub min_flips {
      on Thursday 28 January 2021 22:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-01-28-user-story-mapping-teil1">User Story Mapping Teil 1</a></h2>
             </div> <!-- card-header -->
@@ -3873,403 +4321,6 @@ In der agilen Software-Entwicklung wird oft die formale Korrektheit von User Sto
 
               <p class="text-right"><small>Published
      on Thursday 28 January 2021 10:00</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_74">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/mjgardner/better-perl-with-subroutine-signatures-and-type-validation-2bck">Better Perl with subroutine signatures and type validation</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Did you know that you could increase the read­abil­i­ty and reli­a­bil­i­ty of your Perl code with one fea­ture? I’m talk­ing about sub­rou­tine sig­na­tures: the abil­i­ty to declare what argu­ments, and in some cas­es what types of argu­ments, your func­tions and meth­ods take.</p>
-
-<p>Most Perl pro­gram­mers know about the <a href="https://perldoc.pl/perlvar#@_"><code>@_</code></a> vari­able (or <code>@ARG</code> if you <a href="https://perldoc.pl/English"><code>use English</code></a>). When a sub­rou­tine is called, <code>@_</code> contains the para­me­ters passed. It’s an array (thus the <code>@</code> sig­il) and can be treat­ed as such; it’s even the default argu­ment for <a href="https://perldoc.pl/functions/pop"><code>pop</code></a> and <a href="https://perldoc.pl/functions/shift"><code>shift</code></a>. Here’s an example:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">v5</span><span class="mf">.10</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$parameter</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="nv">say</span> <span class="p">"</span><span class="s2">You passed me </span><span class="si">$parameter</span><span class="p">";</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>Or for mul­ti­ple parameters:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">v5</span><span class="mf">.10</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$parameter1</span><span class="p">,</span> <span class="nv">$parameter2</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="nv">say</span> <span class="p">"</span><span class="s2">You passed me </span><span class="si">$parameter1</span><span class="s2"> and </span><span class="si">$parameter2</span><span class="p">";</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>(What’s that <code>use v5.10;</code> doing there? It enables all features that were intro­duced in <a href="https://perldoc.pl/perl5100delta">Perl 5.10</a>, such as the <a href="https://perldoc.pl/perlfunc#say"><code>say</code></a> func­tion. We’ll assume you type it in from now on to reduce clutter.)</p>
-
-<p><strong>We can do bet­ter</strong>, though. <a href="https://perldoc.pl/perl5200delta">Perl 5.20</a> (released in 2014; why haven’t you upgrad­ed?) intro­duced the exper­i­men­tal <a href="https://perldoc.pl/perlsub#Signatures"><code>signatures</code></a> fea­ture, which as described above, allows parame­ters to be intro­duced right when you declare the subrou­tine. It looks like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">experimental</span> <span class="p">'</span><span class="s1">signatures</span><span class="p">';</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">($parameter1, $parameter2 = 1, @rest) {</span>
-    <span class="nv">say</span> <span class="p">"</span><span class="s2">You passed me </span><span class="si">$parameter1</span><span class="s2"> and </span><span class="si">$parameter2</span><span class="p">";</span>
-    <span class="nv">say</span> <span class="p">"</span><span class="s2">And these:</span><span class="p">";</span>
-    <span class="nv">say</span> <span class="k">for</span> <span class="nv">@rest</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>You can even set defaults for option­al para­me­ters, as seen above with the <code>=</code> sign, or slurp up remain­ing para­me­ters into an array, like the <code>@rest</code> array above. For more help­ful uses of this fea­ture, con­sult the <a href="https://perldoc.pl/perlsub#Signatures">perl­sub</a> man­u­al page.</p>
-
-<p><strong>We can do bet­ter still</strong>. The <a href="https://www.cpan.org/">Com­pre­hen­sive Perl Archive Network (CPAN)</a> con­tains sev­er­al mod­ules that both enable signa­tures, as well as val­i­date parame­ters are of a cer­tain type or for­mat. (Yes, Perl can have types!) Let’s take a tour of some of them.</p>
-
-<h1>
-  <a href="#paramsvalidate" class="anchor">
-  </a>
-  <a href="https://metacpan.org/pod/Params::Validate">Params::Validate</a>
-</h1>
-
-<p>This mod­ule adds two new func­tions, <code>validate()</code> and <code>validate_pos()</code>. <code>validate()</code> intro­duces <em>named parameters</em>, which make your code more read­able by describing what parameters are being called at the time you call them. It looks like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Params::</span><span class="nv">Validate</span><span class="p">;</span>
-
-<span class="nv">say</span> <span class="nv">foo</span><span class="p">(</span><span class="s">parameter1</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">hello</span><span class="p">',</span>  <span class="s">parameter2</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">world</span><span class="p">');</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="nv">%p</span> <span class="o">=</span> <span class="nv">validate</span><span class="p">(</span><span class="err">@</span><span class="nv">_</span><span class="p">,</span> <span class="p">{</span>
-        <span class="s">parameter1</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="c1"># mandatory</span>
-        <span class="s">parameter2</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="c1"># optional</span>
-    <span class="p">}</span> <span class="p">);</span>
-    <span class="k">return</span> <span class="nv">$p</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">parameter1</span><span class="p">},</span> <span class="nv">$p</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">parameter2</span><span class="p">};</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>If all you want to do is val­i­date un-named (posi­tion­al) para­me­ters, use <code>validate_pos()</code>:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Params::</span><span class="nv">Validate</span><span class="p">;</span>
-
-<span class="nv">say</span> <span class="nv">foo</span><span class="p">('</span><span class="s1">hello</span><span class="p">',</span> <span class="p">'</span><span class="s1">world</span><span class="p">');</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="nv">@p</span> <span class="o">=</span> <span class="nv">validate_pos</span><span class="p">(</span><span class="err">@</span><span class="nv">_</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
-    <span class="k">return</span> <span class="nv">@p</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>Params::Validate also has fair­ly deep sup­port for <em>type valida­tion</em>, enabling you to val­i­date para­me­ters against <a href="https://metacpan.org/pod/Params::Validate#Type-Validation">simple types</a>, <a href="https://metacpan.org/pod/Params::Validate#Interface-Validation">method inter­faces</a> (also known as “duck typing”), <a href="https://metacpan.org/pod/Params::Validate#Class-Validation">mem­ber­ship in a class</a>, <a href="https://metacpan.org/pod/Params::Validate#Regex-Validation">reg­u­lar expres­sion match­es</a>, and <a href="https://metacpan.org/pod/Params::Validate#Callback-Validation">arbi­trary code call­backs</a>. As always, con­sult the <a href="https://metacpan.org/pod/Params::Validate">doc­u­men­ta­tion</a> for the nit­ty-grit­ty details.</p>
-
-<h1>
-  <a href="#moosexparamsvalidate" class="anchor">
-  </a>
-  <a href="https://metacpan.org/pod/MooseX::Params::Validate">MooseX::Params::Validate</a>
-</h1>
-
-<p>MooseX::Params::Validate adds type val­i­da­tion via the <a href="https://metacpan.org/pod/Moose">Moose</a> object-ori­ent­ed frame­work’s type sys­tem, mean­ing that anything that can be defined as a <a href="https://metacpan.org/pod/distribution/Moose/lib/Moose/Manual/Types.pod">Moose type</a> can be used to val­i­date the para­me­ters passed to your func­tions or meth­ods. It adds the <a href="https://metacpan.org/pod/MooseX::Params::Validate#validated_hash(-@_,-%parameter_spec-)"><code>validated_hash()</code></a>, <a href="https://metacpan.org/pod/MooseX::Params::Validate#validated_list(-@_,-%parameter_spec-)"><code>validated_list()</code></a>, and <a href="https://metacpan.org/pod/MooseX::Params::Validate#pos_validated_list(-@_,-%24spec,-%24spec,-...-)"><code>pos_validated_list()</code></a> func­tions, and looks like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Foo</span><span class="p">;</span>
-
-<span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">MooseX::Params::</span><span class="nv">Validate</span><span class="p">;</span>
-
-<span class="nv">say</span> <span class="nv">__PACKAGE__</span><span class="o">-&gt;</span><span class="nv">foo</span><span class="p">(</span><span class="s">parameter1</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Mouse</span><span class="p">');</span>
-<span class="nv">say</span> <span class="nv">__PACKAGE__</span><span class="o">-&gt;</span><span class="nv">bar</span><span class="p">(</span><span class="s">parameter1</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Mice</span><span class="p">');</span>
-<span class="nv">say</span> <span class="nv">__PACKAGE__</span><span class="o">-&gt;</span><span class="nv">baz</span><span class="p">('</span><span class="s1">Men</span><span class="p">',</span> <span class="mi">42</span><span class="p">);</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">%params</span><span class="p">)</span> <span class="o">=</span> <span class="nv">validated_hash</span><span class="p">(</span>
-        <span class="o">\</span><span class="err">@</span><span class="nv">_</span><span class="p">,</span>
-        <span class="s">parameter1</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="s">isa</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Str</span><span class="p">',</span> <span class="s">default</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Moose</span><span class="p">'</span> <span class="p">},</span>
-    <span class="p">);</span>
-    <span class="k">return</span> <span class="nv">$params</span><span class="p">{</span><span class="nv">parameter1</span><span class="p">};</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">bar</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$param1</span><span class="p">)</span> <span class="o">=</span> <span class="nv">validated_pos</span><span class="p">(</span>
-        <span class="o">\</span><span class="err">@</span><span class="nv">_</span><span class="p">,</span>
-        <span class="s">parameter1</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="s">isa</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Str</span><span class="p">',</span> <span class="s">default</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Moose</span><span class="p">'</span> <span class="p">},</span>
-    <span class="p">);</span>
-    <span class="k">return</span> <span class="nv">$param1</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">baz</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$foo</span><span class="p">,</span> <span class="nv">$bar</span><span class="p">)</span> <span class="o">=</span> <span class="nv">pos_validated_list</span><span class="p">(</span>
-        <span class="o">\</span><span class="err">@</span><span class="nv">_</span><span class="p">,</span>
-        <span class="p">{</span> <span class="s">isa</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Str</span><span class="p">'</span> <span class="p">},</span>
-        <span class="p">{</span> <span class="s">isa</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Int</span><span class="p">'</span> <span class="p">},</span>
-    <span class="p">);</span>
-    <span class="k">return</span> <span class="nv">$foo</span><span class="p">,</span> <span class="nv">$bar</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>Note that the first para­me­ter passed to each func­tion is a ref­er­ence to the <code>@_</code> array, denot­ed by a backslash.</p>
-
-<p>MooseX::Params::Validate has sev­er­al more things you can spec­i­fy when list­ing para­me­ters, includ­ing <a href="https://metacpan.org/pod/distribution/Moose/lib/Moose/Manual/Roles.pod">roles</a>, <a href="https://metacpan.org/pod/distribution/Moose/lib/Moose/Manual/Types.pod#COERCION">coer­cions</a>, and depen­den­cies. The <a href="https://metacpan.org/pod/MooseX::Params::Validate">doc­u­men­ta­tion for the mod­ule</a> has all the details. <strong>We use this mod­ule at work a lot</strong>, and even use it with­out Moose when val­i­dat­ing para­me­ters passed to test functions.</p>
-
-<h1>
-  <a href="#functionparameters" class="anchor">
-  </a>
-  <a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a>
-</h1>
-
-<p>For a dif­fer­ent take on sub­rou­tine sig­na­tures, you can use the <a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a> mod­ule. Rather than pro­vid­ing helper func­tions, it defines two new Perl key­words, <code>fun</code> and <code>method</code>. It looks like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Function::</span><span class="nv">Parameters</span><span class="p">;</span>
-
-<span class="nv">say</span> <span class="nv">foo</span><span class="p">('</span><span class="s1">hello</span><span class="p">',</span> <span class="p">'</span><span class="s1">world</span><span class="p">');</span>
-<span class="nv">say</span> <span class="nv">bar</span><span class="p">(</span><span class="s">param1</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">hello</span><span class="p">');</span>
-
-<span class="nv">fun</span> <span class="nv">foo</span><span class="p">(</span><span class="nv">$param1</span><span class="p">,</span> <span class="nv">$param2</span><span class="p">)</span> <span class="p">{</span>
-    <span class="k">return</span> <span class="nv">$param1</span><span class="p">,</span> <span class="nv">$param2</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="nv">fun</span> <span class="nv">bar</span><span class="p">(:</span><span class="nv">$param1</span><span class="p">,</span> <span class="p">:</span><span class="nv">$param2</span> <span class="o">=</span> <span class="mi">42</span><span class="p">)</span> <span class="p">{</span>
-    <span class="k">return</span> <span class="nv">$param1</span><span class="p">,</span> <span class="nv">$param2</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>The colons in the <code>bar()</code> func­tion above indi­cate that the para­me­ters are named, and need to be spec­i­fied by name when the func­tion is called, using the <code>=&gt;</code> oper­a­tor as if you were spec­i­fy­ing a hash.</p>
-
-<p>In addi­tion to <a href="https://metacpan.org/pod/Function::Parameters#Default-arguments">defaults</a> and the <a href="https://metacpan.org/pod/Function::Parameters#Simple-parameter-lists">posi­tion­al</a> and <a href="https://metacpan.org/pod/Function::Parameters#Named-parameters">named</a> para­me­ters demon­strat­ed above, Function::Parameters sup­ports <a href="https://metacpan.org/pod/Function::Parameters#Type-constraints">type con­straints</a> (via <a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a>) and Moo or Moose <a href="https://metacpan.org/pod/Function::Parameters#Method-modifiers">method modifiers</a>. (If you don’t know what those are, the <a href="https://metacpan.org/pod/distribution/Moose/lib/Moose/Manual/MethodModifiers.pod">Moose</a> and <a href="https://metacpan.org/pod/Class::Method::Modifiers">Class::Method::Modifiers</a> doc­u­men­ta­tion are helpful.)</p>
-
-<p><strong>I’m not a fan</strong> of mod­ules that add new syn­tax for com­mon tasks like sub­rou­tines and meth­ods, if only because there’s an extra effort in updat­ing tool­ings like syn­tax high­lighters and <a href="http://perlcritic.com/">Perl::Critic</a> code analy­sis. Still, this may appeal to you, espe­cial­ly if you’re com­ing from oth­er lan­guages that have sim­i­lar syntax.</p>
-
-<h1>
-  <a href="#typeparams" class="anchor">
-  </a>
-  <a href="https://metacpan.org/pod/Type::Params">Type::Params</a>
-</h1>
-
-<p>Speak­ing of <a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a>, it includes its own para­me­ter validation library called <a href="https://metacpan.org/pod/Type::Params">Type::Params</a>. <strong>I think I would favor this for new work</strong>, as it’s com­pat­i­ble with both Moo and Moose but does­n’t require them.</p>
-
-<p>Type::Params has a num­ber of func­tions, none of which are pro­vid­ed by default, so you’ll have to import them explic­it­ly when <code>use</code>ing the mod­ule. It also intro­duces a sep­a­rate step for com­pil­ing your val­i­da­tion spec­i­fi­ca­tion to speed up perfor­mance. It looks like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw(Str Int)</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Type::</span><span class="nv">Params</span> <span class="sx">qw(compile compile_named)</span><span class="p">;</span>
-
-<span class="nv">say</span> <span class="nv">foo</span><span class="p">('</span><span class="s1">hello</span><span class="p">',</span> <span class="mi">42</span><span class="p">);</span>
-<span class="nv">say</span> <span class="nv">bar</span><span class="p">(</span><span class="s">param1</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">hello</span><span class="p">');</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
-    <span class="nv">state</span> <span class="nv">$check</span> <span class="o">=</span> <span class="nv">compile</span><span class="p">(</span><span class="nv">Str</span><span class="p">,</span> <span class="nv">Int</span><span class="p">);</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$param1</span><span class="p">,</span> <span class="nv">$param2</span><span class="p">)</span> <span class="o">=</span> <span class="nv">$check</span><span class="o">-&gt;</span><span class="p">(</span><span class="err">@</span><span class="nv">_</span><span class="p">);</span>
-
-    <span class="k">return</span> <span class="nv">$param1</span><span class="p">,</span> <span class="nv">$param2</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">bar</span> <span class="p">{</span>
-    <span class="nv">state</span> <span class="nv">$check</span> <span class="o">=</span> <span class="nv">compile_named</span><span class="p">(</span>
-        <span class="s">param1</span> <span class="o">=&gt;</span> <span class="nv">Str</span><span class="p">,</span>
-        <span class="s">param2</span> <span class="o">=&gt;</span> <span class="nv">Int</span><span class="p">,</span> <span class="p">{</span><span class="s">optional</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">},</span>
-    <span class="p">);</span>
-    <span class="k">my</span> <span class="nv">$params_ref</span> <span class="o">=</span> <span class="nv">$check</span><span class="o">-&gt;</span><span class="p">(</span><span class="err">@</span><span class="nv">_</span><span class="p">);</span>
-
-    <span class="k">return</span> <span class="nv">$params_ref</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">param1</span><span class="p">},</span> <span class="nv">$params_ref</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">param2</span><span class="p">};</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>The fea­tures of Type::Tiny and its bun­dled mod­ules are pret­ty vast, so I sug­gest once again that you <a href="https://metacpan.org/pod/Type::Tiny::Manual">con­sult the doc­u­men­ta­tion</a> on how to use it.</p>
-
-<h1>
-  <a href="#paramsvalidationcompiler" class="anchor">
-  </a>
-  <a href="https://metacpan.org/pod/Params::ValidationCompiler">Params::ValidationCompiler</a>
-</h1>
-
-<p>At the <a href="https://metacpan.org/pod/Params::Validate#DESCRIPTION">top of the doc­u­men­ta­tion to Params::Validate</a>, you’ll notice that the author rec­om­mends instead his <a href="https://metacpan.org/pod/Params::ValidationCompiler">Params::ValidationCompiler</a> mod­ule for faster per­for­mance, using a com­pi­la­tion step much like Type::Params. It pro­vides two func­tions for you to import, <a href="https://metacpan.org/pod/Params::ValidationCompiler#validation_for(...)"><code>validation_for()</code></a> and <a href="https://metacpan.org/pod/Params::ValidationCompiler#source_for(...)"><code>source_for()</code></a>. We’ll con­cen­trate on the for­mer since the lat­ter is main­ly use­ful for debugging.</p>
-
-<p>It looks like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw(Int Str)</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Params::</span><span class="nv">ValidationCompiler</span> <span class="p">'</span><span class="s1">validation_for</span><span class="p">';</span>
-
-<span class="nv">say</span> <span class="nv">foo</span><span class="p">(</span><span class="s">param1</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">hello</span><span class="p">');</span>
-
-<span class="k">my</span> <span class="nv">$validator</span> <span class="o">=</span> <span class="nv">validation_for</span><span class="p">(</span>
-    <span class="s">params</span> <span class="o">=&gt;</span> <span class="p">{</span>
-        <span class="s">param1</span> <span class="o">=&gt;</span> <span class="p">{</span>
-            <span class="s">type</span>    <span class="o">=&gt;</span> <span class="nv">Str</span><span class="p">,</span>
-            <span class="s">default</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Perl is cool</span><span class="p">',</span>
-        <span class="p">},</span>
-        <span class="s">param2</span> <span class="o">=&gt;</span> <span class="p">{</span>
-            <span class="s">type</span>     <span class="o">=&gt;</span> <span class="nv">Int</span><span class="p">,</span>
-            <span class="s">optional</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
-        <span class="p">},</span>
-<span class="p">);</span>
-
-<span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="nv">%params</span> <span class="o">=</span> <span class="nv">$validator</span><span class="o">-&gt;</span><span class="p">(</span><span class="err">@</span><span class="nv">_</span><span class="p">);</span>
-    <span class="k">return</span> <span class="nv">@params</span><span class="p">{'</span><span class="s1">param1</span><span class="p">',</span> <span class="p">'</span><span class="s1">param2</span><span class="p">'};</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>As you can see, it sup­ports type con­straints, defaults, and option­al val­ues. It can also put extra argu­ments in a list (it calls this fea­ture “slur­py”), and can even return generat­ed objects to make it eas­i­er to catch typos (since a typoed hash key just gen­er­ates that key rather than return­ing an error). There’s a bit more to this mod­ule, so please <a href="https://metacpan.org/pod/Params::ValidationCompiler">read the doc­u­men­ta­tion</a> to exam­ine all its features.</p>
-
-<h1>
-  <a href="#con%C2%ADclu%C2%ADsion" class="anchor">
-  </a>
-  Con­clu­sion
-</h1>
-
-<p>One of Per­l’s mot­tos is <strong>“there’s more than one way to do it”</strong>, and you’re wel­come to choose what­ev­er method you need to enable sig­na­tures and type val­i­da­tion. Just remem­ber to be con­sis­tent and have good rea­sons for your choic­es, since the over­all goal is to improve your code’s reli­a­bil­i­ty and readabil­i­ty. And be sure to share your favorite tech­niques with oth­ers, so they too can devel­op bet­ter software.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Mark Gardner
-     on Wednesday 27 January 2021 22:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_75">
@@ -5175,7 +5226,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 05 February 2021 08:51 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 05 February 2021 09:49 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
