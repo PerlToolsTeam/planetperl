@@ -7,9 +7,378 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-02-12T21:48:23Z</updated>
+  <updated>2021-02-12T22:51:05Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl weekly challenge 99</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-99.html"/>
+    <id>tag:blogs.perl.org,2021:/users/james_curtis-smith//3569.10092</id>
+    <published>2021-02-12T16:55:48Z</published>
+    <updated>2021-02-13T03:22:33Z</updated>
+    <author>
+        <name>James Curtis-Smith</name>
+        <uri>https://jamessmith.me.uk</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/james_curtis-smith/">
+        <![CDATA[<p>Here are solutions to this weeks challenges from the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a>.</p>
+
+<p>You can find my full code on
+<a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-099/james-smith/perl">Github</a></p>
+
+<h3>Challenge 1</h3>
+You are given a string $S and a pattern $P.
+
+<p>Write a script to check if given pattern validate the entire string. Print 1 if pass otherwise 0.</p>
+
+<p>The patterns can also have the following characters:</p>
+
+<ul><li>? - Match any single character.</li>
+<li>* - Match any sequence of characters.</li>
+</ul>
+
+<h4>Example 1:</h4>
+
+<pre>
+Input:  $S = "abcde" $P = "a*e"
+Output: 1
+</pre>
+
+<h4>Solution</h4>
+
+<p>This challenge is relatively simple - converting "file name" wildcards into perl regular expressions. the "*" wildcard is the same as ".*" in perl, "?" is the same as "." in perl.</p>
+
+<p>So we replace them in the regex (and remembering we are tied to the ends of the string).</p>
+
+<pre><code>
+  my $regex  = '\A' . ( $pattern =~ s{[*]}{.*}r =~ s{[.]}{?}r ).'\Z';
+</code></pre>
+
+<p>A few notes about generating the regex - First we use the <code>r</code> modifier to return the value of the regex rather than editing in place - secondly we use <code>\A</code> & <code>\Z</code> just out of habit rather than <code>^</code> & <code>$</code>.</p>
+
+<h3>Challenge 2</h3>
+
+<p>You are given two strings <code>$S</code> and <code>$T</code>.</p>
+
+<p>Write a script to find out count of different unique subsequences matching <code>$T</code> without changing the position of characters.</p>
+
+<h4>Example 1</h4>
+<pre>
+Input: $S = "littleit', $T = 'lit'
+Output: 5
+
+<p>    1: [lit] tleit<br />
+    2: [li] t [t] leit<br />
+    3: [li] ttlei [t]<br />
+    4: litt [l] e [it]<br />
+    5: [l] ittle [it]<br />
+</pre></p>
+
+<h4>Solution</h4>
+
+<p>This week's second problem was harder (especially as I thought my code wasn't working as this example was wrong)....</p>
+
+<p>I'll outline the 3 solution functions that I created - two work out the number of sequences (one with memoization), and then a third actually returns the sequences.</p>
+
+<p>The approach to all 3 is to split the string into chunks up until the occurrence of the current first letter of <code>$T</code>.</p>
+
+<pre><code>
+sub uniq_subseq {
+  my( $result, $haystack, $first, $needle )
+    = ( 0, $_[0], $_[1] =~ m{(.)(.*)} );
+  return scalar @{[ $haystack =~ m{$first}g ]}
+    if $needle eq q();
+  $result += uniq_subseq( $haystack, $needle )
+    while $haystack=~s{.*?$first}{};
+  return $result;
+}
+</code></pre>
+
+<p>We use a nice feature of <tt>substr</tt> to extract the first character of the needle string. If you give <tt>substr</tt> it returns the substring - but at the same time replaces it with the fourth parameter - so this strips off the first letter, and updates needle at the same time.</p>
+
+<p>We then split the code ( a slight optimization ) - if we have reached the end of the needle - then we just need to count the occurances of the needle left {saves some function calls}</p>
+
+<p>We then just strip of the characters of the string (haystack) up to each occurance of our search letter - and use recursion to call the function again - but this time with the remainder of the string (and the shortened needle), and them up and that is our value to return.</p>
+
+<p>Our second function just adds memoization, by using a cache (using state variables inside the function) to remember the results of calling <code>uniq_subseq</code> as, as the string gets longer you will end up repeating this call over and over again.</p>
+
+<pre><code>
+sub uniq_subseq_cache {
+  state $cache;
+  my( $result, $cache_key, $haystack, $first, $needle )
+    = ( 0, "$_[0]-$_[1]", $_[0], $_[1] =~ m{(.)(.*)} );
+
+<p>  return $cache->{$cache_key}<br />
+    if exists $cache->{$cache_key};<br />
+  return $cache->{$cache_key} = scalar @{[ $haystack =~ m{$first}g ]}<br />
+    if $needle eq q();<br />
+  $result += uniq_subseq_cache( $haystack, $needle )<br />
+    while $haystack=~s{.*?$first}{};<br />
+  return $cache->{$cache_key} = $result;<br />
+}</p>
+
+<p></code></pre></p>
+
+<p>The final function returns the "annotated" string showing each solution. We use a similar stripping approach - but it adds some complexity - mainly in remembering what we have stripped off the string - while we look for the parts of the needle.</p>
+
+<pre><code>
+sub display_uniq_subseq {
+  my( $haystack, $prev, $regexp, $needle, @result ) = (
+    $_[0],          ## haystack (first string)
+    @_>2?$_[2]:q(), ## previous string (3rd parameter if it exists)
+    $_[1] =~ m{(.)(.*)} ? ('\A(.*?)('.$1.')',$2) : (q(),q()),
+    ## The first character of the needle, remainder of needle
+  );
+
+<p>  ## If we have exhausted the substring we return the previous part<br />
+  ## We collapse adjacent []s by stripping "][".<br />
+  ## We again use the "r" modifier to just return the result<br />
+  ## of the replacement.<br />
+  return ($prev =~s{\]\[}{}gr).$haystack if $regexp eq q();</p>
+
+<p>  ## regex collects anything before the matched letter &<br />
+  ## the matched letter<br />
+  while( $haystack =~ s{$regexp}{} ) {<br />
+    my( $pre_match, $match ) = ($1,$2);<br />
+    push @result, display_uniq_subseq(<br />
+      $haystack, $needle, $prev.$pre_match.'['.$match.']',<br />
+    );<br />
+    ## add the match onto the previous string, and<br />
+    ## continue to the next match<br />
+    $prev .= $pre_match.$match;<br />
+  }<br />
+  return @result;<br />
+}<br />
+</code></pre><br />
+</p>]]>
+        
+    </content>
+</entry>
+  <entry>
+    <title>Perl Weekly Challenge 99: Pattern Match and Unique Subsequence</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/02/perl-weekly-challenge-99-pattern-match-and-unique-subsequence.html"/>
+    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10093</id>
+    <published>2021-02-13T02:49:41Z</published>
+    <updated>2021-02-13T02:54:43Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 99 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-099/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of days (February 14, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Pattern Match</h2>
+
+<p><em>You are given a string <code>$S</code> and a pattern <code>$P</code>.</em></p>
+
+<p><em>Write a script to check if given pattern validate the entire string. Print 1 if pass otherwise 0.</em></p>
+
+<p><em>The patterns can also have the following characters:</em>
+- <em>? - Match any single character.</em>
+- <em>* - Match any sequence of characters.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "a*e"
+Output: 1
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "a*d"
+Output: 0
+</code></pre>
+
+<p><em>Example 3:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "?b*d"
+Output: 0
+</code></pre>
+
+<p><em>Example 4:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "a*c?e"
+Output: 1
+</code></pre>
+
+<p>So the pattern are similar to those used in the Unix <code>ls</code> command, with literal match for letters, digits and other characters common used in file names, and two wild-card characters,  <code>?</code> for any single character, and <code>*</code> for any sequence of characters.</p>
+
+<p>Both in Raku and Perl, we will build a regex pattern by replacing <code>*</code> with the <code>.*</code> regex sequence, and <code>?</code> with the <code>.</code> regex wild-card character. In addition, since we are requested to match the entire string, we will add the <code>^</code> start of string and <code>$</code> end of string regex anchors.</p>
+
+<h3>Pattern Match in Raku</h3>
+
+<p>We could use regex substitutions to build the regex pattern (as we did below for the pattern match in Perl solution), but, here, the <code>match</code> subroutine loops through the input pattern characters and construct the regex pattern by hand. This subroutine finally applies regex matching to the input string.</p>
+
+<pre><code>use v6;
+
+my $in = "abcde";
+my @test-patterns = &lt;a*e a*d ?b*d a*c?e&gt;;
+for @test-patterns -&gt; $test {
+    say "$test: ", match $test, $in;
+}
+
+sub match (Str $pattern, Str $in) {
+    my $regex = 
+        join "", gather {
+            take '^';
+            for $pattern.comb {
+                when '*' { take '.*' }
+                when '?' { take '.'  }
+                default  { take $_   }
+            }
+            take '$';
+    }
+    return  $in ~~ /&lt;$regex&gt;/ ?? 1 !! 0;
+}
+</code></pre>
+
+<p>With the &#8220;abcde&#8221; input string and the four input patterns, this program displays the following output:</p>
+
+<pre><code>$ raku pattern-match.raku
+a*e: 1
+a*d: 0
+?b*d: 0
+a*c?e: 1
+</code></pre>
+
+<h3>Pattern Match in Perl</h3>
+
+<p>As mentioned above, I decided here to use regex substitutions to convert the input pattern into a regex pattern.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my $input = "abcde";
+my @test_patterns = qw/a*e a*d ?b*d a*c?e/;
+for my $pat (@test_patterns) {
+    say "$pat: ", match($input, $pat)
+}
+
+sub match {
+    my ($in, $pattern) = @_;
+    $pattern =~ s/\*/.*/g;
+    $pattern =~ s/\?/./g;
+    $pattern = "^$pattern\$";
+    return $in =~ /$pattern/ ? 1 : 0;
+}
+</code></pre>
+
+<p>This program displays the same output as the Raku program above:</p>
+
+<pre><code>$ perl match-pattern.pl
+a*e: 1
+a*d: 0
+?b*d: 0
+a*c?e: 1
+</code></pre>
+
+<h2>Task 2: Unique Subsequence</h2>
+
+<p><em>You are given two strings <code>$S</code> and <code>$T</code>.</em></p>
+
+<p><em>Write a script to find out count of different unique subsequences matching $T without changing the position of characters.</em></p>
+
+<p><em>UPDATE: 2021-02-08 09:00 AM (UK TIME) suggested by Jonas Berlin, missing entry [5].</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $S = "littleit', $T = 'lit'
+Output: 5
+
+    1: [lit] tleit
+    2: [li] t [t] leit
+    3: [li] ttlei [t]
+    4: litt [l] e [it]
+    5: [l] ittle [it]
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: $S = "london', $T = 'lon'
+Output: 3
+
+    1: [lon] don
+    2: [lo] ndo [n]
+    3: [l] ond [on]
+</code></pre>
+
+<p>Dear Mohammad, when you do such updates, would you please be kind enough to send an e-mail informing us of such change. I had loaded the web page before the update, and spent a couple of hours trying to fix my program against your solution until I found that, in fact, my program was correct and your initial solution wrong. Only at that point did I think about re-loading the page and found that you had fixed the solution on the Web page. Every one can make mistakes, I have no problem with that, but please inform us when this happens.</p>
+
+<h3>Unique Subsequence in Raku</h3>
+
+<p>Although I admit that there may be some more efficient solution in terms of <em>speed performance</em>, I felt that using brute force with the <a href="https://docs.raku.org/routine/combinations">combinations</a> built-in method was better in terms of <em>coding efficiency</em>. The program generates all the input letters combinations having the size of the searched substring, filters out those not matching the input substring, and finally returns the number of matching substrings.</p>
+
+<pre><code>use v6;
+
+my @input-tests = [ "littleit", "lit"], ["london", "lon"];
+
+for @input-tests -&gt; $test {
+    my ($in, $substr) = $test[0..1];
+    say "$test: ", search-substr $in, $substr;
+}
+sub search-substr (Str $in, Str $substr) {
+    my @results = $in.comb.combinations($substr.\
+        chars)&gt;&gt;.join("").grep({$_ eq $substr}).elems;
+}
+</code></pre>
+
+<p>All the real work is done in a single code line (well, formatted here over two lines for a better graphical rendering on this blog page).</p>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ ./raku subsequence.raku
+littleit lit: [5]
+london lon: [3]
+</code></pre>
+
+<h3>Unique Subsequence in Perl</h3>
+
+<p>The solution in Perl is completely different from the Raku solution. Here, we use the <code>search_substr</code> recursive subroutine to explore all the possible substrings. This program could generate all the letter combinations as the Raku program, except that it cuts the process for any letter combination that will never eventually match the search substring, so that the program is doing much less useless work. Presumably this should make the program faster, especially for longer input strings and substrings.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @input_tests = ( [ "littleit", "lit"], ["london", "lon"], ["aaaa", "aa"]);
+my $count;
+for my $in (@input_tests) {
+    $count = 0;
+    search_substr (@$in);
+    say "@$in: $count";
+}
+sub search_substr {
+    my ($in, $searched) = @_; 
+    my $start = substr $searched, 0, 1;
+    my $index = 0;
+    while (1) {
+        $index = index $in, $start, $index;
+        return if $index &lt; 0;
+        $index++;
+        ++$count and next  if length $searched == 1;
+        search_substr (substr($in, $index), substr($searched, 1));      
+    }
+}
+</code></pre>
+
+<p>This programs displays the following output:</p>
+
+<pre><code>$ perl subsequence.pl
+littleit lit: 5
+london lon: 3
+aaaa aa: 6
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon and <em>will be the 100th challenge</em>. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, February 21, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
   <title>The Perl and Raku Conference in the Cloud 2021</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/savethedatetprc2021"/>
@@ -2076,29 +2445,6 @@ cpan SPVM
     <category term="perl7"/>
   </entry>
   <entry>
-    <title>Who you gonna call? Perl client and website for Google Civic Information API</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/1nickt/2021/02/who-you-gonna-call-perl-client-and-website-for-google-civic-information-api.html"/>
-    <id>tag:blogs.perl.org,2021:/users/1nickt//3033.10079</id>
-    <published>2021-02-07T20:48:25Z</published>
-    <updated>2021-02-07T21:02:42Z</updated>
-    <author>
-        <name>1nickt</name>
-        
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/1nickt/">
-        <![CDATA[<p>I recently became aware of a very cool service provided by the Google. The <a href="https://developers.google.com/civic-information">Civic Information API</a> provides contact information for all elected representatives (from head of state down to municipal official) for any US address.</p>
-
-<p>I wrote the Perl client for the API, published as <a href="https://metacpan.org/release/Net-Google-CivicInformation">Net::Google::CivicInformation</a>. Get a free API token and you're up and running.</p>
-
-<p>This was a satisfying project because I can imagine people finding actual value in the product. I'm all for being vocal with our government! I decided to take it a step further and created a webservice interfacing to the API. It's written in <a href="https://metacpan.org/pod/Dancer2">Dancer2</a> and the source code is <a href="https://github.com/1nickt/ContactMyReps">on Github</a> (at the urging of ++GabSzab who pointed out that there are few examples of Dancer2 apps for developers to study.)</p>
-
-<p>The site is online now at <a href="https://contactmyreps.com/">https://contactmyreps.com</a>. Please give it a try. Feedback welcome!</p>
-
-<p><a href="http://blogs.perl.org/users/1nickt/assets_c/2021/02/cmr-4609.html" onclick="window.open('http://blogs.perl.org/users/1nickt/assets_c/2021/02/cmr-4609.html','popup','width=1236,height=1604,scrollbars=no,resizable=no,toolbar=no,directories=no,location=no,menubar=no,status=no,left=0,top=0'); return false"><img src="http://blogs.perl.org/users/1nickt/assets_c/2021/02/cmr-thumb-400x519-4609.png" width="400" height="519" alt="cmr.png" class="mt-image-none" style="" /></a></p>]]>
-        
-    </content>
-</entry>
-  <entry>
   <title>Exploring BDD in Perl - using Test::BDD::Cucumber - part 4</title>
   <summary type="html"><![CDATA[<p>
 BDD - <a href="https://en.wikipedia.org/wiki/Behavior-driven_development">Behavior Driven Development</a>
@@ -2422,34 +2768,6 @@ Live stream via <a href="https://www.twitch.tv/szabgab">Twitch</a>
     <author>
       <name>Gabor Szabo</name>
     </author>
-</entry>
-  <entry>
-    <title>I found the truth about GameStop, Qanon, the Biden adminstration, and the British Royal Family</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/ben_bullock/2021/02/i-found-the-truth-about-gamestop-qanon-the-biden-adminstration-and-the-british-royal-family.html"/>
-    <id>tag:blogs.perl.org,2021:/users/ben_bullock//392.10071</id>
-    <published>2021-02-01T13:53:59Z</published>
-    <updated>2021-02-04T09:12:25Z</updated>
-    <author>
-        <name>Ben Bullock</name>
-        <uri>https://www.lemoda.net/</uri>
-    </author>
-    <category term="randomconspiracytheorygenerator" label="random conspiracy theory generator" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/ben_bullock/">
-        <![CDATA[<blockquote>
-The British Royal Family and GameStop have been in a secret war with each other for hundreds of years. Nobody knows why. GameStop has included it in their manifesto and the Royals is always untrustworthy. They leave clues to mock us! GAMESTOP HAS INCLUDED IT IN THEIR MANIFESTO! MOCK! MOCK!
-</blockquote>
-
-<p>There is more:</p>
-
-<blockquote>
-Q found out that reincarnation is true and he has been imprisoned in The Pentagon. Qanon are protecting this secret. The Biden administration knows the truth but Qanon have paid them off with a warehouse full of holy water. The Wikipedia entry for The Pentagon keeps getting edited by the Biden administration and Qanon even admit it. They leave clues to mock us.
-</blockquote>
-
-<p>You too can find out the truth about what's REALLY going on <a href="https://metacpan.org/release/Acme-ConspiracyTheory-Random">here</a> or <a href="https://www.lemoda.net/games/consp/">here</a></p>
-]]>
-        
-
-    </content>
 </entry>
   <entry>
     <title>Sicherheit für Perl-Anwendungen: fail2ban</title>

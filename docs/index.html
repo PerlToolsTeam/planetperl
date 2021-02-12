@@ -55,6 +55,375 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-99.html">Perl weekly challenge 99</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Here are solutions to this weeks challenges from the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a>.</p>
+
+<p>You can find my full code on
+<a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-099/james-smith/perl">Github</a></p>
+
+<h3>Challenge 1</h3>
+You are given a string $S and a pattern $P.
+
+<p>Write a script to check if given pattern validate the entire string. Print 1 if pass otherwise 0.</p>
+
+<p>The patterns can also have the following characters:</p>
+
+<ul><li>? - Match any single character.</li>
+<li>* - Match any sequence of characters.</li>
+</ul>
+
+<h4>Example 1:</h4>
+
+<pre>
+Input:  $S = "abcde" $P = "a*e"
+Output: 1
+</pre>
+
+<h4>Solution</h4>
+
+<p>This challenge is relatively simple - converting "file name" wildcards into perl regular expressions. the "*" wildcard is the same as ".*" in perl, "?" is the same as "." in perl.</p>
+
+<p>So we replace them in the regex (and remembering we are tied to the ends of the string).</p>
+
+<pre><code>
+  my $regex  = '\A' . ( $pattern =~ s{[*]}{.*}r =~ s{[.]}{?}r ).'\Z';
+</code></pre>
+
+<p>A few notes about generating the regex - First we use the <code>r</code> modifier to return the value of the regex rather than editing in place - secondly we use <code>\A</code> & <code>\Z</code> just out of habit rather than <code>^</code> & <code>$</code>.</p>
+
+<h3>Challenge 2</h3>
+
+<p>You are given two strings <code>$S</code> and <code>$T</code>.</p>
+
+<p>Write a script to find out count of different unique subsequences matching <code>$T</code> without changing the position of characters.</p>
+
+<h4>Example 1</h4>
+<pre>
+Input: $S = "littleit', $T = 'lit'
+Output: 5
+
+<p>    1: [lit] tleit<br />
+    2: [li] t [t] leit<br />
+    3: [li] ttlei [t]<br />
+    4: litt [l] e [it]<br />
+    5: [l] ittle [it]<br />
+</pre></p>
+
+<h4>Solution</h4>
+
+<p>This week's second problem was harder (especially as I thought my code wasn't working as this example was wrong)....</p>
+
+<p>I'll outline the 3 solution functions that I created - two work out the number of sequences (one with memoization), and then a third actually returns the sequences.</p>
+
+<p>The approach to all 3 is to split the string into chunks up until the occurrence of the current first letter of <code>$T</code>.</p>
+
+<pre><code>
+sub uniq_subseq {
+  my( $result, $haystack, $first, $needle )
+    = ( 0, $_[0], $_[1] =~ m{(.)(.*)} );
+  return scalar @{[ $haystack =~ m{$first}g ]}
+    if $needle eq q();
+  $result += uniq_subseq( $haystack, $needle )
+    while $haystack=~s{.*?$first}{};
+  return $result;
+}
+</code></pre>
+
+<p>We use a nice feature of <tt>substr</tt> to extract the first character of the needle string. If you give <tt>substr</tt> it returns the substring - but at the same time replaces it with the fourth parameter - so this strips off the first letter, and updates needle at the same time.</p>
+
+<p>We then split the code ( a slight optimization ) - if we have reached the end of the needle - then we just need to count the occurances of the needle left {saves some function calls}</p>
+
+<p>We then just strip of the characters of the string (haystack) up to each occurance of our search letter - and use recursion to call the function again - but this time with the remainder of the string (and the shortened needle), and them up and that is our value to return.</p>
+
+<p>Our second function just adds memoization, by using a cache (using state variables inside the function) to remember the results of calling <code>uniq_subseq</code> as, as the string gets longer you will end up repeating this call over and over again.</p>
+
+<pre><code>
+sub uniq_subseq_cache {
+  state $cache;
+  my( $result, $cache_key, $haystack, $first, $needle )
+    = ( 0, "$_[0]-$_[1]", $_[0], $_[1] =~ m{(.)(.*)} );
+
+<p>  return $cache->{$cache_key}<br />
+    if exists $cache->{$cache_key};<br />
+  return $cache->{$cache_key} = scalar @{[ $haystack =~ m{$first}g ]}<br />
+    if $needle eq q();<br />
+  $result += uniq_subseq_cache( $haystack, $needle )<br />
+    while $haystack=~s{.*?$first}{};<br />
+  return $cache->{$cache_key} = $result;<br />
+}</p>
+
+<p></code></pre></p>
+
+<p>The final function returns the "annotated" string showing each solution. We use a similar stripping approach - but it adds some complexity - mainly in remembering what we have stripped off the string - while we look for the parts of the needle.</p>
+
+<pre><code>
+sub display_uniq_subseq {
+  my( $haystack, $prev, $regexp, $needle, @result ) = (
+    $_[0],          ## haystack (first string)
+    @_>2?$_[2]:q(), ## previous string (3rd parameter if it exists)
+    $_[1] =~ m{(.)(.*)} ? ('\A(.*?)('.$1.')',$2) : (q(),q()),
+    ## The first character of the needle, remainder of needle
+  );
+
+<p>  ## If we have exhausted the substring we return the previous part<br />
+  ## We collapse adjacent []s by stripping "][".<br />
+  ## We again use the "r" modifier to just return the result<br />
+  ## of the replacement.<br />
+  return ($prev =~s{\]\[}{}gr).$haystack if $regexp eq q();</p>
+
+<p>  ## regex collects anything before the matched letter &<br />
+  ## the matched letter<br />
+  while( $haystack =~ s{$regexp}{} ) {<br />
+    my( $pre_match, $match ) = ($1,$2);<br />
+    push @result, display_uniq_subseq(<br />
+      $haystack, $needle, $prev.$pre_match.'['.$match.']',<br />
+    );<br />
+    ## add the match onto the previous string, and<br />
+    ## continue to the next match<br />
+    $prev .= $pre_match.$match;<br />
+  }<br />
+  return @result;<br />
+}<br />
+</code></pre><br />
+</p>
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by James Curtis-Smith
+     on Friday 12 February 2021 16:55</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/02/perl-weekly-challenge-99-pattern-match-and-unique-subsequence.html">Perl Weekly Challenge 99: Pattern Match and Unique Subsequence</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 99 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-099/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of days (February 14, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Pattern Match</h2>
+
+<p><em>You are given a string <code>$S</code> and a pattern <code>$P</code>.</em></p>
+
+<p><em>Write a script to check if given pattern validate the entire string. Print 1 if pass otherwise 0.</em></p>
+
+<p><em>The patterns can also have the following characters:</em>
+- <em>? - Match any single character.</em>
+- <em>* - Match any sequence of characters.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "a*e"
+Output: 1
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "a*d"
+Output: 0
+</code></pre>
+
+<p><em>Example 3:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "?b*d"
+Output: 0
+</code></pre>
+
+<p><em>Example 4:</em></p>
+
+<pre><code>Input: $S = "abcde" $P = "a*c?e"
+Output: 1
+</code></pre>
+
+<p>So the pattern are similar to those used in the Unix <code>ls</code> command, with literal match for letters, digits and other characters common used in file names, and two wild-card characters,  <code>?</code> for any single character, and <code>*</code> for any sequence of characters.</p>
+
+<p>Both in Raku and Perl, we will build a regex pattern by replacing <code>*</code> with the <code>.*</code> regex sequence, and <code>?</code> with the <code>.</code> regex wild-card character. In addition, since we are requested to match the entire string, we will add the <code>^</code> start of string and <code>$</code> end of string regex anchors.</p>
+
+<h3>Pattern Match in Raku</h3>
+
+<p>We could use regex substitutions to build the regex pattern (as we did below for the pattern match in Perl solution), but, here, the <code>match</code> subroutine loops through the input pattern characters and construct the regex pattern by hand. This subroutine finally applies regex matching to the input string.</p>
+
+<pre><code>use v6;
+
+my $in = "abcde";
+my @test-patterns = &lt;a*e a*d ?b*d a*c?e&gt;;
+for @test-patterns -&gt; $test {
+    say "$test: ", match $test, $in;
+}
+
+sub match (Str $pattern, Str $in) {
+    my $regex = 
+        join "", gather {
+            take '^';
+            for $pattern.comb {
+                when '*' { take '.*' }
+                when '?' { take '.'  }
+                default  { take $_   }
+            }
+            take '$';
+    }
+    return  $in ~~ /&lt;$regex&gt;/ ?? 1 !! 0;
+}
+</code></pre>
+
+<p>With the &#8220;abcde&#8221; input string and the four input patterns, this program displays the following output:</p>
+
+<pre><code>$ raku pattern-match.raku
+a*e: 1
+a*d: 0
+?b*d: 0
+a*c?e: 1
+</code></pre>
+
+<h3>Pattern Match in Perl</h3>
+
+<p>As mentioned above, I decided here to use regex substitutions to convert the input pattern into a regex pattern.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my $input = "abcde";
+my @test_patterns = qw/a*e a*d ?b*d a*c?e/;
+for my $pat (@test_patterns) {
+    say "$pat: ", match($input, $pat)
+}
+
+sub match {
+    my ($in, $pattern) = @_;
+    $pattern =~ s/\*/.*/g;
+    $pattern =~ s/\?/./g;
+    $pattern = "^$pattern\$";
+    return $in =~ /$pattern/ ? 1 : 0;
+}
+</code></pre>
+
+<p>This program displays the same output as the Raku program above:</p>
+
+<pre><code>$ perl match-pattern.pl
+a*e: 1
+a*d: 0
+?b*d: 0
+a*c?e: 1
+</code></pre>
+
+<h2>Task 2: Unique Subsequence</h2>
+
+<p><em>You are given two strings <code>$S</code> and <code>$T</code>.</em></p>
+
+<p><em>Write a script to find out count of different unique subsequences matching $T without changing the position of characters.</em></p>
+
+<p><em>UPDATE: 2021-02-08 09:00 AM (UK TIME) suggested by Jonas Berlin, missing entry [5].</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $S = "littleit', $T = 'lit'
+Output: 5
+
+    1: [lit] tleit
+    2: [li] t [t] leit
+    3: [li] ttlei [t]
+    4: litt [l] e [it]
+    5: [l] ittle [it]
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: $S = "london', $T = 'lon'
+Output: 3
+
+    1: [lon] don
+    2: [lo] ndo [n]
+    3: [l] ond [on]
+</code></pre>
+
+<p>Dear Mohammad, when you do such updates, would you please be kind enough to send an e-mail informing us of such change. I had loaded the web page before the update, and spent a couple of hours trying to fix my program against your solution until I found that, in fact, my program was correct and your initial solution wrong. Only at that point did I think about re-loading the page and found that you had fixed the solution on the Web page. Every one can make mistakes, I have no problem with that, but please inform us when this happens.</p>
+
+<h3>Unique Subsequence in Raku</h3>
+
+<p>Although I admit that there may be some more efficient solution in terms of <em>speed performance</em>, I felt that using brute force with the <a href="https://docs.raku.org/routine/combinations">combinations</a> built-in method was better in terms of <em>coding efficiency</em>. The program generates all the input letters combinations having the size of the searched substring, filters out those not matching the input substring, and finally returns the number of matching substrings.</p>
+
+<pre><code>use v6;
+
+my @input-tests = [ "littleit", "lit"], ["london", "lon"];
+
+for @input-tests -&gt; $test {
+    my ($in, $substr) = $test[0..1];
+    say "$test: ", search-substr $in, $substr;
+}
+sub search-substr (Str $in, Str $substr) {
+    my @results = $in.comb.combinations($substr.\
+        chars)&gt;&gt;.join("").grep({$_ eq $substr}).elems;
+}
+</code></pre>
+
+<p>All the real work is done in a single code line (well, formatted here over two lines for a better graphical rendering on this blog page).</p>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ ./raku subsequence.raku
+littleit lit: [5]
+london lon: [3]
+</code></pre>
+
+<h3>Unique Subsequence in Perl</h3>
+
+<p>The solution in Perl is completely different from the Raku solution. Here, we use the <code>search_substr</code> recursive subroutine to explore all the possible substrings. This program could generate all the letter combinations as the Raku program, except that it cuts the process for any letter combination that will never eventually match the search substring, so that the program is doing much less useless work. Presumably this should make the program faster, especially for longer input strings and substrings.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @input_tests = ( [ "littleit", "lit"], ["london", "lon"], ["aaaa", "aa"]);
+my $count;
+for my $in (@input_tests) {
+    $count = 0;
+    search_substr (@$in);
+    say "@$in: $count";
+}
+sub search_substr {
+    my ($in, $searched) = @_; 
+    my $start = substr $searched, 0, 1;
+    my $index = 0;
+    while (1) {
+        $index = index $in, $start, $index;
+        return if $index &lt; 0;
+        $index++;
+        ++$count and next  if length $searched == 1;
+        search_substr (substr($in, $index), substr($searched, 1));      
+    }
+}
+</code></pre>
+
+<p>This programs displays the following output:</p>
+
+<pre><code>$ perl subsequence.pl
+littleit lit: 5
+london lon: 3
+aaaa aa: 6
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon and <em>will be the 100th challenge</em>. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, February 21, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+     on Saturday 13 February 2021 02:49</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -79,7 +448,7 @@
      on Friday 12 February 2021 12:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/check-links-with-http-simple-perl-3bhh">Check links with HTTP::Simple</a></h2>
             </div> <!-- card-header -->
@@ -294,7 +663,7 @@ https://www.perl.org/
      on Thursday 11 February 2021 15:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/grinnz/2021/02/perl-7-a-modest-proposal.html">Perl 7: A Modest Proposal</a></h2>
             </div> <!-- card-header -->
@@ -313,7 +682,7 @@ https://www.perl.org/
      on Tuesday 09 February 2021 23:06</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/dan-book-s-perl-7-a-modest-proposal-5f1f">Dan Book’s Perl 7: A Modest Proposal</a></h2>
             </div> <!-- card-header -->
@@ -329,7 +698,7 @@ https://www.perl.org/
      on Tuesday 09 February 2021 18:13</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-02-09-badges-cpancover">An Modul-Autoren: Badges für CPANCover</a></h2>
             </div> <!-- card-header -->
@@ -342,7 +711,7 @@ Sowohl für Nutzer als auch für Entwickler ist es ganz schön, wenn auf einen B
      on Tuesday 09 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/02/perl-weekly-challenge-98-read-n-characters-and-search-insert-position.html">Perl Weekly Challenge 98: Read N-Characters and Search Insert Position</a></h2>
             </div> <!-- card-header -->
@@ -557,7 +926,7 @@ sub find_insert-pos ($test) {
      on Monday 08 February 2021 05:18</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/check-links-programmatically-with-perl-1a14">Check links programmatically (with Perl)</a></h2>
             </div> <!-- card-header -->
@@ -1208,7 +1577,7 @@ Content-Type: text/html; charset=UTF-8
      on Monday 08 February 2021 12:02</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/02/you-can-now-use-the-spvmcc-command-to-generate-an-executable-file-from-the-spvm-source-code.html">You can now use the spvmcc command to generate an executable file from the SPVM source code.</a></h2>
             </div> <!-- card-header -->
@@ -1270,7 +1639,7 @@ cpan SPVM
      on Monday 08 February 2021 11:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/y4f">Not your ordinary town! Perl job in Malaysia!</a></h2>
             </div> <!-- card-header -->
@@ -1282,7 +1651,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/wp5">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -1294,7 +1663,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/117">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -1306,7 +1675,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/cto">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1318,7 +1687,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/5pk">Cooking Up Something Good. Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1330,7 +1699,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -1342,7 +1711,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1354,7 +1723,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1366,7 +1735,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -1378,7 +1747,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1390,7 +1759,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl-1">Exploring BDD in Perl - using Test::BDD::Cucumber - part 1</a></h2>
             </div> <!-- card-header -->
@@ -1402,7 +1771,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/open-coding-session.html">Open learning and coding session</a></h2>
             </div> <!-- card-header -->
@@ -1414,7 +1783,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.twitch.tv/szabgab">Live learning / Live coding</a></h2>
             </div> <!-- card-header -->
@@ -1426,7 +1795,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1438,7 +1807,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://courses.code-maven.com/p/testing-in-perl">Testing in Perl</a></h2>
             </div> <!-- card-header -->
@@ -1450,7 +1819,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/02/01/2021-05-gsoc-proposing/">2021.05 GSoC Proposing</a></h2>
             </div> <!-- card-header -->
@@ -1462,7 +1831,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.twitch.tv/videos/901820782">BDD - Behavior Driven Development in Perl</a></h2>
             </div> <!-- card-header -->
@@ -1474,7 +1843,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=TiGxe3wYhD8">Looking forward to Perl 7</a></h2>
             </div> <!-- card-header -->
@@ -1486,7 +1855,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/02/01/PWC098/">Perl Weekly Challenge 98</a></h2>
             </div> <!-- card-header -->
@@ -1498,7 +1867,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-098-235h">Weekly Challenge 098</a></h2>
             </div> <!-- card-header -->
@@ -1510,7 +1879,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/02/Perl_Weekly_Challenge_98__Insert_N.html">Perl Weekly Challenge 98: Insert N</a></h2>
             </div> <!-- card-header -->
@@ -1522,7 +1891,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/02/01/PerlWeeklyChallenge98.html">Perl Weekly Challenge 98: reading chars and inserting in array</a></h2>
             </div> <!-- card-header -->
@@ -1534,7 +1903,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/02/perl-weekly-challenge-98-read-n-characters-and-search-insert-position.html">Perl Weekly Challenge 98: Read N-Characters and Search Insert Position</a></h2>
             </div> <!-- card-header -->
@@ -1546,7 +1915,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/04/pwc098-search-insert-position/">PWC098 - Search Insert Position</a></h2>
             </div> <!-- card-header -->
@@ -1558,7 +1927,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/03/pwc098-readn/">PWC098 - Read N-characters</a></h2>
             </div> <!-- card-header -->
@@ -1570,7 +1939,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/02/01/various-positions-perl-weekly-challenge-98.html">Various Positions: Perl Weekly Challenge #98</a></h2>
             </div> <!-- card-header -->
@@ -1582,7 +1951,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/02/06/practicin-the-three-rs-hummin-an-homin-in-on-home/">Practicin’ the Three ‘R’s, Hummin’ an’ Homin’ in on Home</a></h2>
             </div> <!-- card-header -->
@@ -1594,7 +1963,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/read-n-search.html">Read 'n' Search with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -1606,7 +1975,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://andinus.tilde.institute/pwc/challenge-098/">Challenge 098</a></h2>
             </div> <!-- card-header -->
@@ -1618,7 +1987,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/02/06">Perl Weekly Challenge 098</a></h2>
             </div> <!-- card-header -->
@@ -1630,7 +1999,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-098/">Perl Weekly Challenge 98</a></h2>
             </div> <!-- card-header -->
@@ -1642,7 +2011,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-096">Perl Review - Perl Weekly Challenge - 096</a></h2>
             </div> <!-- card-header -->
@@ -1654,7 +2023,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-098">RECAP - The Weekly Challenge - 098</a></h2>
             </div> <!-- card-header -->
@@ -1666,7 +2035,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-099">The Weekly Challenge - 099</a></h2>
             </div> <!-- card-header -->
@@ -1678,7 +2047,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.gnu.org/software/parallel/">GNU Parallel</a></h2>
             </div> <!-- card-header -->
@@ -1690,7 +2059,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/ildar-shaimordanov/perl-utils/tree/master/perl">File oriented utilities</a></h2>
             </div> <!-- card-header -->
@@ -1702,7 +2071,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://metacpan.org/release/File-Tail">File::Tail</a></h2>
             </div> <!-- card-header -->
@@ -1714,7 +2083,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://brtastic.xyz/blog/article/managing-notes-with-rt">Managing notes with Request Tracker</a></h2>
             </div> <!-- card-header -->
@@ -1726,7 +2095,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/06/xmpl-kv-api/">xmpl - the key/value API</a></h2>
             </div> <!-- card-header -->
@@ -1738,7 +2107,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/05/xmpl/">xmpl - an example web application</a></h2>
             </div> <!-- card-header -->
@@ -1750,7 +2119,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/02/aoc2017-12-rediscovering-union-find/">AoC 2017/12 - Rediscovering Union-Find</a></h2>
             </div> <!-- card-header -->
@@ -1762,7 +2131,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/fgasper/perl-unicode-and-bytes-5cg7">Perl, Unicode, and Bytes</a></h2>
             </div> <!-- card-header -->
@@ -1774,7 +2143,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://ovid.github.io/articles/managing-a-test-database.html">Managing a Test Database</a></h2>
             </div> <!-- card-header -->
@@ -1786,7 +2155,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/02/monthly-report---january-2.html">Monthly Report - January</a></h2>
             </div> <!-- card-header -->
@@ -1798,7 +2167,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/5-ways-you-can-embrace-the-magic-of-perl-1j11">5 Ways You Can Embrace the Magic of Perl</a></h2>
             </div> <!-- card-header -->
@@ -1810,7 +2179,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/brtastic/shuffling-my-playlist-with-perl-and-quantum-mechanics-4e0f">Shuffling my playlist with Perl and quantum mechanics</a></h2>
             </div> <!-- card-header -->
@@ -1822,7 +2191,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature.html">Writing a Perl Core Feature</a></h2>
             </div> <!-- card-header -->
@@ -1834,7 +2203,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/major/MySQLTuner-perl">MySQL Tuner</a></h2>
             </div> <!-- card-header -->
@@ -1846,7 +2215,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/blog/perl-ci-cd-pipelines-for-github-actions/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=blog-perl-ci-cd-pipelines&utm_campaign=user-acquisition">Optimize GitHub Actions for Perl</a></h2>
             </div> <!-- card-header -->
@@ -1858,7 +2227,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/498.html">#498 - Perl.com is back</a></h2>
             </div> <!-- card-header -->
@@ -1885,7 +2254,7 @@ cpan SPVM
      on Monday 08 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-099-ncp">Weekly Challenge 099</a></h2>
             </div> <!-- card-header -->
@@ -2026,7 +2395,7 @@ cpan SPVM
      on Monday 08 February 2021 08:52</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/perl-7-a-modest-proposal-434m">Perl 7: A Modest Proposal</a></h2>
             </div> <!-- card-header -->
@@ -2212,30 +2581,7 @@ cpan SPVM
      on Monday 08 February 2021 02:02</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/1nickt/2021/02/who-you-gonna-call-perl-client-and-website-for-google-civic-information-api.html">Who you gonna call? Perl client and website for Google Civic Information API</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>I recently became aware of a very cool service provided by the Google. The <a href="https://developers.google.com/civic-information">Civic Information API</a> provides contact information for all elected representatives (from head of state down to municipal official) for any US address.</p>
-
-<p>I wrote the Perl client for the API, published as <a href="https://metacpan.org/release/Net-Google-CivicInformation">Net::Google::CivicInformation</a>. Get a free API token and you're up and running.</p>
-
-<p>This was a satisfying project because I can imagine people finding actual value in the product. I'm all for being vocal with our government! I decided to take it a step further and created a webservice interfacing to the API. It's written in <a href="https://metacpan.org/pod/Dancer2">Dancer2</a> and the source code is <a href="https://github.com/1nickt/ContactMyReps">on Github</a> (at the urging of ++GabSzab who pointed out that there are few examples of Dancer2 apps for developers to study.)</p>
-
-<p>The site is online now at <a href="https://contactmyreps.com/">https://contactmyreps.com</a>. Please give it a try. Feedback welcome!</p>
-
-<p><a href="http://blogs.perl.org/users/1nickt/assets_c/2021/02/cmr-4609.html" onclick="window.open('http://blogs.perl.org/users/1nickt/assets_c/2021/02/cmr-4609.html','popup','width=1236,height=1604,scrollbars=no,resizable=no,toolbar=no,directories=no,location=no,menubar=no,status=no,left=0,top=0'); return false"><img src="http://blogs.perl.org/users/1nickt/assets_c/2021/02/cmr-thumb-400x519-4609.png" width="400" height="519" alt="cmr.png" class="mt-image-none" style="" /></a></p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by 1nickt
-     on Sunday 07 February 2021 20:48</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl-4">Exploring BDD in Perl - using Test::BDD::Cucumber - part 4</a></h2>
             </div> <!-- card-header -->
@@ -2253,7 +2599,7 @@ Live stream via <a href="https://www.twitch.tv/szabgab">Twitch</a>
      on Sunday 07 February 2021 10:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/02/06#pwc098">Perl Weekly Challenge 098</a></h2>
             </div> <!-- card-header -->
@@ -2406,7 +2752,7 @@ $ perl perl/ch-2.pl
      on Saturday 06 February 2021 21:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/01/perlcom-hijacked.html">perl.com hijacked </a></h2>
             </div> <!-- card-header -->
@@ -2418,7 +2764,7 @@ $ perl perl/ch-2.pl
      on Wednesday 27 January 2021 20:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cccxxvii-13-cpan-great-modules-released.html">(cccxxvii) 13 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2430,7 +2776,7 @@ $ perl perl/ch-2.pl
      on Saturday 06 February 2021 20:43</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdliii-metacpan-weekly-report.html">(cdliii) metacpan weekly report - Acme::ConspiracyTheory::Random</a></h2>
             </div> <!-- card-header -->
@@ -2442,7 +2788,7 @@ $ perl perl/ch-2.pl
      on Saturday 06 February 2021 20:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl-3">Exploring BDD in Perl - using Test::BDD::Cucumber - part 3</a></h2>
             </div> <!-- card-header -->
@@ -2460,7 +2806,7 @@ Live stream via <a href="https://www.twitch.tv/szabgab">Twitch</a>
      on Saturday 06 February 2021 10:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl-2">Exploring BDD in Perl - using Test::BDD::Cucumber - part 2</a></h2>
             </div> <!-- card-header -->
@@ -2478,7 +2824,7 @@ Live stream via <a href="https://www.twitch.tv/szabgab">Twitch</a>
      on Saturday 06 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-02-06-cpannews-januar-2021">CPAN-News Januar 2021</a></h2>
             </div> <!-- card-header -->
@@ -2491,7 +2837,7 @@ Der Januar ist rum, Zeit mal nachzuschauen was wir im Januar so alles auf CPAN g
      on Saturday 06 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl-1">Exploring BDD in Perl - using Test::BDD::Cucumber - part 1</a></h2>
             </div> <!-- card-header -->
@@ -2509,7 +2855,7 @@ Live stream via <a href="https://www.twitch.tv/szabgab">Twitch</a>
      on Thursday 04 February 2021 20:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl">Exploring BDD in Perl - using Test::BDD::Cucumber</a></h2>
             </div> <!-- card-header -->
@@ -2525,33 +2871,6 @@ Live stream via <a href="https://www.twitch.tv/szabgab">Twitch</a>
 
               <p class="text-right"><small>Published by Gabor Szabo
      on Thursday 04 February 2021 20:29</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_72">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/02/i-found-the-truth-about-gamestop-qanon-the-biden-adminstration-and-the-british-royal-family.html">I found the truth about GameStop, Qanon, the Biden adminstration, and the British Royal Family</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <blockquote>
-The British Royal Family and GameStop have been in a secret war with each other for hundreds of years. Nobody knows why. GameStop has included it in their manifesto and the Royals is always untrustworthy. They leave clues to mock us! GAMESTOP HAS INCLUDED IT IN THEIR MANIFESTO! MOCK! MOCK!
-</blockquote>
-
-<p>There is more:</p>
-
-<blockquote>
-Q found out that reincarnation is true and he has been imprisoned in The Pentagon. Qanon are protecting this secret. The Biden administration knows the truth but Qanon have paid them off with a warehouse full of holy water. The Wikipedia entry for The Pentagon keeps getting edited by the Biden administration and Qanon even admit it. They leave clues to mock us.
-</blockquote>
-
-<p>You too can find out the truth about what's REALLY going on <a href="https://metacpan.org/release/Acme-ConspiracyTheory-Random">here</a> or <a href="https://www.lemoda.net/games/consp/">here</a></p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Ben Bullock
-     on Monday 01 February 2021 13:53</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_73">
@@ -4268,7 +4587,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 12 February 2021 21:48 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 12 February 2021 22:51 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
