@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-02-12T22:51:05Z</updated>
+  <updated>2021-02-12T23:49:46Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -15,7 +15,7 @@
     <link rel="alternate" href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-99.html"/>
     <id>tag:blogs.perl.org,2021:/users/james_curtis-smith//3569.10092</id>
     <published>2021-02-12T16:55:48Z</published>
-    <updated>2021-02-13T03:22:33Z</updated>
+    <updated>2021-02-13T04:26:21Z</updated>
     <author>
         <name>James Curtis-Smith</name>
         <uri>https://jamessmith.me.uk</uri>
@@ -82,8 +82,7 @@ Output: 5
 
 <p>The approach to all 3 is to split the string into chunks up until the occurrence of the current first letter of <code>$T</code>.</p>
 
-<pre><code>
-sub uniq_subseq {
+<pre><code>sub uniq_subseq {
   my( $result, $haystack, $first, $needle )
     = ( 0, $_[0], $_[1] =~ m{(.)(.*)} );
   return scalar @{[ $haystack =~ m{$first}g ]}
@@ -94,7 +93,15 @@ sub uniq_subseq {
 }
 </code></pre>
 
-<p>We use a nice feature of <tt>substr</tt> to extract the first character of the needle string. If you give <tt>substr</tt> it returns the substring - but at the same time replaces it with the fourth parameter - so this strips off the first letter, and updates needle at the same time.</p>
+<p>A bit of a nasty initiliaser - to initialise all the variables we need<br />
+<ul><br />
+  <li><tt>$result</tt> - the count of matches</li><br />
+  <li><tt>$haystack</tt> - the string we are searching in</li><br />
+  <li><tt>$first</tt> - the first character of the needle</li><br />
+  <li><tt>$needle</tt> - the rest of the needle</li><br />
+</ul></p>
+
+<p>We need to a regex to split the needle into the two parts!</p>
 
 <p>We then split the code ( a slight optimization ) - if we have reached the end of the needle - then we just need to count the occurances of the needle left {saves some function calls}</p>
 
@@ -102,11 +109,18 @@ sub uniq_subseq {
 
 <p>Our second function just adds memoization, by using a cache (using state variables inside the function) to remember the results of calling <code>uniq_subseq</code> as, as the string gets longer you will end up repeating this call over and over again.</p>
 
-<pre><code>
-sub uniq_subseq_cache {
-  state $cache;
-  my( $result, $cache_key, $haystack, $first, $needle )
-    = ( 0, "$_[0]-$_[1]", $_[0], $_[1] =~ m{(.)(.*)} );
+<p>Note: the second line of the function is used to clear the cache for performance testing {repeatedly running the method for benchmarking will always return the cached value on subsequent calls. We have to do it with a special call of the function as we are using a state variables for the cache - and this is only accessible inside the function itself.</p>
+
+<p>For the simple examples we don't see much gain from the cache - but if you find a more complex problem... with lots of solutions this function works much better - the example we tested showed a speed gain of around 100x.</p>
+
+<pre><code>sub uniq_subseq_cache {
+  state $cache = {};
+  return $cache={} if $_[0] eq '---'; ## Clear the cache to examine speed
+                                      ## Can't clear state cookie from
+                                      ## outside function....
+
+<p>  my( $result, $cache_key, $haystack, $first, $needle )<br />
+    = ( 0, "$_[0]-$_[1]", $_[0], $_[1] =~ m{(.)(.*)} );</p>
 
 <p>  return $cache->{$cache_key}<br />
     if exists $cache->{$cache_key};<br />
@@ -115,23 +129,26 @@ sub uniq_subseq_cache {
   $result += uniq_subseq_cache( $haystack, $needle )<br />
     while $haystack=~s{.*?$first}{};<br />
   return $cache->{$cache_key} = $result;<br />
-}</p>
+}<br />
+</code></pre></p>
 
-<p></code></pre></p>
+<p>The final function returns the "annotated" string showing each solution. We use a similar stripping approach - but it adds some complexity - mainly in remembering what we have stripped off the string - while we look for the parts of the needle. See code for comments.</p>
 
-<p>The final function returns the "annotated" string showing each solution. We use a similar stripping approach - but it adds some complexity - mainly in remembering what we have stripped off the string - while we look for the parts of the needle.</p>
-
-<pre><code>
-sub display_uniq_subseq {
+<pre><code>sub display_uniq_subseq {
   my( $haystack, $prev, $regexp, $needle, @result ) = (
     $_[0],          ## haystack (first string)
     @_>2?$_[2]:q(), ## previous string (3rd parameter if it exists)
     $_[1] =~ m{(.)(.*)} ? ('\A(.*?)('.$1.')',$2) : (q(),q()),
-    ## The first character of the needle, remainder of needle
+    ## The regex for finding matches + the remainder of needle
+    ## Slightly more complex than the previous version as we
+    ## remove the "optimization" step in the other two functions
   );
 
 <p>  ## If we have exhausted the substring we return the previous part<br />
-  ## We collapse adjacent []s by stripping "][".<br />
+  ## along with what is left of the haystack.<br />
+  ## Note individual mapped letters are surrounded by individual<br />
+  ## brackets - to collapse these down to clusters of matched<br />
+  ## characters - We collapse adjacent []s by stripping "][".<br />
   ## We again use the "r" modifier to just return the result<br />
   ## of the replacement.<br />
   return ($prev =~s{\]\[}{}gr).$haystack if $regexp eq q();</p>
@@ -149,9 +166,86 @@ sub display_uniq_subseq {
   }<br />
   return @result;<br />
 }<br />
-</code></pre><br />
-</p>]]>
+</code></pre></p>
+
+<p>and without comments:</p>
+
+<pre><code>sub display_uniq_subseq {
+  my( $haystack, $prev, $regexp, $needle, @result ) = (
+    $_[0], @_>2?$_[2]:q(),
+    $_[1] =~ m{(.)(.*)} ? ('\A(.*?)('.$1.')',$2) : (q(),q()) );
+
+<p>  return ($prev =~s{\]\[}{}gr).$haystack if $regexp eq q();</p>
+
+<p>  while( $haystack =~ s{$regexp}{} ) {<br />
+    my( $pre_match, $match ) = ($1,$2);<br />
+    push @result, display_uniq_subseq(<br />
+      $haystack, $needle, $prev.$pre_match.'['.$match.']' );<br />
+    $prev .= $pre_match.$match;<br />
+  }<br />
+  return @result;<br />
+}<br />
+</code></pre></p>]]>
         
+    </content>
+</entry>
+  <entry>
+    <title>berrybrew version 1.33 released!</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/steve_bertrand/2021/02/berrybrew-version-133-released.html"/>
+    <id>tag:blogs.perl.org,2021:/users/steve_bertrand//2771.10094</id>
+    <published>2021-02-13T04:14:01Z</published>
+    <updated>2021-02-13T04:16:56Z</updated>
+    <author>
+        <name>Steve Bertrand</name>
+        
+    </author>
+    <category term="berrybrew" label="berrybrew" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="perl" label="perl" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="perlbrew" label="perlbrew" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="strawberry" label="strawberry" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="windows" label="windows" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/steve_bertrand/">
+        <![CDATA[<p>I've released <a href="https://github.com/stevieb9/berrybrew">berrybrew</a> version 1.33. This version has significant enhancements, along with some bug fixes and handling of some uncaught exceptions. The changes reflect versions 1.30 to 1.33.</p>
+
+<p>Major changes include:</p>
+
+<p>UI:</p>
+
+<ul>
+<li>Allows you to install, switch to, remove and use Strawberry Perls directly</li>
+<li>Can now spawn a CLI window for any Perl you have installed</li>
+<li>Allows you to spawn a CLI window for the currently active Perl</li>
+<li>Provides access to modify several of the core configuration options (debug, file association etc)</li>
+<li>Allows you to disable all berrybrew Perls and restore to system default</li>
+</ul>
+
+<p>Installer:</p>
+
+<ul>
+<li>Performs an upgrade on any previous berrybrew install</li>
+<li>Adds any new configuration options, while preserving the values of any previously set existing ones</li>
+<li>Provides facility to install the most recent version of Strawberry Perl</li>
+<li>Allows you to have berrybrew manage the .pl file association</li>
+<li>Allows you to have the UI run at system startup</li>
+<li>Aborts if trying to install the same version that's already installed</li>
+</ul>
+
+<p>Functionality:</p>
+
+<ul>
+<li>You can now leave off the <em>32/</em>64 bit prefix on a Perl name, and we'll default to _64</li>
+<li>All execution paths return a proper exit code</li>
+<li>Added new <c>berrybrew hidden</c> command, lists all, well, <a href="https://github.com/stevieb9/berrybrew/blob/master/doc/berrybrew.md#hidden-command-list">hidden commands</a></li>
+</ul>
+
+<p>For all other changes, please refer to the <a href="https://github.com/stevieb9/berrybrew/blob/master/Changes.md">Changes</a> file.</p>
+
+<p>Cheers!</p>
+
+<p>-stevieb</p>
+]]>
+        
+
     </content>
 </entry>
   <entry>
@@ -1544,68 +1638,6 @@ Content-Type: text/html; charset=UTF-8
     <category term="crawling"/>
     <category term="web"/>
   </entry>
-  <entry>
-    <title>You can now use the spvmcc command to generate an executable file from the SPVM source code.</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/yuki_kimoto/2021/02/you-can-now-use-the-spvmcc-command-to-generate-an-executable-file-from-the-spvm-source-code.html"/>
-    <id>tag:blogs.perl.org,2021:/users/yuki_kimoto//2020.10081</id>
-    <published>2021-02-08T11:34:33Z</published>
-    <updated>2021-02-08T11:41:54Z</updated>
-    <author>
-        <name>Yuki Kimoto</name>
-        <uri>http://d.hatena.ne.jp/perlcodesample</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/yuki_kimoto/">
-        <![CDATA[<p>You can now use the spvmcc command to generate an executable file from the SPVM source code.</p>
-
-<p>SPVM is a module that can convert Perl-like source code into C language and execute it.</p>
-
-<p>I have succeeded in generating an executable in a very stable way.</p>
-
-<p><b>SPVM source code</b></p>
-
-<pre>
-# MyApp.spvm
-package MyApp : precompile {
-  sub main : int ($args : string[]) {
-    my $total = 0;
-    for (my $i = 0; $i < 100000; $i++) {
-      $total += $i;
-    }
-    
-    print "$total\n";
-  }
-}
-</pre>
-
-<p><br />
-<b>Create Excutable File and execute it</b></p>
-
-<pre>
-Create Executable File
-
-<p>  spvmcc -I . -o myapp MyApp</p>
-
-<p>Execute Executable File</p>
-
-<p>  ./myapp</p>
-
-</pre>
-
-<p><a href="https://github.com/yuki-kimoto/SPVM/tree/master/examples/spvmcc/basic">Github spvmcc basic example</a></p>
-
-<p>You can install SPVM from CPAN</p>
-
-<pre>
-cpan SPVM
-
-<p>or</p>
-
-<p>cpanm SPVM<br />
-</pre><br />
-</p>]]>
-        
-    </content>
-</entry>
   <entry>
     <title>Not your ordinary town! Perl job in Malaysia!</title>
     <link rel="alternate" href="https://job.perl.careers/y4f" type="text/html"/>
