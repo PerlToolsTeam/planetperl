@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-02-25T11:46:28Z</updated>
+  <updated>2021-02-25T13:01:38Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -3516,77 +3516,5 @@ In der agilen Software-Entwicklung wird oft die formale Korrektheit von User Sto
     <id>https://blog.perl-academy.de/2021-01-28-user-story-mapping-teil1</id>
     <published>2021-01-28T10:00:00Z</published>
     <updated>2021-01-28T10:00:00Z</updated>
-  </entry>
-  <entry>
-    <title>The Trouble with Reference Counting</title>
-    <link rel="alternate" href="https://perl.com/article/the-trouble-with-reference-counting/" type="text/html"/>
-    <content type="html">
-
-&lt;p&gt;Perl uses a simple form of garbage collection (GC) called &lt;a href="https://en.wikipedia.org/wiki/Reference_counting"&gt;reference counting&lt;/a&gt;. Every variable created by a Perl program has a &lt;a href="https://perldoc.perl.org/perlguts#Reference-Counts-and-Mortality"&gt;refcnt&lt;/a&gt; associated with it. If the program creates a reference to the variable, Perl increments its &lt;code&gt;refcnt&lt;/code&gt;. Whenever Perl exits a block it reclaims any variables that belong to the block scope. If any are references, their referenced values&amp;rsquo; &lt;code&gt;refcnt&lt;/code&gt; are either decremented or they&amp;rsquo;re reclaimed as well if no other references to them remain.&lt;/p&gt;
-
-&lt;h2 id="benefits"&gt;Benefits&lt;/h2&gt;
-
-&lt;p&gt;Reference counting has some nice properties. As GC is deterministic, it is usually not a cause of variable program performance from run-to-run. Whenever Perl leaves a subroutine or a block, it will check for variables to reclaim. This spreads the cost of GC over program runtime, keeping Perl responsive.&lt;/p&gt;
-
-&lt;p&gt;Another benefit of timely reclamation is it minimizes memory fragmentation as variables created in the same scope tend to be reclaimed at the same time, allowing Perl to more efficiently reuse the memory (it exhibits good &lt;a href="https://en.wikipedia.org/wiki/Locality_of_reference#Spatial_and_temporal_locality_usage"&gt;spatial locality of reference&lt;/a&gt;).&lt;/p&gt;
-
-&lt;p&gt;Predictable and timely GC provides a useful mechanism for destructors. A popular example is that &amp;ldquo;lexical&amp;rdquo; filehandles are automatically closed when they go out scope; Perl programs do not need to call &lt;a href="https://perldoc.perl.org/functions/close"&gt;close&lt;/a&gt; on filehandles themselves, and because the filehandle is closed immediately, there is no risk of contention from a new filehandle being opened on the same file before the original is reclaimed.&lt;/p&gt;
-
-&lt;h2 id="how-expensive-is-reference-counting"&gt;How expensive is reference counting?&lt;/h2&gt;
-
-&lt;p&gt;Different reference counting operations have different costs. Consider the following Perl subroutine:&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"&gt;&lt;code class="language-perl" data-lang="perl"&gt;&lt;span style="color:#66d9ef"&gt;sub&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;update_customer&lt;/span&gt; {
-  &lt;span style="color:#66d9ef"&gt;my&lt;/span&gt; ($customer, $values) &lt;span style="color:#f92672"&gt;=&lt;/span&gt; @_;
-  &lt;span style="color:#f92672"&gt;...&lt;/span&gt;
-}&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
-&lt;p&gt;It&amp;rsquo;s called with two arguments; a customer object and a hashref of values. The &lt;code&gt;my&lt;/code&gt; declaration causes Perl to add the lexical variables &lt;code&gt;$customer&lt;/code&gt; and &lt;code&gt;$values&lt;/code&gt; to the savestack (here it performs an optimization, adding them as one group entry instead of two). Each variable is initialized with a &lt;code&gt;refcnt&lt;/code&gt; of 1. Each argument is then assigned to its corresponding lexical variable which increments the &lt;code&gt;refcnt&lt;/code&gt; of the reference&amp;rsquo;s corresponding value. This is cheap as the Perl interpreter just increments the value&amp;rsquo;s &lt;code&gt;refcnt&lt;/code&gt; in its header struct.&lt;/p&gt;
-
-&lt;p&gt;When the subroutine returns a scope exit occurs, and &lt;code&gt;$customer&lt;/code&gt; and &lt;code&gt;$values&lt;/code&gt; must be reclaimed. Their group is popped off the savestack. Perl fetches the &lt;code&gt;refcnt&lt;/code&gt; of &lt;code&gt;$customer&lt;/code&gt;, saves it to a local variable, and tests it to see if it is greater than 1. As the &lt;code&gt;refcnt&lt;/code&gt; of &lt;code&gt;$customer&lt;/code&gt; is 1, it must be reclaimed. Here Perl performs another optimization, essentially doing &lt;code&gt;undef $customer&lt;/code&gt; leaving it ready to be reused next time the subroutine is called. As &lt;code&gt;$customer&lt;/code&gt; is a reference, the referenced customer object&amp;rsquo;s &lt;code&gt;refcnt&lt;/code&gt; must also be fetched and tested. In this case it&amp;rsquo;s greater than 1, so Perl decrements the local &lt;code&gt;refcnt&lt;/code&gt; and stores it back in the customer object&amp;rsquo;s header struct. Perl then performs the same decrement routine for &lt;code&gt;$values&lt;/code&gt;. Decrement&amp;rsquo;s multiple steps causes it to be slightly more expensive than increment, but scope management pushing and popping the savestack is relatively expensive.&lt;/p&gt;
-
-&lt;p&gt;We don&amp;rsquo;t have any data on how long each operation takes, or estimates of how long Perl spends on reference counting activities during the course of a program. Nor is such data available for other reference counting dynamic languages like Python and PHP. Some research has shown that reference counting increases GC runtime by 30% compared to tracing&lt;sup&gt;1, 2&lt;/sup&gt;, but it&amp;rsquo;s not clear how representative that is of Perl&amp;rsquo;s optimized routines.&lt;/p&gt;
-
-&lt;h2 id="drawbacks"&gt;Drawbacks&lt;/h2&gt;
-
-&lt;p&gt;Reference counting scales linearly insofar as every variable created increases the GC overhead. In programming we can usually do better than that, for example by using tricks like minimizing the number of function calls via batch processing.&lt;/p&gt;
-
-&lt;p&gt;Only objects that have a &lt;a href="https://perldoc.perl.org/perlobj#Destructors"&gt;DESTROY&lt;/a&gt; method need timely reclamation, yet Perl  treats &lt;em&gt;every&lt;/em&gt; variable like it needs it, incrementing and decrementing reference counts live. Whenever Perl exits a block it must check for and clean up any unreferenced variables.&lt;/p&gt;
-
-&lt;p&gt;Reference counting usually spreads the cost of GC over runtime, however deterministic and timely reclamation means that the potential cost of any given scope exit is unbounded. Imagine Perl returning from a subroutine which reclaims the final reference to a &lt;em&gt;huge&lt;/em&gt; graph of data, triggering an avalanche of reclamations. Perl &lt;em&gt;has&lt;/em&gt; to clean it all up immediately; a tracing GC could choose not to.&lt;/p&gt;
-
-&lt;p&gt;Reference counts increase memory use a little as every variable has a &lt;code&gt;refcnt&lt;/code&gt; integer associated with it. Compared to tracing schemes, reference counting actually saves memory by not requiring a larger heap to avoid thrashing&lt;sup&gt;3&lt;/sup&gt;. However circular references can increase memory use a lot via memory leaks (if detected the developer can &lt;a href="https://metacpan.org/pod/Scalar::Util#weaken"&gt;weaken&lt;/a&gt; the reference to fix this).&lt;/p&gt;
-
-&lt;p&gt;Reference counts can trigger unneeded &lt;a href="https://en.wikipedia.org/wiki/Copy-on-write"&gt;Copy-On-Write&lt;/a&gt;. Imagine a sub-process loops through a data set it inherited from its parent: &lt;code&gt;for my $foo (@foos) { ... }&lt;/code&gt;. This temporarily increments each element&amp;rsquo;s &lt;code&gt;refcnt&lt;/code&gt;, triggering a memory copy. This isn&amp;rsquo;t quite as calamitous as it sounds as each variable&amp;rsquo;s header struct  is 16 bytes. Since a page is usually 4KB, only one copy is needed per 296 objects (assuming they&amp;rsquo;re contiguous). The copy can also be avoided by not creating the lexical reference by accessing each member directly: &lt;code&gt;for my $i (0..$#foos) { $foos[$i] ... }&lt;/code&gt;.&lt;/p&gt;
-
-&lt;p&gt;Speculating a little, reference counting may increase cache misses as the frequent changes in counts displace valuable data.&lt;/p&gt;
-
-&lt;h2 id="opportunity"&gt;Opportunity?&lt;/h2&gt;
-
-&lt;p&gt;At first glance it seems like Perl can save runtime by switching to a tracing GC scheme and not checking or updating reference counts, but periodically reclaiming unused variables. Observe that most variables are &lt;a href="https://en.wikipedia.org/wiki/Tracing_garbage_collection#Generational_GC_(ephemeral_GC)"&gt;short-lived&lt;/a&gt;; therefore the cost of tracing should scale better than linearly (as only long-lived variables are traceable).&lt;/p&gt;
-
-&lt;p&gt;However to avoid breaking a lot of code, Perl would still need to honor timely reclamation of objects with &lt;code&gt;DESTROY&lt;/code&gt; methods. Perhaps it could follow a hybrid model, reference counting only those objects that need it, but that would reduce the performance benefits of tracing GC, and it complexifies the interpreter adding conditional branches for reference-counted variables. As objects may gain or lose a&lt;code&gt;DESTROY&lt;/code&gt; method during runtime, the interpreter would also need to be able to add and remove variables from the reference counting scheme dynamically.&lt;/p&gt;
-
-&lt;p&gt;A further wrinkle is that references to objects with &lt;code&gt;DESTROY&lt;/code&gt; methods must &lt;em&gt;also&lt;/em&gt; be reference counted (and references to those references and so on). Imagine an array of database handles: the array itself must be reference counted so that when it is reclaimed, Perl can decrement the database handles&amp;rsquo; &lt;code&gt;refcnt&lt;/code&gt; and possibly reclaim them as well.&lt;/p&gt;
-
-&lt;p&gt;A more promising line of inquiry may be to review Perl&amp;rsquo;s reference counting code for further optimization opportunities. Common techniques for improving reference counting are well known&lt;sup&gt;4&lt;/sup&gt; and research has shown that the aforementioned 30% runtime gap can be closed&lt;sup&gt;2&lt;/sup&gt;.&lt;/p&gt;
-
-&lt;p&gt;Before starting that effort, we should collect data on how much time Perl is spending on GC. Two Perl core developers, Todd Rinaldo and Tony Cook have told me they think Perl spends very little time on GC relative to other operations like memory allocation, IO and so on. If 2% of the runtime is spent on GC, reducing it by 30% is nothing to brag about. It may be the case that for Perl at least, better opportunities lie elsewhere.&lt;/p&gt;
-
-&lt;p&gt;&lt;br /&gt;
-&lt;/p&gt;
-
-&lt;p&gt;Thanks to Tony Cook, Dave Mitchell and Todd Rinaldo for their insights on Perl&amp;rsquo;s GC behavior.&lt;/p&gt;
-
-&lt;h2 id="references"&gt;References&lt;/h2&gt;
-
-&lt;ol&gt;
-&lt;li&gt;&lt;a href="https://dl.acm.org/doi/10.1145/1005686.1005693"&gt;Myths and Realities: The Performance Impact of Garbage Collection&lt;/a&gt;, Blackburn, Cheng &amp;amp; McKinley 2004.&lt;/li&gt;
-&lt;li&gt;&lt;a href="https://dl.acm.org/doi/10.1145/2258996.2259008"&gt;Down for the Count? Getting Reference Counting Back in the Ring&lt;/a&gt;, Shahriyar, Blackburn &amp;amp; Frampton 2012.&lt;/li&gt;
-&lt;li&gt;&lt;a href="https://www.cs.kent.ac.uk/people/staff/rej/gcbook/"&gt;Garbage Collection: Algorithms For Automatic Dynamic Memory Management&lt;/a&gt;, Jones &amp;amp; Lins 1999 pp 43.&lt;/li&gt;
-&lt;li&gt;Ibid. pp 44-74.&lt;/li&gt;
-&lt;/ol&gt;
-</content>
-    <id>https://perl.com/article/the-trouble-with-reference-counting/</id>
-    <published>2021-01-25T12:05:23Z</published>
-    <updated>2021-01-25T12:05:23Z</updated>
   </entry>
 </feed>
