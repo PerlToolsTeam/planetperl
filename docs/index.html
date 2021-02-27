@@ -55,6 +55,129 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll">Building a microservice in Perl, part 1: Designing the API</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>A microservice can be thought of as the distributed computing implementation of the <a href="http://catb.org/~esr/writings/taoup/html/ch01s06.html">Unix philosophy</a> of <strong>“Do one thing and do it well.</strong>” Usually modeled around specific business domains, a well-designed set of microservices each have their own lifecycle and communicate with each other and with consuming applications via technology-agnostic protocols like <a href="https://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol">HTTP</a>.  </p>
+
+<p>Because of this, a microservice may be implemented using whatever is the best programming language, database, or other environment to fit the job. <strong><a href="https://www.perl.org/">Perl</a> can be an excellent choice for development</strong> because of its strengths as a battle-tested, expressive multi-paradigm language with a <a href="https://www.perl.org/cpan.html">broad open-source library of modules</a>.</p>
+
+<p>In this series of articles we’ll be using Perl, the <a href="https://mojolicious.org/">Mojolicious</a> web framework, and the <a href="https://swagger.io/specification/">OpenAPI</a> (formerly <a href="https://swagger.io/">Swagger</a>) specification for describing web services to develop an example microservice that adheres to the <a href="https://restfulapi.net/">REST</a> standard for communication over HTTP. Some knowledge of Perl and web development is assumed, and we’ll be linking to supporting documentation and literature as we go.</p>
+
+<p>In a full microservices implementation, we would start by <strong>modeling the business domains being serviced and the explicit boundaries between them.</strong> For the purposes of this series, we are limiting ourselves to developing only one microservice with a trivial purpose—a toy, if you will. This service will act as a simple dictionary allowing consumers to both query for the definitions of words as well as add new entries.</p>
+
+<p>We could envision a variety of consumers: a web front-end, a mobile app, maybe even SMS text messaging. The key is that <strong>the design of our application programming interface (API) should not dictate the implementation or lifecycle</strong> of any of these consumers, and it should be easy for their developers to understand its specification.</p>
+
+<p>To that end, we turn to <a href="https://spec.openapis.org/oas/v3.0.3.html">OpenAPI</a>, which gives both our microservice and its consumers <strong>an unambiguous machine-readable description of the interface</strong> without the need for additional code or documentation. And as we’ll see later, we’ll use that very same specification to drive our web framework to produce HTTP routes that accept valid input and produce valid output.</p>
+
+<p>A full OpenAPI document can be written in either JSON or YAML format, but it must ultimately be able to be represented in both formats, so there are some <a href="https://spec.openapis.org/oas/v3.0.3.html#format">limitations described in the spec</a>. Here’s the OpenAPI document for our dictionary microservice in YAML:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="na">openapi</span><span class="pi">:</span> <span class="s">3.0.3</span>
+<span class="na">info</span><span class="pi">:</span>
+  <span class="na">title</span><span class="pi">:</span> <span class="s">Dictionary</span>
+  <span class="na">description</span><span class="pi">:</span> <span class="s">The PhoenixTrap.com dictionary microservice</span>
+  <span class="na">version</span><span class="pi">:</span> <span class="s">1.0.0</span>
+  <span class="na">license</span><span class="pi">:</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">Artistic License </span><span class="m">2.0</span>
+    <span class="na">url</span><span class="pi">:</span> <span class="s">https://www.perlfoundation.org/artistic-license-20.html</span>
+<span class="na">paths</span><span class="pi">:</span>
+  <span class="s">/health</span><span class="pi">:</span>
+    <span class="na">get</span><span class="pi">:</span>
+      <span class="na">summary</span><span class="pi">:</span> <span class="s">Check if this service is online</span>
+      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">monitoring#heartbeat</span>
+      <span class="na">responses</span><span class="pi">:</span>
+        <span class="na">200</span><span class="pi">:</span>
+          <span class="na">description</span><span class="pi">:</span> <span class="s">All systems operational</span>
+          <span class="na">content</span><span class="pi">:</span>
+            <span class="s">application/json</span><span class="pi">:</span>
+              <span class="na">schema</span><span class="pi">:</span>
+                <span class="na">type</span><span class="pi">:</span> <span class="s">object</span>
+        <span class="na">500</span><span class="pi">:</span>
+          <span class="na">description</span><span class="pi">:</span> <span class="s">Something is wrong</span>
+  <span class="s">/word/{word}</span><span class="pi">:</span>
+    <span class="na">get</span><span class="pi">:</span>
+      <span class="na">summary</span><span class="pi">:</span> <span class="s">Get the definition of a word</span>
+      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">word#define</span>
+      <span class="na">parameters</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="s">$ref</span><span class="pi">:</span> <span class="s1">'</span><span class="s">#/components/parameters/word'</span>
+      <span class="na">responses</span><span class="pi">:</span>
+        <span class="na">200</span><span class="pi">:</span>
+          <span class="na">description</span><span class="pi">:</span> <span class="s">Found word</span>
+          <span class="na">content</span><span class="pi">:</span>
+            <span class="s">application/json</span><span class="pi">:</span>
+              <span class="na">schema</span><span class="pi">:</span>
+                <span class="na">type</span><span class="pi">:</span> <span class="s">string</span>
+        <span class="na">404</span><span class="pi">:</span>
+          <span class="na">description</span><span class="pi">:</span> <span class="s">Could not find word</span>
+    <span class="na">post</span><span class="pi">:</span>
+      <span class="na">summary</span><span class="pi">:</span> <span class="s">Add or replace the definition of a word</span>
+      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">word#save</span>
+      <span class="na">parameters</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="s">$ref</span><span class="pi">:</span> <span class="s1">'</span><span class="s">#/components/parameters/word'</span>
+      <span class="na">requestBody</span><span class="pi">:</span>
+        <span class="na">description</span><span class="pi">:</span> <span class="s">Definition of a word</span>
+        <span class="na">required</span><span class="pi">:</span> <span class="no">true</span>
+        <span class="na">content</span><span class="pi">:</span>
+          <span class="s">application/x-www-form-urlencoded</span><span class="pi">:</span>
+            <span class="na">schema</span><span class="pi">:</span>
+              <span class="na">type</span><span class="pi">:</span> <span class="s">object</span>
+              <span class="na">properties</span><span class="pi">:</span>
+                <span class="na">definition</span><span class="pi">:</span>
+                  <span class="na">type</span><span class="pi">:</span> <span class="s">string</span>
+      <span class="na">responses</span><span class="pi">:</span>
+        <span class="na">200</span><span class="pi">:</span>
+          <span class="na">description</span><span class="pi">:</span> <span class="s">Word saved</span>
+    <span class="na">delete</span><span class="pi">:</span>
+      <span class="na">summary</span><span class="pi">:</span> <span class="s">Delete an entry from the dictionary</span>
+      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">word#remove</span>
+      <span class="na">parameters</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="s">$ref</span><span class="pi">:</span> <span class="s1">'</span><span class="s">#/components/parameters/word'</span>
+      <span class="na">responses</span><span class="pi">:</span>
+        <span class="na">200</span><span class="pi">:</span>
+          <span class="na">description</span><span class="pi">:</span> <span class="s">Word deleted</span>
+<span class="na">components</span><span class="pi">:</span>
+  <span class="na">parameters</span><span class="pi">:</span>
+    <span class="na">word</span><span class="pi">:</span>
+      <span class="na">description</span><span class="pi">:</span> <span class="s">A word in the dictionary</span>
+      <span class="na">in</span><span class="pi">:</span> <span class="s">path</span>
+      <span class="na">name</span><span class="pi">:</span> <span class="s">word</span>
+      <span class="na">required</span><span class="pi">:</span> <span class="no">true</span>
+      <span class="na">schema</span><span class="pi">:</span>
+        <span class="na">type</span><span class="pi">:</span> <span class="s">string</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>(I worked on this in the <strong>free online <a href="https://editor.swagger.io/">Swagger Editor</a></strong>, which checks your syntax, previews what API documentation might look like, and offers suggestions if it finds errors in your document.)</p>
+
+<p>Most of the above should be fairly self-explanatory to any web developer, and you can check <a href="https://spec.openapis.org/oas/v3.0.3.html">the OpenAPI specification</a> for required and optional fields and their allowed values. The only odd field listed is <code>x-mojo-to</code>; we’ll be using the <a href="https://metacpan.org/pod/Mojolicious::Plugin::OpenAPI">Mojolicious::Plugin::OpenAPI</a> module to read that field when generating routes to controllers in the <a href="https://mojolicious.org/">Mojolicious</a> web framework.</p>
+
+<p>In the next installment, we’ll actually be writing some Perl by building our Mojo application and tests.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Mark Gardner
+     on Saturday 27 February 2021 22:09</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-101.html">Perl weekly challenge 101</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -211,7 +334,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Tuesday 23 February 2021 10:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cccxxx-18-cpan-great-modules-released.html">(cccxxx) 18 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -223,7 +346,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdlvi-metacpan-weekly-report.html">(cdlvi) metacpan weekly report - Text::Table::More</a></h2>
             </div> <!-- card-header -->
@@ -235,7 +358,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdlxxix-stackoverflow-perl-report.html">(cdlxxix) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -247,7 +370,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rt-cpan-org-upgraded">rt.cpan.org has a new home</a></h2>
             </div> <!-- card-header -->
@@ -269,7 +392,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Friday 26 February 2021 12:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/what-return-is-expected">What return is expected from a function?</a></h2>
             </div> <!-- card-header -->
@@ -291,7 +414,7 @@ module the function can know exactly how many values it needd to return.
      on Thursday 25 February 2021 17:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-in-2025-fosdem-video-review-1k70">&quot;Perl in 2025&quot; FOSDEM video review </a></h2>
             </div> <!-- card-header -->
@@ -528,7 +651,7 @@ Python or Raku use C3 algorithm as default impementation.</p>
      on Thursday 25 February 2021 15:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/our">our</a></h2>
             </div> <!-- card-header -->
@@ -547,7 +670,7 @@ With that out of the way, in most cases, you'd want to declare variables in a le
      on Tuesday 23 February 2021 20:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/my">my</a></h2>
             </div> <!-- card-header -->
@@ -563,7 +686,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 20:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/q">q</a></h2>
             </div> <!-- card-header -->
@@ -578,7 +701,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 19:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/qq">qq</a></h2>
             </div> <!-- card-header -->
@@ -593,7 +716,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 19:15</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/random-integer-generation-in-an-interval-with-modern-oop-perl-4p2c">Random integer generation in an interval with Modern OOP Perl</a></h2>
             </div> <!-- card-header -->
@@ -670,7 +793,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 11:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/exceptional-perl-failure-is-an-option-382h">Exceptional Perl: Failure is an option</a></h2>
             </div> <!-- card-header -->
@@ -995,7 +1118,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 01:07</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/02/cpan-mirror-list-changes.html">CPAN Mirror List Changes</a></h2>
             </div> <!-- card-header -->
@@ -1007,7 +1130,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Monday 22 February 2021 09:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/browse-cpan-modules-per-namespaces-6p">Browse CPAN modules per namespaces</a></h2>
             </div> <!-- card-header -->
@@ -1281,7 +1404,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 14:07</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/ngh">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -1293,7 +1416,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/kf1">Join Our Merry Band of Perl Programmers. Perl in Belarus</a></h2>
             </div> <!-- card-header -->
@@ -1305,7 +1428,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/u7l">Cooking Up Something Good. Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1317,7 +1440,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/jkf">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1329,7 +1452,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/deu">Not All Heroes Wear Capes. Perl in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -1341,7 +1464,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021 </a></h2>
             </div> <!-- card-header -->
@@ -1353,7 +1476,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -1365,7 +1488,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -1377,7 +1500,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1389,7 +1512,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1401,7 +1524,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1413,7 +1536,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/rex">Rex</a></h2>
             </div> <!-- card-header -->
@@ -1425,7 +1548,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/add-faq-to-metacpan">Add FAQ entry to MetaCPAN</a></h2>
             </div> <!-- card-header -->
@@ -1437,7 +1560,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1449,7 +1572,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/02/15/2021-07-easy-hard/">2021.07 Easy | Hard</a></h2>
             </div> <!-- card-header -->
@@ -1461,7 +1584,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=fOSXTpzlqts">Accept a payment with perl</a></h2>
             </div> <!-- card-header -->
@@ -1473,7 +1596,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=kr0Xz2BYvXU">Thank You - Team PWC</a></h2>
             </div> <!-- card-header -->
@@ -1485,7 +1608,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://video.fosdem.org/2021/D.perl/">FOSDEM Videos</a></h2>
             </div> <!-- card-header -->
@@ -1497,7 +1620,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/carp-always">Carp::Always to find the source of the problem</a></h2>
             </div> <!-- card-header -->
@@ -1509,7 +1632,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/list-groupby">List::GroupBy</a></h2>
             </div> <!-- card-header -->
@@ -1521,7 +1644,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/02/15/PWC100/">Perl Weekly Challenge 100</a></h2>
             </div> <!-- card-header -->
@@ -1533,7 +1656,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-100-4lf6">Weekly Challenge 100</a></h2>
             </div> <!-- card-header -->
@@ -1545,7 +1668,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/02/Perl_Weekly_Challenge_100__Time_Triangle.html">Perl Weekly Challenge 100: Time Triangle</a></h2>
             </div> <!-- card-header -->
@@ -1557,7 +1680,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/02/15/PerlWeeklyChallenge100.html">Perl Weekly Challenge 100: times and triangles</a></h2>
             </div> <!-- card-header -->
@@ -1569,7 +1692,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/02/perl-weekly-challenge-100-fun-time-and-triangle-sum.html">Perl Weekly Challenge 100: Fun Time and Triangle Sum</a></h2>
             </div> <!-- card-header -->
@@ -1581,7 +1704,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.kiwi/tales/2021/02/20/perl_weekly_challenge_100_part_2/">Perl Weekly Challenge 100 part 2</a></h2>
             </div> <!-- card-header -->
@@ -1593,7 +1716,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.kiwi/tales/2021/02/18/perlm-for-the-perl-weekly-challenge-100/">pErLM for the Perl Weekly Challenge 100</a></h2>
             </div> <!-- card-header -->
@@ -1605,7 +1728,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-100.html">Perl weekly challenge 100</a></h2>
             </div> <!-- card-header -->
@@ -1617,7 +1740,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/18/pwc100-triangle-sum/">PWC100 - Triangle Sum</a></h2>
             </div> <!-- card-header -->
@@ -1629,7 +1752,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/17/pwc100-fun-time/">PWC100 - Fun Time</a></h2>
             </div> <!-- card-header -->
@@ -1641,7 +1764,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/02/16/turning-over-a-new-digit-perl-weekly-challenge-100.html">Turning Over A New Digit: Perl Weekly Challenge #100</a></h2>
             </div> <!-- card-header -->
@@ -1653,7 +1776,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/02/20/time-traveling-under-pyramid-power/">Time Traveling Under Pyramid Power</a></h2>
             </div> <!-- card-header -->
@@ -1665,7 +1788,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/fun-sum-time.html">Fun Sum Time with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -1677,7 +1800,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://andinus.tilde.institute/pwc/challenge-100/">Challenge 100</a></h2>
             </div> <!-- card-header -->
@@ -1689,7 +1812,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/02/21">The Weekly Challenge 100</a></h2>
             </div> <!-- card-header -->
@@ -1701,7 +1824,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/02/21/perl-weekly-challenge-100-triangle-sum/">Perl Weekly Challenge 100: Triangle Sum</a></h2>
             </div> <!-- card-header -->
@@ -1713,7 +1836,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/02/21/perl-weekly-challenge-100-fun-time/">Perl Weekly Challenge 100: Fun Time</a></h2>
             </div> <!-- card-header -->
@@ -1725,7 +1848,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-100/">Perl Weekly Challenge 100</a></h2>
             </div> <!-- card-header -->
@@ -1737,7 +1860,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-100">RECAP - The Weekly Challenge - 100</a></h2>
             </div> <!-- card-header -->
@@ -1749,7 +1872,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-101">The Weekly Challenge - 101</a></h2>
             </div> <!-- card-header -->
@@ -1761,7 +1884,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-21-01">Maintaining Perl 5 (Tony Cook): January 2021 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -1773,7 +1896,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ron_grunwald/2021/02/inline-f2003-103.html">Inline::F2003</a></h2>
             </div> <!-- card-header -->
@@ -1785,7 +1908,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/02/new-compression-module-gziplibdeflate.html">New compression module Gzip::Libdeflate</a></h2>
             </div> <!-- card-header -->
@@ -1797,7 +1920,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://metacpan.org/pod/Excel::Grinder">Excel::Grinder</a></h2>
             </div> <!-- card-header -->
@@ -1809,7 +1932,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://metacpan.org/pod/Net::Curl::Easier">Net::Curl::Easier</a></h2>
             </div> <!-- card-header -->
@@ -1821,7 +1944,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Raku/problem-solving/issues/263">The Raku Foundation</a></h2>
             </div> <!-- card-header -->
@@ -1833,7 +1956,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Ovid/Cor/wiki">Corinna Project</a></h2>
             </div> <!-- card-header -->
@@ -1845,7 +1968,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/karjala/2021/02/an-easy-way-to-use-websockets.html">An easy way to use WebSockets?</a></h2>
             </div> <!-- card-header -->
@@ -1857,7 +1980,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://ashutosh.dev/blog/post/2021/02/setup-mojolicious-using-vagrant">Setup Mojolicious using Vagrant</a></h2>
             </div> <!-- card-header -->
@@ -1869,7 +1992,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/to-help-perl-just-blog-9h4">To help Perl, just blog</a></h2>
             </div> <!-- card-header -->
@@ -1881,7 +2004,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/index.php/2021/02/16/better-perl-more-on-signatures-and-types/">Better Perl: More on signatures and types</a></h2>
             </div> <!-- card-header -->
@@ -1893,7 +2016,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/02/msg259168.html">rt.cpan.org is staying</a></h2>
             </div> <!-- card-header -->
@@ -1905,7 +2028,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/resources/videos/state-tool-demo-how-to-install-a-perl-environment-with-a-single-command/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=video-perl-single-command&utm_campaign=user-acquisition">How to install a Perl environment with a single command?</a></h2>
             </div> <!-- card-header -->
@@ -1917,7 +2040,7 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
      on Monday 22 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/500.html">#500 - TPF and TRF</a></h2>
             </div> <!-- card-header -->
@@ -1936,123 +2059,6 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
 
               <p class="text-right"><small>Published
      on Monday 22 February 2021 10:00</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_70">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/thoughts-citations-and-thoughts-about-regex-29h0">Thoughts, quotes and thoughts about regex</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><h1>
-  <a href="#regex" class="anchor">
-  </a>
-  Regex
-</h1>
-
-<p><strong>"Regex"</strong> is the small name of <a href="https://wiki.c2.com/?RegularExpression">Regular expressions</a></p>
-
-<p><strong>Regex</strong> are one of the superpowers 💪 of <a href="https://www.perl.org/">Perl</a><br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--GXpBzaKn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/tioynjfepr3j7qzxdixr.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--GXpBzaKn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/tioynjfepr3j7qzxdixr.png" alt="Perl &lt;3 Regex"></a> </p>
-
-<p>It's a <em>productivity</em> superpower the same way knowing command line shortcuts and mastering vim.</p>
-
-<p><strong>Regex</strong> could become one of <em>your</em> programmer superpowers also if you decide to.<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--oa_xZAzd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/274xka2o0faorfaj6zcw.jpg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--oa_xZAzd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/274xka2o0faorfaj6zcw.jpg" alt="True power"></a></p>
-
-<p>But "regex" have also a <em>nefarious reputation</em> because they are hard, error-prone and misused.<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--eN0pUTvs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4byfxbmyiwtic0sxya4h.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--eN0pUTvs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4byfxbmyiwtic0sxya4h.png" alt="100"></a></p>
-
-<p><a href="https://en.wikipedia.org/wiki/Damian_Conway">Damian Conway</a> is a master of regular expressions but you can sometimes feel the pain in his mouth when he discusses regex<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--16FA5JqU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/j0le639s5pcr5vlqnk5t.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--16FA5JqU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/j0le639s5pcr5vlqnk5t.png" alt="Pain"></a></p>
-
-<p>Or even<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--OwHf232U--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/r4kxkfi0pxcx0scc2g73.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--OwHf232U--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/r4kxkfi0pxcx0scc2g73.png" alt="Misery"></a></p>
-
-<p>But on a more positive note, Damian said<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--AU4clVIe--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dv7a0xj0i80do0796esf.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--AU4clVIe--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dv7a0xj0i80do0796esf.png" alt="WrongButGoodEnough"></a></p>
-
-<p>It could be strange to advocate a <em>wrong thing</em> but sometimes you just don't need more than a one shot program, and for me it would be dumb (or irresponsible) to spend more time than needed just <strong>"for the sake of correctness"</strong>.<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--22ejCHoF--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/1ckek441gz594l4hjhvj.jpeg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--22ejCHoF--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/1ckek441gz594l4hjhvj.jpeg" alt="David Goodenough"></a></p>
-
-<p>I know it's not really the hype of these days where over engineering is better perceived than KISS principles (I exaggerate just a little) but it is pragmatism.</p>
-
-<h1>
-  <a href="#regex-are-bad" class="anchor">
-  </a>
-  Regex are bad
-</h1>
-
-<p>Regex are bad, everybody knows, and here is the very famous <a href="https://stackoverflow.com/a/1732454">SO answer "You can't parse [X]HTML with regex"</a> about that 😀 <br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--BkiIutSg--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fghx6z9n1duiha62sfnz.jpg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--BkiIutSg--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fghx6z9n1duiha62sfnz.jpg" alt="Idiot"></a></p>
-
-<h1>
-  <a href="#are-they-really" class="anchor">
-  </a>
-  Are they really?
-</h1>
-
-<p>Some people have played the "devil's advocate" and came with regex for XML like this <a href="https://stackoverflow.com/a/4234491">great answer from Tom Christiansen</a> where he used regex to tokenize then Perl to parse.</p>
-
-<p>But even <strong>Tom Christiansen</strong> said <br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--JVyJVNQs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3gztnahxug1iev81axau.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--JVyJVNQs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3gztnahxug1iev81axau.png" alt="Should"></a></p>
-
-<p>Seems also like <strong>PCRE</strong> are <em>more</em> than simple regular grammars but actually I can't say if mathematically <strong>Perl regex</strong> can or can't parse XML, <a href="https://en.wikipedia.org/wiki/Regular_expression#Patterns_for_non-regular_languages">regular expression page on wikipedia</a> says that <br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--6PiyrrI3--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2qef7xde37bme6twmawb.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--6PiyrrI3--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2qef7xde37bme6twmawb.png" alt="Regular not regular"></a></p>
-
-<p>Another interesting old link on this topic is <a href="https://www2.cs.sfu.ca/~cameron/REX.html">REX</a>. The abstract of it is </p>
-
-<p><strong><em>The syntax of XML is simple enough that it is possible to parse an XML document into a list of its markup and text items using a single regular expression. Such a shallow parse of an XML document can be very useful for the construction of a variety of lightweight XML processing tools</em></strong></p>
-
-<p>(I do not quoted this one on a picture since I'm too afraid to awake Cthulhu)</p>
-
-<h1>
-  <a href="#then-what-are-regex-recommended-for" class="anchor">
-  </a>
-  Then what are regex <em>recommended</em> for
-</h1>
-
-<p>While use of complex regex are subject to discussions, there are perfect and obvious use cases for regex:</p>
-
-<ul>
-<li>Validation of input</li>
-<li>Cleaning of input</li>
-<li>Restructuring of input</li>
-<li>Looking for substrings within input</li>
-</ul>
-
-<h1>
-  <a href="#folklore" class="anchor">
-  </a>
-  Folklore
-</h1>
-
-<p>I discussed about <strong><em>WrongButGoodEnough</em></strong> regex that help you save the world on a Friday evening:<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--OvAaXuop--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/kogecvqvo2s12dtohfbw.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--OvAaXuop--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/kogecvqvo2s12dtohfbw.png" alt="Save"></a></p>
-
-<p>But writing regex is hard to master and you probably don't<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--7YktB5re--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/158rcsp35vv6mjmeua2i.jpg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--7YktB5re--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/158rcsp35vv6mjmeua2i.jpg" alt="Trial"></a></p>
-
-<p>One solution is to leave your cat typing the regex for you!<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--FKfomICQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pk17xzza4meohq74aop6.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--FKfomICQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pk17xzza4meohq74aop6.png" alt="Cat regex"></a></p>
-
-<h1>
-  <a href="#perl-folks-are-crazy-about-regex" class="anchor">
-  </a>
-  Perl folks are crazy about regex
-</h1>
-
-<p>I wanted to finish with this crazy fact, fasten your seat belts.</p>
-
-<p>Perl folks are really serious about regex<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--ue5_yCyS--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/z48um17vo69q3k5bvdaj.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--ue5_yCyS--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/z48um17vo69q3k5bvdaj.png" alt="Serious"></a></p>
-
-<p>This is mad.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
-     on Monday 22 February 2021 08:57</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_71">
@@ -3814,7 +3820,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 27 February 2021 21:49 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 27 February 2021 22:52 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->

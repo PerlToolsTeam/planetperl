@@ -7,9 +7,135 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-02-27T21:49:38Z</updated>
+  <updated>2021-02-27T22:52:30Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Building a microservice in Perl, part 1: Designing the API</title>
+    <link rel="alternate" href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll" type="text/html"/>
+    <content type="html">&lt;p&gt;A microservice can be thought of as the distributed computing implementation of the &lt;a href="http://catb.org/~esr/writings/taoup/html/ch01s06.html"&gt;Unix philosophy&lt;/a&gt; of &lt;strong&gt;“Do one thing and do it well.&lt;/strong&gt;” Usually modeled around specific business domains, a well-designed set of microservices each have their own lifecycle and communicate with each other and with consuming applications via technology-agnostic protocols like &lt;a href="https://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol"&gt;HTTP&lt;/a&gt;.  &lt;/p&gt;
+
+&lt;p&gt;Because of this, a microservice may be implemented using whatever is the best programming language, database, or other environment to fit the job. &lt;strong&gt;&lt;a href="https://www.perl.org/"&gt;Perl&lt;/a&gt; can be an excellent choice for development&lt;/strong&gt; because of its strengths as a battle-tested, expressive multi-paradigm language with a &lt;a href="https://www.perl.org/cpan.html"&gt;broad open-source library of modules&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;In this series of articles we’ll be using Perl, the &lt;a href="https://mojolicious.org/"&gt;Mojolicious&lt;/a&gt; web framework, and the &lt;a href="https://swagger.io/specification/"&gt;OpenAPI&lt;/a&gt; (formerly &lt;a href="https://swagger.io/"&gt;Swagger&lt;/a&gt;) specification for describing web services to develop an example microservice that adheres to the &lt;a href="https://restfulapi.net/"&gt;REST&lt;/a&gt; standard for communication over HTTP. Some knowledge of Perl and web development is assumed, and we’ll be linking to supporting documentation and literature as we go.&lt;/p&gt;
+
+&lt;p&gt;In a full microservices implementation, we would start by &lt;strong&gt;modeling the business domains being serviced and the explicit boundaries between them.&lt;/strong&gt; For the purposes of this series, we are limiting ourselves to developing only one microservice with a trivial purpose—a toy, if you will. This service will act as a simple dictionary allowing consumers to both query for the definitions of words as well as add new entries.&lt;/p&gt;
+
+&lt;p&gt;We could envision a variety of consumers: a web front-end, a mobile app, maybe even SMS text messaging. The key is that &lt;strong&gt;the design of our application programming interface (API) should not dictate the implementation or lifecycle&lt;/strong&gt; of any of these consumers, and it should be easy for their developers to understand its specification.&lt;/p&gt;
+
+&lt;p&gt;To that end, we turn to &lt;a href="https://spec.openapis.org/oas/v3.0.3.html"&gt;OpenAPI&lt;/a&gt;, which gives both our microservice and its consumers &lt;strong&gt;an unambiguous machine-readable description of the interface&lt;/strong&gt; without the need for additional code or documentation. And as we’ll see later, we’ll use that very same specification to drive our web framework to produce HTTP routes that accept valid input and produce valid output.&lt;/p&gt;
+
+&lt;p&gt;A full OpenAPI document can be written in either JSON or YAML format, but it must ultimately be able to be represented in both formats, so there are some &lt;a href="https://spec.openapis.org/oas/v3.0.3.html#format"&gt;limitations described in the spec&lt;/a&gt;. Here’s the OpenAPI document for our dictionary microservice in YAML:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight yaml"&gt;&lt;code&gt;&lt;span class="na"&gt;openapi&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;3.0.3&lt;/span&gt;
+&lt;span class="na"&gt;info&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+  &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Dictionary&lt;/span&gt;
+  &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;The PhoenixTrap.com dictionary microservice&lt;/span&gt;
+  &lt;span class="na"&gt;version&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;1.0.0&lt;/span&gt;
+  &lt;span class="na"&gt;license&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;name&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Artistic License &lt;/span&gt;&lt;span class="m"&gt;2.0&lt;/span&gt;
+    &lt;span class="na"&gt;url&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;https://www.perlfoundation.org/artistic-license-20.html&lt;/span&gt;
+&lt;span class="na"&gt;paths&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+  &lt;span class="s"&gt;/health&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;get&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="na"&gt;summary&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Check if this service is online&lt;/span&gt;
+      &lt;span class="na"&gt;x-mojo-to&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;monitoring#heartbeat&lt;/span&gt;
+      &lt;span class="na"&gt;responses&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+        &lt;span class="na"&gt;200&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+          &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;All systems operational&lt;/span&gt;
+          &lt;span class="na"&gt;content&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+            &lt;span class="s"&gt;application/json&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+              &lt;span class="na"&gt;schema&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+                &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;object&lt;/span&gt;
+        &lt;span class="na"&gt;500&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+          &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Something is wrong&lt;/span&gt;
+  &lt;span class="s"&gt;/word/{word}&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;get&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="na"&gt;summary&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Get the definition of a word&lt;/span&gt;
+      &lt;span class="na"&gt;x-mojo-to&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;word#define&lt;/span&gt;
+      &lt;span class="na"&gt;parameters&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;$ref&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;'&lt;/span&gt;&lt;span class="s"&gt;#/components/parameters/word'&lt;/span&gt;
+      &lt;span class="na"&gt;responses&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+        &lt;span class="na"&gt;200&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+          &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Found word&lt;/span&gt;
+          &lt;span class="na"&gt;content&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+            &lt;span class="s"&gt;application/json&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+              &lt;span class="na"&gt;schema&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+                &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;string&lt;/span&gt;
+        &lt;span class="na"&gt;404&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+          &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Could not find word&lt;/span&gt;
+    &lt;span class="na"&gt;post&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="na"&gt;summary&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Add or replace the definition of a word&lt;/span&gt;
+      &lt;span class="na"&gt;x-mojo-to&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;word#save&lt;/span&gt;
+      &lt;span class="na"&gt;parameters&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;$ref&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;'&lt;/span&gt;&lt;span class="s"&gt;#/components/parameters/word'&lt;/span&gt;
+      &lt;span class="na"&gt;requestBody&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+        &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Definition of a word&lt;/span&gt;
+        &lt;span class="na"&gt;required&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="no"&gt;true&lt;/span&gt;
+        &lt;span class="na"&gt;content&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+          &lt;span class="s"&gt;application/x-www-form-urlencoded&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+            &lt;span class="na"&gt;schema&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+              &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;object&lt;/span&gt;
+              &lt;span class="na"&gt;properties&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+                &lt;span class="na"&gt;definition&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+                  &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;string&lt;/span&gt;
+      &lt;span class="na"&gt;responses&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+        &lt;span class="na"&gt;200&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+          &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Word saved&lt;/span&gt;
+    &lt;span class="na"&gt;delete&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="na"&gt;summary&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Delete an entry from the dictionary&lt;/span&gt;
+      &lt;span class="na"&gt;x-mojo-to&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;word#remove&lt;/span&gt;
+      &lt;span class="na"&gt;parameters&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;$ref&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;'&lt;/span&gt;&lt;span class="s"&gt;#/components/parameters/word'&lt;/span&gt;
+      &lt;span class="na"&gt;responses&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+        &lt;span class="na"&gt;200&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+          &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;Word deleted&lt;/span&gt;
+&lt;span class="na"&gt;components&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+  &lt;span class="na"&gt;parameters&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;word&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+      &lt;span class="na"&gt;description&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;A word in the dictionary&lt;/span&gt;
+      &lt;span class="na"&gt;in&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;path&lt;/span&gt;
+      &lt;span class="na"&gt;name&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;word&lt;/span&gt;
+      &lt;span class="na"&gt;required&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="no"&gt;true&lt;/span&gt;
+      &lt;span class="na"&gt;schema&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+        &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;string&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;(I worked on this in the &lt;strong&gt;free online &lt;a href="https://editor.swagger.io/"&gt;Swagger Editor&lt;/a&gt;&lt;/strong&gt;, which checks your syntax, previews what API documentation might look like, and offers suggestions if it finds errors in your document.)&lt;/p&gt;
+
+&lt;p&gt;Most of the above should be fairly self-explanatory to any web developer, and you can check &lt;a href="https://spec.openapis.org/oas/v3.0.3.html"&gt;the OpenAPI specification&lt;/a&gt; for required and optional fields and their allowed values. The only odd field listed is &lt;code&gt;x-mojo-to&lt;/code&gt;; we’ll be using the &lt;a href="https://metacpan.org/pod/Mojolicious::Plugin::OpenAPI"&gt;Mojolicious::Plugin::OpenAPI&lt;/a&gt; module to read that field when generating routes to controllers in the &lt;a href="https://mojolicious.org/"&gt;Mojolicious&lt;/a&gt; web framework.&lt;/p&gt;
+
+&lt;p&gt;In the next installment, we’ll actually be writing some Perl by building our Mojo application and tests.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Mark Gardner</name>
+    </author>
+    <id>https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll</id>
+    <published>2021-02-27T22:09:59Z</published>
+    <updated>2021-02-27T22:09:59Z</updated>
+    <category term="perl"/>
+    <category term="microservices"/>
+    <category term="mojolicious"/>
+    <category term="openapi"/>
+  </entry>
   <entry>
     <title>Perl weekly challenge 101</title>
     <link rel="alternate" href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-101.html"/>
@@ -1835,125 +1961,6 @@ XML::YYLex                         0.04  B/BO/BOEWE/XML-YYLex-0.04.tar.gz
     <published>2021-02-22T10:00:00Z</published>
     <updated>2021-02-22T10:00:00Z</updated>
     <category term="list of tags?"/>
-  </entry>
-  <entry>
-    <title>Thoughts, quotes and thoughts about regex</title>
-    <link rel="alternate" href="https://dev.to/thibaultduponchelle/thoughts-citations-and-thoughts-about-regex-29h0" type="text/html"/>
-    <content type="html">&lt;h1&gt;
-  &lt;a href="#regex" class="anchor"&gt;
-  &lt;/a&gt;
-  Regex
-&lt;/h1&gt;
-
-&lt;p&gt;&lt;strong&gt;"Regex"&lt;/strong&gt; is the small name of &lt;a href="https://wiki.c2.com/?RegularExpression"&gt;Regular expressions&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;Regex&lt;/strong&gt; are one of the superpowers 💪 of &lt;a href="https://www.perl.org/"&gt;Perl&lt;/a&gt;&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--GXpBzaKn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/tioynjfepr3j7qzxdixr.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--GXpBzaKn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/tioynjfepr3j7qzxdixr.png" alt="Perl &amp;lt;3 Regex"&gt;&lt;/a&gt; &lt;/p&gt;
-
-&lt;p&gt;It's a &lt;em&gt;productivity&lt;/em&gt; superpower the same way knowing command line shortcuts and mastering vim.&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;Regex&lt;/strong&gt; could become one of &lt;em&gt;your&lt;/em&gt; programmer superpowers also if you decide to.&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--oa_xZAzd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/274xka2o0faorfaj6zcw.jpg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--oa_xZAzd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/274xka2o0faorfaj6zcw.jpg" alt="True power"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;But "regex" have also a &lt;em&gt;nefarious reputation&lt;/em&gt; because they are hard, error-prone and misused.&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--eN0pUTvs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4byfxbmyiwtic0sxya4h.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--eN0pUTvs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4byfxbmyiwtic0sxya4h.png" alt="100"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://en.wikipedia.org/wiki/Damian_Conway"&gt;Damian Conway&lt;/a&gt; is a master of regular expressions but you can sometimes feel the pain in his mouth when he discusses regex&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--16FA5JqU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/j0le639s5pcr5vlqnk5t.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--16FA5JqU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/j0le639s5pcr5vlqnk5t.png" alt="Pain"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Or even&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--OwHf232U--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/r4kxkfi0pxcx0scc2g73.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--OwHf232U--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/r4kxkfi0pxcx0scc2g73.png" alt="Misery"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;But on a more positive note, Damian said&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--AU4clVIe--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dv7a0xj0i80do0796esf.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--AU4clVIe--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dv7a0xj0i80do0796esf.png" alt="WrongButGoodEnough"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;It could be strange to advocate a &lt;em&gt;wrong thing&lt;/em&gt; but sometimes you just don't need more than a one shot program, and for me it would be dumb (or irresponsible) to spend more time than needed just &lt;strong&gt;"for the sake of correctness"&lt;/strong&gt;.&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--22ejCHoF--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/1ckek441gz594l4hjhvj.jpeg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--22ejCHoF--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/1ckek441gz594l4hjhvj.jpeg" alt="David Goodenough"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;I know it's not really the hype of these days where over engineering is better perceived than KISS principles (I exaggerate just a little) but it is pragmatism.&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#regex-are-bad" class="anchor"&gt;
-  &lt;/a&gt;
-  Regex are bad
-&lt;/h1&gt;
-
-&lt;p&gt;Regex are bad, everybody knows, and here is the very famous &lt;a href="https://stackoverflow.com/a/1732454"&gt;SO answer "You can't parse [X]HTML with regex"&lt;/a&gt; about that 😀 &lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--BkiIutSg--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fghx6z9n1duiha62sfnz.jpg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--BkiIutSg--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fghx6z9n1duiha62sfnz.jpg" alt="Idiot"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#are-they-really" class="anchor"&gt;
-  &lt;/a&gt;
-  Are they really?
-&lt;/h1&gt;
-
-&lt;p&gt;Some people have played the "devil's advocate" and came with regex for XML like this &lt;a href="https://stackoverflow.com/a/4234491"&gt;great answer from Tom Christiansen&lt;/a&gt; where he used regex to tokenize then Perl to parse.&lt;/p&gt;
-
-&lt;p&gt;But even &lt;strong&gt;Tom Christiansen&lt;/strong&gt; said &lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--JVyJVNQs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3gztnahxug1iev81axau.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--JVyJVNQs--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3gztnahxug1iev81axau.png" alt="Should"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Seems also like &lt;strong&gt;PCRE&lt;/strong&gt; are &lt;em&gt;more&lt;/em&gt; than simple regular grammars but actually I can't say if mathematically &lt;strong&gt;Perl regex&lt;/strong&gt; can or can't parse XML, &lt;a href="https://en.wikipedia.org/wiki/Regular_expression#Patterns_for_non-regular_languages"&gt;regular expression page on wikipedia&lt;/a&gt; says that &lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--6PiyrrI3--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2qef7xde37bme6twmawb.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--6PiyrrI3--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2qef7xde37bme6twmawb.png" alt="Regular not regular"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Another interesting old link on this topic is &lt;a href="https://www2.cs.sfu.ca/~cameron/REX.html"&gt;REX&lt;/a&gt;. The abstract of it is &lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;&lt;em&gt;The syntax of XML is simple enough that it is possible to parse an XML document into a list of its markup and text items using a single regular expression. Such a shallow parse of an XML document can be very useful for the construction of a variety of lightweight XML processing tools&lt;/em&gt;&lt;/strong&gt;&lt;/p&gt;
-
-&lt;p&gt;(I do not quoted this one on a picture since I'm too afraid to awake Cthulhu)&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#then-what-are-regex-recommended-for" class="anchor"&gt;
-  &lt;/a&gt;
-  Then what are regex &lt;em&gt;recommended&lt;/em&gt; for
-&lt;/h1&gt;
-
-&lt;p&gt;While use of complex regex are subject to discussions, there are perfect and obvious use cases for regex:&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Validation of input&lt;/li&gt;
-&lt;li&gt;Cleaning of input&lt;/li&gt;
-&lt;li&gt;Restructuring of input&lt;/li&gt;
-&lt;li&gt;Looking for substrings within input&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h1&gt;
-  &lt;a href="#folklore" class="anchor"&gt;
-  &lt;/a&gt;
-  Folklore
-&lt;/h1&gt;
-
-&lt;p&gt;I discussed about &lt;strong&gt;&lt;em&gt;WrongButGoodEnough&lt;/em&gt;&lt;/strong&gt; regex that help you save the world on a Friday evening:&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--OvAaXuop--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/kogecvqvo2s12dtohfbw.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--OvAaXuop--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/kogecvqvo2s12dtohfbw.png" alt="Save"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;But writing regex is hard to master and you probably don't&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--7YktB5re--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/158rcsp35vv6mjmeua2i.jpg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--7YktB5re--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/158rcsp35vv6mjmeua2i.jpg" alt="Trial"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;One solution is to leave your cat typing the regex for you!&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--FKfomICQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pk17xzza4meohq74aop6.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--FKfomICQ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pk17xzza4meohq74aop6.png" alt="Cat regex"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#perl-folks-are-crazy-about-regex" class="anchor"&gt;
-  &lt;/a&gt;
-  Perl folks are crazy about regex
-&lt;/h1&gt;
-
-&lt;p&gt;I wanted to finish with this crazy fact, fasten your seat belts.&lt;/p&gt;
-
-&lt;p&gt;Perl folks are really serious about regex&lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--ue5_yCyS--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/z48um17vo69q3k5bvdaj.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--ue5_yCyS--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/z48um17vo69q3k5bvdaj.png" alt="Serious"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;This is mad.&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Tib</name>
-    </author>
-    <id>https://dev.to/thibaultduponchelle/thoughts-citations-and-thoughts-about-regex-29h0</id>
-    <published>2021-02-22T08:57:46Z</published>
-    <updated>2021-02-22T08:57:46Z</updated>
-    <category term="perl"/>
-    <category term="regex"/>
-    <category term="programming"/>
   </entry>
   <entry>
     <title>Perl Weekly Challenge 100: Fun Time and Triangle Sum</title>
