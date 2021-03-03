@@ -55,6 +55,418 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/ovid/designing-an-oop-system-23k0">Designing an OOP System</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Language design is all fun and games until you cut yourself on the edge cases. Case in point would be <a href="https://dev.to/ovid/bringing-modern-oo-to-perl-51ak">Corinna</a>, an attempt to bring modern OOP (object-oriented programming) to the Perl programming language. It's been fun, but painful. And the core design of Corinna has been revisited multiple times to sand down the edges. It's been a journey.</p>
+
+<h1>
+  <a href="#the-background" class="anchor">
+  </a>
+  The Background
+</h1>
+
+<p>Perl has a multiverse of broken, half-implemented, slow, inconsistent OOP implementations available on the CPAN. If you've ever read <a href="http://winestockwebdesign.com/Essays/Lisp_Curse.html">The Lisp Curse</a> you understand why this is.</p>
+
+<p>Newcomers to Perl are often perplexed by strange talk about blessing references, but today, they're just told to download Moose from the CPAN. Or Moo. Or the long tail of many other OOP implementations.</p>
+
+<p>This situation has been unsatisfying for many experienced Perl developers. <a href="https://www.youtube.com/watch?v=lnleCcKqcv4">Stevan Little worked for a long time trying to define a solid OOP system for the Perl core</a>, but stopped. He did some great work, so I picked up the baton. And then the Perl Pumpking (the person who formerly oversaw Perl development), Sawyer X, told me to stop worrying about making something work and focus on design. If the design was good enough, they'd get someone to make it work.</p>
+
+<p>Hence, Corinna.</p>
+
+<h1>
+  <a href="#corinna" class="anchor">
+  </a>
+  Corinna
+</h1>
+
+<p>So what is Corinna? In short, it's an attempt to rewrite a part of the Perl language to allow a clean, class-based OO system that is comfortable for those preferring the dominant Moo/se model. It offers subtle affordances for <em>doing the right thing</em>, but still gives you the freedom to do something others would consider wrong.</p>
+
+<p>For example, if you use <a href="https://metacpan.org/pod/Moo">Moo</a>, how would you declare a <code>Person</code> object with just a <code>name</code> and an optional <code>title</code> attribute (think of attributes as "instance data")? (For the sake of brevity, we're going to ignore discussions about type constraints)<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Person</span> <span class="p">{</span>
+    <span class="k">use</span> <span class="nv">Moo</span><span class="p">;</span>
+
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">name</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span>       <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">required</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="p">);</span>
+
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">title</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+    <span class="p">);</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>I can then call <code>my $person = Person-&gt;new( name =&gt; 'Ovid' );</code> and later, <code>$person-&gt;name</code> returns "Ovid", as expected.</p>
+
+<p>If you're familiar with OO design, you know that just sharing all of your instance data by default is not a good idea. But in Moo (and Moose), it's difficult to write a useful attribute without giving it a public reader. Imagine you have a business rule which states that you must always refer to a customer by title+name if they have a title. You might want the <code>name</code> attribute reader to go away and be replaced by your own. To do that and keep your code working, you would add an <code>init_arg</code> key to the <code>name</code> declaration and rename <code>name</code> to <code>_name</code>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Person</span> <span class="p">{</span>
+    <span class="k">use</span> <span class="nv">Moo</span><span class="p">;</span>
+
+    <span class="c1"># init_arg is the name used in the constructor</span>
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">_name</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span>       <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">required</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s">init_arg</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">name</span><span class="p">',</span>
+    <span class="p">);</span>
+
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">title</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+    <span class="p">);</span>
+
+    <span class="k">sub </span><span class="nf">name</span> <span class="p">{</span>
+        <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+        <span class="k">return</span> <span class="nb">defined</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">title</span> 
+            <span class="p">?</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">title</span> <span class="o">.</span> <span class="p">'</span><span class="s1"> </span><span class="p">'</span> <span class="o">.</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_name</span>
+            <span class="p">:</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_name</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>That's looking a touch awkward and maybe you don't want them to be able to read the <code>title</code> directly and you certainly don't want people calling <code>$person-&gt;_name</code>. And if a subclass happens to override the "private" <code>_name</code> method? Your code breaks. So here's how it looks in Corinna:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">class</span> <span class="nv">Person</span> <span class="p">{</span>
+    <span class="nv">has</span> <span class="nv">$name</span>  <span class="p">:</span><span class="k">new</span><span class="p">;</span>
+    <span class="nv">has</span> <span class="nv">$title</span> <span class="p">:</span><span class="k">new</span> <span class="o">=</span> <span class="nb">undef</span><span class="p">;</span> <span class="c1"># optional</span>
+
+    <span class="nv">method</span> <span class="nv">name</span> <span class="p">()</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nb">defined</span> <span class="nv">$title</span> <span class="p">?</span> <span class="p">"</span><span class="si">$title</span><span class="s2"> </span><span class="si">$name</span><span class="p">"</span> <span class="p">:</span> <span class="nv">$name</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>In the above, you can pass <code>name</code> and an optional <code>title</code> to the constructor and they're perfectly encapsulated. You don't wind up with extra <code>$person-&gt;title</code> or <code>$person-&gt;_name</code> methods littering your namespace, and it's easier to read, to boot.</p>
+
+<p>What if I <em>want</em> people to be able to read the title? Just add a <code>:reader</code>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">has</span> <span class="nv">$title</span> <span class="p">:</span><span class="k">new</span> <span class="p">:</span><span class="nv">reader</span> <span class="o">=</span> <span class="nb">undef</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>Note that you can't actually <em>set</em> the title after object construction. This is one of the ways that Corinna tries to subtly reinforce not only encapsulation, but immutability. However, the design encourages immutability; it doesn't require it. If you want mutability, it's trivial. Just add a <code>:writer</code> and you can do <code>$person-&gt;set_title($new_title)</code>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">has</span> <span class="nv">$title</span> <span class="p">:</span><span class="k">new</span> <span class="p">:</span><span class="nv">reader</span> <span class="p">:</span><span class="nv">writer</span> <span class="o">=</span> <span class="nb">undef</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<h1>
+  <a href="#builders" class="anchor">
+  </a>
+  Builders
+</h1>
+
+<p>And then we have little things called "builders" in Moo/se terminology. Sometimes you want to call code to construct your attribute value:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Thing</span> <span class="p">{</span>
+    <span class="k">use</span> <span class="nv">Moo</span><span class="p">;</span>
+
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">attr</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span>       <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">required</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="p">);</span>
+
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">reverse_attr</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span>      <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">builder</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">_build_reverse_attr</span><span class="p">',</span>
+    <span class="p">);</span>
+
+    <span class="k">sub </span><span class="nf">_build_reverse_attr</span> <span class="p">{</span>
+        <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+        <span class="k">return</span> <span class="nb">scalar</span> <span class="nb">reverse</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">attr</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nv">say</span> <span class="nv">Thing</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span> <span class="s">attr</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">pupils</span><span class="p">'</span> <span class="p">)</span><span class="o">-&gt;</span><span class="nv">reverse_attr</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>The above prints <code>slipup</code> as you might expect. But what if <code>attr</code> was named <code>source</code>?<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Thing</span> <span class="p">{</span>
+    <span class="k">use</span> <span class="nv">Moo</span><span class="p">;</span>
+
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">source</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span>       <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">required</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="p">);</span>
+
+    <span class="nv">has</span> <span class="p">'</span><span class="s1">reverse_attr</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span>      <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">builder</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">_build_reverse_attr</span><span class="p">',</span>
+    <span class="p">);</span>
+
+    <span class="k">sub </span><span class="nf">_build_reverse_attr</span> <span class="p">{</span>
+        <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+        <span class="k">return</span> <span class="nb">scalar</span> <span class="nb">reverse</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">source</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nv">say</span> <span class="nv">Thing</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span> <span class="s">source</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">pupils</span><span class="p">'</span> <span class="p">)</span><span class="o">-&gt;</span><span class="nv">reverse_attr</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>Now you get a warning:</p>
+
+<blockquote>
+<p><code>Use of uninitialized value in reverse at person.pl line 20.</code></p>
+</blockquote>
+
+<p>That's because attributes are built in alphabetical order for Moo. This leads to people regularly declaring attributes as <code>lazy</code> to ensure the builder isn't called until (and if) the attribute is called:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code>    <span class="nv">has</span> <span class="p">'</span><span class="s1">reverse_attr</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span>      <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">builder</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">_build_reverse_attr</span><span class="p">',</span>
+        <span class="s">lazy</span>    <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="p">);</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>Before we explore further, let's look at the above in Corinna. Attributes are (generally) assigned values in the order they're declared (the exception being that, once you hit a <code>:new</code> attribute, they're all gathered and assigned as a group). Here's equivalent code in Corinna:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">class</span> <span class="nv">Thing</span> <span class="p">{</span>
+    <span class="nv">has</span> <span class="nv">$source</span>       <span class="p">:</span><span class="nv">reader</span> <span class="p">:</span><span class="k">new</span><span class="p">;</span>
+    <span class="nv">has</span> <span class="nv">$reverse_attr</span> <span class="p">:</span><span class="nv">reader</span> <span class="o">=</span> <span class="nb">scalar</span> <span class="nb">reverse</span> <span class="nv">$source</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>No fancy tricks required. </p>
+
+<p>That fixes this situation, but what's that <code>_build_reverse_attr</code> doing there in the Moo code in first place?</p>
+
+<p>First, creates a new method in your namespace. Thus, any subclass can now override this behavior and you have little control over it. <a href="https://ovid.github.io/articles/the-problem-with-builder.html">I've discussed this more at length elsewhere</a>. If you have any unusual construction requirements for your attributes in Moo/se, the natural <em>default</em> behavior is to allow subclasses to violate encapsulation! I ran <code>git grep -c '\&lt;builder\s\+=&gt;' lib</code> over a few local codebases and was disturbed by how common this behavior was. Even a brief perusal of the code showed that for most of these classes, I did not want to expose this behavior.</p>
+
+<p>But let's say you really, really want to let subclasses override your instance data. It's still possible. You still create a "builder" method, but you have to call it explicitly in the <code>ADJUST</code> phase (called after the object is constructed, but immediately before it's returned from the constructor).<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">class</span> <span class="nv">Thing</span> <span class="p">{</span>
+    <span class="nv">has</span> <span class="nv">$source</span>       <span class="p">:</span><span class="nv">reader</span> <span class="p">:</span><span class="k">new</span><span class="p">;</span>
+    <span class="nv">has</span> <span class="nv">$reverse_attr</span> <span class="p">:</span><span class="nv">reader</span><span class="p">;</span>
+
+    <span class="nv">ADJUST</span> <span class="p">(</span><span class="nv">%args</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nv">$reverse_attr</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_build_reverse_attr</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="nv">method</span> <span class="nv">_build_reverse_attr</span> <span class="p">()</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nb">scalar</span> <span class="nb">reverse</span> <span class="nv">$source</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nv">class</span> <span class="nv">Child</span> <span class="nv">isa</span> <span class="nv">Thing</span> <span class="p">{</span>
+    <span class="nv">method</span> <span class="nv">_build_reverse_attr</span> <span class="p">()</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nb">uc</span> <span class="nb">scalar</span> <span class="nb">reverse</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">source</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>So Corinna doesn't take anything away. It just makes the <em>natural</em> use of the class a touch closer to OOP best practices, but still allows you to "be naughty" if you really insist upon it. This fits well with the spirit of Perl.</p>
+
+<p>It's also interesting to consider this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">my</span> <span class="nv">$object</span> <span class="o">=</span> <span class="nn">Some::</span><span class="nv">Class</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>What happens when you call <code>-&gt;new</code>? Well, it creates the object. In commonly recommended "best practice" for OOP, whatever object that is returned by the constructor should be <em>complete</em> and ready for use. You usually don't want to call <code>new</code> and then <code>init</code> or other methods to make the object usable.</p>
+
+<p>However, up until the point that the constructor returns the instance, there is no guarantee that its usable. Why does this matter? Because between the time you call the constructor and the time it returns an instance, the class is doing a bunch of stuff to set itself up. And if you're calling builder methods—which might in turn call other methods—during this time, you're not guaranteed that the class is ready for use. This is why in our <code>Moo</code> code we had to declare <code>reverse_attr</code> as <code>lazy</code> to ensure it wouldn't be called before the instance was ready.</p>
+
+<p>We managed to skip that in Corinna because the attributes are assigned their values in declaration order, so by the time we got to <code>$reverse_attr</code>, we knew that <code>$source</code> should have a value (again, punting on types).</p>
+
+<p>So those are just a few of the design considerations which have gone into Corinna. The resulting Perl code tends to be shorter and more declarative than Moo/se, and it tends to push you towards better encapsulation and immutability, though it doesn't require it. </p>
+
+<p>If there are particular topics about Corinna you would like to hear about, please let me know.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Ovid
+     on Wednesday 03 March 2021 10:49</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/a-guide-to-versions-in-perl-3ng1">A Guide to Versions in Perl</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Version numbers in Perl are very important; they allow orderly updating and maintenance of modules and distributions across the <a href="https://metacpan.org">CPAN</a>, and allow CPAN modules and consumers to require the versions of modules with the bugfixes or features they need. However, in this context, they are also a very unique beast with a complex and bumpy history that leads to some surprises for those who are not familiar with the nuances. These are the things CPAN authors should know about versions in Perl, and are nice for consumers to know as well.</p>
@@ -398,7 +810,7 @@
      on Wednesday 03 March 2021 00:52</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakuast-grant-report-2021-02">RakuAST Grant Report for 2021-02</a></h2>
             </div> <!-- card-header -->
@@ -431,7 +843,7 @@
      on Tuesday 02 March 2021 13:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/gzipzopfli---another-compression-module.html">Gzip::Zopfli - another compression module</a></h2>
             </div> <!-- card-header -->
@@ -472,7 +884,7 @@
      on Monday 01 March 2021 22:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/bringing-modern-oo-to-perl-51ak">Bringing Modern OO To Perl</a></h2>
             </div> <!-- card-header -->
@@ -625,7 +1037,7 @@
      on Monday 01 March 2021 11:18</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/1j3">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -637,7 +1049,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/2d2">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -649,7 +1061,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/0na">Smart Shopper = Smart Saver. Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -661,7 +1073,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/scs">Mad Men (and women) of London. Perl in London</a></h2>
             </div> <!-- card-header -->
@@ -673,7 +1085,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/t0i">All Aboard to Your Next Adventure! Perl Role in Malta</a></h2>
             </div> <!-- card-header -->
@@ -685,7 +1097,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021 </a></h2>
             </div> <!-- card-header -->
@@ -697,7 +1109,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -709,7 +1121,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -721,7 +1133,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -733,7 +1145,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting - Lightning Talks</a></h2>
             </div> <!-- card-header -->
@@ -745,7 +1157,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -757,7 +1169,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -769,7 +1181,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/what-to-do-with-legacy-perl-code.html">What to do with legacy Perl code?</a></h2>
             </div> <!-- card-header -->
@@ -781,7 +1193,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/legacy-perl-codebase.html">What can you do if you become the manager of a Perl development team with a huge legacy code-base?</a></h2>
             </div> <!-- card-header -->
@@ -793,7 +1205,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -805,7 +1217,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-in-2025-fosdem-video-review-1k70">&quot;Perl in 2025&quot; FOSDEM video review</a></h2>
             </div> <!-- card-header -->
@@ -817,7 +1229,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-099">Perl Review - Perl Weekly Challenge - 099</a></h2>
             </div> <!-- card-header -->
@@ -829,7 +1241,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-101">RECAP - The Weekly Challenge - 101</a></h2>
             </div> <!-- card-header -->
@@ -841,7 +1253,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-102">The Weekly Challenge - 102</a></h2>
             </div> <!-- card-header -->
@@ -853,7 +1265,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/02/cpan-mirror-list-changes.html">CPAN Mirror List Changes</a></h2>
             </div> <!-- card-header -->
@@ -865,7 +1277,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/browse-cpan-modules-per-namespaces-6p">Browse CPAN modules per namespaces</a></h2>
             </div> <!-- card-header -->
@@ -877,7 +1289,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll">Building a microservice in Perl, part 1: Designing the API</a></h2>
             </div> <!-- card-header -->
@@ -889,7 +1301,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/github-actions-ci-job-for-test-class">GitHub Actions CI job for Perl Test::Class - checking downstream dependencies as well</a></h2>
             </div> <!-- card-header -->
@@ -901,7 +1313,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/27/ipc-cmd-considered-harmful/">IPC::Cmd considered harmful</a></h2>
             </div> <!-- card-header -->
@@ -913,7 +1325,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/the-hijacking-of-perl-com/">The Hijacking of Perl.com</a></h2>
             </div> <!-- card-header -->
@@ -925,7 +1337,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/28/xmpl-visibility/">xmpl - visibility API</a></h2>
             </div> <!-- card-header -->
@@ -937,7 +1349,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/billcosta/way-too-many-if-then-elses-try-a-lookup-table-3j2o">Way Too Many IF-THEN-ELSEs? Try a Lookup Table</a></h2>
             </div> <!-- card-header -->
@@ -949,7 +1361,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/26/line-noise/">Line noise</a></h2>
             </div> <!-- card-header -->
@@ -961,7 +1373,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-11-core.html">Writing a Perl Core Feature - part 11: Core modules</a></h2>
             </div> <!-- card-header -->
@@ -973,7 +1385,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/what-return-is-expected">What return is expected from a function?</a></h2>
             </div> <!-- card-header -->
@@ -985,7 +1397,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-10.html">Writing a Perl Core Feature - part 10: Documentation</a></h2>
             </div> <!-- card-header -->
@@ -997,7 +1409,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/exceptional-perl-failure-is-an-option-382h">Exceptional Perl: Failure is an option</a></h2>
             </div> <!-- card-header -->
@@ -1009,7 +1421,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/23/xmpl-remote-healthz-revisited/">xmpl - remote key/value store healthz revisited</a></h2>
             </div> <!-- card-header -->
@@ -1021,7 +1433,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/random-integer-generation-in-an-interval-with-modern-oop-perl-4p2c">Random integer generation in an interval with Modern OOP Perl</a></h2>
             </div> <!-- card-header -->
@@ -1033,7 +1445,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/sets">Sets in Perl using Set::Scalar</a></h2>
             </div> <!-- card-header -->
@@ -1045,7 +1457,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/22/mojo-useragent-intro-notes/">Mojo::UserAgent introductory notes</a></h2>
             </div> <!-- card-header -->
@@ -1057,7 +1469,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/thoughts-citations-and-thoughts-about-regex-29h0">Thoughts, quotes and thoughts about regex</a></h2>
             </div> <!-- card-header -->
@@ -1069,7 +1481,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-9.html">Writing a Perl Core Feature - part 9: Tests</a></h2>
             </div> <!-- card-header -->
@@ -1081,7 +1493,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rt-cpan-org-upgraded">rt.cpan.org has a new home</a></h2>
             </div> <!-- card-header -->
@@ -1093,7 +1505,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/perl-532/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-532-ad&utm_campaign=user-acquisition">Multi-OS Universal Perl Package Management</a></h2>
             </div> <!-- card-header -->
@@ -1105,7 +1517,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/501.html">#501 - Perl and Quality</a></h2>
             </div> <!-- card-header -->
@@ -1122,7 +1534,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/03/01/list-of-new-cpan-distributions-feb-2021/">List of new CPAN distributions – Feb 2021</a></h2>
             </div> <!-- card-header -->
@@ -1755,7 +2167,7 @@
      on Monday 01 March 2021 01:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-101-jeo">Weekly Challenge 101</a></h2>
             </div> <!-- card-header -->
@@ -1921,7 +2333,7 @@ the   quick brown
      on Sunday 28 February 2021 11:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/the-hijacking-of-perl-com/">The Hijacking of Perl.com</a></h2>
             </div> <!-- card-header -->
@@ -2181,7 +2593,7 @@ If you are interested in helping with that, get in touch with them.</p>
      on Sunday 28 February 2021 08:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/billcosta/way-too-many-if-then-elses-try-a-lookup-table-3j2o">Way Too Many IF-THEN-ELSEs?  Try a Lookup Table</a></h2>
             </div> <!-- card-header -->
@@ -2449,129 +2861,6 @@ If you are interested in helping with that, get in touch with them.</p>
 
               <p class="text-right"><small>Published by Bill Costa
      on Sunday 28 February 2021 01:33</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_50">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll">Building a microservice in Perl, part 1: Designing the API</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>A microservice can be thought of as the distributed computing implementation of the <a href="http://catb.org/~esr/writings/taoup/html/ch01s06.html">Unix philosophy</a> of <strong>“Do one thing and do it well.</strong>” Usually modeled around specific business domains, a well-designed set of microservices each have their own lifecycle and communicate with each other and with consuming applications via technology-agnostic protocols like <a href="https://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol">HTTP</a>.  </p>
-
-<p>Because of this, a microservice may be implemented using whatever is the best programming language, database, or other environment to fit the job. <strong><a href="https://www.perl.org/">Perl</a> can be an excellent choice for development</strong> because of its strengths as a battle-tested, expressive multi-paradigm language with a <a href="https://www.perl.org/cpan.html">broad open-source library of modules</a>.</p>
-
-<p>In this series of articles, we’ll be using Perl, the <a href="https://mojolicious.org/">Mojolicious</a> web framework, and the <a href="https://swagger.io/specification/">OpenAPI</a> (formerly <a href="https://swagger.io/">Swagger</a>) specification for describing web services to develop an example microservice that adheres to the <a href="https://restfulapi.net/">REST</a> architectural style for communication over HTTP. Some knowledge of Perl and web development is assumed, and we’ll be linking to supporting documentation and literature as we go.</p>
-
-<p>In a full microservices implementation, we would start by <strong>modeling the business domains being serviced and the explicit boundaries between them.</strong> For the purposes of this series, we are limiting ourselves to developing only one microservice with a trivial purpose—a toy, if you will. This service will act as a simple dictionary allowing consumers to both query for the definitions of words as well as add new entries.</p>
-
-<p>We could envision a variety of consumers: a web front-end, a mobile app, maybe even SMS text messaging. The key is that <strong>the design of our application programming interface (API) should not dictate the implementation or lifecycle</strong> of any of these consumers, and it should be easy for their developers to understand its specification.</p>
-
-<p>To that end, we turn to <a href="https://spec.openapis.org/oas/v3.0.3.html">OpenAPI</a>, which gives both our microservice and its consumers <strong>an unambiguous machine-readable description of the interface</strong> without the need for additional code or documentation. And as we’ll see later, we’ll use that very same specification to drive our web framework to produce HTTP routes that accept valid input and produce valid output.</p>
-
-<p>A full OpenAPI document can be written in either JSON or YAML format, but it must ultimately be able to be represented in both formats, so there are some <a href="https://spec.openapis.org/oas/v3.0.3.html#format">limitations described in the spec</a>. Here’s the OpenAPI document for our dictionary microservice in YAML:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight yaml"><code><span class="na">openapi</span><span class="pi">:</span> <span class="s">3.0.3</span>
-<span class="na">info</span><span class="pi">:</span>
-  <span class="na">title</span><span class="pi">:</span> <span class="s">Dictionary</span>
-  <span class="na">description</span><span class="pi">:</span> <span class="s">The PhoenixTrap.com dictionary microservice</span>
-  <span class="na">version</span><span class="pi">:</span> <span class="s">1.0.0</span>
-  <span class="na">license</span><span class="pi">:</span>
-    <span class="na">name</span><span class="pi">:</span> <span class="s">Artistic License </span><span class="m">2.0</span>
-    <span class="na">url</span><span class="pi">:</span> <span class="s">https://www.perlfoundation.org/artistic-license-20.html</span>
-<span class="na">paths</span><span class="pi">:</span>
-  <span class="s">/health</span><span class="pi">:</span>
-    <span class="na">get</span><span class="pi">:</span>
-      <span class="na">summary</span><span class="pi">:</span> <span class="s">Check if this service is online</span>
-      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">monitoring#heartbeat</span>
-      <span class="na">responses</span><span class="pi">:</span>
-        <span class="na">200</span><span class="pi">:</span>
-          <span class="na">description</span><span class="pi">:</span> <span class="s">All systems operational</span>
-          <span class="na">content</span><span class="pi">:</span>
-            <span class="s">application/json</span><span class="pi">:</span>
-              <span class="na">schema</span><span class="pi">:</span>
-                <span class="na">type</span><span class="pi">:</span> <span class="s">object</span>
-        <span class="na">500</span><span class="pi">:</span>
-          <span class="na">description</span><span class="pi">:</span> <span class="s">Something is wrong</span>
-  <span class="s">/word/{word}</span><span class="pi">:</span>
-    <span class="na">get</span><span class="pi">:</span>
-      <span class="na">summary</span><span class="pi">:</span> <span class="s">Get the definition of a word</span>
-      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">word#define</span>
-      <span class="na">parameters</span><span class="pi">:</span>
-      <span class="pi">-</span> <span class="s">$ref</span><span class="pi">:</span> <span class="s1">'</span><span class="s">#/components/parameters/word'</span>
-      <span class="na">responses</span><span class="pi">:</span>
-        <span class="na">200</span><span class="pi">:</span>
-          <span class="na">description</span><span class="pi">:</span> <span class="s">Found word</span>
-          <span class="na">content</span><span class="pi">:</span>
-            <span class="s">application/json</span><span class="pi">:</span>
-              <span class="na">schema</span><span class="pi">:</span>
-                <span class="na">type</span><span class="pi">:</span> <span class="s">string</span>
-        <span class="na">404</span><span class="pi">:</span>
-          <span class="na">description</span><span class="pi">:</span> <span class="s">Could not find word</span>
-    <span class="na">post</span><span class="pi">:</span>
-      <span class="na">summary</span><span class="pi">:</span> <span class="s">Add or replace the definition of a word</span>
-      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">word#save</span>
-      <span class="na">parameters</span><span class="pi">:</span>
-      <span class="pi">-</span> <span class="s">$ref</span><span class="pi">:</span> <span class="s1">'</span><span class="s">#/components/parameters/word'</span>
-      <span class="na">requestBody</span><span class="pi">:</span>
-        <span class="na">description</span><span class="pi">:</span> <span class="s">Definition of a word</span>
-        <span class="na">required</span><span class="pi">:</span> <span class="no">true</span>
-        <span class="na">content</span><span class="pi">:</span>
-          <span class="s">application/x-www-form-urlencoded</span><span class="pi">:</span>
-            <span class="na">schema</span><span class="pi">:</span>
-              <span class="na">type</span><span class="pi">:</span> <span class="s">object</span>
-              <span class="na">properties</span><span class="pi">:</span>
-                <span class="na">definition</span><span class="pi">:</span>
-                  <span class="na">type</span><span class="pi">:</span> <span class="s">string</span>
-      <span class="na">responses</span><span class="pi">:</span>
-        <span class="na">200</span><span class="pi">:</span>
-          <span class="na">description</span><span class="pi">:</span> <span class="s">Word saved</span>
-    <span class="na">delete</span><span class="pi">:</span>
-      <span class="na">summary</span><span class="pi">:</span> <span class="s">Delete an entry from the dictionary</span>
-      <span class="na">x-mojo-to</span><span class="pi">:</span> <span class="s">word#remove</span>
-      <span class="na">parameters</span><span class="pi">:</span>
-      <span class="pi">-</span> <span class="s">$ref</span><span class="pi">:</span> <span class="s1">'</span><span class="s">#/components/parameters/word'</span>
-      <span class="na">responses</span><span class="pi">:</span>
-        <span class="na">200</span><span class="pi">:</span>
-          <span class="na">description</span><span class="pi">:</span> <span class="s">Word deleted</span>
-<span class="na">components</span><span class="pi">:</span>
-  <span class="na">parameters</span><span class="pi">:</span>
-    <span class="na">word</span><span class="pi">:</span>
-      <span class="na">description</span><span class="pi">:</span> <span class="s">A word in the dictionary</span>
-      <span class="na">in</span><span class="pi">:</span> <span class="s">path</span>
-      <span class="na">name</span><span class="pi">:</span> <span class="s">word</span>
-      <span class="na">required</span><span class="pi">:</span> <span class="no">true</span>
-      <span class="na">schema</span><span class="pi">:</span>
-        <span class="na">type</span><span class="pi">:</span> <span class="s">string</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>(I worked on this in the <strong>free online <a href="https://editor.swagger.io/">Swagger Editor</a></strong>, which checks your syntax, previews what API documentation might look like, and offers suggestions if it finds errors in your document.)</p>
-
-<p>Most of the above should be fairly self-explanatory to any web developer, and you can check <a href="https://spec.openapis.org/oas/v3.0.3.html">the OpenAPI specification</a> for required and optional fields and their allowed values. The only odd field listed is <code>x-mojo-to</code>; we’ll be using the <a href="https://metacpan.org/pod/Mojolicious::Plugin::OpenAPI">Mojolicious::Plugin::OpenAPI</a> module to read that field when generating routes to controllers in the <a href="https://mojolicious.org/">Mojolicious</a> web framework.</p>
-
-<p>In the next installment, we’ll actually be writing some Perl by building our Mojo application and tests.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Mark Gardner
-     on Saturday 27 February 2021 22:09</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_51">
@@ -3654,19 +3943,6 @@ Der Januar ist rum, Zeit mal nachzuschauen was wir im Januar so alles auf CPAN g
      on Saturday 06 February 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_75">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-02-03-perl-anwendungen-fail2ban">Sicherheit für Perl-Anwendungen: fail2ban</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-Ist eine Webanwendung öffentlich erreichbar, wird es nicht lange dauern und irgendwelche Bots versuchen sich anzumelden. Oder es werden wild irgendwelche URLs aufgerufen. Auch wenn die Anmeldeversuche wahrscheinlich scheitern, geht die Bot-Aktivität zu Lasten der Webanwendung. Und mit genügend versuchen klappt es vielleicht doch mal, dass sich jemand Unbefugtes anmeldet.       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
-
-              <p class="text-right"><small>Published
-     on Wednesday 03 February 2021 10:00</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
 
         </div><!-- col-md-8 -->
         <div class="col-md-2">
@@ -3685,7 +3961,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 03 March 2021 09:53 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 03 March 2021 11:46 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
