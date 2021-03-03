@@ -55,6 +55,351 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/grinnz/a-guide-to-versions-in-perl-3ng1">A Guide to Versions in Perl</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Version numbers in Perl are very important; they allow orderly updating and maintenance of modules and distributions across the <a href="https://metacpan.org">CPAN</a>, and allow CPAN modules and consumers to require the versions of modules with the bugfixes or features they need. However, in this context, they are also a very unique beast with a complex and bumpy history that leads to some surprises for those who are not familiar with the nuances. These are the things CPAN authors should know about versions in Perl, and are nice for consumers to know as well.</p>
+
+<p>To summarize:</p>
+
+<ul>
+<li><p>Versions in Perl come in two forms, decimal numbers and dotted decimal tuples.</p></li>
+<li><p>The two formats can be compared using a defined conversion method, implemented by the <a href="https://perldoc.pl/version">version</a> module.</p></li>
+<li><p>Versions for modules should be declared as string values.</p></li>
+<li><p>Underscores can be used in either form of version to indicate a trial version, but have pitfalls to watch for.</p></li>
+<li><p>The VERSION method can be used on any module to test if it's a certain version or greater, and version objects can be used for arbitrary version comparisons.</p></li>
+</ul>
+
+<h1>
+  <a href="#version-schemes" class="anchor">
+  </a>
+  Version Schemes
+</h1>
+
+<p>To start with, it's important to know that there are two distinct types of versions recognized by Perl. The first kind is simply a decimal number, with digits before and after a decimal separator, for example '1.0' or '0.003'. These versions are compared as numbers, so '1.1' and '1.10' refer to the same version. Despite being numbers, they should always be declared and referenced as strings within the code, so that any trailing zeroes are kept around for consistency in display, and to avoid possible floating point errors for versions with a particularly large number of digits.</p>
+
+<p>While decimal number versions are a simple concept, they are different from the versions used by most everything outside of Perl. For that, Perl recognizes a second type of version: a tuple (or sequence) of integers separated by dots, sometimes referred to as "dotted-decimal" versions, and used for the concept of <a href="https://semver.org/">semantic versioning</a>. These look like 'v1.2.3' and 'v0.0.30'. For these versions, each segment is an integer, so trailing zeroes are significant -- 'v1.2.3' is the same version as 'v1.02.03', but not the same as 'v1.20.30'. Each segment after the first must also be 999 or lower, to allow conversion as described in the next section.</p>
+
+<p>Neither of these version forms allow alphabetic characters or hyphens, as you may see in other versioning schemes. I'll go into the use of underscores later.</p>
+
+<p>Responsible for parsing and disambiguating these two types of versions, as well as performing version comparisons as described below, is the module <a href="https://perldoc.pl/version">version.pm</a> (referred to in this way to disambiguate from the word "version" itself). It has been a core module since Perl v5.10.0, and it is also dual-life, so you can install a newer version from CPAN on any version of Perl (which is helpful for reasons that will become apparent). It disambiguates these two types with simple rules: if the version contains a leading "v" or more than one decimal separator, it's a version tuple; otherwise, it's a decimal number. For this reason it's best to include both a leading "v" and at least two decimal separators for clarity when using tuple versions.</p>
+
+<h1>
+  <a href="#comparing-and-converting" class="anchor">
+  </a>
+  Comparing and Converting
+</h1>
+
+<p>For the sake of comparison, a conversion method is defined between the two types of versions. The first integer in a tuple version and the integer component of a decimal version are considered the same, and each successive segment of the tuple version is considered equivalent to three decimal places in a decimal version. So for example, to convert the version '3.01002' to a tuple version, the first segment is 3, the second is 10, and the third is 20 (padding with zeroes so you have groups of 3 decimal places), resulting in 'v3.10.20'. To convert the version 'v0.4.1' to a decimal version, the integer component is 0, the first three decimal places after the separator are 004, and the next three are 001, resulting in '0.004001'.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>AAA.BBBCCC &lt;-&gt; vAAA.BBB.CCC
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>This method extends to however many segments or decimal places a version may have. The conversion is used by version.pm to compare version objects sourced from either scheme of version. In this way, Perl can determine how one version compares to another even when they are using different schemes.</p>
+
+<h1>
+  <a href="#declaring-versions" class="anchor">
+  </a>
+  Declaring Versions
+</h1>
+
+<p>Version numbers of each of these forms are not only recognized by Perl for the purpose of checking module versions at runtime, but also by the PAUSE indexer when indexing CPAN modules. In this case and similarly when versions are extracted using <a href="https://perldoc.pl/Module::Metadata">Module::Metadata</a>, the behavior is to find the declaration of $VERSION and execute only that line in isolation, so your version declaration line must be executable on its own. The simplest and standard form of declaration is:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="p">'</span><span class="s1">1.02</span><span class="p">';</span> <span class="c1"># for decimal versions, or</span>
+<span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="p">'</span><span class="s1">v1.2.3</span><span class="p">';</span> <span class="c1"># for tuple versions</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>As noted in David Golden's blog post <a href="http://www.dagolden.com/index.php/369/version-numbers-should-be-boring/">Version Numbers Should Be Boring</a>, support for tuple versions has varied widely among old versions of Perl. As support is mostly based on the version.pm module, which is core after Perl v5.10.0, you need to take special care if your module will use tuple versions on Perl v5.8.9 or older. Your module should declare a dependency on version.pm (at least version 0.77, but preferably more recent), and declare the version in this way:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">version</span> <span class="mf">0.77</span><span class="p">;</span> <span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="nv">version</span><span class="o">-&gt;</span><span class="nv">declare</span><span class="p">('</span><span class="s1">v1.2.3</span><span class="p">');</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>Keeping this whole declaration on a single line is important so that version.pm is always loaded when this line is executed by PAUSE or other version extraction tools. And of course, the simpler way to remain compatible with older versions of Perl is to stick to decimal number versions.</p>
+
+<h1>
+  <a href="#underscores-in-versions" class="anchor">
+  </a>
+  Underscores in Versions
+</h1>
+
+<p>Another complex factor in Perl version numbers is the use of underscores. Underscores are, by convention, used to indicate a development or trial release of a module or distribution, which should not be <a href="https://github.com/andk/pause/blob/master/doc/operating-model.md#3-indexing-permissions">indexed by PAUSE</a>.</p>
+
+<p>For decimal versions, it's mostly straightforward: an underscore is placed somewhere between the digits, and ignored for comparison purposes. However, since these versions look like decimal numbers, some may naively compare them using numeric operators, which will fail if they contain an underscore:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="p">'</span><span class="s1">0.01_02</span><span class="p">';</span>
+<span class="k">if</span> <span class="p">(</span><span class="nv">$VERSION</span> <span class="o">&gt;=</span> <span class="p">'</span><span class="s1">0.0101</span><span class="p">')</span> <span class="p">{</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>This comparison will fail (and throw a non-numeric warning if warnings are enabled) because $VERSION is truncated to '0.01' when used as a number. (A less naive comparison may be performed using the VERSION method or version.pm objects as described later.) To account for this possibility while still leaving the underscore in the declaration for static parsers, a common idiom is to remove the underscore in a following line:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="p">'</span><span class="s1">0.01_02</span><span class="p">';</span>
+<span class="nv">$VERSION</span> <span class="o">=~</span> <span class="sr">tr/_//d</span><span class="p">;</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>You may also see eval() used to remove the underscore, but the tr method is more straightforward and preserves trailing zeroes.</p>
+
+<p>Underscores in tuple versions have a significantly more complicated history, and may be interpreted wildly differently depending on the version of version.pm in use. My recommendation would be to avoid doing this entirely, but if you must, your distribution should declare a dependency on version.pm version 0.9915, when its interpretation of underscores in tuple versions was fixed in several ways, and so that it considers underscores in tuple versions the same way as in decimal versions (i.e. not as a separator).</p>
+
+<h2>
+  <a href="#alternative-to-underscore-versions" class="anchor">
+  </a>
+  Alternative to Underscore Versions
+</h2>
+
+<p>Rather than using underscores in your versions, there are other mechanisms to indicate a development or trial release of a distribution that don't involve module versions. If the archive file uploaded to CPAN has a name ending in -TRIAL (before the file extensions), PAUSE <a href="https://github.com/andk/pause/blob/master/doc/operating-model.md#35-factors-considering-in-the-indexing-phase">will not index it as a stable release</a>. Additionally, you can set the <a href="https://perldoc.pl/CPAN::Meta::Spec#release_status">release_status</a> metadata field in meta-spec 2; a value of "testing" or "unstable" will indicate that the release should not be indexed. The method of setting this <a href="http://blogs.perl.org/users/neilb/2017/05/specifying-dependencies-for-your-cpan-distribution.html">depends on your authoring tool</a>. At the time of writing, either of these methods is sufficient to prevent PAUSE from indexing the distribution, and both are performed automatically by the "--trial" option when releasing using Dist::Zilla or Minilla.</p>
+
+<h1>
+  <a href="#checking-for-versions" class="anchor">
+  </a>
+  Checking for Versions
+</h1>
+
+<p>With all of this in mind, the safest and most consistent way to check for a particular version of a module is with the <a href="https://perldoc.pl/UNIVERSAL#VERSION">UNIVERSAL::VERSION</a> method, which is implicitly used by the <a href="https://perldoc.pl/functions/use">use Module::Name VERSION</a> syntax. The VERSION method compares both the module's $VERSION and the passed version as version.pm objects, which automatically does the above-mentioned conversion between version schemes if needed, and throws an exception if the passed version is less than the module version. Like when declaring versions, the version passed to the VERSION method should always be a string or version object.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">if</span> <span class="p">(</span><span class="nb">eval</span> <span class="p">{</span> <span class="nb">require</span> <span class="nn">Module::</span><span class="nv">Name</span><span class="p">;</span> <span class="nn">Module::</span><span class="nv">Name</span><span class="o">-&gt;</span><span class="nv">VERSION</span><span class="p">('</span><span class="s1">v1.2.3</span><span class="p">');</span> <span class="mi">1</span> <span class="p">})</span> <span class="p">{</span>
+  <span class="c1"># Module::Name is able to be loaded and is at least version v1.2.3</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>You can of course use a <a href="http://mvp.kablamo.org/cpan/exceptions/">nicer exception-handling method</a> than bare eval if appropriate.</p>
+
+<p>On Perls older than v5.10.0 you should make sure to 'use version' before doing a comparison involving tuple versions, which will update the VERSION method to use version objects as it does on more recent perls. I would also, as above, recommend depending on version.pm version 0.9915 if you intend to do any comparisons involving versions with underscores. </p>
+
+<p>A more generic method of performing arbitrary version comparisons is to parse the versions into version.pm objects and compare them using standard numeric operators.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">version</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">(</span><span class="nv">version</span><span class="o">-&gt;</span><span class="nv">parse</span><span class="p">('</span><span class="s1">v1.0.3</span><span class="p">')</span> <span class="o">==</span> <span class="nv">version</span><span class="o">-&gt;</span><span class="nv">parse</span><span class="p">('</span><span class="s1">1.000003</span><span class="p">'))</span> <span class="p">{</span>
+  <span class="c1"># versions are equivalent</span>
+<span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<h1>
+  <a href="#versions-for-vendors" class="anchor">
+  </a>
+  Versions for Vendors
+</h1>
+
+<p>Perl versions aren't just used within Perl, of course. If you are a CPAN author, you should be mindful that Perl modules from CPAN are packaged for use in various distributions, which primarily use the tuple version format. This doesn't mean you need to use it yourself, but to be polite to those translating your versions, you should follow these simple rules:</p>
+
+<ol>
+<li><p>If using decimal versions, never decrease the number of significant digits you use without a major version bump. For example, go from '1.19' to '1.20' or '2.0', not to '1.2'.</p></li>
+<li><p>Never change version schemes without a major version bump. Even if you use the above translation correctly, the package vendor may not, and thus end up with a decreasing version.</p></li>
+</ol>
+
+<h1>
+  <a href="#methods-to-avoid" class="anchor">
+  </a>
+  Methods to Avoid
+</h1>
+
+<p>There are a couple other ways to declare versions that should be wholly avoided. One is to declare a bare decimal number version, which means you will lose trailing zeroes and possibly encounter floating-point issues. Sometimes this is used because Perl has a feature that looks like underscores in version numbers:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="mf">0.01_02</span><span class="p">;</span> <span class="c1"># don't do this</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>However, Perl will immediately compile this to the number 0.0102; underscores in numeric literals are only a visual-aid feature.</p>
+
+<p>Another method with a complicated history is the Perl <a href="https://perldoc.pl/perldata#Version-Strings">vstrings</a> feature. This was a feature added in Perl v5.6.0 that seemed to add a convenient syntax for declaring versions that would be stored as a binary string.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="nv">v1</span><span class="mf">.2.3</span><span class="p">;</span> <span class="c1"># don't do this</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+<p>This example would create a string consisting of three characters, with ordinals 1, 2, and 3, equivalent to the string "\x01\x02\x03" (note: the vstring syntax uses decimal ordinals, but the '\x' syntax uses hexadecimal ordinals). While version.pm does parse and allow vstrings to be used to initialize version objects, their interpretation is inconsistent among older versions of Perl and their implementation is surprising in the context of versions (for instance, they are not numerically comparable), so it's better to just use a string. It turns out vstrings are most useful for creating binary string literals, and not versions.</p>
+
+<h1>
+  <a href="#perl-perl-versions" class="anchor">
+  </a>
+  Perl Perl Versions
+</h1>
+
+<p>As you may notice, the versions of the Perl interpreter itself use the same rules as those for Perl modules. The <a href="https://perldoc.pl/variables/%24%5D">$]</a> variable is a representation of the version of the current Perl interpreter as a decimal number, and the <a href="https://perldoc.pl/variables/%24%5EV">$^V</a> variable is the version as a version object. From Perl v5.6.0 until Perl v5.10.0 $^V was a vstring rather than a version object, so it's not recommended to use this variable if your code will be running on Perls v5.8.9 or older.</p>
+
+<p>The <a href="https://perldoc.pl/functions/use">use VERSION</a> statement and runtime <a href="https://perldoc.pl/functions/require">require VERSION</a> allows one to require a certain version of the Perl interpreter using either scheme of version number. Note however that both of these forms require a bareword version rather than a string, and if you use a decimal version form, the three-decimal-places rule still applies; Perl 5.26 would be represented as '5.026', for example.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">v5</span><span class="mf">.14</span><span class="p">;</span> <span class="c1"># also activates feature bundle and strict</span>
+<span class="k">use</span> <span class="nn">Syntax::Keyword::</span><span class="nv">Try</span><span class="p">;</span>
+<span class="nv">try</span> <span class="p">{</span> <span class="nb">require</span> <span class="nv">v5</span><span class="mf">.26.1</span><span class="p">;</span> <span class="nv">say</span> <span class="p">"</span><span class="s2">Perl is &gt;= v5.26.1</span><span class="p">"</span> <span class="p">}</span> <span class="nv">catch</span> <span class="p">{</span> <span class="nv">say</span> <span class="p">"</span><span class="s2">Old Perl: $@</span><span class="p">"</span> <span class="p">}</span>
+</code></pre>
+<div class="highlight__panel js-actions-panel">
+<div class="highlight__panel-action js-fullscreen-code-action">
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+</div>
+</div>
+</div>
+
+
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Dan Book
+     on Wednesday 03 March 2021 00:52</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakuast-grant-report-2021-02">RakuAST Grant Report for 2021-02</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -86,7 +431,7 @@
      on Tuesday 02 March 2021 13:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/gzipzopfli---another-compression-module.html">Gzip::Zopfli - another compression module</a></h2>
             </div> <!-- card-header -->
@@ -127,7 +472,7 @@
      on Monday 01 March 2021 22:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/bringing-modern-oo-to-perl-51ak">Bringing Modern OO To Perl</a></h2>
             </div> <!-- card-header -->
@@ -280,7 +625,7 @@
      on Monday 01 March 2021 11:18</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/1j3">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -292,7 +637,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/2d2">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -304,7 +649,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/0na">Smart Shopper = Smart Saver. Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -316,7 +661,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/scs">Mad Men (and women) of London. Perl in London</a></h2>
             </div> <!-- card-header -->
@@ -328,7 +673,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/t0i">All Aboard to Your Next Adventure! Perl Role in Malta</a></h2>
             </div> <!-- card-header -->
@@ -340,7 +685,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021 </a></h2>
             </div> <!-- card-header -->
@@ -352,7 +697,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -364,7 +709,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -376,7 +721,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -388,7 +733,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting - Lightning Talks</a></h2>
             </div> <!-- card-header -->
@@ -400,7 +745,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -412,7 +757,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -424,7 +769,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/what-to-do-with-legacy-perl-code.html">What to do with legacy Perl code?</a></h2>
             </div> <!-- card-header -->
@@ -436,7 +781,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/legacy-perl-codebase.html">What can you do if you become the manager of a Perl development team with a huge legacy code-base?</a></h2>
             </div> <!-- card-header -->
@@ -448,7 +793,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -460,7 +805,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-in-2025-fosdem-video-review-1k70">&quot;Perl in 2025&quot; FOSDEM video review</a></h2>
             </div> <!-- card-header -->
@@ -472,7 +817,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-099">Perl Review - Perl Weekly Challenge - 099</a></h2>
             </div> <!-- card-header -->
@@ -484,7 +829,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-101">RECAP - The Weekly Challenge - 101</a></h2>
             </div> <!-- card-header -->
@@ -496,7 +841,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-102">The Weekly Challenge - 102</a></h2>
             </div> <!-- card-header -->
@@ -508,7 +853,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/02/cpan-mirror-list-changes.html">CPAN Mirror List Changes</a></h2>
             </div> <!-- card-header -->
@@ -520,7 +865,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/browse-cpan-modules-per-namespaces-6p">Browse CPAN modules per namespaces</a></h2>
             </div> <!-- card-header -->
@@ -532,7 +877,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll">Building a microservice in Perl, part 1: Designing the API</a></h2>
             </div> <!-- card-header -->
@@ -544,7 +889,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/github-actions-ci-job-for-test-class">GitHub Actions CI job for Perl Test::Class - checking downstream dependencies as well</a></h2>
             </div> <!-- card-header -->
@@ -556,7 +901,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/27/ipc-cmd-considered-harmful/">IPC::Cmd considered harmful</a></h2>
             </div> <!-- card-header -->
@@ -568,7 +913,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/the-hijacking-of-perl-com/">The Hijacking of Perl.com</a></h2>
             </div> <!-- card-header -->
@@ -580,7 +925,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/28/xmpl-visibility/">xmpl - visibility API</a></h2>
             </div> <!-- card-header -->
@@ -592,7 +937,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/billcosta/way-too-many-if-then-elses-try-a-lookup-table-3j2o">Way Too Many IF-THEN-ELSEs? Try a Lookup Table</a></h2>
             </div> <!-- card-header -->
@@ -604,7 +949,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/26/line-noise/">Line noise</a></h2>
             </div> <!-- card-header -->
@@ -616,7 +961,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-11-core.html">Writing a Perl Core Feature - part 11: Core modules</a></h2>
             </div> <!-- card-header -->
@@ -628,7 +973,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/what-return-is-expected">What return is expected from a function?</a></h2>
             </div> <!-- card-header -->
@@ -640,7 +985,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-10.html">Writing a Perl Core Feature - part 10: Documentation</a></h2>
             </div> <!-- card-header -->
@@ -652,7 +997,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/exceptional-perl-failure-is-an-option-382h">Exceptional Perl: Failure is an option</a></h2>
             </div> <!-- card-header -->
@@ -664,7 +1009,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/23/xmpl-remote-healthz-revisited/">xmpl - remote key/value store healthz revisited</a></h2>
             </div> <!-- card-header -->
@@ -676,7 +1021,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/random-integer-generation-in-an-interval-with-modern-oop-perl-4p2c">Random integer generation in an interval with Modern OOP Perl</a></h2>
             </div> <!-- card-header -->
@@ -688,7 +1033,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/sets">Sets in Perl using Set::Scalar</a></h2>
             </div> <!-- card-header -->
@@ -700,7 +1045,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/22/mojo-useragent-intro-notes/">Mojo::UserAgent introductory notes</a></h2>
             </div> <!-- card-header -->
@@ -712,7 +1057,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/thoughts-citations-and-thoughts-about-regex-29h0">Thoughts, quotes and thoughts about regex</a></h2>
             </div> <!-- card-header -->
@@ -724,7 +1069,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-9.html">Writing a Perl Core Feature - part 9: Tests</a></h2>
             </div> <!-- card-header -->
@@ -736,7 +1081,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rt-cpan-org-upgraded">rt.cpan.org has a new home</a></h2>
             </div> <!-- card-header -->
@@ -748,7 +1093,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/perl-532/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-532-ad&utm_campaign=user-acquisition">Multi-OS Universal Perl Package Management</a></h2>
             </div> <!-- card-header -->
@@ -760,7 +1105,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/501.html">#501 - Perl and Quality</a></h2>
             </div> <!-- card-header -->
@@ -777,7 +1122,7 @@
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/03/01/list-of-new-cpan-distributions-feb-2021/">List of new CPAN distributions – Feb 2021</a></h2>
             </div> <!-- card-header -->
@@ -1410,7 +1755,7 @@
      on Monday 01 March 2021 01:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-101-jeo">Weekly Challenge 101</a></h2>
             </div> <!-- card-header -->
@@ -1576,7 +1921,7 @@ the   quick brown
      on Sunday 28 February 2021 11:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/the-hijacking-of-perl-com/">The Hijacking of Perl.com</a></h2>
             </div> <!-- card-header -->
@@ -1836,7 +2181,7 @@ If you are interested in helping with that, get in touch with them.</p>
      on Sunday 28 February 2021 08:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/billcosta/way-too-many-if-then-elses-try-a-lookup-table-3j2o">Way Too Many IF-THEN-ELSEs?  Try a Lookup Table</a></h2>
             </div> <!-- card-header -->
@@ -2106,7 +2451,7 @@ If you are interested in helping with that, get in touch with them.</p>
      on Sunday 28 February 2021 01:33</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll">Building a microservice in Perl, part 1: Designing the API</a></h2>
             </div> <!-- card-header -->
@@ -2229,7 +2574,7 @@ If you are interested in helping with that, get in touch with them.</p>
      on Saturday 27 February 2021 22:09</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-101.html">Perl weekly challenge 101</a></h2>
             </div> <!-- card-header -->
@@ -2387,7 +2732,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Tuesday 23 February 2021 10:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cccxxx-18-cpan-great-modules-released.html">(cccxxx) 18 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2399,7 +2744,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdlvi-metacpan-weekly-report.html">(cdlvi) metacpan weekly report - Text::Table::More</a></h2>
             </div> <!-- card-header -->
@@ -2411,7 +2756,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdlxxix-stackoverflow-perl-report.html">(cdlxxix) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -2423,7 +2768,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rt-cpan-org-upgraded">rt.cpan.org has a new home</a></h2>
             </div> <!-- card-header -->
@@ -2445,7 +2790,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Friday 26 February 2021 12:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/what-return-is-expected">What return is expected from a function?</a></h2>
             </div> <!-- card-header -->
@@ -2465,243 +2810,6 @@ module the function can know exactly how many values it needd to return.
 
               <p class="text-right"><small>Published by Gabor Szabo
      on Thursday 25 February 2021 17:30</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_56">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-in-2025-fosdem-video-review-1k70">&quot;Perl in 2025&quot; FOSDEM video review </a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Once again, I have to talk you about <a href="http://leonerds-code.blogspot.com/">Paul "Leonerd" Evans</a> 😃</p>
-
-<p>He is the author of the video that I will review now and I have to say first that I consider that we are lucky to have such brilliant guy in Perl community 👍 💪</p>
-
-<p>The video is titled <a href="https://fosdem.org/2021/schedule/event/perl_in_2025/">Perl in 2025</a> and is actually a list of <strong>open questions</strong> about Perl new operators in near future.</p>
-
-<p>Leonerd goes a bit fast, but I really enjoyed the video.</p>
-
-<h1>
-  <a href="#isa-signatures" class="anchor">
-  </a>
-  isa, signatures
-</h1>
-
-<p>I won't discuss this part, it is stable and coming in the core soon, but he explained these things, and it was very clear.</p>
-
-<h1>
-  <a href="#smart-match" class="anchor">
-  </a>
-  Smart match
-</h1>
-
-<p>I started Perl when smart match (<code>~~</code>) was already around (and already not recommended to the usage). <br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--5TdtwuDv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/cu9qj9g74hz6ivcuxpf7.jpeg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--5TdtwuDv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/cu9qj9g74hz6ivcuxpf7.jpeg" alt="Smartmatch"></a></p>
-
-<p>I used them a bit (I was young and bold at that time 😀) then quickly followed the recommendations and forbid myself to use them.</p>
-
-<p><strong>But what were my needs to use smartmatch?</strong></p>
-
-<p>First, it was to emulate <strong>"is in"</strong> ("Is this value in this array?"). Yes it can be done with other operators or CPAN module but <code>~~</code> seemed so short and elegant...</p>
-
-<p>Second, as explained by Paul, another <em>hidden</em> usage of <code>~~</code> is internally in <code>given/when</code> construction (that I don't used so much at the end).</p>
-
-<p>I would actually have loved to continue to use smartmatch, but I'm a prudent programmer so one warning was sufficient to make me run away and totally forget about this construction 😂</p>
-<h1>
-  <a href="#sharpy-equalities" class="anchor">
-  </a>
-  Sharpy equalities
-</h1>
-
-<p>Leonerd then discusses also about new operators <code>equ</code> and <code>===</code> that I unilaterally decided to name "nervous equalities" or "sharpy equalities" (maybe it sounds terribly bad, but yes I'm not a native english speaker 😀).</p>
-
-<p>The need for them comes from smartmatch (watch the video to know why!) but extends to simplify basic comparisons (<code>if(defined $var and $var eq "perl")</code>).</p>
-
-<p>It appeared to me to be at first a very sharp usage, but finally it seems very cool:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">if</span><span class="p">(""</span> <span class="ow">eq</span> <span class="nb">undef</span><span class="p">)</span> <span class="p">{</span> <span class="c1"># it is true</span>
-    <span class="o">...</span>
-<span class="p">}</span>
-<span class="k">if</span><span class="p">(""</span> <span class="nv">equ</span> <span class="nb">undef</span><span class="p">)</span> <span class="p">{</span> <span class="c1"># it will be false</span>
-    <span class="o">...</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>The same way with numeric <code>===</code>:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">if</span><span class="p">(</span><span class="mi">0</span> <span class="o">==</span> <span class="nb">undef</span><span class="p">)</span> <span class="p">{</span> <span class="c1"># it is true</span>
-    <span class="o">...</span>
-<span class="p">}</span>
-<span class="k">if</span><span class="p">(</span><span class="mi">0</span> <span class="o">===</span> <span class="nb">undef</span><span class="p">)</span> <span class="p">{</span> <span class="c1"># it will be false</span>
-    <span class="o">...</span>
-<span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<h1>
-  <a href="#any-and-in" class="anchor">
-  </a>
-  any and in
-</h1>
-
-<p><code>any</code> and <code>in</code> would cover the need (dig into lists) that I previously mentioned.</p>
-
-<p>Leonerd presents in as a possible metaoperator that you can "parametrize" to choose how it behaves (a bit crazy in a <a href="https://docs.raku.org/language/operators#Metaoperators">Raku way</a>).</p>
-
-<p>By detailing <code>any</code>, <code>in</code>, <code>given/when</code>, and friends, I understand the difficulty it was to properly implement smartmatch (that contains all these things).</p>
-
-<h1>
-  <a href="#multi-dispatch" class="anchor">
-  </a>
-  Multi dispatch
-</h1>
-
-<p>The same way, "multi dispatch" makes me think again of Raku which is amazing on this.</p>
-
-<p>I wondered what dispatch mechanism was already implemented in Perl, since we already have a notion of <a href="https://perldoc.perl.org/mro">Method Resolution Order</a>. The answer is that there is dispatch mechanism but limited to Oriented Object Programming.</p>
-
-<p><strong>What if we try to do multi sub dispatch in the same package?</strong></p>
-
-<p>With prototypes, if you try something like:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">a</span><span class="p">()</span> <span class="p">{</span> <span class="k">print</span> <span class="p">"</span><span class="s2">a</span><span class="se">\n</span><span class="p">";</span> <span class="p">}</span>
-<span class="k">sub </span><span class="nf">a</span><span class="p">($)</span> <span class="p">{</span> <span class="k">print</span> <span class="p">"</span><span class="s2">aa</span><span class="se">\n</span><span class="p">";</span> <span class="p">}</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>Unfortunately you will get an error:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nv">Prototype</span> <span class="nv">mismatch:</span> <span class="k">sub </span><span class="nf">main</span><span class="err">::</span><span class="nf">a</span> <span class="p">()</span> <span class="nf">vs</span> <span class="p">($)</span> <span class="nf">at</span> <span class="nf">multi</span><span class="err">.</span><span class="nf">pl</span> <span class="nf">line</span> <span class="err">2.</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>With signatures, if you try something like:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">v5</span><span class="mf">.20</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw(signatures)</span><span class="p">;</span>
-<span class="nb">no</span> <span class="nv">warnings</span> <span class="sx">qw(experimental::signatures)</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">b</span><span class="p">()</span> <span class="p">{</span> <span class="k">print</span> <span class="p">"</span><span class="s2">b</span><span class="se">\n</span><span class="p">";</span> <span class="p">}</span>
-<span class="k">sub </span><span class="nf">b</span><span class="p">($arg) {</span> <span class="k">print</span> <span class="p">"</span><span class="s2">bb</span><span class="se">\n</span><span class="p">";</span> <span class="p">}</span>
-
-<span class="nv">b</span><span class="p">();</span>
-<span class="nv">b</span><span class="p">("</span><span class="s2">myarg</span><span class="p">");</span>
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-</div>
-</div>
-</div>
-
-
-
-<p>The latest declaration will override the previous one and you can get <code>Too few arguments for subroutine</code> or <code>Too many arguments for subroutine</code> depending the order you declared the <code>sub b</code>.</p>
-
-<p><a class="comment-mentioned-user" href="https://dev.to/mjgardner">@mjgardner</a>
- (and others) do not hesitate to correct me, you master better than me all these things.</p>
-
-<p>You can still use the flexibility of Perl and handle dispatch inside the <code>sub</code>, but it is not properly <em>native</em> dispatch.</p>
-
-<p>Back to the MRO (Method Resolution Order), <a href="https://perldoc.perl.org/mro#NAME">Perl MRO</a> is by default implemented using <a href="https://en.wikipedia.org/wiki/Depth-first_search">DFS (Depth First Search)</a> but can be configured to use <a href="https://en.wikipedia.org/wiki/C3_linearization">C3</a> from the <a href="https://metacpan.org/pod/Class::C3">CPAN module C3</a>.<br>
-Python or Raku use C3 algorithm as default impementation.</p>
-
-<p>Then as a summary, Paul discusses about adding <strong>multi dispatch</strong> (i.e. <strong>method overriding</strong> or <strong>polymorphism</strong> in the same package) and he proposes implementations based on <code>signatures</code>, <code>isa</code> and <code>is</code> (that I do not talked but <code>is</code> is a part of possible new ops).</p>
-
-<p>My thought is... It would be nice! 😃</p>
-
-<h1>
-  <a href="#all-things-together" class="anchor">
-  </a>
-  All things together
-</h1>
-
-<p>This is a great talk, that opens the door to discussion and implementations.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--pvQd67by--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/npqkx3kim0zypdjwhdbg.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--pvQd67by--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/npqkx3kim0zypdjwhdbg.png" alt="All"></a></p>
-
-<p>As a conclusion, thank you again <strong>Leonerd</strong>!</p>
-
-<p>That was the last time I talked about you... for today 😀</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
-     on Thursday 25 February 2021 15:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_57">
@@ -3577,7 +3685,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 02 March 2021 23:52 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 03 March 2021 01:28 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->

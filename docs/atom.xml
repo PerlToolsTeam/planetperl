@@ -7,9 +7,354 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-03-02T23:52:03Z</updated>
+  <updated>2021-03-03T01:28:29Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>A Guide to Versions in Perl</title>
+    <link rel="alternate" href="https://dev.to/grinnz/a-guide-to-versions-in-perl-3ng1" type="text/html"/>
+    <content type="html">&lt;p&gt;Version numbers in Perl are very important; they allow orderly updating and maintenance of modules and distributions across the &lt;a href="https://metacpan.org"&gt;CPAN&lt;/a&gt;, and allow CPAN modules and consumers to require the versions of modules with the bugfixes or features they need. However, in this context, they are also a very unique beast with a complex and bumpy history that leads to some surprises for those who are not familiar with the nuances. These are the things CPAN authors should know about versions in Perl, and are nice for consumers to know as well.&lt;/p&gt;
+
+&lt;p&gt;To summarize:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;Versions in Perl come in two forms, decimal numbers and dotted decimal tuples.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;The two formats can be compared using a defined conversion method, implemented by the &lt;a href="https://perldoc.pl/version"&gt;version&lt;/a&gt; module.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;Versions for modules should be declared as string values.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;Underscores can be used in either form of version to indicate a trial version, but have pitfalls to watch for.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;The VERSION method can be used on any module to test if it's a certain version or greater, and version objects can be used for arbitrary version comparisons.&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h1&gt;
+  &lt;a href="#version-schemes" class="anchor"&gt;
+  &lt;/a&gt;
+  Version Schemes
+&lt;/h1&gt;
+
+&lt;p&gt;To start with, it's important to know that there are two distinct types of versions recognized by Perl. The first kind is simply a decimal number, with digits before and after a decimal separator, for example '1.0' or '0.003'. These versions are compared as numbers, so '1.1' and '1.10' refer to the same version. Despite being numbers, they should always be declared and referenced as strings within the code, so that any trailing zeroes are kept around for consistency in display, and to avoid possible floating point errors for versions with a particularly large number of digits.&lt;/p&gt;
+
+&lt;p&gt;While decimal number versions are a simple concept, they are different from the versions used by most everything outside of Perl. For that, Perl recognizes a second type of version: a tuple (or sequence) of integers separated by dots, sometimes referred to as "dotted-decimal" versions, and used for the concept of &lt;a href="https://semver.org/"&gt;semantic versioning&lt;/a&gt;. These look like 'v1.2.3' and 'v0.0.30'. For these versions, each segment is an integer, so trailing zeroes are significant -- 'v1.2.3' is the same version as 'v1.02.03', but not the same as 'v1.20.30'. Each segment after the first must also be 999 or lower, to allow conversion as described in the next section.&lt;/p&gt;
+
+&lt;p&gt;Neither of these version forms allow alphabetic characters or hyphens, as you may see in other versioning schemes. I'll go into the use of underscores later.&lt;/p&gt;
+
+&lt;p&gt;Responsible for parsing and disambiguating these two types of versions, as well as performing version comparisons as described below, is the module &lt;a href="https://perldoc.pl/version"&gt;version.pm&lt;/a&gt; (referred to in this way to disambiguate from the word "version" itself). It has been a core module since Perl v5.10.0, and it is also dual-life, so you can install a newer version from CPAN on any version of Perl (which is helpful for reasons that will become apparent). It disambiguates these two types with simple rules: if the version contains a leading "v" or more than one decimal separator, it's a version tuple; otherwise, it's a decimal number. For this reason it's best to include both a leading "v" and at least two decimal separators for clarity when using tuple versions.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#comparing-and-converting" class="anchor"&gt;
+  &lt;/a&gt;
+  Comparing and Converting
+&lt;/h1&gt;
+
+&lt;p&gt;For the sake of comparison, a conversion method is defined between the two types of versions. The first integer in a tuple version and the integer component of a decimal version are considered the same, and each successive segment of the tuple version is considered equivalent to three decimal places in a decimal version. So for example, to convert the version '3.01002' to a tuple version, the first segment is 3, the second is 10, and the third is 20 (padding with zeroes so you have groups of 3 decimal places), resulting in 'v3.10.20'. To convert the version 'v0.4.1' to a decimal version, the integer component is 0, the first three decimal places after the separator are 004, and the next three are 001, resulting in '0.004001'.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;AAA.BBBCCC &amp;lt;-&amp;gt; vAAA.BBB.CCC
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This method extends to however many segments or decimal places a version may have. The conversion is used by version.pm to compare version objects sourced from either scheme of version. In this way, Perl can determine how one version compares to another even when they are using different schemes.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#declaring-versions" class="anchor"&gt;
+  &lt;/a&gt;
+  Declaring Versions
+&lt;/h1&gt;
+
+&lt;p&gt;Version numbers of each of these forms are not only recognized by Perl for the purpose of checking module versions at runtime, but also by the PAUSE indexer when indexing CPAN modules. In this case and similarly when versions are extracted using &lt;a href="https://perldoc.pl/Module::Metadata"&gt;Module::Metadata&lt;/a&gt;, the behavior is to find the declaration of $VERSION and execute only that line in isolation, so your version declaration line must be executable on its own. The simplest and standard form of declaration is:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;1.02&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt; &lt;span class="c1"&gt;# for decimal versions, or&lt;/span&gt;
+&lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;v1.2.3&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt; &lt;span class="c1"&gt;# for tuple versions&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;As noted in David Golden's blog post &lt;a href="http://www.dagolden.com/index.php/369/version-numbers-should-be-boring/"&gt;Version Numbers Should Be Boring&lt;/a&gt;, support for tuple versions has varied widely among old versions of Perl. As support is mostly based on the version.pm module, which is core after Perl v5.10.0, you need to take special care if your module will use tuple versions on Perl v5.8.9 or older. Your module should declare a dependency on version.pm (at least version 0.77, but preferably more recent), and declare the version in this way:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;version&lt;/span&gt; &lt;span class="mf"&gt;0.77&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;version&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;declare&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;v1.2.3&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Keeping this whole declaration on a single line is important so that version.pm is always loaded when this line is executed by PAUSE or other version extraction tools. And of course, the simpler way to remain compatible with older versions of Perl is to stick to decimal number versions.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#underscores-in-versions" class="anchor"&gt;
+  &lt;/a&gt;
+  Underscores in Versions
+&lt;/h1&gt;
+
+&lt;p&gt;Another complex factor in Perl version numbers is the use of underscores. Underscores are, by convention, used to indicate a development or trial release of a module or distribution, which should not be &lt;a href="https://github.com/andk/pause/blob/master/doc/operating-model.md#3-indexing-permissions"&gt;indexed by PAUSE&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;For decimal versions, it's mostly straightforward: an underscore is placed somewhere between the digits, and ignored for comparison purposes. However, since these versions look like decimal numbers, some may naively compare them using numeric operators, which will fail if they contain an underscore:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;0.01_02&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;0.0101&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This comparison will fail (and throw a non-numeric warning if warnings are enabled) because $VERSION is truncated to '0.01' when used as a number. (A less naive comparison may be performed using the VERSION method or version.pm objects as described later.) To account for this possibility while still leaving the underscore in the declaration for static parsers, a common idiom is to remove the underscore in a following line:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;0.01_02&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=~&lt;/span&gt; &lt;span class="sr"&gt;tr/_//d&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;You may also see eval() used to remove the underscore, but the tr method is more straightforward and preserves trailing zeroes.&lt;/p&gt;
+
+&lt;p&gt;Underscores in tuple versions have a significantly more complicated history, and may be interpreted wildly differently depending on the version of version.pm in use. My recommendation would be to avoid doing this entirely, but if you must, your distribution should declare a dependency on version.pm version 0.9915, when its interpretation of underscores in tuple versions was fixed in several ways, and so that it considers underscores in tuple versions the same way as in decimal versions (i.e. not as a separator).&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#alternative-to-underscore-versions" class="anchor"&gt;
+  &lt;/a&gt;
+  Alternative to Underscore Versions
+&lt;/h2&gt;
+
+&lt;p&gt;Rather than using underscores in your versions, there are other mechanisms to indicate a development or trial release of a distribution that don't involve module versions. If the archive file uploaded to CPAN has a name ending in -TRIAL (before the file extensions), PAUSE &lt;a href="https://github.com/andk/pause/blob/master/doc/operating-model.md#35-factors-considering-in-the-indexing-phase"&gt;will not index it as a stable release&lt;/a&gt;. Additionally, you can set the &lt;a href="https://perldoc.pl/CPAN::Meta::Spec#release_status"&gt;release_status&lt;/a&gt; metadata field in meta-spec 2; a value of "testing" or "unstable" will indicate that the release should not be indexed. The method of setting this &lt;a href="http://blogs.perl.org/users/neilb/2017/05/specifying-dependencies-for-your-cpan-distribution.html"&gt;depends on your authoring tool&lt;/a&gt;. At the time of writing, either of these methods is sufficient to prevent PAUSE from indexing the distribution, and both are performed automatically by the "--trial" option when releasing using Dist::Zilla or Minilla.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#checking-for-versions" class="anchor"&gt;
+  &lt;/a&gt;
+  Checking for Versions
+&lt;/h1&gt;
+
+&lt;p&gt;With all of this in mind, the safest and most consistent way to check for a particular version of a module is with the &lt;a href="https://perldoc.pl/UNIVERSAL#VERSION"&gt;UNIVERSAL::VERSION&lt;/a&gt; method, which is implicitly used by the &lt;a href="https://perldoc.pl/functions/use"&gt;use Module::Name VERSION&lt;/a&gt; syntax. The VERSION method compares both the module's $VERSION and the passed version as version.pm objects, which automatically does the above-mentioned conversion between version schemes if needed, and throws an exception if the passed version is less than the module version. Like when declaring versions, the version passed to the VERSION method should always be a string or version object.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;eval&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;require&lt;/span&gt; &lt;span class="nn"&gt;Module::&lt;/span&gt;&lt;span class="nv"&gt;Name&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nn"&gt;Module::&lt;/span&gt;&lt;span class="nv"&gt;Name&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;VERSION&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;v1.2.3&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;})&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+  &lt;span class="c1"&gt;# Module::Name is able to be loaded and is at least version v1.2.3&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;You can of course use a &lt;a href="http://mvp.kablamo.org/cpan/exceptions/"&gt;nicer exception-handling method&lt;/a&gt; than bare eval if appropriate.&lt;/p&gt;
+
+&lt;p&gt;On Perls older than v5.10.0 you should make sure to 'use version' before doing a comparison involving tuple versions, which will update the VERSION method to use version objects as it does on more recent perls. I would also, as above, recommend depending on version.pm version 0.9915 if you intend to do any comparisons involving versions with underscores. &lt;/p&gt;
+
+&lt;p&gt;A more generic method of performing arbitrary version comparisons is to parse the versions into version.pm objects and compare them using standard numeric operators.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;version&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;version&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;parse&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;v1.0.3&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="nv"&gt;version&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;parse&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;1.000003&lt;/span&gt;&lt;span class="p"&gt;'))&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+  &lt;span class="c1"&gt;# versions are equivalent&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;h1&gt;
+  &lt;a href="#versions-for-vendors" class="anchor"&gt;
+  &lt;/a&gt;
+  Versions for Vendors
+&lt;/h1&gt;
+
+&lt;p&gt;Perl versions aren't just used within Perl, of course. If you are a CPAN author, you should be mindful that Perl modules from CPAN are packaged for use in various distributions, which primarily use the tuple version format. This doesn't mean you need to use it yourself, but to be polite to those translating your versions, you should follow these simple rules:&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;p&gt;If using decimal versions, never decrease the number of significant digits you use without a major version bump. For example, go from '1.19' to '1.20' or '2.0', not to '1.2'.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;Never change version schemes without a major version bump. Even if you use the above translation correctly, the package vendor may not, and thus end up with a decreasing version.&lt;/p&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h1&gt;
+  &lt;a href="#methods-to-avoid" class="anchor"&gt;
+  &lt;/a&gt;
+  Methods to Avoid
+&lt;/h1&gt;
+
+&lt;p&gt;There are a couple other ways to declare versions that should be wholly avoided. One is to declare a bare decimal number version, which means you will lose trailing zeroes and possibly encounter floating-point issues. Sometimes this is used because Perl has a feature that looks like underscores in version numbers:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mf"&gt;0.01_02&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# don't do this&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;However, Perl will immediately compile this to the number 0.0102; underscores in numeric literals are only a visual-aid feature.&lt;/p&gt;
+
+&lt;p&gt;Another method with a complicated history is the Perl &lt;a href="https://perldoc.pl/perldata#Version-Strings"&gt;vstrings&lt;/a&gt; feature. This was a feature added in Perl v5.6.0 that seemed to add a convenient syntax for declaring versions that would be stored as a binary string.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;$VERSION&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;v1&lt;/span&gt;&lt;span class="mf"&gt;.2.3&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# don't do this&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This example would create a string consisting of three characters, with ordinals 1, 2, and 3, equivalent to the string "\x01\x02\x03" (note: the vstring syntax uses decimal ordinals, but the '\x' syntax uses hexadecimal ordinals). While version.pm does parse and allow vstrings to be used to initialize version objects, their interpretation is inconsistent among older versions of Perl and their implementation is surprising in the context of versions (for instance, they are not numerically comparable), so it's better to just use a string. It turns out vstrings are most useful for creating binary string literals, and not versions.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#perl-perl-versions" class="anchor"&gt;
+  &lt;/a&gt;
+  Perl Perl Versions
+&lt;/h1&gt;
+
+&lt;p&gt;As you may notice, the versions of the Perl interpreter itself use the same rules as those for Perl modules. The &lt;a href="https://perldoc.pl/variables/%24%5D"&gt;$]&lt;/a&gt; variable is a representation of the version of the current Perl interpreter as a decimal number, and the &lt;a href="https://perldoc.pl/variables/%24%5EV"&gt;$^V&lt;/a&gt; variable is the version as a version object. From Perl v5.6.0 until Perl v5.10.0 $^V was a vstring rather than a version object, so it's not recommended to use this variable if your code will be running on Perls v5.8.9 or older.&lt;/p&gt;
+
+&lt;p&gt;The &lt;a href="https://perldoc.pl/functions/use"&gt;use VERSION&lt;/a&gt; statement and runtime &lt;a href="https://perldoc.pl/functions/require"&gt;require VERSION&lt;/a&gt; allows one to require a certain version of the Perl interpreter using either scheme of version number. Note however that both of these forms require a bareword version rather than a string, and if you use a decimal version form, the three-decimal-places rule still applies; Perl 5.26 would be represented as '5.026', for example.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;v5&lt;/span&gt;&lt;span class="mf"&gt;.14&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# also activates feature bundle and strict&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Syntax::Keyword::&lt;/span&gt;&lt;span class="nv"&gt;Try&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="nv"&gt;try&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;require&lt;/span&gt; &lt;span class="nv"&gt;v5&lt;/span&gt;&lt;span class="mf"&gt;.26.1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;say&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Perl is &amp;gt;= v5.26.1&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="nv"&gt;catch&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;say&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Old Perl: $@&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;div class="highlight__panel js-actions-panel"&gt;
+&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
+    Enter fullscreen mode
+    
+
+
+    Exit fullscreen mode
+    
+
+
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+
+
+
+</content>
+    <author>
+      <name>Dan Book</name>
+    </author>
+    <id>https://dev.to/grinnz/a-guide-to-versions-in-perl-3ng1</id>
+    <published>2021-03-03T00:52:22Z</published>
+    <updated>2021-03-03T00:52:22Z</updated>
+    <category term="perl"/>
+  </entry>
   <entry>
   <title>RakuAST Grant Report for 2021-02</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/rakuast-grant-report-2021-02"/>
@@ -2374,246 +2719,6 @@ module the function can know exactly how many values it needd to return.
       <name>Gabor Szabo</name>
     </author>
 </entry>
-  <entry>
-    <title>"Perl in 2025" FOSDEM video review </title>
-    <link rel="alternate" href="https://dev.to/thibaultduponchelle/perl-in-2025-fosdem-video-review-1k70" type="text/html"/>
-    <content type="html">&lt;p&gt;Once again, I have to talk you about &lt;a href="http://leonerds-code.blogspot.com/"&gt;Paul "Leonerd" Evans&lt;/a&gt; 😃&lt;/p&gt;
-
-&lt;p&gt;He is the author of the video that I will review now and I have to say first that I consider that we are lucky to have such brilliant guy in Perl community 👍 💪&lt;/p&gt;
-
-&lt;p&gt;The video is titled &lt;a href="https://fosdem.org/2021/schedule/event/perl_in_2025/"&gt;Perl in 2025&lt;/a&gt; and is actually a list of &lt;strong&gt;open questions&lt;/strong&gt; about Perl new operators in near future.&lt;/p&gt;
-
-&lt;p&gt;Leonerd goes a bit fast, but I really enjoyed the video.&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#isa-signatures" class="anchor"&gt;
-  &lt;/a&gt;
-  isa, signatures
-&lt;/h1&gt;
-
-&lt;p&gt;I won't discuss this part, it is stable and coming in the core soon, but he explained these things, and it was very clear.&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#smart-match" class="anchor"&gt;
-  &lt;/a&gt;
-  Smart match
-&lt;/h1&gt;
-
-&lt;p&gt;I started Perl when smart match (&lt;code&gt;~~&lt;/code&gt;) was already around (and already not recommended to the usage). &lt;br&gt;
-&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--5TdtwuDv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/cu9qj9g74hz6ivcuxpf7.jpeg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--5TdtwuDv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/cu9qj9g74hz6ivcuxpf7.jpeg" alt="Smartmatch"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;I used them a bit (I was young and bold at that time 😀) then quickly followed the recommendations and forbid myself to use them.&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;But what were my needs to use smartmatch?&lt;/strong&gt;&lt;/p&gt;
-
-&lt;p&gt;First, it was to emulate &lt;strong&gt;"is in"&lt;/strong&gt; ("Is this value in this array?"). Yes it can be done with other operators or CPAN module but &lt;code&gt;~~&lt;/code&gt; seemed so short and elegant...&lt;/p&gt;
-
-&lt;p&gt;Second, as explained by Paul, another &lt;em&gt;hidden&lt;/em&gt; usage of &lt;code&gt;~~&lt;/code&gt; is internally in &lt;code&gt;given/when&lt;/code&gt; construction (that I don't used so much at the end).&lt;/p&gt;
-
-&lt;p&gt;I would actually have loved to continue to use smartmatch, but I'm a prudent programmer so one warning was sufficient to make me run away and totally forget about this construction 😂&lt;/p&gt;
-&lt;h1&gt;
-  &lt;a href="#sharpy-equalities" class="anchor"&gt;
-  &lt;/a&gt;
-  Sharpy equalities
-&lt;/h1&gt;
-
-&lt;p&gt;Leonerd then discusses also about new operators &lt;code&gt;equ&lt;/code&gt; and &lt;code&gt;===&lt;/code&gt; that I unilaterally decided to name "nervous equalities" or "sharpy equalities" (maybe it sounds terribly bad, but yes I'm not a native english speaker 😀).&lt;/p&gt;
-
-&lt;p&gt;The need for them comes from smartmatch (watch the video to know why!) but extends to simplify basic comparisons (&lt;code&gt;if(defined $var and $var eq "perl")&lt;/code&gt;).&lt;/p&gt;
-
-&lt;p&gt;It appeared to me to be at first a very sharp usage, but finally it seems very cool:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;if&lt;/span&gt;&lt;span class="p"&gt;(""&lt;/span&gt; &lt;span class="ow"&gt;eq&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="c1"&gt;# it is true&lt;/span&gt;
-    &lt;span class="o"&gt;...&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="k"&gt;if&lt;/span&gt;&lt;span class="p"&gt;(""&lt;/span&gt; &lt;span class="nv"&gt;equ&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="c1"&gt;# it will be false&lt;/span&gt;
-    &lt;span class="o"&gt;...&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;The same way with numeric &lt;code&gt;===&lt;/code&gt;:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;if&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="c1"&gt;# it is true&lt;/span&gt;
-    &lt;span class="o"&gt;...&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="k"&gt;if&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="o"&gt;===&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="c1"&gt;# it will be false&lt;/span&gt;
-    &lt;span class="o"&gt;...&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;h1&gt;
-  &lt;a href="#any-and-in" class="anchor"&gt;
-  &lt;/a&gt;
-  any and in
-&lt;/h1&gt;
-
-&lt;p&gt;&lt;code&gt;any&lt;/code&gt; and &lt;code&gt;in&lt;/code&gt; would cover the need (dig into lists) that I previously mentioned.&lt;/p&gt;
-
-&lt;p&gt;Leonerd presents in as a possible metaoperator that you can "parametrize" to choose how it behaves (a bit crazy in a &lt;a href="https://docs.raku.org/language/operators#Metaoperators"&gt;Raku way&lt;/a&gt;).&lt;/p&gt;
-
-&lt;p&gt;By detailing &lt;code&gt;any&lt;/code&gt;, &lt;code&gt;in&lt;/code&gt;, &lt;code&gt;given/when&lt;/code&gt;, and friends, I understand the difficulty it was to properly implement smartmatch (that contains all these things).&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#multi-dispatch" class="anchor"&gt;
-  &lt;/a&gt;
-  Multi dispatch
-&lt;/h1&gt;
-
-&lt;p&gt;The same way, "multi dispatch" makes me think again of Raku which is amazing on this.&lt;/p&gt;
-
-&lt;p&gt;I wondered what dispatch mechanism was already implemented in Perl, since we already have a notion of &lt;a href="https://perldoc.perl.org/mro"&gt;Method Resolution Order&lt;/a&gt;. The answer is that there is dispatch mechanism but limited to Oriented Object Programming.&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;What if we try to do multi sub dispatch in the same package?&lt;/strong&gt;&lt;/p&gt;
-
-&lt;p&gt;With prototypes, if you try something like:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;a&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;a&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;a&lt;/span&gt;&lt;span class="p"&gt;($)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;aa&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Unfortunately you will get an error:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;Prototype&lt;/span&gt; &lt;span class="nv"&gt;mismatch:&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;main&lt;/span&gt;&lt;span class="err"&gt;::&lt;/span&gt;&lt;span class="nf"&gt;a&lt;/span&gt; &lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="nf"&gt;vs&lt;/span&gt; &lt;span class="p"&gt;($)&lt;/span&gt; &lt;span class="nf"&gt;at&lt;/span&gt; &lt;span class="nf"&gt;multi&lt;/span&gt;&lt;span class="err"&gt;.&lt;/span&gt;&lt;span class="nf"&gt;pl&lt;/span&gt; &lt;span class="nf"&gt;line&lt;/span&gt; &lt;span class="err"&gt;2.&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;With signatures, if you try something like:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;v5&lt;/span&gt;&lt;span class="mf"&gt;.20&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="sx"&gt;qw(signatures)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="nb"&gt;no&lt;/span&gt; &lt;span class="nv"&gt;warnings&lt;/span&gt; &lt;span class="sx"&gt;qw(experimental::signatures)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;b&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;b&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;b&lt;/span&gt;&lt;span class="p"&gt;($arg) {&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;bb&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="nv"&gt;b&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
-&lt;span class="nv"&gt;b&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;myarg&lt;/span&gt;&lt;span class="p"&gt;");&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;div class="highlight__panel js-actions-panel"&gt;
-&lt;div class="highlight__panel-action js-fullscreen-code-action"&gt;
-    Enter fullscreen mode
-    
-
-
-    Exit fullscreen mode
-    
-
-
-&lt;/div&gt;
-&lt;/div&gt;
-&lt;/div&gt;
-
-
-
-&lt;p&gt;The latest declaration will override the previous one and you can get &lt;code&gt;Too few arguments for subroutine&lt;/code&gt; or &lt;code&gt;Too many arguments for subroutine&lt;/code&gt; depending the order you declared the &lt;code&gt;sub b&lt;/code&gt;.&lt;/p&gt;
-
-&lt;p&gt;&lt;a class="comment-mentioned-user" href="https://dev.to/mjgardner"&gt;@mjgardner&lt;/a&gt;
- (and others) do not hesitate to correct me, you master better than me all these things.&lt;/p&gt;
-
-&lt;p&gt;You can still use the flexibility of Perl and handle dispatch inside the &lt;code&gt;sub&lt;/code&gt;, but it is not properly &lt;em&gt;native&lt;/em&gt; dispatch.&lt;/p&gt;
-
-&lt;p&gt;Back to the MRO (Method Resolution Order), &lt;a href="https://perldoc.perl.org/mro#NAME"&gt;Perl MRO&lt;/a&gt; is by default implemented using &lt;a href="https://en.wikipedia.org/wiki/Depth-first_search"&gt;DFS (Depth First Search)&lt;/a&gt; but can be configured to use &lt;a href="https://en.wikipedia.org/wiki/C3_linearization"&gt;C3&lt;/a&gt; from the &lt;a href="https://metacpan.org/pod/Class::C3"&gt;CPAN module C3&lt;/a&gt;.&lt;br&gt;
-Python or Raku use C3 algorithm as default impementation.&lt;/p&gt;
-
-&lt;p&gt;Then as a summary, Paul discusses about adding &lt;strong&gt;multi dispatch&lt;/strong&gt; (i.e. &lt;strong&gt;method overriding&lt;/strong&gt; or &lt;strong&gt;polymorphism&lt;/strong&gt; in the same package) and he proposes implementations based on &lt;code&gt;signatures&lt;/code&gt;, &lt;code&gt;isa&lt;/code&gt; and &lt;code&gt;is&lt;/code&gt; (that I do not talked but &lt;code&gt;is&lt;/code&gt; is a part of possible new ops).&lt;/p&gt;
-
-&lt;p&gt;My thought is... It would be nice! 😃&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#all-things-together" class="anchor"&gt;
-  &lt;/a&gt;
-  All things together
-&lt;/h1&gt;
-
-&lt;p&gt;This is a great talk, that opens the door to discussion and implementations.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--pvQd67by--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/npqkx3kim0zypdjwhdbg.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--pvQd67by--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/npqkx3kim0zypdjwhdbg.png" alt="All"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;As a conclusion, thank you again &lt;strong&gt;Leonerd&lt;/strong&gt;!&lt;/p&gt;
-
-&lt;p&gt;That was the last time I talked about you... for today 😀&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Tib</name>
-    </author>
-    <id>https://dev.to/thibaultduponchelle/perl-in-2025-fosdem-video-review-1k70</id>
-    <published>2021-02-25T15:04:53Z</published>
-    <updated>2021-02-25T15:04:53Z</updated>
-    <category term="perl"/>
-    <category term="future"/>
-    <category term="fosdem"/>
-    <category term="video"/>
-  </entry>
   <entry>
   <title>our</title>
   <summary type="html"><![CDATA[<p>
