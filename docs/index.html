@@ -55,6 +55,217 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-102.html">Perl weekly challenge 102</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Here are solutions to this weeks challenges from the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a>.</p>
+
+<p>You can find my full code on
+<a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-100/james-smith/perl">Github</a></p>
+
+<h3>Task 1: Rare Numbers</h3>
+
+<p>You are given a positive integer $N. Write a script to generate all Rare numbers of size $N if exists. Please checkout the page for more information about it.</p>
+
+<h4>Examples:</h4>
+<ul>
+<li>2 digits:              65</li>
+<li>6 digits:     621,770</li>
+<li>9 digits: 281,089,082</li>
+</ul>
+
+<h4>The solution</h4>
+
+<p>There is a very naive solution to this problem.</p>
+
+<pre><code>#!/usr/local/bin/perl
+
+<p>use strict;</p>
+
+<p>use warnings;<br />
+use feature qw(say);<br />
+use Test::More;</p>
+
+<p>my @rare_ends = ( [2,[2]], [4,[0]], [6,[0,5]], [8,[2,3,7,8]] );</p>
+
+<p>is( "@{[ rare_numbers( 2  ) ]}", '65' );<br />
+is( "@{[ rare_numbers( 6  ) ]}", '621770' );<br />
+is( "@{[ rare_numbers( 9  ) ]}", '281089082' );</p>
+
+<p>done_testing();</p>
+
+<p>sub rare_numbers {<br />
+  my $size = shift;<br />
+  my @ret;<br />
+  my $y;<br />
+  foreach( 10**($size-1) .. 10**$size - 1 ) {<br />
+    $y = reverse $_;<br />
+    push @ret, $_ if $_ > $y<br />
+                  && ($_-$y) == (int sqrt($_-$y))**2<br />
+                  && ($_+$y) == (int sqrt($_+$y))**2;<br />
+  }<br />
+  return @ret;<br />
+}</code></pre></p>
+
+<p>This naive approach though takes around 5 minutes on my linux box to run {most of the time is the loop through 10 billion numbers to get the answer for 9 digits...}</p>
+
+<p>This really is impractical even for 10 digits - taking roughly and hour and (I'm guessing) 5 or 6 days to get the next number (with 12 digits), going up to 2 months, and 2 years for the answers for 13 and 14 digits...</p>
+
+<p>We need to scale this back down to a reasonable number..</p>
+
+<p>There are a number of different rules that drive both the first and last digits, and subsequently the second and penultimate digits.</p>
+
+<p>If we encode this into the code we reduce the search space considerably.</p>
+
+<p>On top of that it has been proven that the digit sum has to be 9, or rewriting that the number itself modulo 9 has to be zero;</p>
+
+<p>Finally we can optimize the square check as we know squares must end in either 0, 1, 2, 4, 5, 6 or 9, and also cache the value of the this check as there will be numerous cases where we know that the difference between the two numbers will be the same. This leads us to the following code...<br />
+<code><pre>#!/usr/local/bin/perl</p>
+
+<p>use strict;</p>
+
+<p>use warnings;<br />
+use feature qw(say state);<br />
+use Test::More;</p>
+
+<p>is( "@{[ rare_numbers( 2  ) ]}", '65' );<br />
+is( "@{[ rare_numbers( 6  ) ]}", '621770' );<br />
+is( "@{[ rare_numbers( 9  ) ]}", '281089082' );<br />
+is( "@{[ rare_numbers( 10 ) ]}", "2022652202 2042832002" );</p>
+
+<p>done_testing();</p>
+
+<p><br />
+sub rare_numbers {<br />
+  my $size = shift;<br />
+  return () if $size < 2; ## No solutions for size <2 as the<br />
+                          ## as the number is the reverse<br />
+                          ## of itself so will fail the $x!=$y<br />
+                          ## constraint<br />
+  ## List of start/end values<br />
+  my @rare_ends = ( [2,[2]], [4,[0]], [6,[0,5]], [8,[2,3,7,8]] );<br />
+  my @F=(0,1,0,1,1,0,1,1,0); ## rare_numbers have a digit sum <br />
+                             ## (value mod 9) of either 9/0,2,5 or 8<br />
+  sub is_rare {<br />
+    sub is_sq {<br />
+      state %cache;<br />
+      return $cache{$_[0]} if exists $cache{$_[0]};<br />
+      return $cache{$_[0]} = $_[0] =~ m{[014569]$} &&<br />
+                           $_[0] == (int sqrt $_[0])**2;<br />
+    }</p>
+
+<p>    my $x = shift;<br />
+    return () if $F[$x%9]; ## Digit sum is wrong...<br />
+    my $y = reverse $x;<br />
+    return () if $x == $y; ## Musn't be the same back and forth<br />
+    return $y if $x<$y && is_sq($x+$y) && is_sq($y-$x);<br />
+    ## Check both ways round!<br />
+    return $x if $y<$x && is_sq($x+$y) && is_sq($x-$y);<br />
+    return ();<br />
+  }</p>
+
+<p>  my %res;<br />
+  my $low  = $size <= 4 ? '' : '0' x ($size-4);<br />
+  my $high = $size <= 4 ? '' : '9' x ($size-4);<br />
+  foreach my $tup ( @rare_ends ) {<br />
+    my $s = $tup->[0];             ## first digit has to be even 2,4,6,8<br />
+    foreach my $e (@{$tup->[1]}) { ## second digit has to be in list<br />
+                                   ## at start...<br />
+      if( $size == 2 ) {           ## As our method really starts at 4<br />
+                                   ## let us deal with 2 & 3 cases first<br />
+                                   ## as the optimized code is for <br />
+                                   ## numbers of length 4 or more<br />
+        $res{$_}=1 foreach is_rare("$s$e");<br />
+        next;<br />
+      }<br />
+      if( $size == 3 ) {<br />
+        $res{$_}=1 foreach map { is_rare("$s$_$e") } 0..9;<br />
+        next;<br />
+      }</p>
+
+<p>      ## Now we need to do the next group....<br />
+      foreach my $b (0..9) {    ## These are filters to apply <br />
+        foreach my $f (0..9) {  ## for each group of numbers....<br />
+          next if $s==2 && $b!=$f<br />
+            || $s==4 && ($b-$f)%2<br />
+            || $s==6 && ! ($b-$f)%2<br />
+            || $s==8 && (<br />
+                  $e==2 && $b+$f!=9<br />
+               || $e==3 && $b-$f!=7 && $f-$b !=3<br />
+               || $e==7 && $b+$f!=1 && $b+$f !=11<br />
+               || $e==8 && $b!=$f<br />
+            );<br />
+          ## Now we try all additional numbers....<br />
+          ## The sequence '000' .. '999' gives all 3 digit numbers.... !<br />
+          $res{$_}=1 foreach map { is_rare("$s$b$_$f$e") } $low..$high;<br />
+        }<br />
+      }<br />
+    }<br />
+  }<br />
+  return sort keys %res;<br />
+}</code></pre><br />
+<h4>Notes</h4><br />
+<ul><br />
+<li><br />
+Rather than having to do a <code>sprintf</code> to get a sequence of numbers of length <em>n</em> we can use the "string" version of the range to go from "000.." to "999.."<br />
+</li><br />
+<li><br />
+We can write the inner loop in a single line given that the is_rare function returns either an empty array of the rare number themselves.<br />
+</li><br />
+<li><br />
+Finally we don't use the array - as we may return the same rare numbers twice, show use the hash key trick to weed out duplicates.<br />
+</li><br />
+</ul><br />
+<h3>Task 2: Hash-counting String</h3></p>
+
+<p>Write a script to produce Hash-counting string of that length.</p>
+
+<p>The definition of a hash-counting string is as follows:</p>
+
+<ul><li>the string consists only of digits 0-9 and hashes, ‘#’</li>
+<li>there are no two consecutive hashes: ‘##’ does not appear in your string</li>
+<li>the last character is a hash</li>
+<li>the number immediately preceding each hash (if it exists) is the position of that hash in the string, with the position being counted up from 1</li></ul>
+
+<p>It can be shown that for every positive integer N there is exactly one such length-N string.</p>
+
+<h4>Examples:</h4>
+<ul>
+<li><tt>"#"</tt> is the counting string of length 1</li>
+<li><tt>"2#"</tt> is the counting string of length 2</li>
+<li><tt>"#3#"</tt> is the string of length 3</li>
+<li><tt>"#3#5#7#10#"</tt> is the string of length 10</li>
+<li><tt>"2#4#6#8#11#14#"</tt> is the string of length 14</li>
+</ul>
+
+<h4>The solution</h4>
+Usually challenge 1 is the easiest solution but this week I think is an exception - although there is an easy solution to challenge 1 - the faster (optimized) one needs extra work.
+
+<p>With many of these problems there are two ways to solve this - we can start at one end or the other.</p>
+
+<p>If we go forward we occasionally get to a point where we have to make a decision both sequences consisting of <em>n</em> <code>9</code>s and a <code>1</code> and <em>n</em> <code>9</code>s are valid at certain points.<br />
+So for length 9 we have "<code>#3#5#7#9#</code>" and length 10 we have "<code>#3#5#7#10#</code>"... Having to continue along two paths is always going to make things harder.</p>
+
+<p>If we go backwards we don't have the same problem - we know the location of the "<code>#</code>" so we have no branching point. As we add the "<em>n</em><code>#</code>" to the end of the string - then the remainder of the string is just the solution for <em>n</em>-1-<em>length of n</em>, with 1 exception if <em>n</em> is 1 - we just don't include the <em>n</em>. This leads to thoughts or recursion - or a simple loop. We though want to avoid the overhead of recursion if we can....</p>
+
+<p>This reduces to something quite simple. We repeat until we get to the case we can't add "<em>n</em><code>#</code>" anymore. One of the nice features of Perl is being able to modify more than one variable at a time with <code>($a,$b)=($c,$d)</code>. We can use this here to reduce the loop to a single line. At the end of the loop we get to the case when <em>n</em> is 0 or 1 - in the latter case we just need to prefix a "<code>#</code>" we could use a ternary <code>?:</code> but in this case we can simplify the code down by using string multiplication <code>x</code>. As we need one copy of <code>#</code> if <em>n</em> is 1 and none if it is 0.</p>
+
+<pre><code>sub hash_count_string {
+  my ( $s, $n ) = ( '',      @_            );
+     ( $s, $n ) = ( "$n#$s", $n-1-length$n ) while $n > 1;
+  return '#'x$n.$s;
+}</code></pre>
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by James Curtis-Smith
+     on Thursday 04 March 2021 12:06</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-102-57jb">Weekly Challenge 102</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-102/">Challenge 102</a><br>
@@ -213,7 +424,7 @@ real    42m4.669s
      on Thursday 04 March 2021 12:19</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/an-easy-git-workflow-4gm0">An Easy git Workflow</a></h2>
             </div> <!-- card-header -->
@@ -689,7 +900,7 @@ Patch failed at 0001 Issue 144 Make read-only the default for attributes
      on Thursday 04 March 2021 08:35</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/inspect-perl-values-prettily-with-data-printer-219o">Inspect Perl values prettily with Data::Printer</a></h2>
             </div> <!-- card-header -->
@@ -817,7 +1028,7 @@ Patch failed at 0001 Issue 144 Make read-only the default for attributes
      on Thursday 04 March 2021 08:07</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/enkidu/2021/03/perl-is-dead-when-im-dead.html">Perl is dead ... when I'm dead!</a></h2>
             </div> <!-- card-header -->
@@ -898,7 +1109,7 @@ If you really think that RT isn’t fit for purpose, start asking people to help
      on Thursday 04 March 2021 16:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/tuesday-at-boston-pm-perl-subroutine-signatures-and-type-validation-4n10">Tuesday at Boston.pm: Perl subroutine signatures and type validation</a></h2>
             </div> <!-- card-header -->
@@ -912,7 +1123,7 @@ If you really think that RT isn’t fit for purpose, start asking people to help
      on Wednesday 03 March 2021 18:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-2-up-and-running-1nd1">Building a microservice in Perl, part 2: Up and running</a></h2>
             </div> <!-- card-header -->
@@ -1349,7 +1560,7 @@ Result: PASS
      on Wednesday 03 March 2021 15:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakuast-grant-report-2021-02">RakuAST Grant Report for 2021-02</a></h2>
             </div> <!-- card-header -->
@@ -1382,7 +1593,7 @@ Result: PASS
      on Tuesday 02 March 2021 13:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/gzipzopfli---another-compression-module.html">Gzip::Zopfli - another compression module</a></h2>
             </div> <!-- card-header -->
@@ -1423,7 +1634,7 @@ Result: PASS
      on Monday 01 March 2021 22:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/1j3">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -1435,7 +1646,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/2d2">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -1447,7 +1658,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/0na">Smart Shopper = Smart Saver. Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -1459,7 +1670,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/scs">Mad Men (and women) of London. Perl in London</a></h2>
             </div> <!-- card-header -->
@@ -1471,7 +1682,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/t0i">All Aboard to Your Next Adventure! Perl Role in Malta</a></h2>
             </div> <!-- card-header -->
@@ -1483,7 +1694,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021 </a></h2>
             </div> <!-- card-header -->
@@ -1495,7 +1706,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1507,7 +1718,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1519,7 +1730,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -1531,7 +1742,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting - Lightning Talks</a></h2>
             </div> <!-- card-header -->
@@ -1543,7 +1754,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1555,7 +1766,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Regular Expression: Master Manipulator of Text</a></h2>
             </div> <!-- card-header -->
@@ -1567,7 +1778,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/what-to-do-with-legacy-perl-code.html">What to do with legacy Perl code?</a></h2>
             </div> <!-- card-header -->
@@ -1579,7 +1790,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/legacy-perl-codebase.html">What can you do if you become the manager of a Perl development team with a huge legacy code-base?</a></h2>
             </div> <!-- card-header -->
@@ -1591,7 +1802,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1603,7 +1814,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-in-2025-fosdem-video-review-1k70">&quot;Perl in 2025&quot; FOSDEM video review</a></h2>
             </div> <!-- card-header -->
@@ -1615,7 +1826,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-099">Perl Review - Perl Weekly Challenge - 099</a></h2>
             </div> <!-- card-header -->
@@ -1627,7 +1838,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-101">RECAP - The Weekly Challenge - 101</a></h2>
             </div> <!-- card-header -->
@@ -1639,7 +1850,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-102">The Weekly Challenge - 102</a></h2>
             </div> <!-- card-header -->
@@ -1651,7 +1862,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/02/cpan-mirror-list-changes.html">CPAN Mirror List Changes</a></h2>
             </div> <!-- card-header -->
@@ -1663,7 +1874,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/browse-cpan-modules-per-namespaces-6p">Browse CPAN modules per namespaces</a></h2>
             </div> <!-- card-header -->
@@ -1675,7 +1886,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/building-a-microservice-in-perl-part-1-designing-the-api-13ll">Building a microservice in Perl, part 1: Designing the API</a></h2>
             </div> <!-- card-header -->
@@ -1687,7 +1898,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/github-actions-ci-job-for-test-class">GitHub Actions CI job for Perl Test::Class - checking downstream dependencies as well</a></h2>
             </div> <!-- card-header -->
@@ -1699,7 +1910,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/27/ipc-cmd-considered-harmful/">IPC::Cmd considered harmful</a></h2>
             </div> <!-- card-header -->
@@ -1711,7 +1922,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/the-hijacking-of-perl-com/">The Hijacking of Perl.com</a></h2>
             </div> <!-- card-header -->
@@ -1723,7 +1934,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/28/xmpl-visibility/">xmpl - visibility API</a></h2>
             </div> <!-- card-header -->
@@ -1735,7 +1946,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/billcosta/way-too-many-if-then-elses-try-a-lookup-table-3j2o">Way Too Many IF-THEN-ELSEs? Try a Lookup Table</a></h2>
             </div> <!-- card-header -->
@@ -1747,7 +1958,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/26/line-noise/">Line noise</a></h2>
             </div> <!-- card-header -->
@@ -1759,7 +1970,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-11-core.html">Writing a Perl Core Feature - part 11: Core modules</a></h2>
             </div> <!-- card-header -->
@@ -1771,7 +1982,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/what-return-is-expected">What return is expected from a function?</a></h2>
             </div> <!-- card-header -->
@@ -1783,7 +1994,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-10.html">Writing a Perl Core Feature - part 10: Documentation</a></h2>
             </div> <!-- card-header -->
@@ -1795,7 +2006,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/exceptional-perl-failure-is-an-option-382h">Exceptional Perl: Failure is an option</a></h2>
             </div> <!-- card-header -->
@@ -1807,7 +2018,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/23/xmpl-remote-healthz-revisited/">xmpl - remote key/value store healthz revisited</a></h2>
             </div> <!-- card-header -->
@@ -1819,7 +2030,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/random-integer-generation-in-an-interval-with-modern-oop-perl-4p2c">Random integer generation in an interval with Modern OOP Perl</a></h2>
             </div> <!-- card-header -->
@@ -1831,7 +2042,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/sets">Sets in Perl using Set::Scalar</a></h2>
             </div> <!-- card-header -->
@@ -1843,7 +2054,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/02/22/mojo-useragent-intro-notes/">Mojo::UserAgent introductory notes</a></h2>
             </div> <!-- card-header -->
@@ -1855,7 +2066,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/thoughts-citations-and-thoughts-about-regex-29h0">Thoughts, quotes and thoughts about regex</a></h2>
             </div> <!-- card-header -->
@@ -1867,7 +2078,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://leonerds-code.blogspot.com/2021/02/writing-perl-core-feature-part-9.html">Writing a Perl Core Feature - part 9: Tests</a></h2>
             </div> <!-- card-header -->
@@ -1879,7 +2090,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rt-cpan-org-upgraded">rt.cpan.org has a new home</a></h2>
             </div> <!-- card-header -->
@@ -1891,7 +2102,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/perl-532/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-532-ad&utm_campaign=user-acquisition">Multi-OS Universal Perl Package Management</a></h2>
             </div> <!-- card-header -->
@@ -1903,7 +2114,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/501.html">#501 - Perl and Quality</a></h2>
             </div> <!-- card-header -->
@@ -1920,7 +2131,7 @@ Result: PASS
      on Monday 01 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/03/01/list-of-new-cpan-distributions-feb-2021/">List of new CPAN distributions – Feb 2021</a></h2>
             </div> <!-- card-header -->
@@ -2553,7 +2764,7 @@ Result: PASS
      on Monday 01 March 2021 01:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/the-hijacking-of-perl-com/">The Hijacking of Perl.com</a></h2>
             </div> <!-- card-header -->
@@ -2813,7 +3024,7 @@ If you are interested in helping with that, get in touch with them.</p>
      on Sunday 28 February 2021 08:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-101.html">Perl weekly challenge 101</a></h2>
             </div> <!-- card-header -->
@@ -2971,7 +3182,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Tuesday 23 February 2021 10:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cccxxx-18-cpan-great-modules-released.html">(cccxxx) 18 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2983,7 +3194,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdlvi-metacpan-weekly-report.html">(cdlvi) metacpan weekly report - Text::Table::More</a></h2>
             </div> <!-- card-header -->
@@ -2995,7 +3206,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdlxxix-stackoverflow-perl-report.html">(cdlxxix) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -3007,7 +3218,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rt-cpan-org-upgraded">rt.cpan.org has a new home</a></h2>
             </div> <!-- card-header -->
@@ -3029,7 +3240,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Friday 26 February 2021 12:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/what-return-is-expected">What return is expected from a function?</a></h2>
             </div> <!-- card-header -->
@@ -3051,7 +3262,7 @@ module the function can know exactly how many values it needd to return.
      on Thursday 25 February 2021 17:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/our">our</a></h2>
             </div> <!-- card-header -->
@@ -3070,7 +3281,7 @@ With that out of the way, in most cases, you'd want to declare variables in a le
      on Tuesday 23 February 2021 20:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/my">my</a></h2>
             </div> <!-- card-header -->
@@ -3086,7 +3297,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 20:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/q">q</a></h2>
             </div> <!-- card-header -->
@@ -3101,7 +3312,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 19:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/qq">qq</a></h2>
             </div> <!-- card-header -->
@@ -3116,7 +3327,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 19:15</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/02/cpan-mirror-list-changes.html">CPAN Mirror List Changes</a></h2>
             </div> <!-- card-header -->
@@ -3128,7 +3339,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Monday 22 February 2021 09:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/02/perl-weekly-challenge-100-fun-time-and-triangle-sum.html">Perl Weekly Challenge 100: Fun Time and Triangle Sum</a></h2>
             </div> <!-- card-header -->
@@ -3386,7 +3597,7 @@ sub find_min_path {
      on Monday 22 February 2021 03:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/02/21#pwc100">&lt;p&gt;The Weekly Challenge 100&lt;/p&gt;</a></h2>
             </div> <!-- card-header -->
@@ -3452,28 +3663,6 @@ $ perl ch-2.pl
 
               <p class="text-right"><small>Published
      on Sunday 21 February 2021 17:09</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_65">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/martin_mcgrath/2021/02/rtcpanorg-to-remain-online.html">rt.cpan.org to remain online</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Despite rt.cpan.org still displaying the sunset message, it is in fact <strong>not</strong> going away forever on the 1st of March, but will have an 'extended downtime' while it is moved elsewhere. In future it'd be nice if communications of such things, and even allowing others to have a say on the matter, could be handled better.</p>
-
-<p>See also:<br />
-<ul><br />
-	<li><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/02/msg259168.html">https://www.nntp.perl.org/group/perl.perl5.porters/2021/02/msg259168.html</a></li><br />
-        <li><a href="https://news.perlfoundation.org/post/rt-cpan-org-future">https://news.perlfoundation.org/post/rt-cpan-org-future</a></li><br />
-        <li><a href="http://blogs.perl.org/users/martin_mcgrath/2021/01/regarding-the-closure-of-rtcpan.html">http://blogs.perl.org/users/martin_mcgrath/2021/01/regarding-the-closure-of-rtcpan.html</a></li><br />
-</ul></p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Martin McGrath
-     on Sunday 21 February 2021 16:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_66">
@@ -3866,7 +4055,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 04 March 2021 13:02 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 04 March 2021 13:47 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
