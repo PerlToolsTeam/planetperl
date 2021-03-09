@@ -55,6 +55,119 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://perl.com/article/why-i-wrote-net-google-civicinformation/">Why I wrote Net::Google::CivicInformation</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+
+<p>Before I became a computer programmer, I tried my hand at being a human programmer, in the form of a wordsmith, as I called myself then. I had various jobs as a writer, editor, translator and journalist, but I met with little success, for two main reasons. In those days you needed a publisher to find your work interesting enough to publish before anyone could read it, and that was a pretty high bar. And in the second place, it was difficult to get the humans to react to the content I wrote (I&rsquo;m still exercised that the movie reviewer would get more letters to the editor than I did after a political exposé that took a month to produce).</p>
+
+<p>I still remember the moment of awe and inspiration in early 1994 or so, when after acquiring a sparkly new i286 PC at Circuit City, I discovered the World Wide Web and its promise of a world free of publishers and constraining editors. I jumped right in and became one of the first &ldquo;webmasters,&rdquo; which led to a job where I needed to learn Perl. Over a short time I began to thrill more at the construction of the engine to publish the content than at the creating of it. I still had the barrier-free entry point, and as to my second gripe &hellip; well, I found that computers respond much more predictably to my writing than humans ever did.</p>
+
+<p>Fast forward almost 25 years and lots of things have changed, but I still get an itch scratched by building &ldquo;websites.&rdquo; Of course now they are called REST APIs or webapps or microservices or whatever the newest term is, and I deliver mostly JSON data packets to other computers inside big organizations—it&rsquo;s been 20 years since I used CGI.pm—but I&rsquo;m very blessed to have had a long career in the same field with fast-evolving technologies, supported throughout by Perl and its amazing community of contributors.</p>
+
+<p>You&rsquo;d think maybe that after spending all week building APIs at work I&rsquo;d be sated, but last weekend found me hankering for a new project, something outside work, but using my expertise, and something that could have real value for other people. I also specifically wanted to see if I could provide for the CPAN a library to interface to a useful public API. I&rsquo;ve contributed a handful of insignificant distributions over the years, and found it to be very satisfying and also that it forces me to up my game as far as quality control and attention to detail. Yet I&rsquo;d never found an opportunity to contribute a module in the area I know best.</p>
+
+<p>Usually all the best ideas are taken, of course, especially when it comes to the CPAN. It seemed there was a client for every API you could think of, but eventually I stumbled upon one that I found to be super-cool, and unsupported in Perl! The <a href="https://developers.google.com/civic-information">Google Civic Information API</a> provides extensive contact information for all elected officials from head of state down to county tax collector for any US address.</p>
+
+<h2 id="silence-betokens-consent">Silence betokens consent</h2>
+
+<p>Like many of you, I suppose, I am still somewhat shell-shocked at the sustained assault on democracy and democratic participation that has been going on lately, not to mention that so many elected &ldquo;leaders&rdquo; seem to be insulated from the people. I also considered the COVID pandemic—not just its awful toll and the crass incompetence of the government response, but also how it has made us all much more isolated from each other, and how technologies that bring people together are even more important now that, for example, you can&rsquo;t readily show up with a neighborhood community group to a crowded county board meeting to make your views heard. But silence betokens consent, and if our elected officials don&rsquo;t hear from us they will just continue to do what they do.</p>
+
+<p>With all that in mind I set to creating a Perl client for the API. The first step was to obtain an auth token, which Google provides to developers for free (with a limit on daily queries). Authentication is extremely simple, so using <a href="https://metacpan.org/pod/HTTP::Tiny">HTTP::Tiny</a> I quickly had a client in my module that could connect to the API and make queries. Because elected officials&rsquo; contact information is only one thing the API provides, I made a parent class <a href="https://metacpan.org/pod/Net::Google::CivicInformation">Net::Google::CivicInformation</a> and subclass <a href="https://metacpan.org/pod/Net::Google::CivicInformation::Representatives">Net::Google::CivicInformation::Representatives</a> handling the representatives-related code. This will allow me or other authors to write sibling subclasses for other endpoints in future.</p>
+
+<p>Here&rsquo;s a portion of the subclass for fetching Representatives data:</p>
+
+<pre><code>package Net::Google::CivicInformation::Representatives;
+
+our $VERSION = '1.02';
+
+use strict;
+use warnings;
+use v5.10;
+
+use Carp 'croak';
+use Function::Parameters;
+use JSON::MaybeXS;
+use Try::Tiny;
+use Types::Common::String 'NonEmptyStr';
+use URI;
+use Moo;
+use namespace::clean;
+
+extends 'Net::Google::CivicInformation';
+
+##
+sub _build__api_url {'representatives'}
+
+##
+method representatives_for_address (NonEmptyStr $address) {
+    my $uri = URI-&gt;new( $self-&gt;_api_url );
+    $uri-&gt;query_form( address =&gt; $address, key =&gt; $self-&gt;api_key );
+
+    my $call = $self-&gt;_client-&gt;get( $uri );
+    my $response;
+
+    ...
+
+</code></pre>
+
+<p>The parent class has the <code>api_url</code> attribute whose coercion prepends the root URL to the value returned by the subclasses&rsquo; builder override. Note the use of <a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a> for signatures and <a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a> for type validation, which reduce the subroutine boilerplate nicely.</p>
+
+<p>Most of the work in creating the client distribution was in deciding how to marshal and reformat the extensive JSON data structure returned by Google. The results are organized into <a href="http://docs.opencivicdata.org/en/latest/proposals/0002.html">Open Civic Data Divisions</a>, an international standard adopted by Google for its service. An OCD Division ID can be as generic as <code>ocd-division/country:us</code> or as specific as <code>ocd-division/country:us/state:ny/place:new_york/council_district:36</code>. Google provides filtering on the data sets but I chose to use a high-level endpoint that returns all levels of officials for a single specific address (although a zip code alone works most of the time as well).</p>
+
+<p>After a few attempts I had it working in a simple way that was pleasing to me as a consumer of the module, and I documented the arrayref of hashrefs it would return representing the, um, representatives. I wrote some tests and bundled up the distribution and uploaded it to PAUSE.</p>
+
+<h2 id="setting-up-the-webservice">Setting up the webservice</h2>
+
+<p>The next step was to put the new client to use, and a public-facing web app seemed the obvious choice. I&rsquo;ve learned over the years that the majority of people still think of a .com domain as most inviting, and that a readable name is key. I settled on <strong>ContactMyReps</strong> for the name, registered the <a href="https://contactmyreps.com">contactmyreps.com</a> domain, and pointed it at my server. At work I use <a href="https://metacpan.org/pod/Mojolicious">Mojolicious</a> but I far prefer <a href="https://metacpan.org/pod/Dancer2">Dancer2</a>—it feels much more light weight and flexible and Perlish to me.</p>
+
+<p>The POST route handler for the lookup query:</p>
+
+<pre><code>post '/find-by-address' =&gt; sub {
+    my $params = params;
+
+    if ( not $params-&gt;{address} ) {
+        send_error('Error: address is required.', 400 );
+    }
+
+    my $client = Net::Google::CivicInformation::Representatives-&gt;new;
+
+    my %result = ( address =&gt; $params-&gt;{address} );
+
+    my $response = $client-&gt;representatives_for_address($params-&gt;{address});
+
+    if ( $response-&gt;{error} ) {
+        $result{error} = $response-&gt;{error};
+    }
+    else {
+        $result{officials} = decode_utf8(encode_json($response-&gt;{officials}));
+    }
+
+    return template 'find-by-address', \%result;
+};
+</code></pre>
+
+<p>The backend side of the webapp was done in an hour, and then I set to the presentation. It took a while but I came up with a design that seemed functional and aesthetically acceptable. After testing locally I was ready to deploy, and after creating a new TLS cert and updating the <code>Apache</code> config, the site was up and running. (The source code is available <a href="https://github.com/1nickt/ContactMyReps">on Github</a>).</p>
+
+<p><img src="https://perl.com/images/why_i_wrote_net_google_civicinformation/expanded.png" alt="" /></p>
+
+<p>I sent the link to the to a couple of friends to see what they thought, and posted to <a href="http://blogs.perl.org/users/1nickt/2021/02/who-you-gonna-call-perl-client-and-website-for-google-civic-information-api.html">blogs.perl.org</a> to get some live testing, and was pleased when other people started using the site.</p>
+
+<h2 id="wrapping-up">Wrapping up</h2>
+
+<p>Having conceived of and implemented the idea in less than 24 hours, I was pretty exhilarated and on a roll. I decided that if a thing was worth doing, it was worth doing well, so I signed up for a few hundred dollars in Google advertising to promote the site next to relevant search results. I also set up a Buy Me a Coffee account and placed a button on the search results display. It costs about $1.20 to buy a click to the site, so I figure if 10% of the visitors contribute something, they&rsquo;ll pay for the advertising to reach new audiences and the thing will be self-sustaining.</p>
+
+<p>All in all it was a fun way to spend a winter weekend. The service is online at <a href="https://contactmyreps.com">https://contactmyreps.com</a> if you&rsquo;d like to check it out!</p>
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://perl.com/" class="badge badge-primary" style="float: left">perl.com</a>
+
+              <p class="text-right"><small>Published
+     on Tuesday 09 March 2021 19:35</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/dist-zilla-why-you-should-use-starter-instead-of-basic-22d7">Dist::Zilla - Why you should use @Starter instead of @Basic</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>I posted previously about a new "starter" bundle for <a href="http://dzil.org/">Dist::Zilla</a>, the CPAN author's automation tool. I'd like to briefly try to answer the question: "Why should I care?"</p>
@@ -81,7 +194,7 @@
      on Tuesday 09 March 2021 19:07</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/the-perl-debugger-can-be-your-superpower-2d3o">The Perl debugger can be your superpower</a></h2>
             </div> <!-- card-header -->
@@ -173,7 +286,7 @@ main::<span class="o">(</span>hello.pl:7<span class="o">)</span>: say <span clas
      on Tuesday 09 March 2021 15:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-103-1hpm">Weekly Challenge 103</a></h2>
             </div> <!-- card-header -->
@@ -284,7 +397,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Tuesday 09 March 2021 13:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-create-rpa-with-perl-57mp">How to create RPA with Perl?</a></h2>
             </div> <!-- card-header -->
@@ -314,7 +427,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Tuesday 09 March 2021 06:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/i-will-talk-about-perl-positively-3nfj">I will talk about Perl positively.</a></h2>
             </div> <!-- card-header -->
@@ -334,7 +447,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Tuesday 09 March 2021 05:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/s1d">The Future is Now! Perl Role in Malaysia</a></h2>
             </div> <!-- card-header -->
@@ -346,7 +459,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/sny">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -358,7 +471,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/ly9">Not All Heroes Wear Capes. Perl in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -370,7 +483,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/9wf">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -382,7 +495,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/5xx">Cooking Up Something Good. Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -394,7 +507,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021 </a></h2>
             </div> <!-- card-header -->
@@ -406,7 +519,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -418,7 +531,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -430,7 +543,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -442,7 +555,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting - Lightning Talks</a></h2>
             </div> <!-- card-header -->
@@ -454,7 +567,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -466,7 +579,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/report-2021-02.html">Gabor self reporting for 2021.02</a></h2>
             </div> <!-- card-header -->
@@ -478,7 +591,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -490,7 +603,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/">Code Maven courses</a></h2>
             </div> <!-- card-header -->
@@ -502,7 +615,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://docs.google.com/forms/d/e/1FAIpQLSehnx4fGn33lV1T_VyB-t1_CZXB_bn5dNOSoCGSyxqveIJjWA/viewform?usp=sf_link">Which versions of Perl are you using?</a></h2>
             </div> <!-- card-header -->
@@ -514,7 +627,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/03/01/2021-09-best-of-raku/">2021.09 Best of Raku?</a></h2>
             </div> <!-- card-header -->
@@ -526,7 +639,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/cpantesters-or-ci-system">CPAN Testers or CI system?</a></h2>
             </div> <!-- card-header -->
@@ -538,7 +651,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/03/01/PWC102/">Perl Weekly Challenge 102</a></h2>
             </div> <!-- card-header -->
@@ -550,7 +663,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-102-57jb">Weekly Challenge 102</a></h2>
             </div> <!-- card-header -->
@@ -562,7 +675,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/03/Perl_Weekly_Challenge_102__Rare_Hash.html">Perl Weekly Challenge 102: Rare Hash</a></h2>
             </div> <!-- card-header -->
@@ -574,7 +687,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-102.html">Perl weekly challenge 102</a></h2>
             </div> <!-- card-header -->
@@ -586,7 +699,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/04/pwc102-hash-counting-string/">PWC102 - Hash-counting String</a></h2>
             </div> <!-- card-header -->
@@ -598,7 +711,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/03/pwc102-rare-numbers/">PWC102 - Rare Numbers</a></h2>
             </div> <!-- card-header -->
@@ -610,7 +723,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/03/01/rare-numbers-and-hash-perl-challenge-102.html">Rare Numbers and Hash: Perl Challenge #102</a></h2>
             </div> <!-- card-header -->
@@ -622,7 +735,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/rare-counting.html">Rare Counting with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -634,7 +747,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/03/07">The Weekly Challenge 102: Threads and Recursion</a></h2>
             </div> <!-- card-header -->
@@ -646,7 +759,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/03/07/perl-weekly-challenge-102-hash-counting-string/">Perl Weekly Challenge 102: Hash-counting String</a></h2>
             </div> <!-- card-header -->
@@ -658,7 +771,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/03/07/perl-weekly-challenge-102-rare-numbers/">Perl Weekly Challenge 102: Rare Numbers</a></h2>
             </div> <!-- card-header -->
@@ -670,7 +783,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-102/">Perl Weekly Challenge 102</a></h2>
             </div> <!-- card-header -->
@@ -682,7 +795,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-102">RECAP - The Weekly Challenge - 102</a></h2>
             </div> <!-- card-header -->
@@ -694,7 +807,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-103">The Weekly Challenge - 103</a></h2>
             </div> <!-- card-header -->
@@ -706,7 +819,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/gzipzopfli---another-compression-module.html">Gzip::Zopfli</a></h2>
             </div> <!-- card-header -->
@@ -718,7 +831,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/enkidu/2021/03/perl-is-dead-when-im-dead.html">Perl is dead ... when I'm dead!</a></h2>
             </div> <!-- card-header -->
@@ -730,7 +843,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/03/monthly-report---february-2.html">Monthly Report - February</a></h2>
             </div> <!-- card-header -->
@@ -742,7 +855,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/03/msg259202.html">Perl Steering Council</a></h2>
             </div> <!-- card-header -->
@@ -754,7 +867,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://gist.github.com/Ovid/7cd0256fe8213953d0f1d86d20d43f4b">Object::Pad v Moo v Moose v Core</a></h2>
             </div> <!-- card-header -->
@@ -766,7 +879,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/bringing-modern-oo-to-perl-51ak">Bringing Modern OO To Perl</a></h2>
             </div> <!-- card-header -->
@@ -778,7 +891,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/automation-with-rex">Learn automation using (R)?ex</a></h2>
             </div> <!-- card-header -->
@@ -790,7 +903,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.rexify.org/docs/release_notes/1.13.3.html">Rex vv1.13.3</a></h2>
             </div> <!-- card-header -->
@@ -802,7 +915,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Ovid/Cor/wiki/Corinna-Overview#no-builder-for-the-mvp">No :builder for the MVP</a></h2>
             </div> <!-- card-header -->
@@ -814,7 +927,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/perl-532/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-532-ad&utm_campaign=user-acquisition">Modern Perl Package Management | By ActiveState</a></h2>
             </div> <!-- card-header -->
@@ -826,7 +939,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/502.html">#502 - Date with Corinna</a></h2>
             </div> <!-- card-header -->
@@ -842,7 +955,7 @@ Les Miserables Episode 1: The Bishop (broadcast date: 1937-07-23) 00:10:24
      on Monday 08 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/03/07#pwc102">The Weekly Challenge 102: Threads and Recursion</a></h2>
             </div> <!-- card-header -->
@@ -975,7 +1088,7 @@ $ perl perl/ch-2.pl
      on Sunday 07 March 2021 16:28</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/cpantesters-or-ci-system">CPAN Testers or CI system?</a></h2>
             </div> <!-- card-header -->
@@ -993,7 +1106,7 @@ I think that the CPAN Testers are awesome, but if you care about your project yo
      on Sunday 07 March 2021 08:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cccxxxi-15-cpan-great-modules-released.html">(cccxxxi) 15 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1005,7 +1118,7 @@ I think that the CPAN Testers are awesome, but if you care about your project yo
      on Saturday 06 March 2021 22:05</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlvii-metacpan-weekly-report.html">(cdlvii) metacpan weekly report - Data::Printer</a></h2>
             </div> <!-- card-header -->
@@ -1017,7 +1130,7 @@ I think that the CPAN Testers are awesome, but if you care about your project yo
      on Saturday 06 March 2021 20:33</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlxxx-stackoverflow-perl-report.html">(cdlxxx) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -1029,7 +1142,7 @@ I think that the CPAN Testers are awesome, but if you care about your project yo
      on Saturday 06 March 2021 20:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/03/monthly-report---february-2.html">Monthly Report - February</a></h2>
             </div> <!-- card-header -->
@@ -1187,7 +1300,7 @@ I think that the CPAN Testers are awesome, but if you care about your project yo
      on Friday 05 March 2021 05:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-102.html">Perl weekly challenge 102</a></h2>
             </div> <!-- card-header -->
@@ -1398,7 +1511,7 @@ So for length 9 we have "<code>#3#5#7#9#</code>" and length 10 we have "<code>#3
      on Thursday 04 March 2021 12:06</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/enkidu/2021/03/perl-is-dead-when-im-dead.html">Perl is dead ... when I'm dead!</a></h2>
             </div> <!-- card-header -->
@@ -1479,7 +1592,7 @@ If you really think that RT isn’t fit for purpose, start asking people to help
      on Thursday 04 March 2021 16:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakuast-grant-report-2021-02">RakuAST Grant Report for 2021-02</a></h2>
             </div> <!-- card-header -->
@@ -1512,7 +1625,7 @@ If you really think that RT isn’t fit for purpose, start asking people to help
      on Tuesday 02 March 2021 13:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/gzipzopfli---another-compression-module.html">Gzip::Zopfli - another compression module</a></h2>
             </div> <!-- card-header -->
@@ -1553,7 +1666,7 @@ If you really think that RT isn’t fit for purpose, start asking people to help
      on Monday 01 March 2021 22:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/03/01/list-of-new-cpan-distributions-feb-2021/">List of new CPAN distributions – Feb 2021</a></h2>
             </div> <!-- card-header -->
@@ -2186,7 +2299,7 @@ If you really think that RT isn’t fit for purpose, start asking people to help
      on Monday 01 March 2021 01:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/the-hijacking-of-perl-com/">The Hijacking of Perl.com</a></h2>
             </div> <!-- card-header -->
@@ -2446,7 +2559,7 @@ If you are interested in helping with that, get in touch with them.</p>
      on Sunday 28 February 2021 08:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/02/perl-weekly-challenge-101.html">Perl weekly challenge 101</a></h2>
             </div> <!-- card-header -->
@@ -2604,7 +2717,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Tuesday 23 February 2021 10:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cccxxx-18-cpan-great-modules-released.html">(cccxxx) 18 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2616,7 +2729,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/02/cdlvi-metacpan-weekly-report.html">(cdlvi) metacpan weekly report - Text::Table::More</a></h2>
             </div> <!-- card-header -->
@@ -2628,7 +2741,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Saturday 27 February 2021 19:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rt-cpan-org-upgraded">rt.cpan.org has a new home</a></h2>
             </div> <!-- card-header -->
@@ -2650,7 +2763,7 @@ One of the uses I put my degree to at work was to use "Winding numbers" to repli
      on Friday 26 February 2021 12:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/what-return-is-expected">What return is expected from a function?</a></h2>
             </div> <!-- card-header -->
@@ -2672,7 +2785,7 @@ module the function can know exactly how many values it needd to return.
      on Thursday 25 February 2021 17:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/our">our</a></h2>
             </div> <!-- card-header -->
@@ -2691,7 +2804,7 @@ With that out of the way, in most cases, you'd want to declare variables in a le
      on Tuesday 23 February 2021 20:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/my">my</a></h2>
             </div> <!-- card-header -->
@@ -2707,7 +2820,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 20:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/q">q</a></h2>
             </div> <!-- card-header -->
@@ -2722,7 +2835,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Tuesday 23 February 2021 19:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/02/cpan-mirror-list-changes.html">CPAN Mirror List Changes</a></h2>
             </div> <!-- card-header -->
@@ -2734,7 +2847,7 @@ There are also package variables in Perl that are declared using the <a href="/o
      on Monday 22 February 2021 09:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/02/21#pwc100">&lt;p&gt;The Weekly Challenge 100&lt;/p&gt;</a></h2>
             </div> <!-- card-header -->
@@ -2802,7 +2915,7 @@ $ perl ch-2.pl
      on Sunday 21 February 2021 17:09</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/outreachy-2021">Outreachy participation - looking for mentors</a></h2>
             </div> <!-- card-header -->
@@ -2828,7 +2941,7 @@ $ perl ch-2.pl
      on Saturday 20 February 2021 20:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tony-report-21-01">Maintaining Perl 5 (Tony Cook): January 2021 Grant Report</a></h2>
             </div> <!-- card-header -->
@@ -2917,7 +3030,7 @@ applied
      on Friday 19 February 2021 13:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/jonathan-2021-01">January report of the Raku Development Grant of Jonathan Worthington</a></h2>
             </div> <!-- card-header -->
@@ -2958,7 +3071,7 @@ In January, I at last felt in shape to get back to the new dispatch mechanism. T
      on Friday 19 February 2021 12:57</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-02-15-app-cmd">Kommandozeilenwerkzeuge mit App::Cmd</a></h2>
             </div> <!-- card-header -->
@@ -2989,7 +3102,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 09 March 2021 19:44 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 09 March 2021 20:48 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->

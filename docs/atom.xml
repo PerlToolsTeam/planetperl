@@ -7,9 +7,118 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-03-09T19:44:35Z</updated>
+  <updated>2021-03-09T20:48:33Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Why I wrote Net::Google::CivicInformation</title>
+    <link rel="alternate" href="https://perl.com/article/why-i-wrote-net-google-civicinformation/" type="text/html"/>
+    <content type="html">
+
+&lt;p&gt;Before I became a computer programmer, I tried my hand at being a human programmer, in the form of a wordsmith, as I called myself then. I had various jobs as a writer, editor, translator and journalist, but I met with little success, for two main reasons. In those days you needed a publisher to find your work interesting enough to publish before anyone could read it, and that was a pretty high bar. And in the second place, it was difficult to get the humans to react to the content I wrote (I&amp;rsquo;m still exercised that the movie reviewer would get more letters to the editor than I did after a political exposé that took a month to produce).&lt;/p&gt;
+
+&lt;p&gt;I still remember the moment of awe and inspiration in early 1994 or so, when after acquiring a sparkly new i286 PC at Circuit City, I discovered the World Wide Web and its promise of a world free of publishers and constraining editors. I jumped right in and became one of the first &amp;ldquo;webmasters,&amp;rdquo; which led to a job where I needed to learn Perl. Over a short time I began to thrill more at the construction of the engine to publish the content than at the creating of it. I still had the barrier-free entry point, and as to my second gripe &amp;hellip; well, I found that computers respond much more predictably to my writing than humans ever did.&lt;/p&gt;
+
+&lt;p&gt;Fast forward almost 25 years and lots of things have changed, but I still get an itch scratched by building &amp;ldquo;websites.&amp;rdquo; Of course now they are called REST APIs or webapps or microservices or whatever the newest term is, and I deliver mostly JSON data packets to other computers inside big organizations—it&amp;rsquo;s been 20 years since I used CGI.pm—but I&amp;rsquo;m very blessed to have had a long career in the same field with fast-evolving technologies, supported throughout by Perl and its amazing community of contributors.&lt;/p&gt;
+
+&lt;p&gt;You&amp;rsquo;d think maybe that after spending all week building APIs at work I&amp;rsquo;d be sated, but last weekend found me hankering for a new project, something outside work, but using my expertise, and something that could have real value for other people. I also specifically wanted to see if I could provide for the CPAN a library to interface to a useful public API. I&amp;rsquo;ve contributed a handful of insignificant distributions over the years, and found it to be very satisfying and also that it forces me to up my game as far as quality control and attention to detail. Yet I&amp;rsquo;d never found an opportunity to contribute a module in the area I know best.&lt;/p&gt;
+
+&lt;p&gt;Usually all the best ideas are taken, of course, especially when it comes to the CPAN. It seemed there was a client for every API you could think of, but eventually I stumbled upon one that I found to be super-cool, and unsupported in Perl! The &lt;a href="https://developers.google.com/civic-information"&gt;Google Civic Information API&lt;/a&gt; provides extensive contact information for all elected officials from head of state down to county tax collector for any US address.&lt;/p&gt;
+
+&lt;h2 id="silence-betokens-consent"&gt;Silence betokens consent&lt;/h2&gt;
+
+&lt;p&gt;Like many of you, I suppose, I am still somewhat shell-shocked at the sustained assault on democracy and democratic participation that has been going on lately, not to mention that so many elected &amp;ldquo;leaders&amp;rdquo; seem to be insulated from the people. I also considered the COVID pandemic—not just its awful toll and the crass incompetence of the government response, but also how it has made us all much more isolated from each other, and how technologies that bring people together are even more important now that, for example, you can&amp;rsquo;t readily show up with a neighborhood community group to a crowded county board meeting to make your views heard. But silence betokens consent, and if our elected officials don&amp;rsquo;t hear from us they will just continue to do what they do.&lt;/p&gt;
+
+&lt;p&gt;With all that in mind I set to creating a Perl client for the API. The first step was to obtain an auth token, which Google provides to developers for free (with a limit on daily queries). Authentication is extremely simple, so using &lt;a href="https://metacpan.org/pod/HTTP::Tiny"&gt;HTTP::Tiny&lt;/a&gt; I quickly had a client in my module that could connect to the API and make queries. Because elected officials&amp;rsquo; contact information is only one thing the API provides, I made a parent class &lt;a href="https://metacpan.org/pod/Net::Google::CivicInformation"&gt;Net::Google::CivicInformation&lt;/a&gt; and subclass &lt;a href="https://metacpan.org/pod/Net::Google::CivicInformation::Representatives"&gt;Net::Google::CivicInformation::Representatives&lt;/a&gt; handling the representatives-related code. This will allow me or other authors to write sibling subclasses for other endpoints in future.&lt;/p&gt;
+
+&lt;p&gt;Here&amp;rsquo;s a portion of the subclass for fetching Representatives data:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;package Net::Google::CivicInformation::Representatives;
+
+our $VERSION = '1.02';
+
+use strict;
+use warnings;
+use v5.10;
+
+use Carp 'croak';
+use Function::Parameters;
+use JSON::MaybeXS;
+use Try::Tiny;
+use Types::Common::String 'NonEmptyStr';
+use URI;
+use Moo;
+use namespace::clean;
+
+extends 'Net::Google::CivicInformation';
+
+##
+sub _build__api_url {'representatives'}
+
+##
+method representatives_for_address (NonEmptyStr $address) {
+    my $uri = URI-&amp;gt;new( $self-&amp;gt;_api_url );
+    $uri-&amp;gt;query_form( address =&amp;gt; $address, key =&amp;gt; $self-&amp;gt;api_key );
+
+    my $call = $self-&amp;gt;_client-&amp;gt;get( $uri );
+    my $response;
+
+    ...
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The parent class has the &lt;code&gt;api_url&lt;/code&gt; attribute whose coercion prepends the root URL to the value returned by the subclasses&amp;rsquo; builder override. Note the use of &lt;a href="https://metacpan.org/pod/Function::Parameters"&gt;Function::Parameters&lt;/a&gt; for signatures and &lt;a href="https://metacpan.org/pod/Type::Tiny"&gt;Type::Tiny&lt;/a&gt; for type validation, which reduce the subroutine boilerplate nicely.&lt;/p&gt;
+
+&lt;p&gt;Most of the work in creating the client distribution was in deciding how to marshal and reformat the extensive JSON data structure returned by Google. The results are organized into &lt;a href="http://docs.opencivicdata.org/en/latest/proposals/0002.html"&gt;Open Civic Data Divisions&lt;/a&gt;, an international standard adopted by Google for its service. An OCD Division ID can be as generic as &lt;code&gt;ocd-division/country:us&lt;/code&gt; or as specific as &lt;code&gt;ocd-division/country:us/state:ny/place:new_york/council_district:36&lt;/code&gt;. Google provides filtering on the data sets but I chose to use a high-level endpoint that returns all levels of officials for a single specific address (although a zip code alone works most of the time as well).&lt;/p&gt;
+
+&lt;p&gt;After a few attempts I had it working in a simple way that was pleasing to me as a consumer of the module, and I documented the arrayref of hashrefs it would return representing the, um, representatives. I wrote some tests and bundled up the distribution and uploaded it to PAUSE.&lt;/p&gt;
+
+&lt;h2 id="setting-up-the-webservice"&gt;Setting up the webservice&lt;/h2&gt;
+
+&lt;p&gt;The next step was to put the new client to use, and a public-facing web app seemed the obvious choice. I&amp;rsquo;ve learned over the years that the majority of people still think of a .com domain as most inviting, and that a readable name is key. I settled on &lt;strong&gt;ContactMyReps&lt;/strong&gt; for the name, registered the &lt;a href="https://contactmyreps.com"&gt;contactmyreps.com&lt;/a&gt; domain, and pointed it at my server. At work I use &lt;a href="https://metacpan.org/pod/Mojolicious"&gt;Mojolicious&lt;/a&gt; but I far prefer &lt;a href="https://metacpan.org/pod/Dancer2"&gt;Dancer2&lt;/a&gt;—it feels much more light weight and flexible and Perlish to me.&lt;/p&gt;
+
+&lt;p&gt;The POST route handler for the lookup query:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;post '/find-by-address' =&amp;gt; sub {
+    my $params = params;
+
+    if ( not $params-&amp;gt;{address} ) {
+        send_error('Error: address is required.', 400 );
+    }
+
+    my $client = Net::Google::CivicInformation::Representatives-&amp;gt;new;
+
+    my %result = ( address =&amp;gt; $params-&amp;gt;{address} );
+
+    my $response = $client-&amp;gt;representatives_for_address($params-&amp;gt;{address});
+
+    if ( $response-&amp;gt;{error} ) {
+        $result{error} = $response-&amp;gt;{error};
+    }
+    else {
+        $result{officials} = decode_utf8(encode_json($response-&amp;gt;{officials}));
+    }
+
+    return template 'find-by-address', \%result;
+};
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The backend side of the webapp was done in an hour, and then I set to the presentation. It took a while but I came up with a design that seemed functional and aesthetically acceptable. After testing locally I was ready to deploy, and after creating a new TLS cert and updating the &lt;code&gt;Apache&lt;/code&gt; config, the site was up and running. (The source code is available &lt;a href="https://github.com/1nickt/ContactMyReps"&gt;on Github&lt;/a&gt;).&lt;/p&gt;
+
+&lt;p&gt;&lt;img src="https://perl.com/images/why_i_wrote_net_google_civicinformation/expanded.png" alt="" /&gt;&lt;/p&gt;
+
+&lt;p&gt;I sent the link to the to a couple of friends to see what they thought, and posted to &lt;a href="http://blogs.perl.org/users/1nickt/2021/02/who-you-gonna-call-perl-client-and-website-for-google-civic-information-api.html"&gt;blogs.perl.org&lt;/a&gt; to get some live testing, and was pleased when other people started using the site.&lt;/p&gt;
+
+&lt;h2 id="wrapping-up"&gt;Wrapping up&lt;/h2&gt;
+
+&lt;p&gt;Having conceived of and implemented the idea in less than 24 hours, I was pretty exhilarated and on a roll. I decided that if a thing was worth doing, it was worth doing well, so I signed up for a few hundred dollars in Google advertising to promote the site next to relevant search results. I also set up a Buy Me a Coffee account and placed a button on the search results display. It costs about $1.20 to buy a click to the site, so I figure if 10% of the visitors contribute something, they&amp;rsquo;ll pay for the advertising to reach new audiences and the thing will be self-sustaining.&lt;/p&gt;
+
+&lt;p&gt;All in all it was a fun way to spend a winter weekend. The service is online at &lt;a href="https://contactmyreps.com"&gt;https://contactmyreps.com&lt;/a&gt; if you&amp;rsquo;d like to check it out!&lt;/p&gt;
+</content>
+    <id>https://perl.com/article/why-i-wrote-net-google-civicinformation/</id>
+    <published>2021-03-09T19:35:09Z</published>
+    <updated>2021-03-09T19:35:09Z</updated>
+  </entry>
   <entry>
     <title>Dist::Zilla - Why you should use @Starter instead of @Basic</title>
     <link rel="alternate" href="https://dev.to/grinnz/dist-zilla-why-you-should-use-starter-instead-of-basic-22d7" type="text/html"/>
