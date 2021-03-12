@@ -7,9 +7,432 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-03-12T09:53:48Z</updated>
+  <updated>2021-03-12T10:53:19Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Writing Declarative Software</title>
+    <link rel="alternate" href="https://dev.to/ovid/writing-declarative-software-375o" type="text/html"/>
+    <content type="html">&lt;p&gt;When you’re writing code, you have business requirements—also known as “features”—such as “the customer must be able to search for books by word count.” You also have “scaffolding” code that has to be written, but that the customer (or manager) doesn’t really notice, such as configuring a web framework and writing exception classes.&lt;/p&gt;
+
+&lt;p&gt;Particularly in systems with large amounts of technical debt, developers spend a lot of time refactoring the scaffolding, shoring it up, moving it around, and so on. The more time you spend fixing your scaffolding, the less time you have to develop your features.&lt;/p&gt;
+
+&lt;p&gt;What if you could spend less time writing the scaffolding code and more time focusing on the business requirements? Here’s how &lt;a href="https://allaroundtheworld.fr/"&gt;our company&lt;/a&gt; made that happen.&lt;/p&gt;
+
+
+
+
+&lt;p&gt;Anyone who’s taken a beginning database course learns about the critical importance of database transactions. For example, consider the following code:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;transfer_money&lt;/span&gt; &lt;span class="p"&gt;($self, $to, $amount) {&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;balance&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nn"&gt;Exception::&lt;/span&gt;&lt;span class="nv"&gt;InsufficientFunds&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;throw&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;...&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+
+    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;dec_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$to&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;inc_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The code is a grotesque oversimplification, but let’s just look at one little line:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;dec_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;What happens if that fails and throws an exception? If it fails before the money is withdrawn, that might not be disastrous. If it happens after the money is withdrawn, we withdraw the money, but don’t deposit it to the new account. Our customers will be very unhappy.&lt;/p&gt;
+
+&lt;p&gt;So we fix that with a database transaction. It might look like this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;transfer_money&lt;/span&gt; &lt;span class="p"&gt;($self, $to, $amount) {&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;balance&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nn"&gt;Exception::&lt;/span&gt;&lt;span class="nv"&gt;InsufficientFunds&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;throw&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;...&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+
+    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;db&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;do_transaction&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;dec_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="nv"&gt;$to&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;inc_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;});&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Now if &lt;code&gt;dec_balance&lt;/code&gt; or &lt;code&gt;inc_balance&lt;/code&gt; throws an exception, we’re guaranteed that whatever money was withdrawn will still be in the original account.&lt;/p&gt;
+
+&lt;p&gt;But it still has a massive bug. What if some other code withdrew money after we checked the balance, but before we withdrew it? Oops. It’s called a “race condition”, because the behavior of your code depends on whether it finishes before or after some other code.&lt;/p&gt;
+
+&lt;p&gt;In this case, the behavior depends on whether the system allows negative balances, whether the account allows negative balances, and other factors. We don’t want to risk this bug, so let’s expand the transaction scope.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;transfer_money&lt;/span&gt; &lt;span class="p"&gt;($self, $to, $amount) {&lt;/span&gt;
+    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;db&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;do_transaction&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;balance&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="nn"&gt;Exception::&lt;/span&gt;&lt;span class="nv"&gt;InsufficientFunds&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;throw&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;...&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="p"&gt;}&lt;/span&gt;
+
+        &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;dec_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="nv"&gt;$to&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;inc_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;});&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;So now we check the transaction before we check the balance. Good to go, right?&lt;/p&gt;
+
+&lt;p&gt;No. ORMs (object-relational mapper) tend to hold their data independently from the underlying storage mechanism. The data might be stale and you need to refresh it. But you can’t just do a &lt;code&gt;SELECT&lt;/code&gt;, you need a &lt;code&gt;SELECT ... FOR UPDATE&lt;/code&gt; to ensure that the row is locked in the transaction.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;transfer_money&lt;/span&gt; &lt;span class="p"&gt;($self, $to, $amount) {&lt;/span&gt;
+    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;db&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;do_transaction&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;requery_for_update&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+        &lt;span class="nv"&gt;$to&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;requery_for_update&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;balance&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="nn"&gt;Exception::&lt;/span&gt;&lt;span class="nv"&gt;InsufficientFunds&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;throw&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;...&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="p"&gt;}&lt;/span&gt;
+
+        &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;dec_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="nv"&gt;$to&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;inc_balance&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$amount&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;});&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We still have more work we need to do, but already we had a very simple method that is starting to get complex just to make sure it’s safe! We didn’t add any functionality. And that’s what we want to fix. The “functionality” is what the customer experiences. All that extra code is scaffolding and it’s easy to forget.&lt;/p&gt;
+
+&lt;p&gt;All you wanted to do was move a bit of money from one bank account to another. When your code gets seriously complex, it can be hard to track down bugs caused by race conditions and not having proper scope on transactions.&lt;/p&gt;
+
+&lt;p&gt;Which brings me to the real point of this article:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;&lt;em&gt;The more things you must remember, the more things you will forget.&lt;/em&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;That is something that developers often gloss over. “You have to know your system.” “It’s your fault that you weren’t paying attention.” “Be better!”&lt;/p&gt;
+
+&lt;p&gt;No. Don’t write code with the expectation that people will always remember exactly how things are wired together. Tau Station is a half million lines of code. Even devs who’ve worked on it for years find dusty corners they don’t know about.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#making-this-simple" class="anchor"&gt;
+  &lt;/a&gt;
+  Making This Simple
+&lt;/h1&gt;
+
+&lt;p&gt;So, what would the above look like in the Tau Station code? Currently the game doesn’t allow players to have multiple bank accounts, but they can move money from their wallet to their bank account and conceptually that’s the same thing. It uses an “Exchange” system we’ve built and it looks like this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$exchange&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;new_exchange&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+    &lt;span class="nv"&gt;Preamble&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;deposit&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;amount&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="nv"&gt;Steps&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="nv"&gt;Wallet&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;      &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;remove_credits&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="nv"&gt;BankAccount&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;add_credits&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="p"&gt;),&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The “Preamble” is a section that declares what success or failure messages are going to be displayed to the player and what information, if any, to use for those messages. The “Steps”, however, are what we’re actually trying to accomplish. In other words, with our exchanges, we write declarative code that describes the desired behavior. All of the “scaffolding” code is hidden away behind the scenes.&lt;/p&gt;
+
+&lt;p&gt;For example, note the code we didn’t have to write. The exchange system handles the following automatically:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Exception handling&lt;/li&gt;
+&lt;li&gt;Transactions&lt;/li&gt;
+&lt;li&gt;Success messages&lt;/li&gt;
+&lt;li&gt;Error messages&lt;/li&gt;
+&lt;li&gt;Logging&lt;/li&gt;
+&lt;li&gt;Tax calculations&lt;/li&gt;
+&lt;li&gt;Sufficient funds&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;And for other exchanges, we have things such as:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Job queues for asynchronous work&lt;/li&gt;
+&lt;li&gt;Email&lt;/li&gt;
+&lt;li&gt;Message popups&lt;/li&gt;
+&lt;li&gt;… and many other details I’m omitting from this&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;In fact, the declarative nature of the above code means that we can even take this “exchange” and cut-n-paste it for our non-technical narrative designers and they understand what it means!&lt;/p&gt;
+
+&lt;p&gt;And guess what? We can reuse this. Here’s another example, reusing the &lt;code&gt;BankAccount.add_credits code&lt;/code&gt;, for a relatively complex action of buying an item from another player (a bit simplified).&lt;/p&gt;
+
+&lt;p&gt;But first, imagine how you would write the code for buying an item from a vendor. You need to be in the same area, right? You need to have enough money, it needs to be for sale, and so on. Think of all the code you would have to write to check for that and all of the other issues, along with ensuring the database remains consistent.&lt;/p&gt;
+
+&lt;p&gt;Here’s what it looks like declaratively:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;Steps&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="nv"&gt;Location&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;           &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;is_in_station&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$station&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;PlayerMarketItem&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;   &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;is_not_seller_of&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$item&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;PlayerMarketItem&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;   &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;can_buy&lt;/span&gt;          &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$item&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;BankAccount&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;        &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;remove_credits&lt;/span&gt;   &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;BankAccount&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;      &lt;span class="nv"&gt;$vendor&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;add_credits&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$amount&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;Inventory&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;          &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;add_item&lt;/span&gt;         &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$item&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;PlayerMarketItem&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$vendor&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;remove_item&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$item&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Did you think of all those steps? How much code would you have had to write to implement all those steps? And would you have remembered all the possible exceptions, the transactions, the &lt;code&gt;SELECT ... FOR UPDATE&lt;/code&gt;, and so on? Would you have remembered or cared about all the success or failure messages?&lt;/p&gt;
+
+&lt;p&gt;By writing code in such a declarative style, we have taken incredibly complex behavior and not only made it simpler, but more correct.&lt;/p&gt;
+
+&lt;p&gt;Here’s another example. In Tau Station, you can save your progress by gestating a new clone. If you die, you respawn into your latest clone. What does clone gestation look like? It used to look like this mess:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;gestate&lt;/span&gt; &lt;span class="p"&gt;( $self, $character ) {&lt;/span&gt;
+    &lt;span class="c1"&gt;# check their area&lt;/span&gt;
+    &lt;span class="nv"&gt;croak&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="err"&gt;…&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="k"&gt;unless&lt;/span&gt; &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;area&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;slug&lt;/span&gt; &lt;span class="ow"&gt;eq&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;clonevat&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# make sure they can afford the clone&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$price&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;price_per_character&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;wallet&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="nv"&gt;$price&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;add_message&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="err"&gt;…&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$guard&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;result_source&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;schema&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;txn_scope_guard&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# pay for the clone&lt;/span&gt;
+    &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;dec_wallet&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$price&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;update&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# spawn a new clone&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$clone&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;find_or_new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="s"&gt;character_id&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;character_id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+        &lt;span class="s"&gt;station_area_id&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;station_area&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;station_area_id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+    &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$clone&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="vg"&gt;$_&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;physical_stats&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$now&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;DateTime&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;now&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="nv"&gt;$clone&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;clone_date&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$now&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$clone&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;gestation_date&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+    &lt;span class="nv"&gt;$now&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;clone&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;add&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;seconds&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;gestation_delay&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$clone&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;update_or_insert&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="nv"&gt;$character&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;add_message&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="err"&gt;…&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$guard&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;commit&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$clone&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And that was a bucket of bugs. And hard to follow. Now it looks like this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;Steps&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="nv"&gt;Location&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;is_in_area&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;clonevat&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;Wallet&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;   &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;pay&lt;/span&gt;        &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$price&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+  &lt;span class="nv"&gt;Clone&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;    &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;gestate&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;station_area&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Honestly, which of those would you rather write?&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#declarative-exchanges" class="anchor"&gt;
+  &lt;/a&gt;
+  Declarative Exchanges
+&lt;/h1&gt;
+
+&lt;p&gt;So how does this magic work?&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#the-behavior" class="anchor"&gt;
+  &lt;/a&gt;
+  The Behavior
+&lt;/h2&gt;
+
+&lt;p&gt;When you create a new exchange, the first thing it does is go through your steps and figure out what objects might be updated. Then we:&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;Start a transaction&lt;/li&gt;
+&lt;li&gt;Refresh all assets via &lt;code&gt;SELECT...FOR UPDATE&lt;/code&gt;
+&lt;/li&gt;
+&lt;li&gt;Run all the steps&lt;/li&gt;
+&lt;li&gt;Commit on success and rollback on failure&lt;/li&gt;
+&lt;li&gt;Notify the player(s) (if appropriate)&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;It sounds simple, but there’s a lot more going on under the hood. For example, if you are a member of a syndicate and you earn income, you may have to pay “tax” to that syndicate. Thus, the exchange needs to know that it must fetch the syndicate object, lock it, and send taxes to it. As a developer writing the code, you almost never have to pay attention to this. It’s all automatic.&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#the-structure" class="anchor"&gt;
+  &lt;/a&gt;
+  The Structure
+&lt;/h2&gt;
+
+&lt;p&gt;Each exchange step looks very similar:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;Location&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;is_in_area&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;clonevat&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;In exchange parlance, that’s:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;Topic&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;subject&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="s"&gt;verb&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;object&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Everything follows a linguistic SVO (subject-verb-object) pattern. To create a new Topic for the exchanges, you create a class called &lt;code&gt;Veure::Economy::Asset::Topic&lt;/code&gt; (there are legacy reasons for the name) and have it inherit from &lt;code&gt;Veure::Economy::Asset&lt;/code&gt;. We have another system that automatically finds and loads all these classes and ensures that the asset name is exportable on demand. You just write the code, there’s no need to wire it together because that’s done for you.&lt;/p&gt;
+
+&lt;p&gt;Each of these classes takes a subject (the first argument) and implementing a verb is merely a matter of writing a method. The object (in linguistic terms) becomes the argument(s) to the method. A simple &lt;code&gt;is_in_area&lt;/code&gt; check might look like this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;is_in_area&lt;/span&gt; &lt;span class="p"&gt;( $self, $area_slug ) {&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;station_area&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;area_slug&lt;/span&gt; &lt;span class="ow"&gt;eq&lt;/span&gt; &lt;span class="nv"&gt;$area_slug&lt;/span&gt;  &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;new_outcome&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;success&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# give them a nice failure message&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;new_outcome&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="s"&gt;success&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+        &lt;span class="s"&gt;message&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="o"&gt;...&lt;/span&gt;
+    &lt;span class="p"&gt;);&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Simple, eh? And now we can reuse this to our heart’s content.&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#failure" class="anchor"&gt;
+  &lt;/a&gt;
+  Failure
+&lt;/h2&gt;
+
+&lt;p&gt;Aside from the fact that the exchanges allow us to write incredibly complex code very quickly, one of my favorite parts is the fact that even though it’s declarative on the surface, underneath it’s objects all the way down. That means we get the full power of OO introspection where we need it. For example, what happens if I’m running the test suite and an exchange throws an exception?&lt;/p&gt;
+
+&lt;p&gt;Well, of course, we get a stack trace. And at the top of that trace, we get a stringified version of the exchange, along with its data. In this example, it’s for refueling a spaceship:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;character&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;new_exchange&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+    &lt;span class="s"&gt;slug&lt;/span&gt;            &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;refuel-current-ship&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+    &lt;span class="s"&gt;success_message&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Your ship is now being refueled.&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+    &lt;span class="s"&gt;failure_message&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Unable to refuel ship.&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+    &lt;span class="nv"&gt;Steps&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="nv"&gt;Area&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;character&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;is_in&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;docks&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="nv"&gt;Ship&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;ship&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;bootlegger&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;is_docked_on&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;tau&lt;/span&gt;&lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;station&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="nv"&gt;Ship&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;ship&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;bootlegger&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;needs_refueling&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="nv"&gt;Character&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;character&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;not_onboard_ship&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; 
+          &lt;span class="nv"&gt;ship&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;bootlegger&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt; 
+        &lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="nv"&gt;Money&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;character&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;pay&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mf"&gt;15.00&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="nv"&gt;Character&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;character&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;refuel_ship&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;ship&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;bootlegger&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+        &lt;span class="nv"&gt;Character&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;character&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;set_cooldown&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; 
+          &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="s"&gt;ship&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;ship&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;bootlegger&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt;
+          &lt;span class="s"&gt;cooldown_type&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ship_refuel&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;&lt;span class="s"&gt;period&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1000&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;In this case, we got an exception because there’s a serious bug: somehow the character has been asked to pay negative credits. This stringified exchange shows this very clearly here:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;Money&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;character&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;ovid&lt;/span&gt;&lt;span class="p"&gt;'),&lt;/span&gt; &lt;span class="nv"&gt;pay&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="mf"&gt;15.00&lt;/span&gt; &lt;span class="p"&gt;),&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;So it’s dead simple to recreate conditions that cause failures in incredibly complex behavior. In this case, we knew our exchange system was fine, but something was sending it bad data.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#regrets" class="anchor"&gt;
+  &lt;/a&gt;
+  Regrets
+&lt;/h1&gt;
+
+&lt;p&gt;If there is one regret I have about the exchange system, it’s that it’s not open source. We would release this if we could, but when we started on it, it wasn’t clear what the end result would be. Thus, it’s deeply tied to the game Tau Station . If we find ourselves with the time—or a contract—for this, we will release this for everyone.&lt;/p&gt;
+
+&lt;p&gt;As an aside, Ruby has something rather similar, named &lt;a href="https://trailblazer.to/2.1/"&gt;Trailblazer&lt;/a&gt;. The main difference in exchanges is that we’re not tied to MVC or the web. Trailblazer documents itself as “A New Architecture For Rails”, suggesting a tight coupling. That being said, it has fantastic testimonials which match our internal experience with exchanges. I expect we might see more of this type of code in the future.&lt;/p&gt;
+
+
+
+
+&lt;h1&gt;
+  &lt;a href="#hire-us" class="anchor"&gt;
+  &lt;/a&gt;
+  Hire Us!
+&lt;/h1&gt;
+
+&lt;p&gt;If you want this sort of software quality for your code, &lt;a href="https://allaroundtheworld.fr/"&gt;hire us&lt;/a&gt;. The above examples are in Perl because that's what the backend of Tau Station is written in, but we work with many different languages.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://ovid.github.io/articles/project-500.html"&gt;Here’s a case study of some emergency work we did&lt;/a&gt;.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Ovid</name>
+    </author>
+    <id>https://dev.to/ovid/writing-declarative-software-375o</id>
+    <published>2021-03-12T10:44:15Z</published>
+    <updated>2021-03-12T10:44:15Z</updated>
+    <category term="perl"/>
+    <category term="programming"/>
+    <category term="productivity"/>
+  </entry>
   <entry>
     <title>What place is best to do announcement of New Programming language?</title>
     <link rel="alternate" href="https://dev.to/yukikimoto/what-place-is-best-to-do-announcement-of-new-programming-language-3ja1" type="text/html"/>
@@ -628,200 +1051,6 @@ Kawabunga!
     <category term="perl"/>
     <category term="fun"/>
     <category term="programming"/>
-  </entry>
-  <entry>
-    <title>The Unknown Design Pattern</title>
-    <link rel="alternate" href="https://dev.to/ovid/the-unknown-design-pattern-1l64" type="text/html"/>
-    <content type="html">&lt;p&gt;If you care about software, you have probably heard about design patterns. MVC, decorators, factories, etc. But there's an awesome design pattern that’s perfect for modeling complex behaviors, but it’s not well-known outside of the game industry.&lt;/p&gt;
-
-&lt;p&gt;We’ve built a &lt;a href="https://taustation.space/"&gt;narrative sci-fi MMORPG named Tau Station&lt;/a&gt; (it’s free to play; check it out!). Like many devs, we were quickly hit with the problem of developing complex items. At first, it looked like we just wanted to create an &lt;code&gt;Item&lt;/code&gt; class and inherit from that.&lt;/p&gt;
-
-&lt;p&gt;But what if you want to create a military grade combat suit? Yes, it functions as armor. But it can shoot back, so it functions as a weapon. And it can patch up minor wounds, so it also functions as a medkit.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--N9K9h48z--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3hy0ygdrivdzcbnrkzmd.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--N9K9h48z--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3hy0ygdrivdzcbnrkzmd.png" alt="Tau Station Combat Suit"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Have you ever wondered how games handle complex objects with multiple behaviors? Many older gaming articles recommended multiple inheritance, despite the well-known problems. Today, games frequently use the Entity-Component-System (ECS). It’s ridiculously powerful and often you find that creating a new, complex class is simply adding a few entries into a database.&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#the-entitycomponentsystem" class="anchor"&gt;
-  &lt;/a&gt;
-  The Entity-Component-System
-&lt;/h1&gt;
-
-&lt;p&gt;ECS was first developed for the award-winning game &lt;a href="https://en.wikipedia.org/wiki/Thief:_The_Dark_Project"&gt;Thief: The Dark Project&lt;/a&gt;. It’s a powerful way of introducing complex object behavior without complex programming. There are three parts to it:&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Entities—Guns, Cars, Trees, and so on.&lt;/li&gt;
-&lt;li&gt;Components—Armor, Weapon, Medical, or whatever things might change behavior&lt;/li&gt;
-&lt;li&gt;System—The system that responds to the components of entities&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Note that in ECS, you’re dealing with data, not objects. That’s very important to remember.&lt;/p&gt;
-
-&lt;p&gt;Now imagine you’re building a game for children where they are photographing animals in the forest. Each “entity” might be an animal, a plant, a trap, or any combination (a Venus Fly Trap could be both a plant and a trap). The core game loop might look like this (code examples in Perl):&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$game&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;My::Awesome::&lt;/span&gt;&lt;span class="nv"&gt;Game&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;%parameters&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-&lt;span class="k"&gt;while&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$game&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;is_running&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-    &lt;span class="nv"&gt;$game&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;get_user_input&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-    &lt;span class="nv"&gt;$game&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;update_state&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-    &lt;span class="nv"&gt;$game&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;draw&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;The &lt;code&gt;update_state&lt;/code&gt; method might look like this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;update_state&lt;/span&gt;&lt;span class="p"&gt;($self) {&lt;/span&gt;
-    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;hide_from_danger&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;forage_for_food&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;move&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;photograph_available_animals&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;And finally, the &lt;code&gt;forage_for_food&lt;/code&gt; method might look like this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;forage_for_food&lt;/span&gt; &lt;span class="p"&gt;($self) {&lt;/span&gt;
-    &lt;span class="k"&gt;foreach&lt;/span&gt; &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$entity&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;local_entities&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;is_animal&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$entity&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-            &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;search_for_food&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$entity&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-        &lt;span class="p"&gt;}&lt;/span&gt;
-
-        &lt;span class="c1"&gt;# we can't use "elsif" here because more than&lt;/span&gt;
-        &lt;span class="c1"&gt;# one entity type might apply to the entity&lt;/span&gt;
-        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;is_plant&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$entity&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-            &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;react_to_sunlight&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$entity&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-        &lt;span class="p"&gt;}&lt;/span&gt;
-
-        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;is_trap&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$entity&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-            &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;trigger_trap&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$entity&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-        &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Entities are merely bundles of data and the helper functions, such as &lt;code&gt;is_animal&lt;/code&gt;, &lt;code&gt;is_plant&lt;/code&gt;, and &lt;code&gt;is_trap&lt;/code&gt; identify if an entity has a particular component.&lt;/p&gt;
-
-&lt;p&gt;But we’re a web-based game. Our game is driven by Tau Station citizen’s clicking on links, not on a game loop. So how do we handle this?&lt;/p&gt;
-
-&lt;h1&gt;
-  &lt;a href="#ecs-for-the-web" class="anchor"&gt;
-  &lt;/a&gt;
-  ECS for the Web
-&lt;/h1&gt;
-
-&lt;h2&gt;
-  &lt;a href="#the-database" class="anchor"&gt;
-  &lt;/a&gt;
-  The Database
-&lt;/h2&gt;
-
-&lt;p&gt;Tau Station doesn’t have a game loop, but that’s not really a problem. Instead, we check behavior as needed and the main concern is how we create our entities. For that, we have a simple view which pulls all related data in a single SQL query:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight sql"&gt;&lt;code&gt;         &lt;span class="k"&gt;SELECT&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;item_id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;name&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;mass&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;...&lt;/span&gt;   &lt;span class="c1"&gt;-- global&lt;/span&gt;
-                &lt;span class="n"&gt;ar&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;component_armor_id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;   &lt;span class="p"&gt;...&lt;/span&gt;        &lt;span class="c1"&gt;-- armor&lt;/span&gt;
-                &lt;span class="n"&gt;md&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;component_medical_id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;...&lt;/span&gt;        &lt;span class="c1"&gt;-- med&lt;/span&gt;
-                &lt;span class="n"&gt;wp&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;component_weapon_id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;  &lt;span class="p"&gt;...&lt;/span&gt;        &lt;span class="c1"&gt;-- weapon&lt;/span&gt;
-           &lt;span class="k"&gt;FROM&lt;/span&gt; &lt;span class="n"&gt;items&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;
-&lt;span class="k"&gt;LEFT&lt;/span&gt; &lt;span class="k"&gt;OUTER&lt;/span&gt; &lt;span class="k"&gt;JOIN&lt;/span&gt; &lt;span class="n"&gt;component_armors&lt;/span&gt;   &lt;span class="n"&gt;ar&lt;/span&gt; &lt;span class="k"&gt;ON&lt;/span&gt; &lt;span class="n"&gt;ar&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;item_id&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;item_id&lt;/span&gt;
-&lt;span class="k"&gt;LEFT&lt;/span&gt; &lt;span class="k"&gt;OUTER&lt;/span&gt; &lt;span class="k"&gt;JOIN&lt;/span&gt; &lt;span class="n"&gt;component_medicals&lt;/span&gt; &lt;span class="n"&gt;md&lt;/span&gt; &lt;span class="k"&gt;ON&lt;/span&gt; &lt;span class="n"&gt;md&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;item_id&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;item_id&lt;/span&gt;
-&lt;span class="k"&gt;LEFT&lt;/span&gt; &lt;span class="k"&gt;OUTER&lt;/span&gt; &lt;span class="k"&gt;JOIN&lt;/span&gt; &lt;span class="n"&gt;component_weapons&lt;/span&gt;  &lt;span class="n"&gt;wp&lt;/span&gt; &lt;span class="k"&gt;ON&lt;/span&gt; &lt;span class="n"&gt;wp&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;item_id&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;item_id&lt;/span&gt;
-          &lt;span class="k"&gt;WHERE&lt;/span&gt; &lt;span class="n"&gt;me&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;slug&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="o"&gt;?&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;There are a few things to note about the SQL. First, all items have a unique, human-readable “slug” that we use in the URL. The “Combat Suit” slug, for example, is &lt;code&gt;combat-suit&lt;/code&gt;. That’s used in the bind parameter (the question mark) in the SQL.&lt;/p&gt;
-
-&lt;p&gt;The &lt;code&gt;LEFT OUTER JOIN&lt;/code&gt; parts mean the component columns will be &lt;code&gt;NULL&lt;/code&gt; if the row is not found.&lt;/p&gt;
-
-&lt;p&gt;Finally, for many items, this SQL could be extremely inefficient. However, all of our items are immutable, meaning that we cache the results of the above query and player inventories contain “item instances” which might have more information (such as damage level).&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#the-code" class="anchor"&gt;
-  &lt;/a&gt;
-  The Code
-&lt;/h2&gt;
-
-&lt;p&gt;The code to use the above data is fairly simple. In our strategy, we have global properties such as “name”, “mass”, and so on. That’s in our items table. Each item might have an armor component (&lt;code&gt;component_armors&lt;/code&gt; table), a weapon component (&lt;code&gt;component_weapons&lt;/code&gt; table), and so on. We have an &lt;code&gt;Item&lt;/code&gt; class (it should have been named &lt;code&gt;Entity&lt;/code&gt;) and though it’s a class, it only has read-only accessors for fetching item properties, and predicate methods for testing components:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;is_armor&lt;/span&gt;  &lt;span class="p"&gt;($self) {&lt;/span&gt; &lt;span class="nb"&gt;defined&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;component_armor_id&lt;/span&gt;  &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;is_weapon&lt;/span&gt; &lt;span class="p"&gt;($self) {&lt;/span&gt; &lt;span class="nb"&gt;defined&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;component_weapon_id&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;is_med&lt;/span&gt;    &lt;span class="p"&gt;($self) {&lt;/span&gt; &lt;span class="nb"&gt;defined&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;component_med_id&lt;/span&gt;    &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Because we used &lt;code&gt;LEFT OUTER JOIN&lt;/code&gt;s in our code, the &lt;code&gt;is_armor&lt;/code&gt; predicate method will return false if the &lt;code&gt;component_armor_id&lt;/code&gt; is &lt;code&gt;NULL&lt;/code&gt;. This means, finally, that if someone wants to equip armor, we can easily check this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;equip_armor&lt;/span&gt;&lt;span class="p"&gt;($self, $item_slug) {&lt;/span&gt;
-
-    &lt;span class="c1"&gt;# logs and throws an exception if item not found&lt;/span&gt;
-    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$item&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;resolve_entity&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$item_slug&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-
-    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$item&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;is_armor&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="c1"&gt;# equip it&lt;/span&gt;
-    &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="c1"&gt;# don't equip it&lt;/span&gt;
-    &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;It’s a shame ECS isn’t well-known outside of the gaming industry, but after I gave a talk about Tau Station in Amsterdam, one London-based finance company realized it was a perfect way of modeling complex financial instruments. I’ve seen plenty of codebases where ECS would provide tremendous benefit. It’s “composition over inheritance” and it’s data-driven. It’s a huge win.&lt;/p&gt;
-
-&lt;p&gt;If you’d like to learn a bit more about Tau Station and how it was built, here’s a presentation I gave in Amsterdam.&lt;/p&gt;
-
-&lt;p&gt;&lt;iframe width="710" height="399" src="https://www.youtube.com/embed/UmLwYLSmTSs"&gt;
-&lt;/iframe&gt;
-&lt;/p&gt;
-
-&lt;p&gt;Also, the code in the cover image for this post is from the game!&lt;/p&gt;
-
-&lt;p&gt;Feel free to leave questions in the comments and I’ll try to answer them.&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Ovid</name>
-    </author>
-    <id>https://dev.to/ovid/the-unknown-design-pattern-1l64</id>
-    <published>2021-03-11T08:24:56Z</published>
-    <updated>2021-03-11T08:24:56Z</updated>
-    <category term="perl"/>
-    <category term="patterns"/>
-    <category term="software"/>
-    <category term="database"/>
   </entry>
   <entry>
     <title>I failed to pause before blogging</title>
