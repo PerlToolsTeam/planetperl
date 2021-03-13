@@ -1307,41 +1307,37 @@ chan         else         goto         package      switch
 <p>With all that in mind I set to creating a Perl client for the API. The first step was to obtain an auth token, which Google provides to developers for free (with a limit on daily queries). Authentication is extremely simple, so using <a href="https://metacpan.org/pod/HTTP::Tiny">HTTP::Tiny</a> I quickly had a client in my module that could connect to the API and make queries. Because elected officials&rsquo; contact information is only one thing the API provides, I made a parent class <a href="https://metacpan.org/pod/Net::Google::CivicInformation">Net::Google::CivicInformation</a> and subclass <a href="https://metacpan.org/pod/Net::Google::CivicInformation::Representatives">Net::Google::CivicInformation::Representatives</a> handling the representatives-related code. This will allow me or other authors to write sibling subclasses for other endpoints in future.</p>
 
 <p>Here&rsquo;s a portion of the subclass for fetching Representatives data:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-perl" data-lang="perl"><span style="color:#66d9ef">package</span> Net::Google::CivicInformation::Representatives;
 
-<pre><code>package Net::Google::CivicInformation::Representatives;
+<span style="color:#66d9ef">our</span> $VERSION <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;1.02&#39;</span>;
 
-our $VERSION = '1.02';
+<span style="color:#66d9ef">use</span> strict;
+<span style="color:#66d9ef">use</span> warnings;
+<span style="color:#66d9ef">use</span> v5<span style="color:#ae81ff">.10</span>;
 
-use strict;
-use warnings;
-use v5.10;
+<span style="color:#66d9ef">use</span> Carp <span style="color:#e6db74">&#39;croak&#39;</span>;
+<span style="color:#66d9ef">use</span> Function::Parameters;
+<span style="color:#66d9ef">use</span> JSON::MaybeXS;
+<span style="color:#66d9ef">use</span> Try::Tiny;
+<span style="color:#66d9ef">use</span> Types::Common::String <span style="color:#e6db74">&#39;NonEmptyStr&#39;</span>;
+<span style="color:#66d9ef">use</span> URI;
+<span style="color:#66d9ef">use</span> Moo;
+<span style="color:#66d9ef">use</span> namespace::clean;
 
-use Carp 'croak';
-use Function::Parameters;
-use JSON::MaybeXS;
-use Try::Tiny;
-use Types::Common::String 'NonEmptyStr';
-use URI;
-use Moo;
-use namespace::clean;
+extends <span style="color:#e6db74">&#39;Net::Google::CivicInformation&#39;</span>;
 
-extends 'Net::Google::CivicInformation';
+<span style="color:#75715e">##</span>
+<span style="color:#66d9ef">sub</span> <span style="color:#a6e22e">_build__api_url</span> {<span style="color:#e6db74">&#39;representatives&#39;</span>}
 
-##
-sub _build__api_url {'representatives'}
-
-##
+<span style="color:#75715e">##</span>
 method representatives_for_address (NonEmptyStr $address) {
-    my $uri = URI-&gt;new( $self-&gt;_api_url );
-    $uri-&gt;query_form( address =&gt; $address, key =&gt; $self-&gt;api_key );
+    <span style="color:#66d9ef">my</span> $uri <span style="color:#f92672">=</span> URI<span style="color:#f92672">-&gt;</span><span style="color:#66d9ef">new</span>( $self<span style="color:#f92672">-&gt;</span>_api_url );
+    $uri<span style="color:#f92672">-&gt;</span>query_form( address <span style="color:#f92672">=&gt;</span> $address, key <span style="color:#f92672">=&gt;</span> $self<span style="color:#f92672">-&gt;</span>api_key );
 
-    my $call = $self-&gt;_client-&gt;get( $uri );
-    my $response;
+    <span style="color:#66d9ef">my</span> $call <span style="color:#f92672">=</span> $self<span style="color:#f92672">-&gt;</span>_client<span style="color:#f92672">-&gt;</span>get( $uri );
+    <span style="color:#66d9ef">my</span> $response;
 
-    ...
-
-</code></pre>
-
+    <span style="color:#f92672">...</span></code></pre></div>
 <p>The parent class has the <code>api_url</code> attribute whose coercion prepends the root URL to the value returned by the subclasses&rsquo; builder override. Note the use of <a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a> for signatures and <a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a> for type validation, which reduce the subroutine boilerplate nicely.</p>
 
 <p>Most of the work in creating the client distribution was in deciding how to marshal and reformat the extensive JSON data structure returned by Google. The results are organized into <a href="http://docs.opencivicdata.org/en/latest/proposals/0002.html">Open Civic Data Divisions</a>, an international standard adopted by Google for its service. An OCD Division ID can be as generic as <code>ocd-division/country:us</code> or as specific as <code>ocd-division/country:us/state:ny/place:new_york/council_district:36</code>. Google provides filtering on the data sets but I chose to use a high-level endpoint that returns all levels of officials for a single specific address (although a zip code alone works most of the time as well).</p>
@@ -1353,31 +1349,28 @@ method representatives_for_address (NonEmptyStr $address) {
 <p>The next step was to put the new client to use, and a public-facing web app seemed the obvious choice. I&rsquo;ve learned over the years that the majority of people still think of a .com domain as most inviting, and that a readable name is key. I settled on <strong>ContactMyReps</strong> for the name, registered the <a href="https://contactmyreps.com">contactmyreps.com</a> domain, and pointed it at my server. At work I use <a href="https://metacpan.org/pod/Mojolicious">Mojolicious</a> but I far prefer <a href="https://metacpan.org/pod/Dancer2">Dancer2</a>—it feels much more light weight and flexible and Perlish to me.</p>
 
 <p>The POST route handler for the lookup query:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-perl" data-lang="perl">post <span style="color:#e6db74">&#39;/find-by-address&#39;</span> <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">sub</span> {
+    <span style="color:#66d9ef">my</span> $params <span style="color:#f92672">=</span> params;
 
-<pre><code>post '/find-by-address' =&gt; sub {
-    my $params = params;
-
-    if ( not $params-&gt;{address} ) {
-        send_error('Error: address is required.', 400 );
+    <span style="color:#66d9ef">if</span> ( <span style="color:#f92672">not</span> $params<span style="color:#f92672">-&gt;</span>{address} ) {
+        send_error(<span style="color:#e6db74">&#39;Error: address is required.&#39;</span>, <span style="color:#ae81ff">400</span> );
     }
 
-    my $client = Net::Google::CivicInformation::Representatives-&gt;new;
+    <span style="color:#66d9ef">my</span> $client <span style="color:#f92672">=</span> Net::Google::CivicInformation::Representatives<span style="color:#f92672">-&gt;</span><span style="color:#66d9ef">new</span>;
 
-    my %result = ( address =&gt; $params-&gt;{address} );
+    <span style="color:#66d9ef">my</span> %result <span style="color:#f92672">=</span> ( address <span style="color:#f92672">=&gt;</span> $params<span style="color:#f92672">-&gt;</span>{address} );
 
-    my $response = $client-&gt;representatives_for_address($params-&gt;{address});
+    <span style="color:#66d9ef">my</span> $response <span style="color:#f92672">=</span> $client<span style="color:#f92672">-&gt;</span>representatives_for_address($params<span style="color:#f92672">-&gt;</span>{address});
 
-    if ( $response-&gt;{error} ) {
-        $result{error} = $response-&gt;{error};
+    <span style="color:#66d9ef">if</span> ( $response<span style="color:#f92672">-&gt;</span>{error} ) {
+        $result{error} <span style="color:#f92672">=</span> $response<span style="color:#f92672">-&gt;</span>{error};
     }
-    else {
-        $result{officials} = decode_utf8(encode_json($response-&gt;{officials}));
+    <span style="color:#66d9ef">else</span> {
+        $result{officials} <span style="color:#f92672">=</span> decode_utf8(encode_json($response<span style="color:#f92672">-&gt;</span>{officials}));
     }
 
-    return template 'find-by-address', \%result;
-};
-</code></pre>
-
+    <span style="color:#66d9ef">return</span> template <span style="color:#e6db74">&#39;find-by-address&#39;</span>, <span style="color:#f92672">\</span>%result;
+};</code></pre></div>
 <p>The backend side of the webapp was done in an hour, and then I set to the presentation. It took a while but I came up with a design that seemed functional and aesthetically acceptable. After testing locally I was ready to deploy, and after creating a new TLS cert and updating the <code>Apache</code> config, the site was up and running. (The source code is available <a href="https://github.com/1nickt/ContactMyReps">on Github</a>).</p>
 
 <p><img src="https://perl.com/images/why_i_wrote_net_google_civicinformation/expanded.png" alt="" /></p>
@@ -3736,7 +3729,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 13 March 2021 22:54 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 13 March 2021 23:52 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
