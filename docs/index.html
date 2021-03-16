@@ -57,6 +57,164 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-104.html">Perl weekly challenge 104</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Here are solutions to this weeks challenges from the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a>.</p>
+
+<p>You can find my full code on
+<a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-103/james-smith/perl">Github</a></p>
+
+<h3>Task 1: FUSC sequence</h3>
+Write a script to generate first 50 members of FUSC Sequence. Please refer to OEIS for more information._
+
+<p>The sequence defined as below:</p>
+
+<pre>
+fusc(0) = 0
+fusc(1) = 1
+for n > 1:
+when n is even: fusc(n) = fusc(n / 2),
+when n is odd: fusc(n) = fusc((n-1)/2) + fusc((n+1)/2)
+</pre>
+
+<h4>Solution</h4>
+
+<p>I will show you 4 versions of the code below - they essentially non-cached/cached versions of recursive (naive) code to get an individual element, and a non-recursive version to compute the whole system.</p>
+
+<pre><code>sub fusc {
+  my $n = shift;
+  return $n<2 ? $n : fusc($n>>1) + ( $n&1 ? fusc(1+$n>>1) : 0 );
+}</code></pre>
+
+<p>Notes:<br />
+<ul><br />
+<li>Rather than using arithmetic operators here - we use binary operators - as we are checking for even (last bit set) or dividing by 2 (right it shift)<br />
+  <ul><br />
+    <li><em>$n & 1</em> is faster than <em>$n%2</em></li><br />
+    <li>By using bit shift operators here rather then divide by 2 - the code is faster and also avoids the need for adding an additional <code>int</code> as the bit-shift operator drops the last bit anyway!</li><br />
+  </ul><br />
+</li><br />
+<li>We can split the numbers into one of 3 cases:<br />
+  <ul><br />
+    <li><em>n &lt; 2</em> - Then the return value is just <em>n</em>;</li><br />
+    <li><em>n</em> is even - this is just the entry at index <em>n/2</em> - which we can also think of as <em>floor( n/2 )</em>;</li><br />
+    <li><em>n</em> is odd  - this is just the sum of entries at index <em>(n-1)/2</em> & <em>(n+1)/2</em>- which we can also think of as <em>floor( n/2 )</em> + <em>1 + floor( n/2 )</em>;</li><br />
+  </ul><br />
+</li><br />
+<li>We can write this as nested ternary operators - but note we can re-phrase the last two cases as <em>floor(n/2)</em> plus, if <em>n</em> is odd <em>1+floor(n/2)</em>.</li><br />
+</ul></p>
+
+<p>To add caching in this case we just use a state variable which contains all the values - as the index is numeric we can use an array here rather than a hash.</p>
+
+<pre><code>sub fusc_cache {
+  my $n = shift;
+  state @cache;
+  return $cache[$n] ||= $n<2 ? $n :
+    fusc_cache($n>>1) + ( $n&1 ? fusc_cache(1+$n>>1) : 0 );
+}</code></pre>
+
+<h4>Non-recursive</h4>
+
+<p>In all these cases we wish to avoid the overhead of recursion - even with caching there is a great overhead in the stack management of the function calls - it isn't always possible - but it is in this case.</p>
+
+<p>In this example we store the sequence in an array and push the subsequence fusc numbers on to the end of it.</p>
+
+<ul>
+  <li>We note we have two ways of extending the list odd and even - so we can right logic to work out which one we are needing - or we can realise that we can push 2 values at a time, one for the next odd element and one for the next even element, this simplifies the code somewhat...</li>
+  <li>Because we push 2 at a time - we only need to run through the loop half the numbers of times - from 1 .. <em>n/2-1</em></li>
+  <li>We do need to specify and extra seed value (for <em>n=2</em>)</li>
+  <li>When <em>n</em> is odd we generate an extra entry - so we just remove it with a <code>pop</code> at the end.</li>
+</ul>
+
+<pre><code>sub fusc_seq {
+  my $n = shift;
+  return 0..$n-1 if $n<2;
+  my   @seq = (0,1,1);
+  push @seq, $seq[$_]+$seq[$_+1], $seq[$_+1] foreach 1..$n/2-1;
+  pop  @seq unless $n&1;
+  return @seq;
+}</code></pre>
+
+<p>The cached version is similar - we just make the variable <code>@seq</code> a <code>state</code> variable and it is remembered between calls, we then only need to start at the top of the cache and add new elements on -- we start at <code>@seq/2</code> rather than <code>1</code> like in the code above.</p>
+<p>The cache now may be much larger than the sequence length we want, so we just use an array slice to return the parts we want</p>
+<pre><code>sub fusc_seq_cache {
+  my $n = shift;
+  state  @seq = (0,1,1);
+  push   @seq, $seq[$_]+$seq[$_+1], $seq[$_+1] foreach @seq/2..$n/2-1;
+  return @seq[0..$n-1];
+}</code></pre>
+
+<h3>Task 2: NIM Game</h3>
+
+<p>Write a script to simulate the NIM Game.</p>
+
+<p>It is played between 2 players. For the purpose of this task, let assume you play against the machine.</p>
+
+<p>There are 3 simple rules to follow:</p>
+
+<ol>
+<li>You have 12 tokens</li>
+<li>Each player can pick 1, 2 or 3 tokens at a time</li>
+<li>The player who picks the last token wins the game</li>
+</ol>
+
+<h4>The solution</h4>
+
+<p>There is some flexibility in this weeks challenge - as to how to simulate the game. I'm going to write two versions, one where the computer plays randomly - and one where it plays the optimal solution.</p>
+
+<p>Rather than having human interaction - I'm also playing the human player randomly...</p>
+
+<pre><code>sub simulate {
+  my($tokens,$player,$n) = (12,1,'');
+  while(1) {
+    $n = 1 + int rand 3;
+    last if $n >= $tokens;
+    $tokens-=$n;
+    say "Player $player takes $n token(s) and leaves $tokens token(s)";
+    $player = 3-$player;
+  }
+  say "Player $player takes the last $n token(s) and wins...\n";
+}</code></pre>
+
+<p>Notes:<br />
+<ul><br />
+  <li>We use a <code>while(1)</code> loop with <code>last</code> as it simplifies the logic.</li><br />
+  <li>To flip the player number from 1 to 2 and <em>v.v.</em> then we just subtract it from 3 - a classic coding trick so we don't need the ternary <code>$player = $player==1 ? 2 : 1</code></li><br />
+</ul></p>
+
+<h4>Optimal solution (computer always wins!)</h4>
+
+<p>In someways the optimal player 2 solution is easier as it doesn't need to keep track of players.. Basically whatever player 1 (human) does player 2 (computer) takes tokens so that there are a multiple of 4 left. Human takes <em>n</em> computer takes <em>4-n</em>.</p>
+
+<pre><code>sub simulate_player2 {
+  my $tokens = 12;
+  while(1) {
+    my $n = 1 + int rand 3;
+    $tokens -= $n;
+    say "Player 1 takes $n token(s) and leaves $tokens token(s)";
+    $n = 4-$n;
+    print "Player 2 takes $n token(s) and ";
+    $tokens -= $n;
+    last unless $tokens;
+    say "leaves $tokens tokens";
+  }
+  say "wins...\n";
+}</code></pre>
+
+<p><br />
+</p>
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by James Curtis-Smith
+     on Tuesday 16 March 2021 09:53</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/would-you-like-to-stop-the-article-loved-python-disliked-perl-from-spreading-all-over-the-world-317b">Would you like to stop the article &quot;Loved Python, Disliked Perl&quot; from spreading all over the world?</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Would you like to stop the article "Loved Python, Disliked Perl" from spreading all over the world?</p>
@@ -73,7 +231,7 @@
      on Tuesday 16 March 2021 04:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/03/dancer2-0301000-released.html">Dancer2 0.301000 Released</a></h2>
             </div> <!-- card-header -->
@@ -109,7 +267,7 @@ Jason / CromeDome</p>
      on Tuesday 16 March 2021 04:26</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/mvc-tutorials-are-broken-17lp">MVC Tutorials Are Broken</a></h2>
             </div> <!-- card-header -->
@@ -295,7 +453,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:38</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/rb7">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -307,7 +465,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/g7r">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -319,7 +477,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/3cv">Big Dividends, Bigger Opportunity! Perl role with multiple location options</a></h2>
             </div> <!-- card-header -->
@@ -331,7 +489,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/wcm">Mad Men (and women) of London. Perl in London</a></h2>
             </div> <!-- card-header -->
@@ -343,7 +501,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/u7g">Smart Shopper = Smart Saver. Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -355,7 +513,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021 </a></h2>
             </div> <!-- card-header -->
@@ -367,7 +525,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -379,7 +537,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Short talks: #AprilFools hijinks</a></h2>
             </div> <!-- card-header -->
@@ -391,7 +549,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -403,7 +561,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -415,7 +573,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -427,7 +585,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -439,7 +597,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/p/perl">Code Maven courses</a></h2>
             </div> <!-- card-header -->
@@ -451,7 +609,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://en.wikipedia.org/wiki/Signal_for_Help">Violence at Home - Signal for Help</a></h2>
             </div> <!-- card-header -->
@@ -463,7 +621,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-103-1hpm">Weekly Challenge 103</a></h2>
             </div> <!-- card-header -->
@@ -475,7 +633,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/03/Perl_Weekly_Challenge_103__Playing_Zodiac.html">Perl Weekly Challenge 103: Playing Zodiac</a></h2>
             </div> <!-- card-header -->
@@ -487,7 +645,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.kiwi/tales/2021/03/13/chinese-zodiac-calculation-in-perl-and-elm/">Chinese Zodiac calculation in Perl and Elm</a></h2>
             </div> <!-- card-header -->
@@ -499,7 +657,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/03/08/PerlWeeklyChallenge103.html">Perl Weekly Challenge 103: Chinese Calendar and streaming players</a></h2>
             </div> <!-- card-header -->
@@ -511,7 +669,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-103.html">Perl weekly challenge 103</a></h2>
             </div> <!-- card-header -->
@@ -523,7 +681,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/11/pwc103-what-s-playing/">PWC103 - What's playing?</a></h2>
             </div> <!-- card-header -->
@@ -535,7 +693,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/10/pwc103-chinese-zodiac/">PWC103 - Chinese Zodiac</a></h2>
             </div> <!-- card-header -->
@@ -547,7 +705,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/03/09/the-miserable-metal-ox-perl-weekly-challenge-013.html">The Miserable Metal Ox: Perl Weekly Challenge #013</a></h2>
             </div> <!-- card-header -->
@@ -559,7 +717,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/playing-zodiac.html">Playing the Zodiac with Raku</a></h2>
             </div> <!-- card-header -->
@@ -571,7 +729,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/03/14">The Weekly Challenge 103: Astrology and Audio</a></h2>
             </div> <!-- card-header -->
@@ -583,7 +741,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/03/15/perl-weekly-challenge-103-whats-playing/">Perl Weekly Challenge 103: What’s playing?</a></h2>
             </div> <!-- card-header -->
@@ -595,7 +753,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/03/15/perl-weekly-challenge-103-chinese-zodiac/">Perl Weekly Challenge 103: Chinese Zodiac</a></h2>
             </div> <!-- card-header -->
@@ -607,7 +765,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-103/">Perl Weekly Challenge 103</a></h2>
             </div> <!-- card-header -->
@@ -619,7 +777,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-103">RECAP - The Weekly Challenge - 103</a></h2>
             </div> <!-- card-header -->
@@ -631,7 +789,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-104">The Weekly Challenge - 104</a></h2>
             </div> <!-- card-header -->
@@ -643,7 +801,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/elk-with-rex">Learning more about (R)?ex</a></h2>
             </div> <!-- card-header -->
@@ -655,7 +813,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/automation-with-rex">Learn automation using (R)?ex</a></h2>
             </div> <!-- card-header -->
@@ -667,7 +825,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/dist-zilla-starter-revision-3-git-versioning-and-more-k5h">Dist::Zilla @Starter Revision 3 - Git, versioning, and more</a></h2>
             </div> <!-- card-header -->
@@ -679,7 +837,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/dist-zilla-starter-revision-2-1bi">Dist::Zilla @Starter - Revision 2 </a></h2>
             </div> <!-- card-header -->
@@ -691,7 +849,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/dist-zilla-why-you-should-use-starter-instead-of-basic-22d7">Dist::Zilla - Why you should use @Starter instead of @Basic</a></h2>
             </div> <!-- card-header -->
@@ -703,7 +861,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/dist-zilla-pluginbundle-starter-a-new-way-to-start-using-dist-zilla-38m6">Dist::Zilla::PluginBundle::Starter - A new way to start using Dist::Zilla</a></h2>
             </div> <!-- card-header -->
@@ -715,7 +873,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dean/2021/03/a-blog-post-about-blog-posts.html">A blog post about blog posts</a></h2>
             </div> <!-- card-header -->
@@ -727,7 +885,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/davorg/don-t-be-a-perl-programmer-4h2d">Don't be a Perl programmer</a></h2>
             </div> <!-- card-header -->
@@ -739,7 +897,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.swagg.net/thoughts-on-session-cookies-w-perl-mojolicious">Thoughts on Session Cookies w/ Perl Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -751,7 +909,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/relatively-easy-ways-to-catch-memory-errors.html">Relatively easy ways to catch memory errors</a></h2>
             </div> <!-- card-header -->
@@ -763,7 +921,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/salvador_fandino/2021/03/twenty-years-ago.html">Twenty years ago...</a></h2>
             </div> <!-- card-header -->
@@ -775,7 +933,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/i-failed-to-pause-before-blogging.html">I failed to pause before blogging</a></h2>
             </div> <!-- card-header -->
@@ -787,7 +945,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/13/dibs-path-function/">A path function in dibs</a></h2>
             </div> <!-- card-header -->
@@ -799,7 +957,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/writing-declarative-software-375o">Writing Declarative Software</a></h2>
             </div> <!-- card-header -->
@@ -811,7 +969,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/the-unknown-design-pattern-1l64">The Unknown Design Pattern</a></h2>
             </div> <!-- card-header -->
@@ -823,7 +981,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/fun-with-dot-2ijm">Fun with dot </a></h2>
             </div> <!-- card-header -->
@@ -835,7 +993,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/09/dbp-packages-from-file/">dibspack-basic enhancement for packages</a></h2>
             </div> <!-- card-header -->
@@ -847,7 +1005,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/the-perl-debugger-can-be-your-superpower-2d3o">The Perl debugger can be your superpower</a></h2>
             </div> <!-- card-header -->
@@ -859,7 +1017,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/08/webservice-fake-update/">WebService::Fake update</a></h2>
             </div> <!-- card-header -->
@@ -871,7 +1029,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/resources/videos/state-tool-demo-how-to-install-a-perl-environment-with-a-single-command/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=video-perl-single-command&utm_campaign=user-acquisition">How do you install your Perl environments? </a></h2>
             </div> <!-- card-header -->
@@ -883,7 +1041,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/503.html">#503 - Perl Community?</a></h2>
             </div> <!-- card-header -->
@@ -898,7 +1056,7 @@ Jason / CromeDome</p>
      on Monday 15 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/salvador_fandino/2021/03/twenty-years-ago.html">Twenty years ago...</a></h2>
             </div> <!-- card-header -->
@@ -921,7 +1079,7 @@ Jason / CromeDome</p>
      on Sunday 14 March 2021 21:19</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/relatively-easy-ways-to-catch-memory-errors.html">Relatively easy ways to catch memory errors</a></h2>
             </div> <!-- card-header -->
@@ -981,7 +1139,7 @@ Jason / CromeDome</p>
      on Sunday 14 March 2021 23:18</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/03/14#pwc103">The Weekly Challenge 103: Astrology and Audio</a></h2>
             </div> <!-- card-header -->
@@ -1118,7 +1276,7 @@ $ perl perl/ch-2.pl
      on Sunday 14 March 2021 16:46</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cccxxxii-15-cpan-great-modules-released.html">(cccxxxii) 15 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1130,7 +1288,7 @@ $ perl perl/ch-2.pl
      on Saturday 13 March 2021 22:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlviii-metacpan-weekly-report.html">(cdlviii) metacpan weekly report - Crypt::Passphrase</a></h2>
             </div> <!-- card-header -->
@@ -1142,7 +1300,7 @@ $ perl perl/ch-2.pl
      on Saturday 13 March 2021 22:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlxxxi-stackoverflow-perl-report.html">(cdlxxxi) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -1154,7 +1312,7 @@ $ perl perl/ch-2.pl
      on Saturday 13 March 2021 22:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-103.html">Perl weekly challenge 103</a></h2>
             </div> <!-- card-header -->
@@ -1225,7 +1383,7 @@ do that in one line by using <code>map {...} &lt;..&gt;</code>.</p>
      on Saturday 13 March 2021 04:35</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/welcome-to-perl-fine-channel-3ii3">Welcome to Perl Fine Channel!</a></h2>
             </div> <!-- card-header -->
@@ -1251,7 +1409,7 @@ do that in one line by using <code>map {...} &lt;..&gt;</code>.</p>
      on Saturday 13 March 2021 01:15</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/writing-declarative-software-375o">Writing Declarative Software</a></h2>
             </div> <!-- card-header -->
@@ -1672,7 +1830,7 @@ do that in one line by using <code>map {...} &lt;..&gt;</code>.</p>
      on Friday 12 March 2021 10:44</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/perl-perlbrew-and-plenv-is-same-as-python-pyenv-1llp">Perl perlbrew and plenv is same as Python pyenv.</a></h2>
             </div> <!-- card-header -->
@@ -1694,35 +1852,6 @@ do that in one line by using <code>map {...} &lt;..&gt;</code>.</p>
 
               <p class="text-right"><small>Published by Yuki Kimoto
      on Friday 12 March 2021 01:37</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_64">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/i-failed-to-pause-before-blogging.html">I failed to pause before blogging</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>I got this email from PAUSE just now:</p>
-
-<pre>
-Failed: PAUSE indexer report BKB/Go-Tokenize-0.01.tar.gz
-
-     module : switch
-</pre>
-
-<p>It looks like it doesn't like <a href="https://metacpan.org/release/Go-Tokenize/source/lib/Go/Tokenize.pm#L26">this line of code</a> containing Go keywords:</p>
-
-<pre>
-chan         else         goto         package      switch
-</pre>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Ben Bullock
-     on Wednesday 10 March 2021 11:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_65">
@@ -3280,7 +3409,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 16 March 2021 04:58 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 16 March 2021 05:48 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
