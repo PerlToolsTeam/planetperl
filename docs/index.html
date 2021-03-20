@@ -57,6 +57,304 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/ibrierley/playing-with-perl-inline-c-and-sdl2-part-1-94f">Perl animated game. Playing with Perl, Inline C++ and SDL2 (part 1)</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--wOMwxKae--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fal0xqdb54hlxzpa6soh.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--wOMwxKae--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fal0xqdb54hlxzpa6soh.png" alt="Alt Text"></a></p>
+
+<p>TLDR; We're going to create a (very basic) animated game using Perl, Inline and C++, screenshot of it in action at the top of this page! </p>
+
+<p>Be gentle, this is my first ever post!</p>
+
+<p>Firstly, I'm not a C++ programmer. I don't really know SDL2 either. Also my Perl is quite ordinary :D. However I do like exploring, and I'm going to do the odd blog not as a tutorial, but just highlighting my experiences. Some things I'll get wrong or won't understand, but that's fine, it may highlight weak points in myself, documentation, or something else!</p>
+
+<p>Secondly, say hello to a new Camel at the top, drawn by a friend Tommy Cameron for this blog, and will appear in the SDL2 graphics later. More of his stuff <a href="https://tommycameronn.wixsite.com/portfolio">here</a>.</p>
+
+<p>With that disclaimer out of the way, there have been quite a few times I've wanted to explore the following....</p>
+
+<p>1) Integrating Perl with other languages, especially with none trivial objects or data. <br>
+2) Integrating Perl with system libraries.<br>
+3) Integrating Perl with graphics.<br>
+4) Play with SDL2 and OpenGL. I can't really tell if Perl SDL is relevant any more.<br>
+5) Look at Perl c stuff. All the Perl SV variables and functions feel too difficult to use when in explore mode to amend their code. Whoever named all the SV stuff needs erm, something doing to them :). It's always put me off, so I'm trying easier routes to explore.</p>
+
+<p>So, here we go, lets see if I can achieve some of the above. In this case with C++ and Inline (I want to explore FFI-&gt;Platypus to compare at some point as well).</p>
+
+<p>What is SDL ? It's a "Simple" DirectMedia layer that comes with most systems. It's mainly used for 2d graphics manipulation in its own graphics window, but also deals with sounds, keyboard events and things like that. SDL2 adds some new features, like storing textures in graphics card memory, interfacing with OpenGL and a few bits like that.</p>
+
+<p>Inline is a way of combining another languages code to intermingle with Perl code. You can currently Inline C, C++, Python and some others, as well as have a stab at creating your Inline module for a new language if you want!</p>
+
+<p>So firstly, let's make sure SDL2 is installed. I'm using Linux Mint (and also the Raspberry PI) , so some the initial package install may vary depending on your distro.<br>
+</p>
+
+<p><code>sudo apt install libsdl2-2.0-0 libsdl2-dev<br>
+sudo apt install libsdl2-image-dev libsdl2-image-2.0-0</code><br>
+</p>
+
+<p>If you're not sure what the package names are, try searching with apt or yum, eg<br>
+</p>
+
+<p><code>apt search libsdl2  or yum search libsdl2</code><br>
+</p>
+
+<p>You will need the library itself and the dev packages for compiling against.</p>
+
+<p>Next, lets install Perls Inline::CPP via CPAN.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>cpan install Inline::Struct
+cpan install Inline::cpp
+</code></pre>
+
+</div>
+
+
+
+<p>Make a cup of tea if you are doing this on the Pi. Or two. Or cut out the middle man and go straight for the Cider.</p>
+
+<p>Still here (and sober)? :)</p>
+
+<p>If you get stuck on any of the Inline bits, it's worth checking out <a href="https://metacpan.org/pod/Inline::CPP">Inline::CPP docs</a> and <a href="https://metacpan.org/pod/Inline">Inline docs</a></p>
+
+<p>So, we need to get Inline working with the system SDL library we have just installed. Let's have a go. We'll start with our usual strict, warnings, Dumper, and a highres time module.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use strict;
+use warnings;
+use Data::Dumper;
+use Time::HiRes qw( usleep gettimeofday );
+</code></pre>
+
+</div>
+
+
+
+<p>Now we'll get to the fiddly bit, that may vary, but works for me on both systems...<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use Inline CPP =&gt; config =&gt; libs =&gt; '-L/usr/local/lib -lSDL2 -lSDL2_image -lSDL-Wl,-rpath=/usr/local/lib';
+use Inline CPP =&gt; config =&gt; ccflags =&gt; '-Wall -c -std=c++11 -I/usr/local/include';
+use Inline CPP =&gt; config =&gt; inc =&gt; '-I/usr/local/include';
+use Inline CPP =&gt; config =&gt; cc =&gt; '/usr/bin/g++';
+</code></pre>
+
+</div>
+
+
+
+<p>The first line tells Inline::CPP which libraries we want to use, and where to find them. If you want to add a new library to interface with, add it to this line. You can find the docs in library imports <a href="https://metacpan.org/pod/Inline::CPP#libs">here</a>.<br>
+The rest is for the compiler, where it is and what options to compile with. If you are on Windows, I'm not sure what would go here, happy to edit if we have some Windows users here, who could test.</p>
+
+<p>IMPORTANT: If you edit some of the CPP config bits above, you may need to delete the Inline cache to reset it. Inline creates some cache files in your current directories ./_Inline folder. You can safely delete this any time you need to reset it. You shouldn't need to bother with this if just amended most normal source code.</p>
+
+<p>So, to include C++ code with our Perl and Inline::CPP, we need to tell Perl where the C++ source code is. We can tell it to look for code after the "DATA" section with<br>
+</p>
+
+<p><code>use Inline CPP =&gt; 'DATA';</code><br>
+</p>
+
+<p>At this point, I'm going to jump straight in and add some! Add this to the end of the code.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>__DATA__
+__CPP__
+
+#include &lt;SDL2/SDL.h&gt;
+#include &lt;SDL2/SDL_image.h&gt;
+#include &lt;iostream&gt;
+#include &lt;map&gt;
+
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 600;
+const int NUMBER_OF_IMAGES = 2;
+
+SDL_Renderer *renderer = NULL;
+SDL_Window *window;
+SDL_Surface* tempSurface;
+</code></pre>
+
+</div>
+
+
+
+<p>We're basically including the relevant header files for SDL2 to make the SDL resources available from C++ and a few other useful starting points.</p>
+
+<p>Note, we can now reference SDL objects like SDL_Window and things like that.<br>
+There's a really great and useful C++ SDL2 tutorial <a href="https://lazyfoo.net/tutorials/SDL/">here</a>. I'd recommend giving it a view, and the first sections of that, will closely match some of the code here, because it may get tricky without having an appreciation of SDL.</p>
+
+<p>I'm now going to create my very own C++ class (I'm new to these!). With this, we can initialise an SDL window to test everything works.</p>
+
+<p>We can create an SDL Window and renderer (an object we can manipulate to display to the window) with<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>SDL_CreateWindow("SDL2 Window", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+SDL_CreateRenderer( window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+</code></pre>
+
+</div>
+
+
+
+<p>and I'm now going to include that in a class init function, that we'll call from Perl...<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>class Sdl {
+  private:
+
+  public:
+
+    Sdl() {
+        std::cout &lt;&lt; "C++ Constructor for Sdl\n";
+    }   
+    ~Sdl() {
+        std::cout &lt;&lt; "C++ Destructor for Sdl\n";
+    }
+
+
+    int init() {
+        int x = SDL_Init(SDL_INIT_VIDEO);
+        if( x == 0 ) {
+            window = SDL_CreateWindow("SDL2 Window",
+                                       SDL_WINDOWPOS_CENTERED,
+                                       SDL_WINDOWPOS_CENTERED,
+                                       SCREEN_WIDTH, SCREEN_HEIGHT,
+                                       0);
+            renderer = SDL_CreateRenderer( window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+        } else {
+            std::cout &lt;&lt; "Had a problem creating a window! " &lt;&lt; SDL_GetError();
+        }
+        if( window == NULL ) {
+            std::cout &lt;&lt; "Window null";
+            exit( 0 );
+        }
+        if( renderer == NULL ) {
+            std::cout &lt;&lt; "Renderer null";
+            exit( 0 );
+        }
+        return 0;
+  }
+
+};
+</code></pre>
+
+</div>
+
+
+
+<p>I'm going to leave some debugging in for you, so you can see what happens later.</p>
+
+<p>NOW, we can access this class from Perl!</p>
+
+<p>At the top of page, after your "use" commands, add the following lines.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>my $sdl = Sdl-&gt;new;
+$sdl-&gt;init();
+sleep 2;
+</code></pre>
+
+</div>
+
+
+
+<p>Our complete code should look like...<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use Time::HiRes qw( usleep gettimeofday );
+
+use Inline CPP =&gt; config =&gt; libs =&gt; '-L/usr/local/lib -lSDL2 -lSDL2_image -lSDL-Wl,-rpath=/usr/local/lib';
+use Inline CPP =&gt; config =&gt; ccflags =&gt; '-Wall -c -std=c++11 -I/usr/local/include';
+use Inline CPP =&gt; config =&gt; inc =&gt; '-I/usr/local/include';
+use Inline CPP =&gt; config =&gt; cc =&gt; '/usr/bin/g++';
+
+use Inline CPP =&gt; 'DATA';
+
+my $sdl = Sdl-&gt;new;
+$sdl-&gt;init();
+sleep 2;
+
+
+__DATA__
+__CPP__
+
+#include &lt;SDL2/SDL.h&gt;
+#include &lt;SDL2/SDL_image.h&gt;
+#include &lt;iostream&gt;
+#include &lt;map&gt;
+
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 600;
+const int NUMBER_OF_IMAGES = 2;
+
+SDL_Renderer *renderer = NULL;
+SDL_Window *window;
+SDL_Surface* tempSurface;
+
+class Sdl {
+  private:
+  public:
+
+    Sdl() {
+        std::cout &lt;&lt; "C++ Constructor for Sdl\n";
+    }   
+    ~Sdl() {
+        std::cout &lt;&lt; "C++ Destructor for Sdl\n";
+    }
+
+    int init() {
+        int x = SDL_Init(SDL_INIT_VIDEO);
+        if( x == 0 ) {
+            window = SDL_CreateWindow("SDL2 Window",
+                                       SDL_WINDOWPOS_CENTERED,
+                                       SDL_WINDOWPOS_CENTERED,
+                                       SCREEN_WIDTH, SCREEN_HEIGHT,
+                                       0);
+            renderer = SDL_CreateRenderer( window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+        } else {
+            std::cout &lt;&lt; "Had a problem creating a window! " &lt;&lt; SDL_GetError();
+        }
+        if( window == NULL ) {
+            std::cout &lt;&lt; "Window null";
+            exit( 0 );
+        }
+        if( renderer == NULL ) {
+            std::cout &lt;&lt; "Renderer null";
+            exit( 0 );
+        }
+        return 0;
+  }
+
+};
+</code></pre>
+
+</div>
+
+
+
+<p>If you run it, Perl should access the Sdl class with Sdl-&gt;new and $sdl-&gt;init(), which will open a new (empty) window and wait for a few seconds before quitting.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Ian
+     on Saturday 20 March 2021 16:15</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/true-private-attributes-and-methods-for-modern-perl-oop-2i39">True private attributes and methods for modern Perl OOP</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Today we will <a href="https://dev.to/smonff/random-integer-generation-in-an-interval-with-modern-oop-perl-4p2c">continue</a> our exploration of modern Perl OOP. Those are very experimental features, but I feel like it could be a bit similar to what <a href="https://github.com/Ovid/Cor">Corrina</a> could look like so I find it fun to try new things. This is also an opportunity to learn more about OOP.</p>
@@ -199,7 +497,7 @@ has hidden (
      on Saturday 20 March 2021 14:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/why-do-you-use-perl-perl-fine-channel-230k">Why do you use Perl? - Perl Fine Channel</a></h2>
             </div> <!-- card-header -->
@@ -225,7 +523,7 @@ has hidden (
      on Saturday 20 March 2021 02:08</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/data-visualization-creating-charts-using-perl-chart-clicker-1hm">Data visualization: Creating charts using Perl (Chart::Clicker)</a></h2>
             </div> <!-- card-header -->
@@ -672,7 +970,7 @@ Also, I will be writing about <strong>Amcharts</strong> and how you can use it w
      on Friday 19 March 2021 17:56</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/unshift">unshift - to insert an element to the beginning of an array</a></h2>
             </div> <!-- card-header -->
@@ -687,7 +985,7 @@ Also, I will be writing about <strong>Amcharts</strong> and how you can use it w
      on Friday 19 March 2021 10:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jj/how-to-totally-over-engineer-your-cv-in-a-few-easy-steps-6ha">How to totally over-engineer your CV in a few easy steps</a></h2>
             </div> <!-- card-header -->
@@ -936,102 +1234,6 @@ EOC
 
               <p class="text-right"><small>Published by Juan Julián Merelo Guervós
      on Friday 19 March 2021 09:32</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_6">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/new-upload-to-cpan-github-action-4h8j">New upload-to-cpan Github action</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>I don't release CPAN modules so often, but when I do, I try to do it with class! 😄</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--L48jtY7T--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/lpyca80s6wr3zhraw3yf.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--L48jtY7T--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/lpyca80s6wr3zhraw3yf.png" alt="Style"></a></p>
-
-<p>Some days ago, I got the idea that it could be nice to have a Github action to automatically upload a distribution to CPAN. </p>
-
-<p>I wondered how to upload a distribution from command line (I never needed such thing) and luckily there is already a perfect existing solution for this: <a href="https://metacpan.org/pod/distribution/CPAN-Uploader/bin/cpan-upload">cpan-upload</a></p>
-
-<p>I never created before a Github action but surprisingly it is very easy. There are 2 types of actions:</p>
-
-<ul>
-<li><a href="https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action">javascript actions</a></li>
-<li><a href="https://docs.github.com/en/actions/creating-actions/creating-a-docker-container-action">dockerfile actions</a></li>
-</ul>
-
-<p>I started with javascript version but since it required more customization, I quickly switched to dockerfile action.</p>
-
-<p>So finally here is it: </p>
-
-<h1>
-  <a href="#thibaultduponchelleuploadtocpan-sparkles" class="anchor">
-  </a>
-  <a href="https://github.com/thibaultduponchelle/upload-to-cpan">thibaultduponchelle/upload-to-cpan</a> ✨
-</h1>
-
-<p>I tested it with <a href="https://metacpan.org/pod/Acme::Automatix">Acme::Automatix</a></p>
-
-<p>The yml file describing the process of building and releasing my repository source code is like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight yaml"><code><span class="na">on</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">push</span><span class="pi">]</span>
-
-<span class="na">jobs</span><span class="pi">:</span>
-  <span class="na">build-and-release</span><span class="pi">:</span>
-    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">ubuntu-latest</span>
-    <span class="na">name</span><span class="pi">:</span> <span class="s">Build and release Acme::Automatix to CPAN</span>
-    <span class="na">steps</span><span class="pi">:</span>
-    <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v2</span>
-    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Configure</span>
-      <span class="na">run</span><span class="pi">:</span> <span class="s">perl Makefile.PL</span>
-    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Build</span>
-      <span class="na">run</span><span class="pi">:</span> <span class="s">make</span>
-    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Deliver locally</span>
-      <span class="na">run</span><span class="pi">:</span> <span class="s">make dist</span>
-    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Upload to CPAN</span>
-      <span class="na">id</span><span class="pi">:</span> <span class="s">upload</span>
-      <span class="na">uses</span><span class="pi">:</span> <span class="s">thibaultduponchelle/upload-to-cpan@master</span>
-      <span class="na">with</span><span class="pi">:</span>
-          <span class="na">username</span><span class="pi">:</span> <span class="s">${{ secrets.USERNAME }}</span>
-          <span class="na">password</span><span class="pi">:</span> <span class="s">${{ secrets.PASSWORD }}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Since credentials are required to upload to CPAN, you have to give your username and password, but you don't want to share them with everybody so you have to put them in as <strong>"secrets"</strong>. Go to "Settings" then "Secrets" and you can add your secret credentials.<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--2W2HPeVB--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/d9ocq1sfnmlzjof6v7hd.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--2W2HPeVB--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/d9ocq1sfnmlzjof6v7hd.png" alt="Secrets"></a></p>
-
-<p>Only the password is really secret, so I can show you how I added my username (yes I'm "CONTRA" on CPAN):<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--QJZcP9JZ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xehneatvry4a68fh75ye.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--QJZcP9JZ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xehneatvry4a68fh75ye.png" alt="CONTRA"></a></p>
-
-<p>And later they well appear obfuscated in the logs 😄<br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--MkordpQK--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/0ygkgkmcrv2ikbp1fkcc.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--MkordpQK--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/0ygkgkmcrv2ikbp1fkcc.png" alt="Secrets"></a></p>
-
-<p>By default, <code>upload-to-cpan</code> will try to upload any tarball in the root directory of your github repo (could maybe change that in the future). Also I'm using <code>@master</code> version of the action but this will change in the future.</p>
-
-<p>If you forget to update the version, the releasing with fail with a "conflict".</p>
-
-<p>You can be smarter than me and introduce conditions to upload (only release when merging on a "production" branch, or only release on tagging...)</p>
-
-<h2>
-  <a href="#conclusion" class="anchor">
-  </a>
-  Conclusion
-</h2>
-
-<p>I really think this action is useful and since I wrote it, I discovered that these kind of things exist for other ecosystems (e.g. rubygems, pypi...) so it confirmed my feeling 😄</p>
-
-<p>Then all that remains is to wish you Happy releasing! ✨</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Ift2Kksn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_66%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/kco5uq6sjtyag2a7bpvy.gif" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Ift2Kksn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_66%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/kco5uq6sjtyag2a7bpvy.gif" alt="Muppet"></a> </p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
-     on Friday 19 March 2021 07:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_7">
@@ -3852,7 +4054,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 20 March 2021 15:53 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 20 March 2021 17:20 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
