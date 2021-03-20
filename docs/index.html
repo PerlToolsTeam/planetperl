@@ -57,6 +57,164 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-104.html">Perl weekly challenge 104</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Here are solutions to this weeks challenges from the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a>.</p>
+
+<p>You can find my full code on
+<a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-104/james-smith/perl">Github</a></p>
+
+<h3>Task 1: FUSC sequence</h3>
+Write a script to generate first 50 members of FUSC Sequence. Please refer to OEIS for more information.
+
+<p>The sequence defined as below:</p>
+
+<pre>
+fusc(0) = 0
+fusc(1) = 1
+for n > 1:
+when n is even: fusc(n) = fusc(n / 2),
+when n is odd:  fusc(n) = fusc((n-1)/2) + fusc((n+1)/2)
+</pre>
+
+<h4>Solution</h4>
+
+<p>I will show you 4 versions of the code below - they essentially non-cached/cached versions of recursive (naive) code to get an individual element, and a non-recursive version to compute the whole sequence.</p>
+
+<pre><code>sub fusc {
+  my $n = shift;
+  return $n<2 ? $n : fusc($n>>1) + ( $n&1 ? fusc(1+$n>>1) : 0 );
+}</code></pre>
+
+<p>Notes:<br />
+<ul><br />
+<li>Rather than using arithmetic operators here - we use binary operators - as we are checking for even (last bit set) or dividing by 2 (right it shift)<br />
+  <ul><br />
+    <li><em>$n & 1</em> is faster than <em>$n%2</em></li><br />
+    <li>By using bit shift operators here rather than divide by 2 - the code is faster and also avoids the need for adding an additional <code>int</code> as the bit-shift operator drops the last bit anyway!</li><br />
+  </ul><br />
+</li><br />
+<li>We can split the numbers into one of 3 cases:<br />
+  <ul><br />
+    <li><em>n &lt; 2</em> - Then the return value is just <em>n</em>;</li><br />
+    <li><em>n</em> is even - this is just the entry at index <em>n/2</em> - which we can also think of as <em>floor( n/2 )</em>;</li><br />
+    <li><em>n</em> is odd  - this is just the sum of entries at index <em>(n-1)/2</em> & <em>(n+1)/2</em>- which we can also think of as <em>floor( n/2 )</em> + <em>1 + floor( n/2 )</em>;</li><br />
+  </ul><br />
+</li><br />
+<li>We can write this as nested ternary operators - but note we can re-phrase the last two cases as <em>floor(n/2)</em> plus, if <em>n</em> is odd <em>1+floor(n/2)</em>.</li><br />
+</ul></p>
+
+<p>To add caching in this case we just use a state variable which contains all the values - as the index is numeric we can use an array here rather than a hash.</p>
+
+<pre><code>sub fusc_cache {
+  my $n = shift;
+  state @cache;
+  return $cache[$n] ||= $n<2 ? $n :
+    fusc_cache($n>>1) + ( $n&1 ? fusc_cache(1+$n>>1) : 0 );
+}</code></pre>
+
+<h4>Non-recursive</h4>
+
+<p>In all these cases we wish to avoid the overhead of recursion - even with caching there is a great overhead in the stack management of the function calls - it isn't always possible - but it is in this case.</p>
+
+<p>In this example we store the sequence in an array and push the subsequence fusc numbers on to the end of it.</p>
+
+<ul>
+  <li>We note we have two ways of extending the list odd and even - so we can right logic to work out which one we are needing - or we can realise that we can push 2 values at a time, one for the next odd element and one for the next even element, this simplifies the code somewhat...</li>
+  <li>Because we push 2 at a time - we only need to run through the loop half the numbers of times - from 1 .. <em>n/2-1</em></li>
+  <li>We do need to specify and extra seed value (for <em>n=2</em>)</li>
+  <li>When <em>n</em> is even we generate an extra entry - so we just remove it with a <code>pop</code> at the end.</li>
+</ul>
+
+<pre><code>sub fusc_seq {
+  my $n = shift;
+  return 0..$n-1 if $n<2;
+  my   @seq = (0,1,1);
+  push @seq, $seq[$_]+$seq[$_+1], $seq[$_+1] foreach 1..$n/2-1;
+  pop  @seq unless $n&1;
+  return @seq;
+}</code></pre>
+
+<p>The cached version is similar - we just make the variable <code>@seq</code> a <code>state</code> variable and it is remembered between calls, we then only need to start at the top of the cache and add new elements on -- we start at <code>@seq/2</code> rather than <code>1</code> like in the code above.</p>
+<p>The cache now may be much larger than the sequence length we want, so we just use an array slice to return the parts we want</p>
+<pre><code>sub fusc_seq_cache {
+  my $n = shift;
+  state  @seq = (0,1,1);
+  push   @seq, $seq[$_]+$seq[$_+1], $seq[$_+1] foreach @seq/2..$n/2-1;
+  return @seq[0..$n-1];
+}</code></pre>
+
+<h3>Task 2: NIM Game</h3>
+
+<p>Write a script to simulate the NIM Game.</p>
+
+<p>It is played between 2 players. For the purpose of this task, let assume you play against the machine.</p>
+
+<p>There are 3 simple rules to follow:</p>
+
+<ol>
+<li>You have 12 tokens</li>
+<li>Each player can pick 1, 2 or 3 tokens at a time</li>
+<li>The player who picks the last token wins the game</li>
+</ol>
+
+<h4>The solution</h4>
+
+<p>There is some flexibility in this weeks challenge - as to how to simulate the game. I'm going to write two versions, one where the computer plays randomly - and one where it plays the optimal solution.</p>
+
+<p>Rather than having human interaction - I'm also playing the human player randomly...</p>
+
+<pre><code>sub simulate {
+  my($tokens,$player,$n) = (12,1,'');
+  while(1) {
+    $n = 1 + int rand 3;
+    last if $n >= $tokens;
+    $tokens-=$n;
+    say "Player $player takes $n token(s) and leaves $tokens token(s)";
+    $player = 3-$player;
+  }
+  say "Player $player takes the last $n token(s) and wins...\n";
+}</code></pre>
+
+<p>Notes:<br />
+<ul><br />
+  <li>We use a <code>while(1)</code> loop with <code>last</code> as it simplifies the logic.</li><br />
+  <li>To flip the player number from 1 to 2 and <em>v.v.</em> then we just subtract it from 3 - a classic coding trick so we don't need the ternary <code>$player = $player==1 ? 2 : 1</code></li><br />
+</ul></p>
+
+<h4>Optimal solution (computer always wins!)</h4>
+
+<p>In some ways the optimal player 2 solution is easier as it doesn't need to keep track of players.. Basically whatever player 1 (human) does player 2 (computer) takes tokens so that there are a multiple of 4 left. Human takes <em>n</em> computer takes <em>4-n</em>.</p>
+
+<pre><code>sub simulate_player2 {
+  my $tokens = 12;
+  while(1) {
+    my $n = 1 + int rand 3;
+    $tokens -= $n;
+    say "Player 1 takes $n token(s) and leaves $tokens token(s)";
+    $n = 4-$n;
+    print "Player 2 takes $n token(s) and ";
+    $tokens -= $n;
+    last unless $tokens;
+    say "leaves $tokens tokens";
+  }
+  say "wins...\n";
+}</code></pre>
+
+<p><br />
+</p>
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by James Curtis-Smith
+     on Tuesday 16 March 2021 09:53</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cccxxxiii-14-cpan-great-modules.html">(cccxxxiii) 14 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/RJBS/App-Cmd-0.333' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::Cmd</span></b></a> - write command line apps with less suffering <ul>  <li>Version: <strong>0.333</strong> on 2021-03-14</li>  <li>Votes: 40</li>  <li>Previous version: 0.332 was 1 day before</li></ul></li><li><a href='https://metacpan.org/release/MIK/Crypt-JWT-0.032' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Crypt::JWT</span></b></a> - JSON Web Token <ul>  <li>Version: <strong>0.032</strong> on 2021-03-18</li>  <li>Votes: 15</li>  <li>Previous version: 0.031 was 2 months, 8 days before</li></ul></li><li><a href='https://metacpan.org/release/CROMEDOME/Dancer2-0.301001' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Dancer2</span></b></a> - Lightweight yet powerful web application framework <ul>  <li>Version: <strong>0.301001</strong> on 2021-03-17</li>  <li>Votes: 122</li>  <li>Previous version: 0.300005 was 1 month, 22 days before</li></ul></li><li><a href='https://metacpan.org/release/SCHUBIGER/DateTime-Format-Natural-1.12' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>DateTime::Format::Natural</span></b></a> - Parse informal natural language date/time strings <ul>  <li>Version: <strong>1.12</strong> on 2021-03-19</li>  <li>Votes: 14</li>  <li>Previous version: 1.11 was 5 months, 26 days before</li></ul></li><li><a href='https://metacpan.org/release/PLICEASE/FFI-Platypus-1.43' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>FFI::Platypus</span></b></a> - Write Perl bindings to non-Perl libraries with FFI. No XS required. <ul>  <li>Version: <strong>1.43</strong> on 2021-03-17</li>  <li>Votes: 53</li>  <li>Previous version: 1.38 was 8 days before</li></ul></li><li><a href='https://metacpan.org/release/PLICEASE/File-Which-1.24' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>File::Which</span></b></a> - Perl implementation of the which utility as an API <ul>  <li>Version: <strong>1.24</strong> on 2021-03-19</li>  <li>Votes: 24</li>  <li>Previous version: 1.23 was 2 years, 2 months, 19 days before</li></ul></li><li><a href='https://metacpan.org/release/RJBS/Getopt-Long-Descriptive-0.109' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Getopt::Long::Descriptive</span></b></a> - Getopt::Long, but simpler and more powerful <ul>  <li>Version: <strong>0.109</strong> on 2021-03-16</li>  <li>Votes: 46</li>  <li>Previous version: 0.106 was 3 days before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Minion-10.20' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Minion</span></b></a> - Job queue <ul>  <li>Version: <strong>10.20</strong> on 2021-03-14</li>  <li>Votes: 82</li>  <li>Previous version: 10.19 was 4 days before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Mojolicious-9.11' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojolicious</span></b></a> - Real-time web framework <ul>  <li>Version: <strong>9.11</strong> on 2021-03-20</li>  <li>Votes: 447</li>  <li>Previous version: 9.08 was 8 days before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Mojolicious-Plugin-Status-1.16' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojolicious::Plugin::Status</span></b></a> - Mojolicious server status <ul>  <li>Version: <strong>1.16</strong> on 2021-03-18</li>  <li>Votes: 12</li>  <li>Previous version: 1.15 was 26 days before</li></ul></li><li><a href='https://metacpan.org/release/ETHER/MooseX-Getopt-0.75' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>MooseX::Getopt</span></b></a> - A Moose role for processing command line options <ul>  <li>Version: <strong>0.75</strong> on 2021-03-16</li>  <li>Votes: 20</li>  <li>Previous version: 0.74 was 2 years, 5 months, 23 days before</li></ul></li><li><a href='https://metacpan.org/release/BDFOY/PerlPowerTools-1.024' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>PerlPowerTools</span></b></a> - BSD utilities written in pure Perl <ul>  <li>Version: <strong>1.024</strong> on 2021-03-19</li>  <li>Votes: 28</li>  <li>Previous version: 1.023 was 1 month, 9 days before</li></ul></li><li><a href='https://metacpan.org/release/TEODESIAN/Selenium-Remote-Driver-1.42' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Selenium::Remote::Driver</span></b></a> - Perl Client for Selenium Remote Driver <ul>  <li>Version: <strong>1.42</strong> on 2021-03-17</li>  <li>Votes: 43</li>  <li>Previous version: 1.40 was 9 days before</li></ul></li><li><a href='https://metacpan.org/release/EHUELS/Test-BDD-Cucumber-0.79' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Test::BDD::Cucumber</span></b></a> - Feature-complete Cucumber-style testing in Perl <ul>  <li>Version: <strong>0.79</strong> on 2021-03-19</li>  <li>Votes: 15</li>  <li>Previous version: 0.77 was 1 month, 9 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
@@ -67,7 +225,7 @@
      on Saturday 20 March 2021 20:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlix-metacpan-weekly-report-gdgraph.html">(cdlix) metacpan weekly report - GD::Graph</a></h2>
             </div> <!-- card-header -->
@@ -79,7 +237,7 @@
      on Saturday 20 March 2021 20:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlxxxii-stackoverflow-perl-report.html">(cdlxxxii) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -91,7 +249,7 @@
      on Saturday 20 March 2021 20:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ibrierley/playing-with-perl-inline-c-and-sdl2-part-1-94f">Perl animated game. Playing with Perl, Inline C++ and SDL2 (part 1)</a></h2>
             </div> <!-- card-header -->
@@ -440,7 +598,7 @@ __CPP__
      on Saturday 20 March 2021 16:15</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/true-private-attributes-and-methods-for-modern-perl-oop-2i39">True private attributes and methods for modern Perl OOP</a></h2>
             </div> <!-- card-header -->
@@ -584,7 +742,7 @@ has hidden (
      on Saturday 20 March 2021 14:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/why-do-you-use-perl-perl-fine-channel-230k">Why do you use Perl? - Perl Fine Channel</a></h2>
             </div> <!-- card-header -->
@@ -610,7 +768,7 @@ has hidden (
      on Saturday 20 March 2021 02:08</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/data-visualization-creating-charts-using-perl-chart-clicker-1hm">Data visualization: Creating charts using Perl (Chart::Clicker)</a></h2>
             </div> <!-- card-header -->
@@ -1057,7 +1215,7 @@ Also, I will be writing about <strong>Amcharts</strong> and how you can use it w
      on Friday 19 March 2021 17:56</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/unshift">unshift - to insert an element to the beginning of an array</a></h2>
             </div> <!-- card-header -->
@@ -1072,7 +1230,7 @@ Also, I will be writing about <strong>Amcharts</strong> and how you can use it w
      on Friday 19 March 2021 10:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jj/how-to-totally-over-engineer-your-cv-in-a-few-easy-steps-6ha">How to totally over-engineer your CV in a few easy steps</a></h2>
             </div> <!-- card-header -->
@@ -1323,7 +1481,7 @@ EOC
      on Friday 19 March 2021 09:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/destroy">The destructor called DESTROY</a></h2>
             </div> <!-- card-header -->
@@ -1341,7 +1499,7 @@ scope or otherwise loses its last reference.
      on Friday 19 March 2021 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/03/perl-weekly-challenge-104-fusc-sequence-and-nim-game.html">Perl Weekly Challenge 104: Fusc Sequence and NIM Game</a></h2>
             </div> <!-- card-header -->
@@ -1675,7 +1833,7 @@ You won!
      on Wednesday 17 March 2021 04:19</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/course-management-app-in-mojolicious">Course Management Application in Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -1694,7 +1852,7 @@ In this experimental project <a href="https://phoenixtrap.com/">Mark Gardner</a>
      on Thursday 18 March 2021 17:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/regex-capturing-variables">Regex capturing variables $1, $2, $3, $4, $5, $6, ...</a></h2>
             </div> <!-- card-header -->
@@ -1710,7 +1868,7 @@ the opening parenthese from left to right.
      on Wednesday 17 March 2021 17:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/chr">chr</a></h2>
             </div> <!-- card-header -->
@@ -1725,7 +1883,7 @@ chr in Perl returns the character represented by that NUMBER in the character se
      on Wednesday 17 March 2021 17:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/jonathan-2021-02">February report of the Raku Development Grant of Jonathan Worthington</a></h2>
             </div> <!-- card-header -->
@@ -1751,164 +1909,6 @@ Total time worked: 24 hours 36 minutes
 
               <p class="text-right"><small>Published by Matthias Bloch
      on Wednesday 17 March 2021 01:51</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_16">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-104.html">Perl weekly challenge 104</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Here are solutions to this weeks challenges from the <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a>.</p>
-
-<p>You can find my full code on
-<a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-104/james-smith/perl">Github</a></p>
-
-<h3>Task 1: FUSC sequence</h3>
-Write a script to generate first 50 members of FUSC Sequence. Please refer to OEIS for more information.
-
-<p>The sequence defined as below:</p>
-
-<pre>
-fusc(0) = 0
-fusc(1) = 1
-for n > 1:
-when n is even: fusc(n) = fusc(n / 2),
-when n is odd:  fusc(n) = fusc((n-1)/2) + fusc((n+1)/2)
-</pre>
-
-<h4>Solution</h4>
-
-<p>I will show you 4 versions of the code below - they essentially non-cached/cached versions of recursive (naive) code to get an individual element, and a non-recursive version to compute the whole system.</p>
-
-<pre><code>sub fusc {
-  my $n = shift;
-  return $n<2 ? $n : fusc($n>>1) + ( $n&1 ? fusc(1+$n>>1) : 0 );
-}</code></pre>
-
-<p>Notes:<br />
-<ul><br />
-<li>Rather than using arithmetic operators here - we use binary operators - as we are checking for even (last bit set) or dividing by 2 (right it shift)<br />
-  <ul><br />
-    <li><em>$n & 1</em> is faster than <em>$n%2</em></li><br />
-    <li>By using bit shift operators here rather then divide by 2 - the code is faster and also avoids the need for adding an additional <code>int</code> as the bit-shift operator drops the last bit anyway!</li><br />
-  </ul><br />
-</li><br />
-<li>We can split the numbers into one of 3 cases:<br />
-  <ul><br />
-    <li><em>n &lt; 2</em> - Then the return value is just <em>n</em>;</li><br />
-    <li><em>n</em> is even - this is just the entry at index <em>n/2</em> - which we can also think of as <em>floor( n/2 )</em>;</li><br />
-    <li><em>n</em> is odd  - this is just the sum of entries at index <em>(n-1)/2</em> & <em>(n+1)/2</em>- which we can also think of as <em>floor( n/2 )</em> + <em>1 + floor( n/2 )</em>;</li><br />
-  </ul><br />
-</li><br />
-<li>We can write this as nested ternary operators - but note we can re-phrase the last two cases as <em>floor(n/2)</em> plus, if <em>n</em> is odd <em>1+floor(n/2)</em>.</li><br />
-</ul></p>
-
-<p>To add caching in this case we just use a state variable which contains all the values - as the index is numeric we can use an array here rather than a hash.</p>
-
-<pre><code>sub fusc_cache {
-  my $n = shift;
-  state @cache;
-  return $cache[$n] ||= $n<2 ? $n :
-    fusc_cache($n>>1) + ( $n&1 ? fusc_cache(1+$n>>1) : 0 );
-}</code></pre>
-
-<h4>Non-recursive</h4>
-
-<p>In all these cases we wish to avoid the overhead of recursion - even with caching there is a great overhead in the stack management of the function calls - it isn't always possible - but it is in this case.</p>
-
-<p>In this example we store the sequence in an array and push the subsequence fusc numbers on to the end of it.</p>
-
-<ul>
-  <li>We note we have two ways of extending the list odd and even - so we can right logic to work out which one we are needing - or we can realise that we can push 2 values at a time, one for the next odd element and one for the next even element, this simplifies the code somewhat...</li>
-  <li>Because we push 2 at a time - we only need to run through the loop half the numbers of times - from 1 .. <em>n/2-1</em></li>
-  <li>We do need to specify and extra seed value (for <em>n=2</em>)</li>
-  <li>When <em>n</em> is odd we generate an extra entry - so we just remove it with a <code>pop</code> at the end.</li>
-</ul>
-
-<pre><code>sub fusc_seq {
-  my $n = shift;
-  return 0..$n-1 if $n<2;
-  my   @seq = (0,1,1);
-  push @seq, $seq[$_]+$seq[$_+1], $seq[$_+1] foreach 1..$n/2-1;
-  pop  @seq unless $n&1;
-  return @seq;
-}</code></pre>
-
-<p>The cached version is similar - we just make the variable <code>@seq</code> a <code>state</code> variable and it is remembered between calls, we then only need to start at the top of the cache and add new elements on -- we start at <code>@seq/2</code> rather than <code>1</code> like in the code above.</p>
-<p>The cache now may be much larger than the sequence length we want, so we just use an array slice to return the parts we want</p>
-<pre><code>sub fusc_seq_cache {
-  my $n = shift;
-  state  @seq = (0,1,1);
-  push   @seq, $seq[$_]+$seq[$_+1], $seq[$_+1] foreach @seq/2..$n/2-1;
-  return @seq[0..$n-1];
-}</code></pre>
-
-<h3>Task 2: NIM Game</h3>
-
-<p>Write a script to simulate the NIM Game.</p>
-
-<p>It is played between 2 players. For the purpose of this task, let assume you play against the machine.</p>
-
-<p>There are 3 simple rules to follow:</p>
-
-<ol>
-<li>You have 12 tokens</li>
-<li>Each player can pick 1, 2 or 3 tokens at a time</li>
-<li>The player who picks the last token wins the game</li>
-</ol>
-
-<h4>The solution</h4>
-
-<p>There is some flexibility in this weeks challenge - as to how to simulate the game. I'm going to write two versions, one where the computer plays randomly - and one where it plays the optimal solution.</p>
-
-<p>Rather than having human interaction - I'm also playing the human player randomly...</p>
-
-<pre><code>sub simulate {
-  my($tokens,$player,$n) = (12,1,'');
-  while(1) {
-    $n = 1 + int rand 3;
-    last if $n >= $tokens;
-    $tokens-=$n;
-    say "Player $player takes $n token(s) and leaves $tokens token(s)";
-    $player = 3-$player;
-  }
-  say "Player $player takes the last $n token(s) and wins...\n";
-}</code></pre>
-
-<p>Notes:<br />
-<ul><br />
-  <li>We use a <code>while(1)</code> loop with <code>last</code> as it simplifies the logic.</li><br />
-  <li>To flip the player number from 1 to 2 and <em>v.v.</em> then we just subtract it from 3 - a classic coding trick so we don't need the ternary <code>$player = $player==1 ? 2 : 1</code></li><br />
-</ul></p>
-
-<h4>Optimal solution (computer always wins!)</h4>
-
-<p>In someways the optimal player 2 solution is easier as it doesn't need to keep track of players.. Basically whatever player 1 (human) does player 2 (computer) takes tokens so that there are a multiple of 4 left. Human takes <em>n</em> computer takes <em>4-n</em>.</p>
-
-<pre><code>sub simulate_player2 {
-  my $tokens = 12;
-  while(1) {
-    my $n = 1 + int rand 3;
-    $tokens -= $n;
-    say "Player 1 takes $n token(s) and leaves $tokens token(s)";
-    $n = 4-$n;
-    print "Player 2 takes $n token(s) and ";
-    $tokens -= $n;
-    last unless $tokens;
-    say "leaves $tokens tokens";
-  }
-  say "wins...\n";
-}</code></pre>
-
-<p><br />
-</p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by James Curtis-Smith
-     on Tuesday 16 March 2021 09:53</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_17">
@@ -4079,7 +4079,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 20 March 2021 22:54 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 20 March 2021 23:53 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
