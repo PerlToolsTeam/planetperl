@@ -57,6 +57,492 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/ibrierley/perl-animated-game-playing-with-perl-inline-c-and-sdl2-part-2-ocg">Perl animated game. Playing with Perl, Inline C++ and SDL2 (part 2!)</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>(Full code and Git link at bottom, Part 1 is <a href="https://dev.to/ibrierley/playing-with-perl-inline-c-and-sdl2-part-1-94f">here</a>)</p>
+
+<p>First things first. On the shoulders of giants are small irrelevant programs made :D. I have to give full kudos to folks who write things like Inline, Inline::cpp, SDL etc. So  much work put into things like these, I think they often don't get enough appreciation, so a big round of applause from me.</p>
+
+<p>Our aims in Part 2:</p>
+
+<ol>
+<li>Set up some basic Perl classes for game Entities.</li>
+<li>Use Perls Inline::cpp to access more c++ classes and methods (so we can access SDL2).</li>
+<li>Get those c++ methods, to take some information from Perl and display to the screen using our system SDL2 lib (installed from Part 1).</li>
+</ol>
+
+<p>We should end up with a window and image as below:<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--7kwk8Q3a--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/bddcq0h0jy1dmssirbxz.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--7kwk8Q3a--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/bddcq0h0jy1dmssirbxz.png" alt="Alt Text"></a></p>
+
+<p>Right, recap time for Part 2!! The main code and Git link is at the end. If you've followed that, you should hopefully have Inline::cpp working with some c++ code, and SDL2 window appearing. Small acorns and all that! Any problems let us know.</p>
+
+<p>So let's develop the Perl and c++ a bit further to get an image on the page, and a basic Object passing some info between the languages.</p>
+
+<p>We'll create an Entity in Perl (i.e an object that represents something we can move about), and the fiddly bit, is an Object in c++ which represents the graphics portion of the object. There's a few ways to skin this cat, and I'm not sure which is the best approach, and I'm happy to hear others ideas.</p>
+
+<p>My main theory is to leave all the graphical heavy lifting on c++, things like graphics, vertices, any big datasets. Then decision making, logic etc, where an object is, the stuff we want to play with easily in Perl. So x,y in Perl, how an object is represented graphically in c++.</p>
+
+<p>For the moment, I'm going to call the Perl game object/entity an erm Entity, and the c++ object a Gfx object, and link the two (well Inline automatically links c++ objects to Perl). </p>
+
+<p>We will end up with:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>Perls $some_entity-&gt;gfx accesses the c++ Gfx class.
+Perls $sdl element accesses the c++ Sdl class.
+</code></pre>
+
+</div>
+
+
+
+<p>So I'm going to create a new package for the Entity in Perl. the gfx methods we'll define later in c++ below.</p>
+
+<p>This is going to go right at the top of our code after our "use" statements. It's a basic object with a few attributes. Note the "Gfx"<br>
+</p>
+
+<p><code>Perl: Creating a game Entity class, with access to c++ Gfx class.</code><br>
+</p>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code>
+<span class="nb">package</span> <span class="nv">Entity</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">new</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$class</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$type</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">bless</span> <span class="p">{</span>
+        <span class="p">'</span><span class="s1">alive</span><span class="p">'</span>   <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">x</span><span class="p">'</span>       <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">y</span><span class="p">'</span>       <span class="o">=&gt;</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">width</span><span class="p">'</span>   <span class="o">=&gt;</span> <span class="mi">100</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">height</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="mi">100</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">type</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="nv">$type</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">gfx</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="k">new</span> <span class="nv">Gfx</span><span class="p">,</span>     <span class="c1"># Reference a c++ class in later code</span>
+    <span class="p">},</span> <span class="nv">$class</span><span class="p">;</span>
+
+    <span class="c1"># Set the x,y coordinates of our new c++ Gfx object.</span>
+    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">gfx</span><span class="o">-&gt;</span><span class="nv">setxy</span><span class="p">(</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">x</span><span class="p">'</span> <span class="p">},</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">y</span><span class="p">'</span> <span class="p">}</span> <span class="p">);</span>   
+
+    <span class="k">return</span> <span class="nv">$self</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">gfx</span>    <span class="p">{</span> <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span> <span class="k">return</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">gfx</span><span class="p">'</span> <span class="p">}</span> <span class="p">};</span>     <span class="c1"># Simple accessor.</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Whenever we create a new player, enemy, object, it will have a few attributes, like if it's alive, where it is on the screen etc. Lower down in our main package, we'll create one, which will be the player! It may be nice to create getters/setters for x,y etc, but I'm trying to keep the code down just for the moment for simplicity.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">my</span> <span class="nv">$player</span> <span class="o">=</span> <span class="nv">Entity</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">('</span><span class="s1">player</span><span class="p">');</span>
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">x</span><span class="p">'</span> <span class="p">}</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">y</span><span class="p">'</span> <span class="p">}</span> <span class="o">=</span> <span class="mi">4</span><span class="p">;</span>
+
+<span class="c1"># $player-&gt;gfx-&gt;method is calling c++!</span>
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="nv">gfx</span><span class="o">-&gt;</span><span class="nv">setwidth</span><span class="p">(</span><span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="nv">width</span> <span class="p">},</span> <span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="nv">height</span> <span class="p">});</span>   <span class="c1"># This will reference the c++ class we'll see soon!</span>
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="nv">gfx</span><span class="o">-&gt;</span><span class="nv">setTextureSlot</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>    <span class="c1"># Don't worry about this just yet...it's which image we will use later for the player.</span>
+</code></pre>
+
+</div>
+
+
+
+<p>The call..<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code><span class="err">$</span><span class="n">player</span><span class="o">-&gt;</span><span class="n">gfx</span><span class="o">-&gt;</span><span class="n">someMethod</span><span class="p">()</span>
+</code></pre>
+
+</div>
+
+
+
+<p>is calling the c++ object gfx of class Gfx we have created in our c++ code.</p>
+
+<p>Now, we need Perl to call those c++ classes, and methods. Remember, Inline::cpp makes classes available (and structs with a bit of extra work, see Part 1 tutorial). So let's have a look at an example c++ class to use!<br>
+</p>
+
+<p><code>c++ creating our Graphics class that each Perl game Entity will reference</code><br>
+</p>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code><span class="k">class</span> <span class="nc">Gfx</span> <span class="p">{</span>
+    <span class="nl">public:</span> 
+        <span class="kt">int</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">h</span><span class="p">;</span>     <span class="c1">// set x,y, width, height</span>
+        <span class="kt">int</span> <span class="n">textureSlot</span><span class="p">;</span>    <span class="c1">// which texture/image slot this object will use for visuals</span>
+        <span class="kt">void</span> <span class="n">setxy</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nx</span><span class="p">,</span> <span class="kt">int</span> <span class="n">ny</span> <span class="p">);</span>   
+        <span class="kt">void</span> <span class="n">setwidth</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nw</span><span class="p">,</span> <span class="kt">int</span> <span class="n">nh</span> <span class="p">);</span>
+        <span class="kt">void</span> <span class="n">setTextureSlot</span><span class="p">(</span> <span class="kt">int</span> <span class="n">slot</span> <span class="p">);</span>
+<span class="p">};</span>
+
+<span class="kt">void</span> <span class="n">Gfx</span><span class="o">::</span><span class="n">setTextureSlot</span><span class="p">(</span> <span class="kt">int</span> <span class="n">slot</span> <span class="p">)</span> <span class="p">{</span> <span class="n">textureSlot</span> <span class="o">=</span> <span class="n">slot</span><span class="p">;</span> <span class="p">}</span>
+<span class="kt">void</span> <span class="n">Gfx</span><span class="o">::</span><span class="n">setxy</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nx</span><span class="p">,</span> <span class="kt">int</span> <span class="n">ny</span> <span class="p">)</span>    <span class="p">{</span> <span class="n">x</span> <span class="o">=</span> <span class="n">nx</span><span class="p">;</span> <span class="n">y</span> <span class="o">=</span> <span class="n">ny</span><span class="p">;</span> <span class="p">}</span>
+<span class="kt">void</span> <span class="n">Gfx</span><span class="o">::</span><span class="n">setwidth</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nw</span><span class="p">,</span> <span class="kt">int</span> <span class="n">nh</span> <span class="p">)</span> <span class="p">{</span> <span class="n">w</span> <span class="o">=</span> <span class="n">nw</span><span class="p">;</span> <span class="n">h</span> <span class="o">=</span> <span class="n">nh</span><span class="p">;</span> <span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>So there's not a lot of clues here, but the c++ Gfx class has an x,y, w(width), h(height), and a couple of methods to set its options we can use on the c++ side. Why don't we write this bit in Perl ? Well, we want to pass some information to various methods in c++, so it makes it simpler passing those types about. Again, there may be a better way to do this!</p>
+
+<p>Now, if you have your code from Part 1, we also had the Sdl class. We're going to extend that a bit to be able to store an image.</p>
+
+<p>This is in the existing Sdl class (from Part 1)<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code>  <span class="k">const</span> <span class="kt">int</span> <span class="n">NUMBER_OF_IMAGES</span> <span class="o">=</span> <span class="mi">2</span><span class="p">;</span>
+
+  <span class="n">SDL_Texture</span> <span class="o">*</span><span class="n">textureList</span><span class="p">[</span> <span class="n">NUMBER_OF_IMAGES</span> <span class="p">];</span>
+  <span class="n">SDL_Rect</span> <span class="n">currentSpritePos</span><span class="p">;</span>
+  <span class="n">SDL_Surface</span><span class="o">*</span> <span class="n">tempSurface</span><span class="p">;</span>
+
+
+  <span class="kt">void</span> <span class="nf">loadImageIntoSlot</span><span class="p">(</span> <span class="kt">char</span> <span class="o">*</span><span class="n">newImage</span><span class="p">,</span> <span class="kt">int</span> <span class="n">slot</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="n">tempSurface</span> <span class="o">=</span> <span class="n">IMG_Load</span><span class="p">(</span> <span class="n">newImage</span> <span class="p">);</span>
+        <span class="k">if</span><span class="p">(</span> <span class="n">tempSurface</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="p">)</span> <span class="p">{</span>
+                <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"Unable to use surface</span><span class="se">\n</span><span class="s">"</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+                <span class="n">SDL_Texture</span> <span class="o">*</span><span class="n">myTextureAddress</span> <span class="o">=</span> <span class="n">SDL_CreateTextureFromSurface</span><span class="p">(</span> <span class="n">renderer</span><span class="p">,</span> <span class="n">tempSurface</span> <span class="p">);</span>
+                <span class="n">textureList</span><span class="p">[</span> <span class="n">slot</span> <span class="p">]</span> <span class="o">=</span> <span class="n">myTextureAddress</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">if</span><span class="p">(</span> <span class="n">textureList</span><span class="p">[</span> <span class="n">slot</span> <span class="p">]</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="p">)</span> <span class="p">{</span> <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"Unable to load image </span><span class="se">\n</span><span class="s">"</span><span class="p">;</span> <span class="p">}</span>
+        <span class="n">SDL_FreeSurface</span><span class="p">(</span> <span class="n">tempSurface</span> <span class="p">);</span>
+    <span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Eeek! What on earth ? Ok, this is where the SDL docs need to be read a bit to understand what each one does. There's a wiki at <a href="https://wiki.libsdl.org/">https://wiki.libsdl.org/</a> but it needs a bit of digging through the tutorials and API.</p>
+
+<p>So what I'm doing here, is creating a method which will take (from Perl in our case) the name of an image, which "slot" we'll load it into (just our own array here, so we can reuse image/textures). Convert this to a texture, which we'll store in the graphics card. So we'll have an array of pointers to texures/images.</p>
+
+<p>So we do<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code><span class="n">tempSurface</span> <span class="o">=</span> <span class="n">IMG_Load</span><span class="p">(</span> <span class="n">newImage</span> <span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>load in the image from the filesystem, and test it loaded ok.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code><span class="n">SDL_Texture</span> <span class="o">*</span><span class="n">myTextureAddress</span> <span class="o">=</span> <span class="n">SDL_CreateTextureFromSurface</span><span class="p">(</span> <span class="n">renderer</span><span class="p">,</span> <span class="n">tempSurface</span> <span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This is creating a texture from the image. The difference here, is that in SDL2 the textures can be stored on the graphics card. So we'll manipulate "textures" now instead of images.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code><span class="n">SDL_FreeSurface</span><span class="p">(</span> <span class="n">tempSurface</span> <span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>We no longer need that temporary bit of image/surface space, so we'll get rid of it to be nice and clean.</p>
+
+<p>Now, we're going to create another couple of c++ methods. </p>
+
+<p>First one, clear the "renderer" or screen in this case (sort of), but we'll set a colour for it to clear to. In this case, a healthy "grey" colour ;). (couple of languages differences for our friends over the pond there ;))<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code>    <span class="kt">void</span> <span class="nf">renderClear</span><span class="p">()</span> <span class="p">{</span>
+        <span class="n">SDL_SetRenderDrawColor</span><span class="p">(</span><span class="n">renderer</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">200</span><span class="p">);</span>
+        <span class="n">SDL_RenderClear</span><span class="p">(</span><span class="n">renderer</span><span class="p">);</span>
+    <span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Then renderPresent will update the screen with any rendering we've stored (we save it to a buffer which then gets splatted to the screen).<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code>    <span class="kt">void</span> <span class="nf">renderPresent</span><span class="p">()</span> <span class="p">{</span>
+        <span class="n">SDL_RenderPresent</span><span class="p">(</span><span class="n">renderer</span><span class="p">);</span>
+    <span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Now, this following bit, we're just using the Perl entities gfx reference, copying the basic values into an Sdl rect, and then passing to an SDL Render method, which takes a texture, a position (our Rect) and displays it on the screen with SDL_RenderCopyEx. There's a couple of bits on there, like SDL_FLIP and whether we it to be a mirror image reversed or not. Why don't we just pass the Perl entity ? c++ doesn't know about Perl objects, and Perl doesn't know about SDL Rect types, so we have to convert them.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code>    <span class="kt">void</span> <span class="nf">updatePosition</span><span class="p">(</span> <span class="n">Gfx</span> <span class="o">*</span><span class="n">gfx</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">x</span><span class="p">;</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">y</span><span class="p">;</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">w</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">;</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">h</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">;</span>
+        <span class="n">SDL_RenderCopyEx</span><span class="p">(</span><span class="n">renderer</span><span class="p">,</span> <span class="n">textureList</span><span class="p">[</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">textureSlot</span> <span class="p">],</span> <span class="nb">NULL</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">currentSpritePos</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="n">SDL_FLIP_NONE</span><span class="p">);</span>
+    <span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Now, finally back to Perl! We've created our $sdl object in Part1 which opened up a window and referenced Sdl2.</p>
+
+<p>We'll now call these new c++ methods, firstly to load our image.<br>
+Then to clear the screen to grey.<br>
+Then to update our c++ reference to our Entity with our new position.<br>
+Then to splat the screen with the buffered texture.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">loadImageIntoSlot</span><span class="p">("</span><span class="s2">Camel1.png</span><span class="p">",</span> <span class="mi">1</span><span class="p">);</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">renderClear</span><span class="p">();</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">updatePosition</span><span class="p">(</span> <span class="nv">$player</span><span class="o">-&gt;</span><span class="nv">gfx</span> <span class="p">);</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">renderPresent</span><span class="p">();</span>
+
+</code></pre>
+
+</div>
+
+
+
+<p>You can download the Camel from Github <a href="https://github.com/ibrierley/perl_inline_cpp_sdl2_tutorial/raw/main/Camel1.png">here</a>, save into the same folder as the script.</p>
+
+<p>FULL CODE BELOW (or Git link at bottom)! (Save both sections in one file)</p>
+
+<p>Perl code:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/perl</span>
+
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Data::</span><span class="nv">Dumper</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Time::</span><span class="nv">HiRes</span> <span class="sx">qw( usleep gettimeofday )</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">Inline</span> <span class="s">CPP</span> <span class="o">=&gt;</span> <span class="s">config</span> <span class="o">=&gt;</span> <span class="s">libs</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">-L/usr/local/lib -lSDL2 -lSDL2_image -lSDL-Wl,-rpath=/usr/local/lib</span><span class="p">';</span>
+<span class="k">use</span> <span class="nv">Inline</span> <span class="s">CPP</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">DATA</span><span class="p">';</span>
+
+<span class="c1"># Game object class</span>
+<span class="nb">package</span> <span class="nv">Entity</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">new</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$class</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$type</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">bless</span> <span class="p">{</span>
+        <span class="p">'</span><span class="s1">alive</span><span class="p">'</span>   <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">x</span><span class="p">'</span>       <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">y</span><span class="p">'</span>       <span class="o">=&gt;</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">width</span><span class="p">'</span>   <span class="o">=&gt;</span> <span class="mi">100</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">height</span><span class="p">'</span>  <span class="o">=&gt;</span> <span class="mi">100</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">type</span><span class="p">'</span>    <span class="o">=&gt;</span> <span class="nv">$type</span><span class="p">,</span>
+        <span class="p">'</span><span class="s1">gfx</span><span class="p">'</span>     <span class="o">=&gt;</span> <span class="k">new</span> <span class="nv">Gfx</span><span class="p">,</span> <span class="c1"># calling c++ class</span>
+    <span class="p">},</span> <span class="nv">$class</span><span class="p">;</span>
+
+    <span class="c1"># calling c++ Gfx class</span>
+    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">gfx</span><span class="o">-&gt;</span><span class="nv">setxy</span><span class="p">(</span><span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">x</span><span class="p">'</span> <span class="p">},</span><span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">y</span><span class="p">'</span> <span class="p">});</span>
+
+    <span class="k">return</span> <span class="nv">$self</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">gfx</span>    <span class="p">{</span> <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span> <span class="k">return</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">gfx</span><span class="p">'</span> <span class="p">}</span> <span class="p">};</span>
+
+
+<span class="nb">package</span> <span class="nv">main</span><span class="p">;</span>
+
+<span class="c1"># Set up a new Graphics window for the game</span>
+<span class="k">my</span> <span class="nv">$sdl</span> <span class="o">=</span> <span class="nv">Sdl</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">;</span> <span class="c1"># Calling c++ class</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">init</span><span class="p">();</span>
+
+<span class="c1"># Create our player</span>
+<span class="k">my</span> <span class="nv">$player</span> <span class="o">=</span> <span class="nv">Entity</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">('</span><span class="s1">player</span><span class="p">');</span>
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">x</span><span class="p">'</span> <span class="p">}</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">y</span><span class="p">'</span> <span class="p">}</span> <span class="o">=</span> <span class="mi">4</span><span class="p">;</span>
+
+<span class="c1"># Call c++ class/methods below, so c++ has the correct positional info</span>
+
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="nv">gfx</span><span class="o">-&gt;</span><span class="nv">setwidth</span><span class="p">(</span><span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">width</span><span class="p">'</span> <span class="p">},</span> <span class="nv">$player</span><span class="o">-&gt;</span><span class="p">{</span> <span class="p">'</span><span class="s1">height</span><span class="p">'</span> <span class="p">});</span>
+<span class="nv">$player</span><span class="o">-&gt;</span><span class="nv">gfx</span><span class="o">-&gt;</span><span class="nv">setTextureSlot</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+
+<span class="c1"># Store our image in an texture/image array slot</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">loadImageIntoSlot</span><span class="p">("</span><span class="s2">Camel1.png</span><span class="p">",</span> <span class="mi">1</span><span class="p">);</span>
+
+<span class="c1"># Clear the screen in grey</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">renderClear</span><span class="p">();</span>
+
+<span class="c1"># Draw our player</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">updatePosition</span><span class="p">(</span> <span class="nv">$player</span><span class="o">-&gt;</span><span class="nv">gfx</span> <span class="p">);</span>
+
+<span class="c1"># Update the screen from our drawn buffer</span>
+<span class="nv">$sdl</span><span class="o">-&gt;</span><span class="nv">renderPresent</span><span class="p">();</span>
+
+<span class="nb">sleep</span> <span class="mi">2</span><span class="p">;</span>
+
+
+<span class="cp">__DATA__
+__CPP__
+</span></code></pre>
+
+</div>
+
+
+
+<p>c++ code<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight cpp"><code><span class="cp">#include &lt;SDL2/SDL.h&gt;
+#include &lt;SDL2/SDL_image.h&gt;
+#include &lt;iostream&gt;
+#include &lt;map&gt;
+</span>
+<span class="k">const</span> <span class="kt">int</span> <span class="n">SCREEN_WIDTH</span> <span class="o">=</span> <span class="mi">800</span><span class="p">;</span>
+<span class="k">const</span> <span class="kt">int</span> <span class="n">SCREEN_HEIGHT</span> <span class="o">=</span> <span class="mi">600</span><span class="p">;</span>
+<span class="k">const</span> <span class="kt">int</span> <span class="n">NUMBER_OF_IMAGES</span> <span class="o">=</span> <span class="mi">2</span><span class="p">;</span>
+
+<span class="n">SDL_Renderer</span> <span class="o">*</span><span class="n">renderer</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="n">SDL_Window</span> <span class="o">*</span><span class="n">window</span><span class="p">;</span>
+<span class="n">SDL_Surface</span><span class="o">*</span> <span class="n">tempSurface</span><span class="p">;</span>
+
+<span class="c1">// Class that Perl references, so SDL can access the relevant Perl game Entity variables</span>
+
+<span class="k">class</span> <span class="nc">Gfx</span> <span class="p">{</span>
+    <span class="nl">public:</span> 
+        <span class="kt">int</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">h</span><span class="p">;</span>
+        <span class="kt">int</span> <span class="n">textureSlot</span><span class="p">;</span>
+        <span class="kt">void</span> <span class="n">setxy</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nx</span><span class="p">,</span> <span class="kt">int</span> <span class="n">ny</span> <span class="p">);</span>
+        <span class="kt">void</span> <span class="n">setwidth</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nw</span><span class="p">,</span> <span class="kt">int</span> <span class="n">nh</span> <span class="p">);</span>
+        <span class="kt">void</span> <span class="n">setTextureSlot</span><span class="p">(</span> <span class="kt">int</span> <span class="n">slot</span> <span class="p">);</span>
+<span class="p">};</span>
+
+<span class="kt">void</span> <span class="n">Gfx</span><span class="o">::</span><span class="n">setTextureSlot</span><span class="p">(</span> <span class="kt">int</span> <span class="n">slot</span> <span class="p">)</span> <span class="p">{</span> <span class="n">textureSlot</span> <span class="o">=</span> <span class="n">slot</span><span class="p">;</span> <span class="p">}</span>
+<span class="kt">void</span> <span class="n">Gfx</span><span class="o">::</span><span class="n">setxy</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nx</span><span class="p">,</span> <span class="kt">int</span> <span class="n">ny</span> <span class="p">)</span> <span class="p">{</span> <span class="n">x</span> <span class="o">=</span> <span class="n">nx</span><span class="p">;</span> <span class="n">y</span> <span class="o">=</span> <span class="n">ny</span><span class="p">;</span> <span class="p">}</span>
+<span class="kt">void</span> <span class="n">Gfx</span><span class="o">::</span><span class="n">setwidth</span><span class="p">(</span> <span class="kt">int</span> <span class="n">nw</span><span class="p">,</span> <span class="kt">int</span> <span class="n">nh</span> <span class="p">)</span> <span class="p">{</span> <span class="n">w</span> <span class="o">=</span> <span class="n">nw</span><span class="p">;</span> <span class="n">h</span> <span class="o">=</span> <span class="n">nh</span><span class="p">;</span> <span class="p">}</span>
+
+<span class="c1">// Set up our SDL Window and Renderer for displaying to the screen</span>
+
+<span class="k">class</span> <span class="nc">Sdl</span> <span class="p">{</span>
+  <span class="nl">private:</span>
+
+  <span class="nl">public:</span>
+
+    <span class="n">Sdl</span><span class="p">()</span> <span class="p">{</span>
+        <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"C++ Constructor for Sdl</span><span class="se">\n</span><span class="s">"</span><span class="p">;</span>
+    <span class="p">}</span>   
+    <span class="o">~</span><span class="n">Sdl</span><span class="p">()</span> <span class="p">{</span>
+        <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"C++ Destructor for Sdl</span><span class="se">\n</span><span class="s">"</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="n">SDL_Texture</span> <span class="o">*</span><span class="n">textureList</span><span class="p">[</span> <span class="n">NUMBER_OF_IMAGES</span> <span class="p">];</span>
+    <span class="n">SDL_Rect</span> <span class="n">currentSpritePos</span><span class="p">;</span>
+
+    <span class="kt">int</span> <span class="n">init</span><span class="p">()</span> <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">x</span> <span class="o">=</span> <span class="n">SDL_Init</span><span class="p">(</span><span class="n">SDL_INIT_VIDEO</span><span class="p">);</span>
+        <span class="k">if</span><span class="p">(</span> <span class="n">x</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">)</span> <span class="p">{</span>
+            <span class="n">window</span> <span class="o">=</span> <span class="n">SDL_CreateWindow</span><span class="p">(</span><span class="s">"SDL2 Window"</span><span class="p">,</span>
+                                       <span class="n">SDL_WINDOWPOS_CENTERED</span><span class="p">,</span>
+                                       <span class="n">SDL_WINDOWPOS_CENTERED</span><span class="p">,</span>
+                                       <span class="n">SCREEN_WIDTH</span><span class="p">,</span> <span class="n">SCREEN_HEIGHT</span><span class="p">,</span>
+                                       <span class="mi">0</span><span class="p">);</span>
+            <span class="n">renderer</span> <span class="o">=</span> <span class="n">SDL_CreateRenderer</span><span class="p">(</span> <span class="n">window</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">SDL_RENDERER_ACCELERATED</span> <span class="o">|</span> <span class="n">SDL_RENDERER_PRESENTVSYNC</span> <span class="p">);</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+            <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"Had a problem creating a window! "</span> <span class="o">&lt;&lt;</span> <span class="n">SDL_GetError</span><span class="p">();</span>
+        <span class="p">}</span>
+        <span class="k">if</span><span class="p">(</span> <span class="n">window</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="p">)</span> <span class="p">{</span>
+            <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"Window null"</span><span class="p">;</span>
+            <span class="n">exit</span><span class="p">(</span> <span class="mi">0</span> <span class="p">);</span>
+        <span class="p">}</span>
+        <span class="k">if</span><span class="p">(</span> <span class="n">renderer</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="p">)</span> <span class="p">{</span>
+            <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"Renderer null"</span><span class="p">;</span>
+            <span class="n">exit</span><span class="p">(</span> <span class="mi">0</span> <span class="p">);</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="p">}</span>
+
+
+   <span class="c1">// Save our image as a texture into an array of possible textures</span>
+    <span class="kt">void</span> <span class="n">loadImageIntoSlot</span><span class="p">(</span> <span class="kt">char</span> <span class="o">*</span><span class="n">newImage</span><span class="p">,</span> <span class="kt">int</span> <span class="n">slot</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="n">tempSurface</span> <span class="o">=</span> <span class="n">IMG_Load</span><span class="p">(</span> <span class="n">newImage</span> <span class="p">);</span>
+        <span class="k">if</span><span class="p">(</span> <span class="n">tempSurface</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="p">)</span> <span class="p">{</span>
+                <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"Unable to use surface</span><span class="se">\n</span><span class="s">"</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+                <span class="n">SDL_Texture</span> <span class="o">*</span><span class="n">myTextureAddress</span> <span class="o">=</span> <span class="n">SDL_CreateTextureFromSurface</span><span class="p">(</span> <span class="n">renderer</span><span class="p">,</span> <span class="n">tempSurface</span> <span class="p">);</span>
+                <span class="n">textureList</span><span class="p">[</span> <span class="n">slot</span> <span class="p">]</span> <span class="o">=</span> <span class="n">myTextureAddress</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">if</span><span class="p">(</span> <span class="n">textureList</span><span class="p">[</span> <span class="n">slot</span> <span class="p">]</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="p">)</span> <span class="p">{</span> <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="s">"Unable to load image </span><span class="se">\n</span><span class="s">"</span><span class="p">;</span> <span class="p">}</span>
+        <span class="n">SDL_FreeSurface</span><span class="p">(</span> <span class="n">tempSurface</span> <span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="c1">// clear the screen in grey</span>
+    <span class="kt">void</span> <span class="n">renderClear</span><span class="p">()</span> <span class="p">{</span>
+        <span class="n">SDL_SetRenderDrawColor</span><span class="p">(</span><span class="n">renderer</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">200</span><span class="p">);</span>
+        <span class="n">SDL_RenderClear</span><span class="p">(</span><span class="n">renderer</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="c1">// update our Graphics card buffer</span>
+    <span class="kt">void</span> <span class="n">renderPresent</span><span class="p">()</span> <span class="p">{</span>
+        <span class="n">SDL_RenderPresent</span><span class="p">(</span><span class="n">renderer</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Render our texture to the screen in the correct position.    </span>
+    <span class="kt">void</span> <span class="n">updatePosition</span><span class="p">(</span> <span class="n">Gfx</span> <span class="o">*</span><span class="n">gfx</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">x</span><span class="p">;</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">y</span><span class="p">;</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">w</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">w</span><span class="p">;</span>
+        <span class="n">currentSpritePos</span><span class="p">.</span><span class="n">h</span> <span class="o">=</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">h</span><span class="p">;</span>
+        <span class="n">SDL_RenderCopyEx</span><span class="p">(</span><span class="n">renderer</span><span class="p">,</span> <span class="n">textureList</span><span class="p">[</span> <span class="n">gfx</span><span class="o">-&gt;</span><span class="n">textureSlot</span> <span class="p">],</span> <span class="nb">NULL</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">currentSpritePos</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="n">SDL_FLIP_NONE</span><span class="p">);</span>
+    <span class="p">}</span>
+
+
+<span class="p">};</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Code and image all avaiable on Github <a href="https://github.com/ibrierley/perl_inline_cpp_sdl2_tutorial">here</a></p>
+
+<p>Extra thoughts:<br>
+methods like renderClear(); feel too SDL specific, so maybe Perl should start to reference more graphics library agnostic names. Eg clearScreen() and updateScreen(), then if we want to use Opengl or something, the Perl part of the code would likely need to change less. </p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Ian
+     on Wednesday 24 March 2021 08:04</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jesse_shy/2021/03/subject-verb-object-notation-declarative-perl-without-the-framework.html">Subject Verb Object notation; declarative Perl without the framework</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -110,7 +596,7 @@ $other->Wallet::credit($credits);</p>
      on Tuesday 23 March 2021 18:35</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_march_2020_round">Call for Grants: March 2020 Round</a></h2>
             </div> <!-- card-header -->
@@ -146,7 +632,7 @@ $other->Wallet::credit($credits);</p>
      on Tuesday 23 March 2021 18:46</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/perl-version-poll-2020-03">Which Version of Perl are you using?</a></h2>
             </div> <!-- card-header -->
@@ -161,7 +647,7 @@ A non-scientific poll to which 132 answered. Mostly with one, sometimes with 2 r
      on Tuesday 23 March 2021 15:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/undef-defined-true-false">undef - defined - true -false</a></h2>
             </div> <!-- card-header -->
@@ -177,7 +663,7 @@ This is different from being evaluated to <a href="/true">true</a> or <a href="/
      on Tuesday 23 March 2021 08:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/true">true</a></h2>
             </div> <!-- card-header -->
@@ -193,7 +679,7 @@ There are certain values that evaluate to <a href="/false">false</a> or true in 
      on Tuesday 23 March 2021 08:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/false">false</a></h2>
             </div> <!-- card-header -->
@@ -209,7 +695,7 @@ There are certain values that evaluate to false or <a href="/true">true</a> in b
      on Tuesday 23 March 2021 08:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/defined">defined</a></h2>
             </div> <!-- card-header -->
@@ -224,7 +710,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Tuesday 23 March 2021 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/managing-a-test-database-2oje">Managing a Test Database</a></h2>
             </div> <!-- card-header -->
@@ -537,7 +1023,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 13:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/rb7">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -549,7 +1035,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/g7r">Guten Tag, Senior Perl Developers! Perl role in South Germany</a></h2>
             </div> <!-- card-header -->
@@ -561,7 +1047,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/3cv">Big Dividends, Bigger Opportunity! Perl role with multiple location options</a></h2>
             </div> <!-- card-header -->
@@ -573,7 +1059,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/wcm">Mad Men (and women) of London. Perl in London</a></h2>
             </div> <!-- card-header -->
@@ -585,7 +1071,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/u7g">Smart Shopper = Smart Saver. Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -597,7 +1083,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021 </a></h2>
             </div> <!-- card-header -->
@@ -609,7 +1095,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -621,7 +1107,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Short talks: #AprilFools hijinks</a></h2>
             </div> <!-- card-header -->
@@ -633,7 +1119,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -645,7 +1131,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -657,7 +1143,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://act.yapc.eu/gpw2021">German Perl Workshop 2021</a></h2>
             </div> <!-- card-header -->
@@ -669,7 +1155,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -681,7 +1167,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/course-management-app-in-mojolicious">Live development of a Mojolicious-based web application</a></h2>
             </div> <!-- card-header -->
@@ -693,7 +1179,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/elk-with-rex">Learning more about (R)?ex today!</a></h2>
             </div> <!-- card-header -->
@@ -705,7 +1191,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/p/perl">Code Maven courses</a></h2>
             </div> <!-- card-header -->
@@ -717,7 +1203,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/03/15/2021-11-two-year-itch/">2021.11 Two Year Itch</a></h2>
             </div> <!-- card-header -->
@@ -729,7 +1215,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/forking-pid-ppid">Forking, Process ID, Parent Process ID, init</a></h2>
             </div> <!-- card-header -->
@@ -741,7 +1227,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/03/Perl_Weekly_Challenge_104__FUSC_NIM.html">Perl Weekly Challenge 104: FUSC NIM</a></h2>
             </div> <!-- card-header -->
@@ -753,7 +1239,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/03/perl-weekly-challenge-104-fusc-sequence-and-nim-game.html">Perl Weekly Challenge 104: Fusc Sequence and NIM Game</a></h2>
             </div> <!-- card-header -->
@@ -765,7 +1251,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/03/15/PerlWeeklyChallenge104.html">Perl Weekly Challenge 104: recursion and picking</a></h2>
             </div> <!-- card-header -->
@@ -777,7 +1263,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-104.html">Perl weekly challenge 104</a></h2>
             </div> <!-- card-header -->
@@ -789,7 +1275,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.braincells.com/perl/2021/03/perl_weekly_challenge_week_104.html">Perl Weekly Challenge: Week 104</a></h2>
             </div> <!-- card-header -->
@@ -801,7 +1287,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/18/pwc104-nim-game/">PWC104 - NIM Game</a></h2>
             </div> <!-- card-header -->
@@ -813,7 +1299,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/17/pwc104-fusc-sequence/">PWC104 - FUSC Sequence</a></h2>
             </div> <!-- card-header -->
@@ -825,7 +1311,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/03/15/fuscing-tokens-perl-weekly-challenge-104.html">FUSCing Tokens: Perl Weekly Challenge 104</a></h2>
             </div> <!-- card-header -->
@@ -837,7 +1323,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/nimbly-fuscous.html">Nimbly Fuscous with Raku</a></h2>
             </div> <!-- card-header -->
@@ -849,7 +1335,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/03/21/perl-weekly-challenge-104-nim-game/">Perl Weekly Challenge 104: NIM Game</a></h2>
             </div> <!-- card-header -->
@@ -861,7 +1347,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://programmingblog702692439.wordpress.com/2021/03/21/perl-weekly-challenge-104-fusc-sequence/">Perl Weekly Challenge 104: FUSC Sequence</a></h2>
             </div> <!-- card-header -->
@@ -873,7 +1359,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-104/">Perl Weekly Challenge 104</a></h2>
             </div> <!-- card-header -->
@@ -885,7 +1371,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-104">RECAP - The Weekly Challenge - 104</a></h2>
             </div> <!-- card-header -->
@@ -897,7 +1383,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-105">The Weekly Challenge - 105</a></h2>
             </div> <!-- card-header -->
@@ -909,7 +1395,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/jonathan-2021-02">February report on Jonathan Worthington's Raku Development Grant</a></h2>
             </div> <!-- card-header -->
@@ -921,7 +1407,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/15/test-cli/">Test::CLI</a></h2>
             </div> <!-- card-header -->
@@ -933,7 +1419,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://ology.github.io/2021/03/14/releasing-perl-modules-to-cpan/">Releasing Perl Modules to CPAN</a></h2>
             </div> <!-- card-header -->
@@ -945,7 +1431,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/16/teepee/">teepee</a></h2>
             </div> <!-- card-header -->
@@ -957,7 +1443,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="http://mail-archives.apache.org/mod_mbox/perl-modperl/202103.mbox/%3CCAND+6xmhzwd7Jn5vjsfadKC26COv15B5bx6kzWZT5CySSnqP4A@mail.gmail.com%3E">The future of mod_perl</a></h2>
             </div> <!-- card-header -->
@@ -969,7 +1455,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/2021/03/16/perl_map_grep/">Better Perl: Using map and grep</a></h2>
             </div> <!-- card-header -->
@@ -981,7 +1467,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/relatively-easy-ways-to-catch-memory-errors.html">Relatively easy ways to catch memory errors</a></h2>
             </div> <!-- card-header -->
@@ -993,7 +1479,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/manwar/Dancer2-REST-API">Dancer2 REST API</a></h2>
             </div> <!-- card-header -->
@@ -1005,7 +1491,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/03/dancer2-0301000-released.html">Dancer2 0.301000 Released</a></h2>
             </div> <!-- card-header -->
@@ -1017,7 +1503,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.activestate.com/products/perl/downloads/?utm_source=perl-weekly-newsletter&utm_medium=cpc&utm_content=perl-download-message&utm_campaign=user-acquisition">Why Download Perl From ActiveState?</a></h2>
             </div> <!-- card-header -->
@@ -1033,7 +1519,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/504.html">#504 - Make Perl #1 again ...</a></h2>
             </div> <!-- card-header -->
@@ -1052,7 +1538,7 @@ The <b>defined</b> function in Perl checks if the given value is anything but <a
      on Monday 22 March 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/03/perl-weekly-challenge-104-fusc-sequence-and-nim-game.html">Perl Weekly Challenge 104: Fusc Sequence and NIM Game</a></h2>
             </div> <!-- card-header -->
@@ -1575,7 +2061,7 @@ You won!
      on Wednesday 17 March 2021 04:19</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/randal_l_schwartz/2021/03/my-half-life-with-perl-from-oscon-2013-live-encore-performance.html">&quot;My half-life with Perl&quot; from OSCON 2013 live encore performance</a></h2>
             </div> <!-- card-header -->
@@ -1598,7 +2084,7 @@ You won!
      on Sunday 21 March 2021 05:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-104.html">Perl weekly challenge 104</a></h2>
             </div> <!-- card-header -->
@@ -1756,7 +2242,7 @@ when n is odd:  fusc(n) = fusc((n-1)/2) + fusc((n+1)/2)
      on Tuesday 16 March 2021 09:53</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cccxxxiii-14-cpan-great-modules.html">(cccxxxiii) 14 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1768,7 +2254,7 @@ when n is odd:  fusc(n) = fusc((n-1)/2) + fusc((n+1)/2)
      on Saturday 20 March 2021 20:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlix-metacpan-weekly-report-gdgraph.html">(cdlix) metacpan weekly report - GD::Graph</a></h2>
             </div> <!-- card-header -->
@@ -1780,7 +2266,7 @@ when n is odd:  fusc(n) = fusc((n-1)/2) + fusc((n+1)/2)
      on Saturday 20 March 2021 20:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlxxxii-stackoverflow-perl-report.html">(cdlxxxii) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -1792,9 +2278,9 @@ when n is odd:  fusc(n) = fusc((n-1)/2) + fusc((n+1)/2)
      on Saturday 20 March 2021 20:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/ibrierley/playing-with-perl-inline-c-and-sdl2-part-1-94f">Perl animated game. Playing with Perl, Inline C++ and SDL2 (part 1&amp;2)</a></h2>
+              <h2 class="card-title"><a href="https://dev.to/ibrierley/playing-with-perl-inline-c-and-sdl2-part-1-94f">Perl animated game. Playing with Perl, Inline C++ and SDL2 (part 1!)</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--wOMwxKae--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fal0xqdb54hlxzpa6soh.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--wOMwxKae--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fal0xqdb54hlxzpa6soh.png" alt="Alt Text"></a></p>
 
@@ -2152,7 +2638,7 @@ __CPP__
      on Saturday 20 March 2021 16:15</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/true-private-attributes-and-methods-for-modern-perl-oop-2i39">True private attributes and methods for modern Perl OOP</a></h2>
             </div> <!-- card-header -->
@@ -2308,7 +2794,7 @@ __CPP__
      on Saturday 20 March 2021 14:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/why-do-you-use-perl-perl-fine-channel-230k">Why do you use Perl? - Perl Fine Channel</a></h2>
             </div> <!-- card-header -->
@@ -2332,453 +2818,6 @@ __CPP__
 
               <p class="text-right"><small>Published by Yuki Kimoto
      on Saturday 20 March 2021 02:08</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_60">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/raigaurav/data-visualization-creating-charts-using-perl-chart-clicker-1hm">Data visualization: Creating charts using Perl (Chart::Clicker)</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>As usual there are multiple ways to create beautiful charts in Perl.</p>
-
-<ol>
-<li><a href="https://metacpan.org/pod/Chart::Clicker">Chart::Clicker</a></li>
-<li><a href="https://metacpan.org/pod/GD::Graph">GD::Graph</a></li>
-<li><a href="https://metacpan.org/pod/Chart::Plotly">Chart::Plotly</a></li>
-<li>
-<a href="https://metacpan.org/pod/Chart::GGPlot">Chart::GGPlot</a> - Experimental </li>
-</ol>
-
-<p>We will be using Chart::Clicker in this post.</p>
-
-<p>But let me get few thing clear before that. Both <strong>Chart::Clicker</strong> and <strong>GD::Graph</strong> hasn't been updated in last 4+ years. Especially for GD::Graph there are multiple issue opened and not sure about current status.</p>
-
-<p><strong>Chart::Plotly</strong> is something which I am more interested in right now. It is based on <a href="https://plotly.com/javascript/">plotly.js</a>.<br>
-I also encourage you to checkout <a href="https://github.com/plotly/dash">Dash</a> which is built on top of Plotly.js, React and Flask for building ML &amp; data science web apps.<br>
-There is something equivalent in Perl world also from same author(Chart::Plotly) - <a href="https://metacpan.org/pod/Dash">Dash</a> which will be using <a href="https://metacpan.org/pod/Mojolicious">Mojolicious</a> or <a href="https://metacpan.org/pod/Dancer2">Dancer2</a>. But right now it is in experimental stage and still under active development. I hope it will be ready for production soon because I can't wait to try my hands on it.</p>
-
-<p>I have used Chart::Clicker 2-3 years back and it was good for my need at that time. It is based on <a href="https://www.cairographics.org/">Cairo</a>. The reason I used it instead of Chart::Plotly is because it was very new. But its 2021 and there are lots of beautiful charting library already available (specially on front-end side) which is not just easy to use but also look good to eyes. Few notable ones are -</p>
-
-<ol>
-<li><a href="https://www.chartjs.org/">Chart.js</a></li>
-<li><a href="https://d3js.org/">D3.js</a></li>
-<li><a href="https://www.amcharts.com/">Amcharts</a></li>
-<li><a href="https://www.highcharts.com/">Highcharts</a></li>
-</ol>
-
-<p>There are many more (a lot) but that is not the focus of today. Out of these </p>
-
-<ul>
-<li>
-<strong>Chart.js</strong> is lightweight and elegant when you have some basic and simple requirement. When your requirement gets more complex or too specific it will be little difficult to achieve and you have to write some extra codes to achieve it.</li>
-<li>
-<strong>D3.js</strong> is the beast which is difficult to tame but can win you any battle.(I spent some time on taming it but still not confident - maybe I am not a good Javascript developer till now.)</li>
-<li>I can personally vouch for <strong>Amcharts</strong>. After spending time on above two library, Amcharts is the sweet spot. It has everything you need and out of the box. Plenty of good examples on there website and highly configurable to your need - especially there <a href="https://www.amcharts.com/v4/">v4</a> which is written in Typescript.</li>
-</ul>
-
-<p>That's been said lets start with our example. There is a <a href="http://onemogin.com/assets/talks/Data-Viz-w-ChartClicker.pdf">talk</a> given by author sometime back. You can also take a look at it for more info.</p>
-<h2>
-  <a href="#basic-chart-elements" class="anchor">
-  </a>
-  Basic chart elements
-</h2>
-
-<p>Lets look at basic chart terminologies. From <a href="https://canvasjs.com/docs/charts/basics-of-creating-html5-chart/chart-elements/">canvasJS docs</a><br>
-<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--r42VZMdt--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/39kmv6fwe4h5jkmwm6i9.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--r42VZMdt--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/39kmv6fwe4h5jkmwm6i9.PNG" alt="chart_terminology"></a></p>
-<h2>
-  <a href="#creating-the-data-config" class="anchor">
-  </a>
-  Creating the data config
-</h2>
-
-<p>We will be creating multi-line chart for today. To make it easy to use and highly configurable we will be creating a input data json file<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight json"><code><span class="p">{</span><span class="w">
-    </span><span class="nl">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Number of automobiles sold per day by manufacturer"</span><span class="p">,</span><span class="w">
-    </span><span class="nl">"domainAxis"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="nl">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"2020-04-15"</span><span class="p">,</span><span class="w"> </span><span class="s2">"2020-04-16"</span><span class="p">,</span><span class="w"> </span><span class="s2">"2020-04-17"</span><span class="p">,</span><span class="w"> </span><span class="s2">"2020-04-18"</span><span class="p">],</span><span class="w">
-        </span><span class="nl">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Date"</span><span class="w">
-    </span><span class="p">},</span><span class="w">
-    </span><span class="nl">"rangeAxis"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="nl">"lines"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-            </span><span class="nl">"line1"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-                </span><span class="nl">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">10</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="mi">5</span><span class="p">,</span><span class="mi">9</span><span class="p">],</span><span class="w">
-                </span><span class="nl">"legendName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Honda"</span><span class="w">
-            </span><span class="p">},</span><span class="w">
-            </span><span class="nl">"line2"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-                </span><span class="nl">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">20</span><span class="p">,</span><span class="mi">15</span><span class="p">,</span><span class="mi">8</span><span class="p">,</span><span class="mi">10</span><span class="p">],</span><span class="w">
-                </span><span class="nl">"legendName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Toyota"</span><span class="w">
-            </span><span class="p">},</span><span class="w">
-            </span><span class="nl">"line3"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-                </span><span class="nl">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">6</span><span class="p">,</span><span class="mi">19</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">4</span><span class="p">],</span><span class="w">
-                </span><span class="nl">"legendName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Ford"</span><span class="w">
-            </span><span class="p">},</span><span class="w">
-            </span><span class="nl">"line4"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-                </span><span class="nl">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">16</span><span class="p">,</span><span class="mi">10</span><span class="p">,</span><span class="mi">6</span><span class="p">,</span><span class="mi">12</span><span class="p">],</span><span class="w">
-                </span><span class="nl">"legendName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Renault"</span><span class="w">
-            </span><span class="p">}</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="nl">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Numbers of automobiles sold"</span><span class="w">
-    </span><span class="p">}</span><span class="w">
-</span><span class="p">}</span><span class="w">
-</span></code></pre>
-
-</div>
-
-
-
-<p>The names are self explanatory. <code>domainAxis</code> is the x-axis which is a <strong>Date</strong>. <code>rangeAxis</code> is y-axis which has 3 lines for now.</p>
-
-<h2>
-  <a href="#directory-structure" class="anchor">
-  </a>
-  Directory structure
-</h2>
-
-<p>Our directory structure will be simple. <em>input</em> for input data, <em>output</em> for generated chart, <em>lib</em> for perl module.</p>
-
-<p>┣ 📂input<br>
- ┃ ┗ 📜input_data.json<br>
- ┣ 📂lib<br>
- ┃ ┗ 📜CreateCharts.pm<br>
- ┣ 📂output<br>
- ┣ 📜multi_line_chart.pl<br>
- ┗ 📜README.md</p>
-<h2>
-  <a href="#creating-the-module" class="anchor">
-  </a>
-  Creating the module
-</h2>
-
-<p>While working on creating the multi-line chart, I spend a quite amount of time understanding it. The documentation is good but still I think it can be improved. Why like this and how this is happening is unanswered at some places. One good thing is there are lot of <a href="https://github.com/gphat/chart-clicker-examples/">example</a> present. So, you can look at it and found your way out.</p>
-
-<p>So, lets create our module.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">CreateCharts</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-
-<span class="k">use</span> <span class="nn">Chart::</span><span class="nv">Clicker</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Chart::Clicker::</span><span class="nv">Context</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Chart::Clicker::Data::</span><span class="nv">DataSet</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Chart::Clicker::Data::</span><span class="nv">Marker</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Chart::Clicker::Data::</span><span class="nv">Series</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Chart::Clicker::Axis::</span><span class="nv">DateTime</span><span class="p">;</span>
-
-<span class="k">use</span> <span class="nn">Geometry::Primitive::</span><span class="nv">Rectangle</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Geometry::Primitive::</span><span class="nv">Circle</span><span class="p">;</span>
-
-<span class="k">use</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="p">;</span>
-
-<span class="k">use</span> <span class="nv">DateTime</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">new</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$class</span><span class="p">,</span> <span class="nv">@arguments</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="p">{</span><span class="nv">@arguments</span><span class="p">};</span>
-    <span class="nb">bless</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$class</span><span class="p">;</span>
-    <span class="k">return</span> <span class="nv">$self</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_generate_specific_colors</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-
-    <span class="c1"># build the color allocator</span>
-    <span class="c1"># Add more colors in case your line is more than 6</span>
-    <span class="k">my</span> <span class="nv">$ca</span> <span class="o">=</span> <span class="nn">Chart::Clicker::Drawing::</span><span class="nv">ColorAllocator</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">;</span>
-
-    <span class="k">my</span> <span class="nv">$red</span>    <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">({</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mf">.75</span><span class="p">,</span> <span class="s">green</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>   <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>   <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mf">.8</span><span class="p">});</span>
-    <span class="k">my</span> <span class="nv">$green</span>  <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">({</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>   <span class="s">green</span> <span class="o">=&gt;</span> <span class="mf">.75</span><span class="p">,</span> <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>   <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mf">.8</span><span class="p">});</span>
-    <span class="k">my</span> <span class="nv">$blue</span>   <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">({</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>   <span class="s">green</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>   <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mf">.75</span><span class="p">,</span> <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mf">.8</span><span class="p">});</span>
-    <span class="k">my</span> <span class="nv">$orange</span> <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mf">.88</span><span class="p">,</span> <span class="s">green</span> <span class="o">=&gt;</span> <span class="mf">.48</span><span class="p">,</span> <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mf">.09</span><span class="p">,</span> <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mf">.8</span><span class="p">);</span>
-    <span class="k">my</span> <span class="nv">$aqua</span>   <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">green</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mf">.8</span><span class="p">);</span>
-    <span class="k">my</span> <span class="nv">$fuchsia</span> <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">green</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mf">.8</span><span class="p">);</span>
-
-    <span class="nv">$ca</span><span class="o">-&gt;</span><span class="nv">add_to_colors</span><span class="p">(</span><span class="nv">$green</span><span class="p">);</span>
-    <span class="nv">$ca</span><span class="o">-&gt;</span><span class="nv">add_to_colors</span><span class="p">(</span><span class="nv">$red</span><span class="p">);</span>
-    <span class="nv">$ca</span><span class="o">-&gt;</span><span class="nv">add_to_colors</span><span class="p">(</span><span class="nv">$blue</span><span class="p">);</span>
-    <span class="nv">$ca</span><span class="o">-&gt;</span><span class="nv">add_to_colors</span><span class="p">(</span><span class="nv">$orange</span><span class="p">);</span>
-    <span class="nv">$ca</span><span class="o">-&gt;</span><span class="nv">add_to_colors</span><span class="p">(</span><span class="nv">$aqua</span><span class="p">);</span>
-    <span class="nv">$ca</span><span class="o">-&gt;</span><span class="nv">add_to_colors</span><span class="p">(</span><span class="nv">$fuchsia</span><span class="p">);</span>
-
-    <span class="k">return</span> <span class="nv">$ca</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_genrate_random_colors</span> <span class="p">{</span>
-
-    <span class="c1"># let Chart::Clicker autmatically pick complementing colors for you</span>
-    <span class="c1"># https://metacpan.org/pod/Chart::Clicker::Drawing::ColorAllocator#AUTOMATIC-COLOR-ALLOCATION</span>
-    <span class="k">my</span> <span class="nv">$ca</span> <span class="o">=</span> <span class="nn">Chart::Clicker::Drawing::</span><span class="nv">ColorAllocator</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">({</span>
-            <span class="s">seed_hue</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>    <span class="c1">#red</span>
-    <span class="p">});</span>
-    <span class="k">return</span> <span class="nv">$ca</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_add_series</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$x_axis</span><span class="p">,</span> <span class="nv">$y_axis</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="k">my</span> <span class="nv">$ds</span> <span class="o">=</span> <span class="nn">Chart::Clicker::Data::</span><span class="nv">DataSet</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">;</span>
-    <span class="k">foreach</span> <span class="k">my</span> <span class="nv">$axis</span> <span class="p">(</span><span class="nb">keys</span> <span class="nv">%</span><span class="p">{</span><span class="nv">$y_axis</span><span class="p">})</span> <span class="p">{</span>
-        <span class="nv">$ds</span><span class="o">-&gt;</span><span class="nv">add_to_series</span><span class="p">(</span>
-            <span class="nn">Chart::Clicker::Data::</span><span class="nv">Series</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
-                <span class="s">keys</span>   <span class="o">=&gt;</span> <span class="nv">$x_axis</span><span class="p">,</span>
-                <span class="s">values</span> <span class="o">=&gt;</span> <span class="nv">$y_axis</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">$axis</span><span class="p">}</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">data</span><span class="p">},</span>
-                <span class="s">name</span>   <span class="o">=&gt;</span> <span class="nv">$y_axis</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">$axis</span><span class="p">}</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">legendName</span><span class="p">},</span>
-            <span class="p">)</span>
-        <span class="p">);</span>
-    <span class="p">}</span>
-    <span class="k">return</span> <span class="nv">$ds</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_add_title</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$cc</span><span class="p">,</span> <span class="nv">$title</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">title</span><span class="o">-&gt;</span><span class="nv">font</span><span class="o">-&gt;</span><span class="nv">family</span><span class="p">('</span><span class="s1">Helvetica</span><span class="p">');</span>
-
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">title</span><span class="o">-&gt;</span><span class="nv">text</span><span class="p">(</span><span class="nv">$title</span><span class="p">);</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">title</span><span class="o">-&gt;</span><span class="nv">font</span><span class="o">-&gt;</span><span class="nv">size</span><span class="p">(</span><span class="mi">20</span><span class="p">);</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">title</span><span class="o">-&gt;</span><span class="nv">padding</span><span class="o">-&gt;</span><span class="nv">bottom</span><span class="p">(</span><span class="mi">10</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_style_legend</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$cc</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">legend</span><span class="o">-&gt;</span><span class="nv">font</span><span class="o">-&gt;</span><span class="nv">size</span><span class="p">(</span><span class="mi">20</span><span class="p">);</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">legend</span><span class="o">-&gt;</span><span class="nv">font</span><span class="o">-&gt;</span><span class="nv">family</span><span class="p">('</span><span class="s1">Helvetica</span><span class="p">');</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_add_background</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$cc</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-
-    <span class="c1"># https://metacpan.org/pod/Graphics::Color::RGB</span>
-    <span class="k">my</span> <span class="nv">$titan_white</span> <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mf">.98</span><span class="p">,</span> <span class="s">green</span> <span class="o">=&gt;</span> <span class="mf">.98</span><span class="p">,</span> <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">);</span>
-    <span class="k">my</span> <span class="nv">$white</span>       <span class="o">=</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>   <span class="s">green</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>   <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">alpha</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">);</span>
-
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">plot</span><span class="o">-&gt;</span><span class="nv">grid</span><span class="o">-&gt;</span><span class="nv">visible</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">background_color</span><span class="p">(</span><span class="nv">$white</span><span class="p">);</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">plot</span><span class="o">-&gt;</span><span class="nv">grid</span><span class="o">-&gt;</span><span class="nv">background_color</span><span class="p">(</span><span class="nv">$titan_white</span><span class="p">);</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">border</span><span class="o">-&gt;</span><span class="nv">width</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_add_label</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$def</span><span class="p">,</span> <span class="nv">$x_label</span><span class="p">,</span> <span class="nv">$y_label</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="nv">$def</span><span class="o">-&gt;</span><span class="nv">domain_axis</span><span class="o">-&gt;</span><span class="nv">label</span><span class="p">(</span><span class="nv">$x_label</span><span class="p">);</span>
-    <span class="nv">$def</span><span class="o">-&gt;</span><span class="nv">range_axis</span><span class="o">-&gt;</span><span class="nv">label</span><span class="p">(</span><span class="nv">$y_label</span><span class="p">);</span>
-    <span class="nv">$def</span><span class="o">-&gt;</span><span class="nv">domain_axis</span><span class="o">-&gt;</span><span class="nv">label_font</span><span class="o">-&gt;</span><span class="nv">size</span><span class="p">(</span><span class="mi">20</span><span class="p">);</span>
-    <span class="nv">$def</span><span class="o">-&gt;</span><span class="nv">range_axis</span><span class="o">-&gt;</span><span class="nv">label_font</span><span class="o">-&gt;</span><span class="nv">size</span><span class="p">(</span><span class="mi">20</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">_add_shapes_to_lines</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$defctx</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-
-    <span class="c1"># https://metacpan.org/pod/Chart::Clicker::Renderer::Line#shape</span>
-    <span class="nv">$defctx</span><span class="o">-&gt;</span><span class="nv">renderer</span><span class="o">-&gt;</span><span class="nv">shape</span><span class="p">(</span><span class="nn">Geometry::Primitive::</span><span class="nv">Circle</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">({</span><span class="s">radius</span> <span class="o">=&gt;</span> <span class="mi">6</span><span class="p">,}));</span>
-
-    <span class="c1"># https://metacpan.org/pod/Chart::Clicker::Renderer::Line#shape_brush</span>
-    <span class="nv">$defctx</span><span class="o">-&gt;</span><span class="nv">renderer</span><span class="o">-&gt;</span><span class="nv">shape_brush</span><span class="p">(</span>
-        <span class="nn">Graphics::Primitive::</span><span class="nv">Brush</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
-            <span class="s">width</span> <span class="o">=&gt;</span> <span class="mi">2</span><span class="p">,</span>
-            <span class="s">color</span> <span class="o">=&gt;</span> <span class="nn">Graphics::Color::</span><span class="nv">RGB</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">red</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">green</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span> <span class="s">blue</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="p">)</span>
-    <span class="p">);</span>
-
-    <span class="nv">$defctx</span><span class="o">-&gt;</span><span class="nv">renderer</span><span class="o">-&gt;</span><span class="nv">brush</span><span class="o">-&gt;</span><span class="nv">width</span><span class="p">(</span><span class="mi">2</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">generate_chart</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$chart_loc</span><span class="p">,</span> <span class="nv">$summary_info</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-
-    <span class="k">my</span> <span class="nv">$cc</span> <span class="o">=</span> <span class="nn">Chart::</span><span class="nv">Clicker</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">width</span> <span class="o">=&gt;</span> <span class="mi">800</span><span class="p">,</span> <span class="s">height</span> <span class="o">=&gt;</span> <span class="mi">600</span><span class="p">,</span> <span class="s">format</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">png</span><span class="p">');</span>
-
-    <span class="k">my</span> <span class="nv">$x_axis</span> <span class="o">=</span> <span class="nv">$summary_info</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">domainAxis</span><span class="p">};</span>
-    <span class="k">my</span> <span class="nv">$y_axis</span> <span class="o">=</span> <span class="nv">$summary_info</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">rangeAxis</span><span class="p">};</span>
-
-    <span class="k">my</span> <span class="p">(</span><span class="nv">@epoch_datetime</span><span class="p">);</span>
-
-    <span class="k">for</span> <span class="k">my</span> <span class="nv">$datetime</span> <span class="p">(</span><span class="nv">@</span><span class="p">{</span><span class="nv">$x_axis</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">data</span><span class="p">}})</span> <span class="p">{</span>
-
-        <span class="c1"># https://github.com/gphat/chart-clicker/blob/master/example/date-axis.pl</span>
-        <span class="c1"># Need to convert date time string to epoch time</span>
-        <span class="k">my</span> <span class="p">(</span><span class="nv">$y</span><span class="p">,</span> <span class="nv">$m</span><span class="p">,</span> <span class="nv">$d</span><span class="p">)</span> <span class="o">=</span> <span class="nb">split</span><span class="p">(</span><span class="sr">/-/</span><span class="p">,</span> <span class="nv">$datetime</span><span class="p">);</span>
-        <span class="k">my</span> <span class="nv">$epoch</span> <span class="o">=</span> <span class="nv">DateTime</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">year</span> <span class="o">=&gt;</span> <span class="nv">$y</span><span class="p">,</span> <span class="s">month</span> <span class="o">=&gt;</span> <span class="nv">$m</span><span class="p">,</span> <span class="s">day</span> <span class="o">=&gt;</span> <span class="nv">$d</span><span class="p">)</span><span class="o">-&gt;</span><span class="nv">epoch</span><span class="p">;</span>
-        <span class="nb">push</span> <span class="nv">@epoch_datetime</span><span class="p">,</span> <span class="nv">$epoch</span><span class="p">;</span>
-    <span class="p">}</span>
-
-    <span class="k">my</span> <span class="nv">$ds</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_add_series</span><span class="p">(</span><span class="o">\</span><span class="nv">@epoch_datetime</span><span class="p">,</span> <span class="nv">$y_axis</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">lines</span><span class="p">});</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">add_to_datasets</span><span class="p">(</span><span class="nv">$ds</span><span class="p">);</span>
-
-    <span class="c1"># To generate random colors and let Chart::Clicker autmatically pick color</span>
-    <span class="c1"># my $ca = $self-&gt;_genrate_random_colors();</span>
-
-    <span class="c1"># To generate some specific colors for lines ise this function</span>
-    <span class="k">my</span> <span class="nv">$ca</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_generate_specific_colors</span><span class="p">();</span>
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">color_allocator</span><span class="p">(</span><span class="nv">$ca</span><span class="p">);</span>
-
-    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_add_title</span><span class="p">(</span><span class="nv">$cc</span><span class="p">,</span> <span class="nv">$summary_info</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">title</span><span class="p">});</span>
-    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_style_legend</span><span class="p">(</span><span class="nv">$cc</span><span class="p">);</span>
-    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_add_background</span><span class="p">(</span><span class="nv">$cc</span><span class="p">);</span>
-
-    <span class="k">my</span> <span class="nv">$defctx</span> <span class="o">=</span> <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">get_context</span><span class="p">('</span><span class="s1">default</span><span class="p">');</span>
-
-    <span class="c1"># For range axis</span>
-    <span class="nv">$defctx</span><span class="o">-&gt;</span><span class="nv">range_axis</span><span class="o">-&gt;</span><span class="nv">range</span><span class="p">(</span><span class="nn">Chart::Clicker::Data::</span><span class="nv">Range</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">lower</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">));</span>
-    <span class="nv">$defctx</span><span class="o">-&gt;</span><span class="nv">range_axis</span><span class="o">-&gt;</span><span class="nb">format</span><span class="p">('</span><span class="s1">%d</span><span class="p">');</span>
-
-    <span class="c1"># https://metacpan.org/pod/Chart::Clicker::Axis#fudge_amount</span>
-    <span class="c1"># $defctx-&gt;range_axis-&gt;fudge_amount(0.02);</span>
-
-    <span class="c1"># For domain axis</span>
-    <span class="nv">$defctx</span><span class="o">-&gt;</span><span class="nv">domain_axis</span><span class="p">(</span>
-        <span class="nn">Chart::Clicker::Axis::</span><span class="nv">DateTime</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
-            <span class="s">format</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">%Y-%m-%d</span><span class="p">",</span>
-            <span class="s">ticks</span>  <span class="o">=&gt;</span> <span class="nb">scalar</span> <span class="nv">@</span><span class="p">{</span><span class="nv">$x_axis</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">data</span><span class="p">}},</span>
-            <span class="s">position</span>         <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">bottom</span><span class="p">',</span>
-            <span class="s">tick_label_angle</span> <span class="o">=&gt;</span> <span class="mf">0.78539816</span><span class="p">,</span>                       <span class="c1"># 45 deg in radians</span>
-            <span class="s">orientation</span>      <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">vertical</span><span class="p">',</span>
-            <span class="s">tick_font</span>        <span class="o">=&gt;</span> <span class="nn">Graphics::Primitive::</span><span class="nv">Font</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">({</span><span class="s">family</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Helvetica</span><span class="p">',</span> <span class="s">slant</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">normal</span><span class="p">'})</span>
-        <span class="p">)</span>
-    <span class="p">);</span>
-
-    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_add_label</span><span class="p">(</span><span class="nv">$defctx</span><span class="p">,</span> <span class="nv">$x_axis</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">label</span><span class="p">},</span> <span class="nv">$y_axis</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">label</span><span class="p">});</span>
-    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_add_shapes_to_lines</span><span class="p">(</span><span class="nv">$defctx</span><span class="p">);</span>
-
-    <span class="nv">$cc</span><span class="o">-&gt;</span><span class="nv">write_output</span><span class="p">(</span><span class="nv">$chart_loc</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="mi">1</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>I tried to use proper names for subroutines, so it is easy to understand. Comments are also added.</p>
-
-<ul>
-<li>
-<code>_generate_specific_colors</code> - generates specific set of color for your lines. You can update it to suit your need.</li>
-<li>
-<code>_generate_random_colors</code> - allow the colors to be chosen randomly by the module itself.</li>
-<li>
-<code>_add_series</code> - add the series/ lines to your chart. The loop inside will run for each line(total 3) and add it to dataset.</li>
-<li>
-<code>_add_title</code> - add title to your chart which you have provided in input json file. There is different format options available which you can update to suit your requirements.</li>
-<li>
-<code>_style_legend</code> - is to format the legends.</li>
-<li>
-<code>_add_background</code> - add the background colors and format to the chart.</li>
-<li>
-<code>_add_label</code> - to the charts and format them.</li>
-<li>
-<code>_add_shapes_to_lines</code> - add the circular shape and brush to the lines.</li>
-<li>
-<code>generate_chart</code> - this is the subroutine we will be calling from outside with the input json data.</li>
-</ul>
-
-<p>You may have notices the underscore in front of subroutines name. This is because they are private to this module.</p>
-
-<h2>
-  <a href="#using-the-module" class="anchor">
-  </a>
-  Using the module
-</h2>
-
-<p>Let create our startup script to access this module for creating our chart.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">Cwd</span> <span class="sx">qw( abs_path )</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">File::</span><span class="nv">Basename</span> <span class="sx">qw( dirname )</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">JSON</span><span class="p">;</span>
-
-<span class="k">BEGIN</span> <span class="p">{</span>
-    <span class="nv">$ENV</span><span class="p">{"</span><span class="s2">SCRIPT_DIR</span><span class="p">"}</span> <span class="o">=</span> <span class="nv">dirname</span><span class="p">(</span><span class="nv">abs_path</span><span class="p">(</span><span class="err">$</span><span class="mi">0</span><span class="p">));</span>
-<span class="p">}</span>
-
-<span class="k">use</span> <span class="nv">lib</span> <span class="nv">$ENV</span><span class="p">{"</span><span class="s2">SCRIPT_DIR</span><span class="p">"}</span> <span class="o">.</span> <span class="p">"</span><span class="s2">/lib</span><span class="p">";</span>
-<span class="k">use</span> <span class="nv">CreateCharts</span><span class="p">;</span>
-
-<span class="k">my</span> <span class="nv">$chart_out_file</span> <span class="o">=</span> <span class="nv">$ENV</span><span class="p">{"</span><span class="s2">SCRIPT_DIR</span><span class="p">"}</span> <span class="o">.</span> <span class="p">"</span><span class="s2">/output/lineChart.png</span><span class="p">";</span>
-
-<span class="k">sub </span><span class="nf">read_json_file</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$json_file</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="k">print</span> <span class="p">"</span><span class="se">\n</span><span class="s2">Reading </span><span class="si">$json_file</span><span class="p">";</span>
-
-    <span class="nb">open</span><span class="p">(</span><span class="k">my</span> <span class="nv">$in</span><span class="p">,</span> <span class="p">'</span><span class="s1">&lt;</span><span class="p">',</span> <span class="nv">$json_file</span><span class="p">)</span> <span class="ow">or</span> <span class="k">print</span> <span class="p">"</span><span class="s2">Unable to open file </span><span class="si">$json_file</span><span class="s2"> : $!</span><span class="p">";</span>
-    <span class="k">my</span> <span class="nv">$json_text</span> <span class="o">=</span> <span class="k">do</span> <span class="p">{</span> <span class="nb">local</span> <span class="vg">$/</span> <span class="o">=</span> <span class="nb">undef</span><span class="p">;</span> <span class="o">&lt;</span><span class="nv">$in</span><span class="o">&gt;</span><span class="p">;</span> <span class="p">};</span>
-    <span class="nb">close</span><span class="p">(</span><span class="nv">$in</span><span class="p">)</span> <span class="ow">or</span> <span class="k">print</span> <span class="p">"</span><span class="se">\n</span><span class="s2">Unable to close file : $!</span><span class="p">";</span>
-
-    <span class="k">my</span> <span class="nv">$config_data</span> <span class="o">=</span> <span class="nv">decode_json</span><span class="p">(</span><span class="nv">$json_text</span><span class="p">);</span>
-    <span class="k">return</span> <span class="nv">$config_data</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">main</span> <span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$data_in_json</span> <span class="o">=</span> <span class="nv">read_json_file</span><span class="p">(</span><span class="nv">$ENV</span><span class="p">{"</span><span class="s2">SCRIPT_DIR</span><span class="p">"}</span> <span class="o">.</span> <span class="p">"</span><span class="s2">/input/input_data.json</span><span class="p">");</span>
-
-    <span class="k">my</span> <span class="nv">$chart</span> <span class="o">=</span> <span class="nv">CreateCharts</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">();</span>
-    <span class="nv">$chart</span><span class="o">-&gt;</span><span class="nv">generate_chart</span><span class="p">(</span><span class="nv">$chart_out_file</span><span class="p">,</span> <span class="nv">$data_in_json</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="nv">main</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>We are reading the JSON data from input file and calling <code>generate_chart</code> with it.</p>
-
-<h2>
-  <a href="#running-the-script" class="anchor">
-  </a>
-  Running the script
-</h2>
-
-<p>Not lets run this script and check the output.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--PHGsfHKE--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/8g3425cgjb0nkvqc0rpu.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--PHGsfHKE--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/8g3425cgjb0nkvqc0rpu.PNG" alt="output_chart"></a></p>
-
-<p>The output which you are seeing above is from a linux machine.<br>
-One of the limitation I found about this module is it is difficult to make it run on windows. Maybe because of cairo or something else - not sure. Installing it on windows is not straight forward. I tried it but failed to make it working. If you know a way, let me know.</p>
-
-<h2>
-  <a href="#usage" class="anchor">
-  </a>
-  Usage
-</h2>
-
-<p>As I mentioned before because of new modern libraries available, there is little chance you will be tempted to use this module.<br>
-The one place I can see its usability today is - </p>
-
-<ul>
-<li>You want to quickly create a chart and you have no intention of using it on the web.</li>
-<li>Creating a chart over a period of time and sending it as mail attachment. Your input can be from a SQL or NoSQL database. That's the reason I have created the input as JSON so it can be created easily.</li>
-<li>I have taken the example of only line chart, but it also support many <a href="https://metacpan.org/pod/Chart::Clicker#FEATURES">other types</a> also. You can look at the <a href="https://github.com/gphat/chart-clicker-examples/">examples</a> for more understanding.</li>
-<li>Remember that colors play an important role in chart. Choosing a proper color with proper opacity (hue/saturation) play a vital role. The same chart can look good or bad based on color choices. There are various online tools which can help you. My personal favorite is <a href="https://www.w3schools.com/colors/colors_picker.asp">W3 color picker</a>. You can look at the color tutorial for more understanding.</li>
-</ul>
-
-<p>The above example is also available at <a href="https://github.com/rai-gaurav/perl-toolkit/tree/master/Charts">github</a></p>
-
-<h2>
-  <a href="#what-next" class="anchor">
-  </a>
-  What next
-</h2>
-
-<p>I will be writing more about <strong>Chart::Plotly</strong> and its usage as I found it more modern.<br>
-Also, I will be writing about <strong>Amcharts</strong> and how you can use it with Perl(Mojolicious) and React.js</p>
-
-<p>Cover image taken from <a href="https://www.amcharts.com/demos/multiple-value-axes/?theme=material">here</a></p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Gaurav Rai
-     on Friday 19 March 2021 17:56</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_61">
@@ -4211,7 +4250,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 24 March 2021 09:45 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 24 March 2021 10:45 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
