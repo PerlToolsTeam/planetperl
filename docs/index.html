@@ -86,6 +86,154 @@ Once you get a lot of subs, you prevent name collisions with name spaces (packag
           </div><!-- card -->
           <div class="card" id="card_2">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-and-xml-in-2021-a-few-lessons-learned-5dp8">Perl and XML in 2021: A few lessons learned</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>It’s been years since I’ve had to hack on anything <a href="https://en.wikipedia.org/wiki/XML">XML</a>-related, but a recent project at work has me once again jumping into the waters of generating, parsing, and modifying this 90s-era document format. Most developers these days likely only know of it as part of the curiously-named <a href="https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest">XMLHTTPRequest</a> object in web browsers used to retrieve data in <a href="https://en.wikipedia.org/wiki/JSON">JSON</a> format from servers, and as the “X” in <a href="https://en.wikipedia.org/wiki/Ajax_%28programming%29">AJAX</a>. But here we are in 2021, and there are still plenty of APIs and documents using XML to get their work done.</p>
+
+<p>In my particular case, the task is to update the API calls for a new version of <a href="https://www.virtuozzo.com/support/all-products/virtuozzo-automator.html">Virtuozzo Automator</a>. Its API is a bit unusual in that it doesn’t use <a href="https://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol">HTTP</a>, but rather relies on opening a <a href="https://en.wikipedia.org/wiki/Transport_Layer_Security">TLS</a>-encrypted socket to the server and exchanging documents delimited with a <a href="https://en.wikipedia.org/wiki/Null_character">null character</a>. The previous version of our code is in 1990s-sysadmin-style Perl, with manual <a href="https://perldoc.pl/functions/bless"><code>bless</code></a>ing of objects and parsing the XML using <a href="https://perldoc.pl/perlre">regular expressions</a>. I’ve decided to update it to use the <a href="https://metacpan.org/pod/Moo">Moo</a> object system and a proper XML parser. But which parser and module to use?</p>
+
+<h2>
+  <a href="#selecting-a-parser" class="anchor">
+  </a>
+  Selecting a parser
+</h2>
+
+<p>There are several <a href="https://perlmaven.com/xml">generic XML modules</a> for parsing and generating XML on <a href="https://www.cpan.org/">CPAN</a>, each with its own advantages and disadvantages. I’d like to say that I did a comprehensive survey of each of them, but this project is pressed for time <em>(aren’t they all?)</em> and I didn’t want to create too many extra dependencies in our Perl stack. Luckily, <a href="https://metacpan.org/pod/XML::LibXML">XML::LibXML</a> is already available, I’ve had some previous experience with it, and it’s a good choice for performant standards-based XML parsing (using either <a href="https://metacpan.org/pod/distribution/XML-LibXML/lib/XML/LibXML/DOM.pod">DOM</a> or <a href="https://metacpan.org/pod/distribution/XML-LibXML/lib/XML/LibXML/SAX.pod">SAX</a>) and generation.</p>
+
+<p>Given more time and leeway in adding dependencies, I might use something else. If the Virtuozzo API had an <a href="https://en.wikipedia.org/wiki/XML_schema">XML Schema</a> or used <a href="https://en.wikipedia.org/wiki/SOAP">SOAP</a>, I would consider <a href="https://metacpan.org/pod/XML::Compile">XML::Compile</a> as I’ve had some success with that in other projects. But even that uses XML::LibXML under the hood, so I’d still be using that. Your mileage may vary.</p>
+
+<h2>
+  <a href="#generating-xml" class="anchor">
+  </a>
+  Generating XML
+</h2>
+
+<p>Depending on the size and complexity of the XML documents to generate, you might choose to build them up node by node using <a href="https://metacpan.org/pod/distribution/XML-LibXML/lib/XML/LibXML/Node.pod">XML::LibXML::Node</a> and <a href="https://metacpan.org/pod/distribution/XML-LibXML/lib/XML/LibXML/Element.pod">XML::LibXML::Element</a> objects. Most of the messages I’m sending to Virtuozzo Automator are short and have easily-interpolated values, so I’m using <a href="https://perldoc.pl/perlop#%3C%3CEOF">here-document</a> islands of XML inside my Perl code. This also has the advantage of being easily validated against the examples in the documentation.</p>
+
+<p>Where the interpolated values in the messages are a little complicated, I’m using this idiom inside the here-docs:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">@</span><span class="p">{[</span><span class="o">...</span><span class="p">]}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This allows me to put an arbitrary expression in the … part, which is then put into an anonymous array reference, which is then immediately dereferenced into its string result. It’s a cheap and cheerful way to do minimal templating inside Perl strings without loading a full templating library; I’ve also had success using this technique when generating <a href="https://en.wikipedia.org/wiki/SQL">SQL</a> for database queries.</p>
+
+<h2>
+  <a href="#parser-as-an-object-attribute" class="anchor">
+  </a>
+  Parser as an object attribute
+</h2>
+
+<p>Rather than instantiate a new <a href="https://metacpan.org/pod/XML::LibXML">XML::LibXML</a> in every method that needs to parse a document, I created a private attribute:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Local::API::Virtozzo::</span><span class="nv">Agent</span> <span class="p">{</span>
+    <span class="k">use</span> <span class="nv">Moo</span><span class="p">;</span>
+    <span class="k">use</span> <span class="nn">XML::</span><span class="nv">LibXML</span><span class="p">;</span>
+    <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw(InstanceOf)</span><span class="p">;</span>
+    <span class="o">...</span>
+    <span class="nv">has</span> <span class="s">_parser</span> <span class="o">=&gt;</span> <span class="p">(</span>
+        <span class="s">is</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
+        <span class="s">isa</span> <span class="o">=&gt;</span> <span class="nv">InstanceOf</span><span class="p">['</span><span class="s1">XML::LibXML</span><span class="p">'],</span>
+        <span class="s">default</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> <span class="nn">XML::</span><span class="nv">LibXML</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">()</span> <span class="p">},</span>
+    <span class="p">);</span>
+    <span class="k">sub </span><span class="nf">foo</span> <span class="p">{</span>
+        <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+        <span class="k">my</span> <span class="nv">$send_doc</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_parser</span>
+          <span class="o">-&gt;</span><span class="nv">parse_string</span><span class="p">(</span><span class="o">&lt;&lt;</span><span class="p">"</span><span class="s2">END_XML</span><span class="p">");</span>
+            <span class="o">&lt;</span><span class="nv">foo</span><span class="o">/&gt;</span>
+<span class="nv">END_XML</span>
+        <span class="o">...</span>
+    <span class="p">}</span>
+<span class="o">...</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  <a href="#boilerplate" class="anchor">
+  </a>
+  Boilerplate
+</h2>
+
+<p>XML documents can be verbose, with elements that rarely change in every document. In the Virtuozzo API’s case, every document has a <code>&lt;packet&gt;</code> element containing a <code>version</code> attribute and an <code>id</code> attribute to match requests to responses. I wrote a simple function to wrap my documents in this element that pulled the version from a constant and always increased the <code>id</code> by one every time it’s called:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">_wrap_packet</span> <span class="p">{</span>
+    <span class="nv">state</span> <span class="nv">$send_id</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="k">return</span> <span class="sx">qq(&lt;packet version="$PACKET_VERSION" id=")</span>
+      <span class="o">.</span> <span class="nv">$send_id</span><span class="o">++</span> <span class="o">.</span> <span class="p">'</span><span class="s1">"&gt;</span><span class="p">'</span> <span class="o">.</span> <span class="nb">shift</span> <span class="o">.</span> <span class="p">'</span><span class="s1">&lt;/packet&gt;</span><span class="p">';</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>If I need to add more attributes to the <code>&lt;packet&gt;</code> element (for instance, namespaces for attributes in enclosed elements, I can always use <a href="https://metacpan.org/pod/distribution/XML-LibXML/lib/XML/LibXML/Element.pod#setAttribute">XML::LibXML::Element::setAttribute</a> after parsing the document string.</p>
+
+<h2>
+  <a href="#parsing-responses-with-xpath" class="anchor">
+  </a>
+  Parsing responses with <a href="https://en.wikipedia.org/wiki/XPath">XPath</a>
+</h2>
+
+<p>Rather than using brittle regular expressions to extract data from the response, I use the shared parser object from above and then the full power of <a href="https://en.wikipedia.org/wiki/XPath">XPath</a>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">English</span><span class="p">;</span>
+<span class="o">...</span>
+<span class="k">sub </span><span class="nf">get_sampleID</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">$sample_name</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="o">...</span>
+    <span class="c1"># used to separate documents</span>
+    <span class="nb">local</span> <span class="nv">$INPUT_RECORD_SEPARATOR</span> <span class="o">=</span> <span class="p">"</span><span class="se">\</span><span class="s2">0</span><span class="p">";</span>
+    <span class="c1"># $self-&gt;_sock is the IO::Socket::SSL connection</span>
+    <span class="k">my</span> <span class="nv">$get_doc</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_parser</span><span class="p">(</span> <span class="nv">parse_string</span><span class="p">(</span>
+      <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">_sock</span><span class="o">-&gt;</span><span class="nv">getline</span><span class="p">(),</span>
+    <span class="p">)</span> <span class="p">);</span>
+    <span class="k">my</span> <span class="nv">$sample_id</span> <span class="o">=</span> <span class="nv">$get_doc</span><span class="o">-&gt;</span><span class="nv">findvalue</span><span class="p">(</span>
+        <span class="sx">qq(//ns3:id[following-sibling::ns3:name="$sample_name"])</span><span class="p">,</span>
+    <span class="p">);</span>
+    <span class="k">return</span> <span class="nv">$sample_id</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This way, even if the order of elements change or more elements are introduced, the XPath patterns will continue to find the right data.</p>
+
+<h2>
+  <a href="#conclusion-so-far" class="anchor">
+  </a>
+  Conclusion… so far
+</h2>
+
+<p>I’m only about halfway through updating these API calls, and I’ve left out some non-XML-related details such as setting up the TLS socket connection. Hopefully this article has given you a taste of what’s involved in XML processing these days. Please leave me a comment if you have any suggestions or questions.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Mark Gardner
+     on Sunday 28 March 2021 01:26</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cccxxxiv-20-cpan-great-modules-released.html">(cccxxxiv) 20 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/MSTROUT/App-opan-0.003003' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::opan</span></b></a> - A CPAN overlay for darkpan and pinning purposes <ul>  <li>Version: <strong>0.003003</strong> on 2021-03-21</li>  <li>Votes: 13</li>  <li>Previous version: 0.003002 was 1 year, 10 months, 12 days before</li></ul></li><li><a href='https://metacpan.org/release/PEVANS/Devel-MAT-0.44' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Devel::MAT</span></b></a> - Perl Memory Analysis Tool <ul>  <li>Version: <strong>0.44</strong> on 2021-03-27</li>  <li>Votes: 25</li>  <li>Previous version: 0.43 was 11 months, 3 days before</li></ul></li><li><a href='https://metacpan.org/release/ETJ/Graph-0.9720' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Graph</span></b></a> - graph data structures and algorithms <ul>  <li>Version: <strong>0.9720</strong> on 2021-03-25</li>  <li>Votes: 25</li>  <li>Previous version: 0.9718 was 12 days before</li></ul></li><li><a href='https://metacpan.org/release/JHTHORSEN/JSON-Validator-4.16' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>JSON::Validator</span></b></a> - Validate data against a JSON schema <ul>  <li>Version: <strong>4.16</strong> on 2021-03-24</li>  <li>Votes: 27</li>  <li>Previous version: 4.14 was 1 month, 1 day before</li></ul></li><li><a href='https://metacpan.org/release/DROLSKY/Markdent-0.40' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Markdent</span></b></a> - An event-based Markdown parser toolkit <ul>  <li>Version: <strong>0.40</strong> on 2021-03-21</li>  <li>Votes: 21</li>  <li>Previous version: 0.39 was 1 month, 9 days before</li></ul></li><li><a href='https://metacpan.org/release/SKAJI/Minilla-v3.1.12' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Minilla</span></b></a> - CPAN module authoring tool <ul>  <li>Version: <strong>v3.1.12</strong> on 2021-03-25</li>  <li>Votes: 50</li>  <li>Previous version: v3.1.11 was 6 months, 13 days before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Minion-10.21' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Minion</span></b></a> - Job queue <ul>  <li>Version: <strong>10.21</strong> on 2021-03-20</li>  <li>Votes: 82</li>  <li>Previous version: 10.20 was 6 days before</li></ul></li><li><a href='https://metacpan.org/release/BINGOS/Module-CoreList-5.20210320' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Module::CoreList</span></b></a> - what modules shipped with versions of perl <ul>  <li>Version: <strong>5.20210320</strong> on 2021-03-21</li>  <li>Votes: 34</li>  <li>Previous version: 5.20210220 was 1 month, 1 day before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Mojolicious-9.14' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojolicious</span></b></a> - Real-time web framework <ul>  <li>Version: <strong>9.14</strong> on 2021-03-23</li>  <li>Votes: 447</li>  <li>Previous version: 9.12 was 3 days before</li></ul></li><li><a href='https://metacpan.org/release/JHTHORSEN/Mojolicious-Plugin-OpenAPI-4.02' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojolicious::Plugin::OpenAPI</span></b></a> - OpenAPI / Swagger plugin for Mojolicious <ul>  <li>Version: <strong>4.02</strong> on 2021-03-24</li>  <li>Votes: 39</li>  <li>Previous version: 4.00 was 1 month, 7 days before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Mojolicious-Plugin-Status-1.17' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojolicious::Plugin::Status</span></b></a> - Mojolicious server status <ul>  <li>Version: <strong>1.17</strong> on 2021-03-23</li>  <li>Votes: 12</li>  <li>Previous version: 1.16 was 5 days before</li></ul></li><li><a href='https://metacpan.org/release/HAARG/Moo-2.005003' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Moo</span></b></a> - Minimalist Object Orientation (with Moose compatibility) <ul>  <li>Version: <strong>2.005003</strong> on 2021-03-21</li>  <li>Votes: 280</li>  <li>Previous version: 2.004004 was 3 months, 26 days before</li></ul></li><li><a href='https://metacpan.org/release/RHANDOM/Net-Server-2.010' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Net::Server</span></b></a> - Extensible Perl internet server <ul>  <li>Version: <strong>2.010</strong> on 2021-03-22</li>  <li>Votes: 28</li>  <li>Previous version: 2.009 was 3 years, 7 months, 12 days before</li></ul></li><li><a href='https://metacpan.org/release/ETJ/PDL-2.032' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>PDL</span></b></a> - Perl Data Language <ul>  <li>Version: <strong>2.032</strong> on 2021-03-24</li>  <li>Votes: 41</li>  <li>Previous version: 2.029 was 12 days before</li></ul></li><li><a href='https://metacpan.org/release/PETDANCE/Perl-Critic-1.140' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Perl::Critic</span></b></a> - Critique Perl source code for best-practices. <ul>  <li>Version: <strong>1.140</strong> on 2021-03-24</li>  <li>Votes: 111</li>  <li>Previous version: 1.138 was 1 year, 2 months before</li></ul></li><li><a href='https://metacpan.org/release/EZIMUEL/Search-Elasticsearch-7.712' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Search::Elasticsearch</span></b></a> - The official client for Elasticsearch <ul>  <li>Version: <strong>7.712</strong> on 2021-03-25</li>  <li>Votes: 40</li>  <li>Previous version: 7.711001 was 24 days before</li></ul></li><li><a href='https://metacpan.org/release/TEODESIAN/Selenium-Remote-Driver-1.44' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Selenium::Remote::Driver</span></b></a> - Perl Client for Selenium Remote Driver <ul>  <li>Version: <strong>1.44</strong> on 2021-03-27</li>  <li>Votes: 43</li>  <li>Previous version: 1.42 was 10 days before</li></ul></li><li><a href='https://metacpan.org/release/BAKERSCOT/String-Util-1.32' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>String::Util</span></b></a> - String processing utility functions <ul>  <li>Version: <strong>1.32</strong> on 2021-03-26</li>  <li>Votes: 12</li>  <li>Previous version: 1.31 was 7 months, 30 days before</li></ul></li><li><a href='https://metacpan.org/release/PEVANS/Syntax-Keyword-Try-0.23' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Syntax::Keyword::Try</span></b></a> - a try/catch/finally syntax for perl <ul>  <li>Version: <strong>0.23</strong> on 2021-03-27</li>  <li>Votes: 33</li>  <li>Previous version: 0.21 was 2 months, 5 days before</li></ul></li><li><a href='https://metacpan.org/release/HMBRAND/Text-CSV_XS-1.46' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Text::CSV_XS</span></b></a> - Comma-Separated Values manipulation routines <ul>  <li>Version: <strong>1.46</strong> on 2021-03-24</li>  <li>Votes: 92</li>  <li>Previous version: 1.45 was 3 months before</li></ul></li></ol>       </div><!-- card-text -->     </div>
@@ -96,7 +244,7 @@ Once you get a lot of subs, you prevent name collisions with name spaces (packag
      on Saturday 27 March 2021 18:49</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlx-metacpan-weekly-report.html">(cdlx) metacpan weekly report - Hash::Flatten</a></h2>
             </div> <!-- card-header -->
@@ -108,7 +256,7 @@ Once you get a lot of subs, you prevent name collisions with name spaces (packag
      on Saturday 27 March 2021 18:44</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/03/cdlxxxiii-stackoverflow-perl-report.html">(cdlxxxiii) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -120,7 +268,7 @@ Once you get a lot of subs, you prevent name collisions with name spaces (packag
      on Saturday 27 March 2021 18:35</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/fgasper/use-sys-binmode-4e6o">use Sys::Binmode;</a></h2>
             </div> <!-- card-header -->
@@ -251,7 +399,7 @@ exec "echo", $foo;
      on Saturday 27 March 2021 10:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/james_curtis-smith/2021/03/perl-weekly-challenge-105.html">Perl weekly challenge 105</a></h2>
             </div> <!-- card-header -->
@@ -349,7 +497,7 @@ my $REGEX = '^[aeiou]*([bcdfghjklmnpqrstvwxyz])';
      on Saturday 27 March 2021 03:26</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/03/perl-weekly-challenge-105-nth-root-and-the-name-game.html">Perl Weekly Challenge 105: Nth Root and The Name Game</a></h2>
             </div> <!-- card-header -->
@@ -677,7 +825,7 @@ Billy!
      on Saturday 27 March 2021 03:05</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/my-job-histroy-as-perl-developper-477p">My Job Histroy as Perl Developper</a></h2>
             </div> <!-- card-header -->
@@ -707,7 +855,7 @@ Estate Searching web system</p>
      on Saturday 27 March 2021 01:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/kraih/playwright-and-mojolicious-21hn">Playwright and Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -916,7 +1064,7 @@ Result: PASS
      on Friday 26 March 2021 17:08</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-report-libuv-2021-03">LibUV Grant: March 2021 Update</a></h2>
             </div> <!-- card-header -->
@@ -943,7 +1091,7 @@ fine on Linux now at least.</p>
      on Friday 26 March 2021 14:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-raku-ci-bot-2021-03">Raku CI Integration Bot Grant - Report March 2021</a></h2>
             </div> <!-- card-header -->
@@ -965,7 +1113,7 @@ fine on Linux now at least.</p>
      on Friday 26 March 2021 14:33</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/davehodg/efficient-programming-5g54">Efficient programming</a></h2>
             </div> <!-- card-header -->
@@ -987,219 +1135,6 @@ fine on Linux now at least.</p>
 
               <p class="text-right"><small>Published by Dave Hodgkinson
      on Friday 26 March 2021 11:33</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_13">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/install-cpan-modules-from-different-sources-with-cpanminus-5afi">Install CPAN modules from different sources with cpanminus</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><ol>
-<li><a href="#from-cpan">cpanm from CPAN</a></li>
-<li><a href="#from-git">cpanm from git</a></li>
-<li><a href="#from-tarball">cpanm from local tarball</a></li>
-<li><a href="#from-remote">cpanm from remote tarball</a></li>
-</ol>
-
-<p>For this post, I will use the CPAN client <a href="https://metacpan.org/pod/distribution/App-cpanminus/bin/cpanm">cpanm</a> and <a href="https://metacpan.org/release/Acme-Automatix">Acme::Automatix</a> which is one of my modules (and that  does nothing). </p>
-
-<h1>
-  <a href="#cpanm-from-cpan" class="anchor">
-  </a>
-  cpanm from CPAN <a></a>
-</h1>
-
-<p>The main way, install from CPAN:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>cpanm Acme::Automatix
-<span class="nt">--</span><span class="o">&gt;</span> Working on Acme::Automatix
-Fetching http://www.cpan.org/authors/id/C/CO/CONTRA/Acme-Automatix-0.05.tar.gz ... OK
-Configuring Acme-Automatix-0.05 ... OK
-Building and testing Acme-Automatix-0.05 ... OK
-Successfully installed Acme-Automatix-0.05
-1 distribution installed
-</code></pre>
-
-</div>
-
-
-
-<p>This is the common way and <strong>recommended way</strong>, because as much as possible, modules have to hit the CPAN (to be indexed, shared and watched by cpantesters). But I will now show you some exotic/pragmatic methods.</p>
-
-<h1>
-  <a href="#cpanm-from-git" class="anchor">
-  </a>
-  cpanm from git <a></a>
-</h1>
-
-<p>If the code is on github, you can install it almost the same way:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>cpanm https://github.com/thibaultduponchelle/Acme-Automatix.git
-Cloning https://github.com/thibaultduponchelle/Acme-Automatix.git ... OK
-<span class="nt">--</span><span class="o">&gt;</span> Working on https://github.com/thibaultduponchelle/Acme-Automatix.git
-Configuring /tmp/CkMIR8CLw4 ... OK
-Building and testing Acme-Automatix-0.06 ... OK
-Successfully installed Acme-Automatix-0.06
-1 distribution installed
-</code></pre>
-
-</div>
-
-
-
-<p>Disclaimer: As I said (and I insist), do not use this feature as an excuse to do not release your code to CPAN. This would be an error. Your code won't be well shared, not integrated in the ecosystem of dependencies etc... In other words, not really <em>visible</em>, the CPAN is the source of truth!</p>
-
-<p>There was an <a href="https://github.com/next-cpan/cnext">experiment</a> (abandoned since then) to build a CPAN client based on github for index and deliveries.</p>
-
-<p>While the time changed since CPAN was created and I understand the benefits that conducted to explore this experiment (e.g. easy patching, flexibility...), it may require to think twice before fully relying on an external <em>platform</em>. Both <a href="https://metacpan.org/">CPAN</a>, <a href="https://pypi.org/">PyPi</a> and <a href="https://rubygems.org">RubyGems</a> currently rely on <em>infrastructure</em> providers for hosting but are not tied to an external <em>platform</em>.</p>
-
-<h1>
-  <a href="#cpanm-from-local-tarball" class="anchor">
-  </a>
-  cpanm from local tarball <a></a>
-</h1>
-
-<p>I don't have a tarball of Acme::Automatix, I will create one. First get the sources:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>git clone https://github.com/thibaultduponchelle/Acme-Automatix.git
-Cloning into <span class="s1">'Acme-Automatix'</span>...
-remote: Enumerating objects: 131, <span class="k">done</span><span class="nb">.</span>
-remote: Counting objects: 100% <span class="o">(</span>131/131<span class="o">)</span>, <span class="k">done</span><span class="nb">.</span>
-remote: Compressing objects: 100% <span class="o">(</span>40/40<span class="o">)</span>, <span class="k">done</span><span class="nb">.</span>
-remote: Total 131 <span class="o">(</span>delta 48<span class="o">)</span>, reused 131 <span class="o">(</span>delta 48<span class="o">)</span>, pack-reused 0
-Receiving objects: 100% <span class="o">(</span>131/131<span class="o">)</span>, 20.69 KiB | 3.45 MiB/s, <span class="k">done</span><span class="nb">.</span>
-Resolving deltas: 100% <span class="o">(</span>48/48<span class="o">)</span>, <span class="k">done</span><span class="nb">.</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Configure:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span><span class="nb">cd </span>Acme-Automatix
-<span class="nv">$ </span>perl Makefile.PL
-Generating a Unix-style Makefile
-Writing Makefile <span class="k">for </span>Acme::Automatix
-Writing MYMETA.yml and MYMETA.json
-</code></pre>
-
-</div>
-
-
-
-<p>At this point we have a <code>Makefile</code> and we can run various <em>make "target"</em>.<br>
-Let's create the distribution tarball:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>make dist
-<span class="nb">rm</span> <span class="nt">-rf</span> Acme-Automatix-0.06
-<span class="s2">"/usr/bin/perl"</span> <span class="s2">"-MExtUtils::Manifest=manicopy,maniread"</span> <span class="se">\</span>
-    <span class="nt">-e</span> <span class="s2">"manicopy(maniread(),'Acme-Automatix-0.06', 'best');"</span>
-<span class="nb">mkdir </span>Acme-Automatix-0.06
-<span class="nb">mkdir </span>Acme-Automatix-0.06/t
-<span class="nb">mkdir </span>Acme-Automatix-0.06/.github
-<span class="nb">mkdir </span>Acme-Automatix-0.06/.github/workflows
-<span class="nb">mkdir </span>Acme-Automatix-0.06/lib
-<span class="nb">mkdir </span>Acme-Automatix-0.06/lib/Acme
-Generating META.yml
-Generating META.json
-<span class="nb">tar </span>cvf Acme-Automatix-0.06.tar Acme-Automatix-0.06
-Acme-Automatix-0.06/
-Acme-Automatix-0.06/META.yml
-Acme-Automatix-0.06/.github/
-Acme-Automatix-0.06/.github/workflows/
-Acme-Automatix-0.06/.github/workflows/build-and-upload.yml
-Acme-Automatix-0.06/lib/
-Acme-Automatix-0.06/lib/Acme/
-Acme-Automatix-0.06/lib/Acme/Automatix.pm
-Acme-Automatix-0.06/MANIFEST
-Acme-Automatix-0.06/Changes
-Acme-Automatix-0.06/Makefile.PL
-Acme-Automatix-0.06/README.md
-Acme-Automatix-0.06/META.json
-Acme-Automatix-0.06/t/
-Acme-Automatix-0.06/t/pod.t
-Acme-Automatix-0.06/t/pod-coverage.t
-Acme-Automatix-0.06/t/manifest.t
-Acme-Automatix-0.06/t/00-load.t
-<span class="nb">rm</span> <span class="nt">-rf</span> Acme-Automatix-0.06
-<span class="nb">gzip</span> <span class="nt">-9f</span> Acme-Automatix-0.06.tar
-Created Acme-Automatix-0.06.tar.gz
-</code></pre>
-
-</div>
-
-
-
-<p>As you can see my tarball contains <code>.github/workflows/</code> things which is not very elegant (should be ignored) but not really a problem. </p>
-
-<p>Then you can install it with cpanm:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code>cpanm Acme-Automatix-0.06.tar.gz 
-<span class="nt">--</span><span class="o">&gt;</span> Working on Acme-Automatix-0.06.tar.gz
-Fetching file:///home/tduponchelle/Code/Acme-Automatix/Acme-Automatix-0.06.tar.gz ... OK
-Configuring Acme-Automatix-0.06 ... OK
-Building and testing Acme-Automatix-0.06 ... OK
-Successfully installed Acme-Automatix-0.06
-1 distribution installed
-</code></pre>
-
-</div>
-
-
-
-<h1>
-  <a href="#cpanm-from-remote-tarball" class="anchor">
-  </a>
-  cpanm from remote tarball <a></a>
-</h1>
-
-<p>Put your tarball somewhere accessible in HTTP, in my case a <a href="https://github.com/thibaultduponchelle/messy-ci-workflows/blob/master/dirt/Acme-Automatix-0.06.tar.gz">github public repo</a></p>
-
-<p>Then you can install it with the URL:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>cpanm https://github.com/thibaultduponchelle/messy-ci-workflows/raw/master/dirt/Acme-Automatix-0.06.tar.gz
-<span class="nt">--</span><span class="o">&gt;</span> Working on https://github.com/thibaultduponchelle/messy-ci-workflows/raw/master/dirt/Acme-Automatix-0.06.tar.gz
-Fetching https://github.com/thibaultduponchelle/messy-ci-workflows/raw/master/dirt/Acme-Automatix-0.06.tar.gz ... OK
-Configuring Acme-Automatix-0.06 ... OK
-Building and testing Acme-Automatix-0.06 ... OK
-Successfully installed Acme-Automatix-0.06
-1 distribution installed
-</code></pre>
-
-</div>
-
-
-
-<h1>
-  <a href="#conclusion" class="anchor">
-  </a>
-  Conclusion
-</h1>
-
-<p>This is the end of my tour of exotic sources of <a href="https://metacpan.org/pod/distribution/App-cpanminus/bin/cpanm">cpanm</a>... 👍 </p>
-
-<p>Do you know other ways?</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
-     on Friday 26 March 2021 08:02</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_14">
@@ -3781,7 +3716,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 28 March 2021 01:02 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 28 March 2021 02:03 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
