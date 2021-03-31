@@ -57,6 +57,204 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/haarg/distar-a-cpan-distribution-author-tool-5e95">Distar - A CPAN Distribution Author Tool</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h1>
+  <a href="#basic-cpan-tooling" class="anchor">
+  </a>
+  Basic CPAN Tooling
+</h1>
+
+<p>When releasing a distribution on <a href="https://www.cpan.org/">CPAN</a>, authors need to include an installer script. Classically, this would be a <code>Makefile.PL</code> using <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a> to generate a <code>Makefile</code>, which would then be used with <code>make</code>. Later, <a href="https://metacpan.org/pod/Module::Build">Module::Build</a> was created, using a <code>Build.PL</code> script which served a similar purpose. The installer script would include information about the distribution, such as the name and prerequisites. This script, as well as the information inside it, would be used by a tool like <a href="https://metacpan.org/pod/CPAN">CPAN.pm</a> or <a href="https://metacpan.org/pod/cpanm">cpanm</a> to install the distribution and its prerequisites. This is the primary purpose of the tools, as something users interact with to test and install modules.</p>
+
+<p>But since authors always had the install tool at hand, it became a convenient place to put author tools as well. The primary of these would be <code>make dist</code> which generates a distribution archive suitable for uploading to <a href="https://www.cpan.org/">CPAN</a>. For a long time, this was the primary way authors would create releases.</p>
+
+<p>However, as an author tool, <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a> leaves a lot to be desired. It uses a <code>MANIFEST</code> file to list the files to include in the distribution, which won't include new files unless the author remembers to run <code>make manifest</code>. And there are other sanity checks that authors should do before making a release that it doesn't provide for at all. Bumping version numbers, updating change logs, tagging and pushing to a VCS server. Some authors would build these tools into their <code>Makefile.PL</code> script, but that can become a maintenance burden. Other tools, like <a href="https://metacpan.org/pod/Module::Install">Module::Install</a> were created to address some of this, by having a split between the author tools and user code, but it made some other problematic architectural choices.</p>
+
+<h1>
+  <a href="#distzilla" class="anchor">
+  </a>
+  Dist::Zilla
+</h1>
+
+<p>These issues led to the creation of tools like <a href="https://metacpan.org/pod/Dist::Zilla">Dist::Zilla</a> which entirely separate the author tooling from the user tooling. It would also take over writing the <code>Makefile.PL</code> script, since writing a proper <code>Makefile.PL</code> is not trivial, and being able to include arbitrary code is usually unneeded. It is based on a plugin system, allowing authors to tailor its behavior to whatever release process they prefer.</p>
+
+<p><a href="https://metacpan.org/pod/Dist::Zilla">Dist::Zilla</a> can be a fantastic tool, but comes with its own problems. There can be unexpected interactions between the multitude of plugins and versions, which can make the results of builds hard to reproduce without significant effort. It can also be difficult to express the desired build process via the plugin system, or to understand how it will behave by reading its configuration. The combination of these plugins often leads to a significant number of prerequisites, increasing the complexity and avenues of failure. It also regularly gets updated to take advantage of new perl features, which prevents it from being used on older perl versions<sup id="fnref1"><a href="#fn1">1</a></sup>. These issues are all trade-offs made to allow it to be very feature full and extremely flexible.</p>
+
+<h1>
+  <a href="#distar" class="anchor">
+  </a>
+  Distar
+</h1>
+
+<p>Not all authors agree with the trade-offs made by tools like <a href="https://metacpan.org/pod/Dist::Zilla">Dist::Zilla</a>. <a href="https://metacpan.org/author/MSTROUT">Matt S Trout</a> wanted an author tool, but started from a different perspective. What needs to be added on top of what <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a> provides to make it a viable author tool? The result of this thought process was <a href="https://github.com/p5sagit/Distar">Distar</a>.</p>
+
+<p><a href="https://github.com/p5sagit/Distar">Distar</a> is a tool that adds just enough to <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a> so you can't bungle a release. And it is small enough to be able to read and understand the entire codebase at the same time.</p>
+
+<p>It uses an allowlist to include files in the dist, rather than <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a>'s normal denylist, preventing extraneous files in the working directory from being shipped. It makes certain that the <code>MANIFEST</code> is up to date. It ensures you are testing against the same thing you are releasing. It forces you to add a Changelog entry for your release. It uploads to <a href="https://www.cpan.org/">CPAN</a>, and tags and pushes to git. And it does very little else.</p>
+
+<p>Since its creation, <a href="https://github.com/p5sagit/Distar">Distar</a> has seen very little adoption. The only other <a href="https://www.cpan.org/">CPAN</a> author using it that I'm aware of is me. I've also done most of the development for the last several years, making it more robust, and including a few quality of life improvements like version bumping.</p>
+
+<p><a href="https://github.com/p5sagit/Distar">Distar</a> does not make any changes from files in the repository vs the files shipped in the distribution. It generates a <code>README</code>, a <code>LICENSE</code> file, and the default files created by <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a>, <code>META.json</code> and <code>META.yml</code>.</p>
+
+<h1>
+  <a href="#how-does-distar-work" class="anchor">
+  </a>
+  How Does Distar Work?
+</h1>
+
+<p>To use <a href="https://github.com/p5sagit/Distar">Distar</a>, you start with a normal <code>Makefile.PL</code>:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use ExtUtils::MakeMaker;
+WriteMakefile(NAME =&gt; "My::Cool::Module");
+</code></pre>
+
+</div>
+
+<p>Before the call to <code>WriteMakefile</code>, you add:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>(do './maint/Makefile.PL.include' or die $@) unless -f 'META.yml';
+</code></pre>
+
+</div>
+
+<p>Since the <code>META.yml</code> file is generated by <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a> in the distribution directory it creates, but not the working directory, it is a reliable check for "author mode" in a pure <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">EUMM</a> environment.</p>
+
+<p>You then create the file <code>maint/Makefile.PL.include</code> with the content:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>BEGIN { -e 'Distar' or system qw(git clone https://github.com/p5sagit/Distar.git) }
+use lib 'Distar/lib';
+use Distar;
+
+author 'A. U. Thor &lt;author@cpan.org&gt;';
+</code></pre>
+
+</div>
+
+<p><a href="https://github.com/p5sagit/Distar">Distar</a> provides essentially no configuration aside from this. Any customization needed in the build process needs to be written in the <code>Makefile.PL</code>, the same way it would be for raw <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a>.</p>
+
+<p>To make a release using <a href="https://github.com/p5sagit/Distar">Distar</a>, the process is:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>make bump           # bump version number
+make nextrelease    # add changelog version heading
+make release        # test &amp; release
+</code></pre>
+
+</div>
+<h2>
+  <a href="#make-release" class="anchor">
+  </a>
+  make release
+</h2>
+
+<p>The core of <a href="https://github.com/p5sagit/Distar">Distar</a> is the <code>release</code> target. It does a number of sanity checks, then creates a release.</p>
+
+<ul>
+<li>Verify that the version numbers in all of the modules are matching.</li>
+<li>Verify that the <code>MANIFEST</code> file is up to date.</li>
+<li>Verify that <code>cpan-upload</code> is available to push to CPAN.</li>
+<li>Fetches any changes from the remote git server</li>
+<li>Verify that no git tag exists for the version being published.</li>
+<li>Verify that the release is being made from the master branch.</li>
+<li>Verify that there are no new commits on the remote git server.</li>
+<li>Verify that there is a version line in the Changelog that has been staged in git.</li>
+<li>Verify that there are no other uncommitted changes.</li>
+<li>Generate a dist directory, including a <code>README</code> and <code>LICENSE</code> file.</li>
+<li>Run the tests in the dist directory, with <code>RELEASE_TESTING</code> set.</li>
+<li>Create a git commit for the release.</li>
+<li>Create a git tag for the release.</li>
+<li>Create a dist tarball.</li>
+<li>Upload the dist tarball to <a href="https://www.cpan.org/">CPAN</a>.</li>
+<li>Push the new tag and commit to the remote git server.</li>
+</ul>
+<h2>
+  <a href="#make-bump" class="anchor">
+  </a>
+  make bump
+</h2>
+
+<p><a href="https://github.com/p5sagit/Distar">Distar</a> provides a version bumping tool to modify any modules or <code>Makefile.PL</code> containing the version number. It is meant to work with both numeric and dotted-decimal style versions. By default, it will bump the last segment of the dotted-decimal version, or the highest precision portion of a numeric version. It also provides other targets to bump specific parts of a version. When bumping a specific part of a version, numeric versions will be treated as <code>X.YYYZZZ</code> versions, the same way perl versions work. Any components following the one specified will be reset to 0.</p>
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>make bumpmajor                # bump the first digit component
+make bumpminor                # bump the second digit component
+make bumpbugfix               # bump the third digit component
+</code></pre>
+
+</div>
+
+<p>Other options can be used via the <code>V</code> option.</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>make bump V=1.200             # bump to specific version
+make bump V=--alpha           # bump last component, but add an underscore
+                              # to indicate a developer release
+make bump V='major --alpha'   # bump first digit component, but also add
+                              # an underscore.
+</code></pre>
+
+</div>
+
+<p>After bumping the version, the changes will be committed to git. This will work even if there are other changes in the working directory, leaving those changes uncommitted. The <code>Makefile.PL</code> will then be re-run pick up the new version.</p>
+
+<h2>
+  <a href="#make-nextrelease" class="anchor">
+  </a>
+  make nextrelease
+</h2>
+
+<p>The release process of a <a href="https://github.com/p5sagit/Distar">Distar</a> dist requires you to add a version line to your Changelog file, and stage that change (git add). The <code>nextrelease</code> target will do this for you.</p>
+
+<p>It adds the version line, then uses git's interactive add on it, so you will need to confirm the changes. The diff shown should include all of the changelog entries written for the release.</p>
+
+<h1>
+  <a href="#git-clone-distar" class="anchor">
+  </a>
+  git clone Distar
+</h1>
+
+<p>The current way <a href="https://github.com/p5sagit/Distar">Distar</a> is distributed is by adding code to <code>Makefile.PL</code> which clones the repository and uses that. Some might think this would present a compatibility or stability issue, but the authors of <a href="https://github.com/p5sagit/Distar">Distar</a> are very committed to maintaining stability and compatibility. Users have to trust that the authors will always keep the code in git in a working state. This trust has been easy to maintain so far, since the known users of <a href="https://github.com/p5sagit/Distar">Distar</a> are its authors.</p>
+
+<p>There may be other users, since its code is small enough that others could understand it without needing any discussion with <a href="https://metacpan.org/author/MSTROUT">Matt S Trout</a> or myself.</p>
+
+<p>Not being published on <a href="https://www.cpan.org/">CPAN</a> limits the visibility of <a href="https://github.com/p5sagit/Distar">Distar</a>. I have, at times, thought of this as a feature. I've been uncertain if I wanted the pressure of additional users, and having to either accomodate or push back against alternate use cases and feature requests.</p>
+
+<h1>
+  <a href="#should-you-use-distar" class="anchor">
+  </a>
+  Should You Use Distar?
+</h1>
+
+<p>I have no idea. It works well for me, and fits the model I have for creating releases. It isn't as fully automatic as many <a href="https://metacpan.org/pod/Dist::Zilla">Dist::Zilla</a> setups are, but it is extremely predictable, backwards compatible, and lightweight. It is very opinionated. It is unlikely to become more configurable to cover differing use cases.</p>
+
+<p>If others did like the idea of <a href="https://github.com/p5sagit/Distar">Distar</a>, it may be time to look at improving the documentation and publishing it on CPAN.</p>
+
+<p><a href="https://github.com/p5sagit/Distar">Distar</a> is currently available on GitHub at <a href="https://github.com/p5sagit/Distar">https://github.com/p5sagit/Distar</a>.</p>
+
+
+
+
+<ol>
+
+<li id="fn1">
+<p>It prevents authors from using older perl versions, but the CPAN releases it creates are still backward compatible. <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Graham Knop
+     on Wednesday 31 March 2021 01:42</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/my-first-article-on-perl-com-59kk">My first article on Perl.com!</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>This month I <a href="https://www.perl.com/article/interview-trying-to-catch-paul-leonerd-evans/">interviewed Paul “LeoNerd” Evans</a> for Perl.com on the upcoming <code>try</code>/<code>catch</code> syntax he’s added to the language and other topics. Check it out!</p>
@@ -69,7 +267,7 @@
      on Tuesday 30 March 2021 14:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/the-zen-of-test-suites-304f">The Zen of Test Suites</a></h2>
             </div> <!-- card-header -->
@@ -883,7 +1081,7 @@ sub factorial {
      on Tuesday 30 March 2021 07:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/python-zen-vs-perl-tmtowtdi-j53">Python Zen vs Perl TMTOWTDI</a></h2>
             </div> <!-- card-header -->
@@ -909,7 +1107,7 @@ sub factorial {
      on Tuesday 30 March 2021 06:09</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/perl-s-spvm-is-similar-to-python-s-cython-74d">Perl's SPVM is similar to Python's Cython.</a></h2>
             </div> <!-- card-header -->
@@ -935,7 +1133,7 @@ sub factorial {
      on Tuesday 30 March 2021 04:49</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/switch-lots-of-things-on-at-once.html">Switch lots of things on at once</a></h2>
             </div> <!-- card-header -->
@@ -1034,7 +1232,7 @@ binmode STDOUT, ":encoding(utf8)";
      on Tuesday 30 March 2021 00:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/lichtkind/2021/03/in-defence-of-oop.html">In defence of OOP</a></h2>
             </div> <!-- card-header -->
@@ -1063,7 +1261,7 @@ Once you get a lot of subs, you prevent name collisions with name spaces (packag
      on Sunday 28 March 2021 01:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/interview-trying-to-catch-paul-leonerd-evans/">Interview: Trying to Catch Paul &quot;LeoNerd&quot; Evans</a></h2>
             </div> <!-- card-header -->
@@ -1133,7 +1331,7 @@ maybe you&rsquo;ve heard of them? Sadly they don&rsquo;t do much Perl there.</p>
      on Tuesday 30 March 2021 01:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/security-issues-in-perl-ip-address-distros">Security Issues in Perl IP Address distros</a></h2>
             </div> <!-- card-header -->
@@ -1153,7 +1351,7 @@ maybe you&rsquo;ve heard of them? Sadly they don&rsquo;t do much Perl there.</p>
      on Monday 29 March 2021 20:51</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/outreach-2021-projects">Outreachy 2021 projects published</a></h2>
             </div> <!-- card-header -->
@@ -1179,26 +1377,6 @@ maybe you&rsquo;ve heard of them? Sadly they don&rsquo;t do much Perl there.</p>
 
               <p class="text-right"><small>Published by Makoto Nozaki
      on Monday 29 March 2021 20:12</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_10">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/mjgardner/part-2-of-live-coding-in-perl-and-mojolicious-139c">Part 1 video of live-coding in Perl and Mojolicious; Part 2 coming up</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Sunday’s live pair programming session with Gábor Szabó was a blast, so we’re doing it again <strong>this Sunday, April 4</strong>. Watch the video below, and <a href="https://perlmaven.com/course-management-app-in-mojolicious">learn all about it and register here</a>.</p>
-
-<p><iframe width="710" height="399" src="https://www.youtube.com/embed/_AInPp-dneQ">
-</iframe>
-</p>
-
-<p><em>(I really need to do a better job of looking at the camera.)</em></p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Mark Gardner
-     on Monday 29 March 2021 14:35</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_11">
@@ -4533,7 +4711,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 31 March 2021 01:01 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 31 March 2021 02:03 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
