@@ -57,6 +57,454 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/tomk3003/regression-testing-table-data-with-spreadsheet-compare-34g6">Regression Testing Table Data with Spreadsheet::Compare</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--jo5ZSqSv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dok1p7tpj1fz7ow5fk6z.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--jo5ZSqSv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dok1p7tpj1fz7ow5fk6z.png" alt="example of a result displayed as HTML"></a></p>
+
+<p>An often used method for regression testing software changes is comparing created data before and after deployment of the change. On systems that produce a lot of data, the deviations as well as the underlying causes may be numerous. </p>
+
+<p>If you want to do that on a regular basis - e.g. with reference data in a nightly build process or during tests for a new version of a business application - you might want to define a number of fine tuned comparison definitions that help to get a quick overview where to look or what to fix first.</p>
+
+<p>As an aid to make that task a bit easier, I have uploaded the new module [Spreadsheet::Compare]<a href="https://metacpan.org/pod/Spreadsheet::Compare">https://metacpan.org/pod/Spreadsheet::Compare</a>) to CPAN.</p>
+
+<p>Here a list of the main features:</p>
+
+<ul>
+<li>define a list of comparisons as YAML configuration</li>
+<li>read input data from CSV, fixed record files, databases and various spreadsheet formats (ODS, XLS, XLSX)</li>
+<li>create reports with highlighted deviations in HTML or XLSX format</li>
+<li>filter data (e.g. ignore columns or rows)</li>
+<li>define limits for deviations in numerical values and highlight them in the reports</li>
+<li>provide methods to limit memory usage for large amounts of data</li>
+<li>run comparisons in parallel</li>
+<li>run multiple comparison configurations as a suite</li>
+<li>easily extendable by subclassing Reader or Reporter base classes</li>
+</ul>
+
+<p>Although the documentation of the available modules and configuration options is essentially complete, the module's documentation needs to be extended with a tutorial to elaborate on the possibilities and show how to translate that into configuration values.</p>
+
+<p>So let's do that:</p>
+
+<h2>
+  <a href="#installation" class="anchor">
+  </a>
+  Installation
+</h2>
+
+<p>By installing Spreadsheet::Compare (e.g. with cpanm)<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nv">$ </span>cpanm Spreadsheet::Compare
+</code></pre>
+
+</div>
+
+
+
+<p>you will get the basic set of modules, the command line utility <code>spreadcomp</code> and a number of needed modules as dependencies. These include:</p>
+
+<ul>
+<li>Mojolicious</li>
+<li>Excel::Writer::XLSX</li>
+<li>Log::Log4perl</li>
+<li>Text::CSV</li>
+</ul>
+
+<p>There are a few other modules not automatically installed. You may need those for being able to read certain data formats:</p>
+
+<ul>
+<li>Text::CSV_XS (for significantly better CSV performance)</li>
+<li>DBI and appropriate DBD modules for database connection</li>
+<li>Spreadsheet::Read (for reading Spreadsheet formats) and at least one of:
+
+<ul>
+<li>Spreadsheet::ParseODS</li>
+<li>Spreadsheet::ParseXLSX</li>
+<li>Spreadsheet::ParseExcel</li>
+</ul>
+
+
+</li>
+</ul>
+
+<p>For integration into your own Perl scripts use <code>Spreadsheet::Compare</code> directly in your scripts. <code>spreadcomp</code> is just a small wrapper around the main module. The command line options correspond to matching attributes.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>spreadcomp:
+
+    Compare spreadsheets or databases and create a report for the detected
+    differences. This is the command line frontend script for the Perl
+    module Spreadsheet::Compare.
+    See https://metacpan.org/pod/Spreadsheet::Compare for more information.
+
+Usage:
+        spreadcomp -c &lt;YAML-config-file&gt; [-d] [-j] [-q] [-h] [-m]
+
+        Options:
+            -c, --config
+                YAML config file for comparison (required)
+
+            -d, --debug
+                Set the debug level (optional), possible values are:
+                  TRACE, DEBUG, INFO, WARN, ERROR or FATAL
+                This can also be set with the environment variable
+                  SPREADSHEET_COMPARE_DEBUG
+
+            -j --jobs
+                Set the number of concurrent subprocesses to use (optional, defaults to 1)
+                This will use threads under Windows which means that the non thread safe
+                Text::CSV_XS cannot be used for CSV processing. By using Text::CSV_PP
+                processing can be slower than using the default.
+
+            -q --quiet
+                Don't show the line counter while running.
+
+            -h, --help
+                 Display this message
+
+            -m, --manual
+                 Display complete manual (e.g. config file specifications)
+
+            -v, --version
+                 Display version number and exit
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  <a href="#starting-simple" class="anchor">
+  </a>
+  Starting simple
+</h2>
+
+<p>For easy creation of sample data I have used the small version of the Northwind database available at<br>
+<a href="https://github.com/jpwhite3/northwind-SQLite3">https://github.com/jpwhite3/northwind-SQLite3</a>.</p>
+
+<p>I duplicated the tables <strong>Order</strong>, and <strong>Product</strong> as <strong>NewOrder</strong>, and <strong>NewProduct</strong> and changed some values to generate some discrepancies. So we are ready to start. Let's create a very basic comparison configuration:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="nn">---</span>
+<span class="pi">-</span> <span class="na">title</span><span class="pi">:</span> <span class="s2">"</span><span class="s">order"</span>
+  <span class="na">type</span><span class="pi">:</span>  <span class="s">DB</span>
+  <span class="na">dsns</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">dsn</span><span class="pi">:</span> <span class="s1">'</span><span class="s">dbi:SQLite:dbname=Northwind_small.sqlite'</span>
+  <span class="na">sql</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">select * from [Order]</span>
+    <span class="pi">-</span> <span class="s">select * from [NewOrder]</span>
+  <span class="na">identity</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">Id</span>
+</code></pre>
+
+</div>
+
+
+
+<p>We are using just one database and compare the records returned from two different statements. It is also possible to use the same statement but different databases or keep this separate for both.</p>
+
+<p>The most important part is defining the identity for a record. Here we use the column <code>Id</code>. The option <code>identity</code> takes a list of columns, so we could use a combination of columns here that define a unique record.</p>
+
+<p>Saving this as <code>nw_base1.yml</code> we can start the first comparison:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nv">$ </span>spreadcomp <span class="nt">-c</span> nw_base1.yml
+0000001660
+nw_base1/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000000 MIS:000001 ADD:000001 DUP:000000
+</code></pre>
+
+</div>
+
+
+
+<p>We didn't configure any reporting yet, so all we get is a short summary about the findings. This looks a bit cryptic but is easily explained:</p>
+
+<ul>
+<li>the first line is the number of records read, the sum for both sides of the comparison; this is a running counter that
+will show progress for larger datasets and can be disabled by the <code>--quiet</code> command line option.</li>
+<li>the second line is just the file name and the title of the comparison</li>
+<li>the third line shows the results of the comparison
+
+<ul>
+<li>LEF: the number of records read from he left side</li>
+<li>RIG: the number of records read from he right side</li>
+<li>SAM: the number of records with an identical match</li>
+<li>DIF: the number of records with deviations</li>
+<li>LIM: the number of deviations below configured limits</li>
+<li>MIS: the number of records on the left without a match on the right</li>
+<li>ADD: the number of records on the right without a match on the left</li>
+<li>DUP: the number of duplicate Id values, the sum of left and right</li>
+</ul>
+
+
+</li>
+</ul>
+
+<h2>
+  <a href="#adding-a-report" class="anchor">
+  </a>
+  Adding a report
+</h2>
+
+<p>So far so good, but to be able to do anything about those differences we need to see the values. So lets add some reporting:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="nn">---</span>
+<span class="pi">-</span> <span class="na">title</span><span class="pi">:</span>    <span class="s">order</span>
+  <span class="na">type</span><span class="pi">:</span>     <span class="s">DB</span>
+  <span class="na">dsns</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">dsn</span><span class="pi">:</span> <span class="s1">'</span><span class="s">dbi:SQLite:dbname=Northwind_small.sqlite'</span>
+  <span class="na">sql</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">select * from [Order]</span>
+    <span class="pi">-</span> <span class="s">select * from [NewOrder]</span>
+  <span class="na">identity</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">Id</span>
+  <span class="na">reporter</span><span class="pi">:</span> <span class="s">HTML</span>
+</code></pre>
+
+</div>
+
+
+
+<p>We could have used <code>reporter: XLSX</code> as well.</p>
+
+<p>Next try, now with debugging enabled to see, what's going on:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nv">$ </span>spreadcomp <span class="nt">-c</span> nw_base1.yml <span class="nt">-d</span> INFO <span class="nt">-q</span>
+<span class="o">[</span>1277406] 
+<span class="o">[</span>1277406] <span class="o">==================================================</span>
+<span class="o">[</span>1277406] <span class="o">||</span> RUNNING TEST <span class="o">&gt;&gt;</span>order&lt;&lt;
+<span class="o">[</span>1277406] <span class="o">==================================================</span>
+<span class="o">[</span>1277406] loading Spreadsheet::Compare::Reader::DB
+<span class="o">[</span>1277406] running comparison nw_base1/order
+<span class="o">[</span>1277406] Reporter Args: <span class="nt">---</span> <span class="o">{}</span>
+<span class="o">[</span>1277406] connecting to <span class="o">&gt;&gt;</span>dbi:SQLite:dbname<span class="o">=</span>Northwind_small.sqlite&lt;&lt;
+<span class="o">[</span>1277406] connecting to <span class="o">&gt;&gt;</span>dbi:SQLite:dbname<span class="o">=</span>Northwind_small.sqlite&lt;&lt;
+<span class="o">[</span>1277406] Fetched 830 records from left
+<span class="o">[</span>1277406] Fetched 830 records from right
+<span class="o">[</span>1277406] last_pass:1
+<span class="o">[</span>1277406] saving HTML report to <span class="s1">'order.html'</span>
+nw_base1/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000000 MIS:000001 ADD:000001 DUP:000000
+</code></pre>
+
+</div>
+
+
+
+<p>The number in brackets is the process id. This gets relevant when we run the comparisons in parallel processes and need to know wich comparison the debug statement belongs to.</p>
+
+<p>And this is, what <code>order.html</code> looks like in a browser:</p>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--aXZsX5T9--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3pgt1tx28562i4tmskr4.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--aXZsX5T9--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3pgt1tx28562i4tmskr4.png" alt="differences displayed as HTML"></a><br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--MXVsrGCy--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xgzwe51que7fjtl6og6j.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--MXVsrGCy--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xgzwe51que7fjtl6og6j.png" alt="missing displayed as HTML"></a><br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--elDqI26q--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hooelqy49df1a08hf48u.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--elDqI26q--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hooelqy49df1a08hf48u.png" alt="additional of diff displayed as HTML"></a><br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Z0KGkZW_--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/eosqe2dsmyhq6tvshwx4.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Z0KGkZW_--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/eosqe2dsmyhq6tvshwx4.png" alt="duplicates of diff displayed as HTML"></a></p>
+
+<p>Now we can see exactly which values differ with the rest of the data as context. By default, matching records are not displayed at all. It would just slow things down for large record sets. But there is an option <code>report_all_data</code> for that.</p>
+<h2>
+  <a href="#using-limits" class="anchor">
+  </a>
+  Using Limits
+</h2>
+
+<p>Sometimes differences below a certain margin may be acceptable or are obscuring the bigger deviations that are more important. For that we can define limits on columns with numerical values. You can have absolute and/or relative limits.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="s">--------</span>
+<span class="pi">-</span> <span class="na">title</span><span class="pi">:</span>    <span class="s">order</span>
+  <span class="na">type</span><span class="pi">:</span>     <span class="s">DB</span>
+  <span class="na">dsns</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">dsn</span><span class="pi">:</span> <span class="s1">'</span><span class="s">dbi:SQLite:dbname=Northwind_small.sqlite'</span>
+  <span class="na">sql</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">select * from [Order]</span>
+    <span class="pi">-</span> <span class="s">select * from [NewOrder]</span>
+  <span class="na">identity</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">Id</span>
+  <span class="na">reporter</span><span class="pi">:</span> <span class="s">HTML</span>
+  <span class="na">limit_rel</span><span class="pi">:</span>
+    <span class="na">__default__</span><span class="pi">:</span> <span class="s">.1</span>
+    <span class="na">Freight</span><span class="pi">:</span>     <span class="m">0.08</span>
+  <span class="na">limit_abs</span><span class="pi">:</span>
+    <span class="na">__default__</span><span class="pi">:</span> <span class="s">none</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Limits are defined by column. There is a special column <code>__default__</code> for setting a baseline. By setting a special limit of <code>none</code>, the limit will not be checked at all. This is different from an undefined value or the value 0, which means no tolerance at all (this is the default).</p>
+
+<p>We only want to have relative limits so we disabled the absolute ones with <code>__default__: none</code>. Then we added a 10% limit as default and an 8% limit for the column Freight.</p>
+
+<p>Now we get:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nv">$ </span>spreadcomp <span class="nt">-c</span> nw_base1.yml <span class="nt">-q</span>
+nw_base1/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000073 MIS:000001 ADD:000001 DUP:000000
+</code></pre>
+
+</div>
+
+
+
+<p>So 73 differences are below our relative limits. The report for that looks like this:</p>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--aM4K2eet--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3lqxevrfgjfh3gma2h69.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--aM4K2eet--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3lqxevrfgjfh3gma2h69.png" alt="differences displayed as HTML"></a></p>
+
+<p>If you are not interested about deviations below the limit, you can set<br>
+<code>below_limit_is_equal: 1</code> and it will look exactly as if the values where equal.</p>
+<h2>
+  <a href="#more-comparisons" class="anchor">
+  </a>
+  More Comparisons
+</h2>
+
+<p>Now we will add another comparison to the configuration. To save typing we can factor out common settings into a special section wtih the special title <code>__DEFAULT__</code>. All global values can be later overwritten in the individual sections.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="s">--------</span>
+<span class="pi">-</span> <span class="na">title</span><span class="pi">:</span>           <span class="s">__GLOBAL__</span>
+  <span class="na">reporter</span><span class="pi">:</span>        <span class="s">HTML</span>
+  <span class="na">type</span><span class="pi">:</span>            <span class="s">DB</span>
+  <span class="na">dsns</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">dsn</span><span class="pi">:</span> <span class="s1">'</span><span class="s">dbi:SQLite:dbname=Northwind_small.sqlite'</span>
+  <span class="na">summary</span><span class="pi">:</span>         <span class="s">HTML</span>
+  <span class="na">report_diff_row</span><span class="pi">:</span> <span class="m">1</span>
+  <span class="na">identity</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">Id</span>
+  <span class="na">limit_rel</span><span class="pi">:</span>
+    <span class="na">__default__</span><span class="pi">:</span> <span class="s">.1</span>
+    <span class="na">Freight</span><span class="pi">:</span>     <span class="m">0.08</span>
+  <span class="na">limit_abs</span><span class="pi">:</span>
+    <span class="na">__default__</span><span class="pi">:</span> <span class="s">none</span>
+<span class="c1">#=============================================</span>
+<span class="pi">-</span> <span class="na">title</span><span class="pi">:</span> <span class="s">order</span>
+  <span class="na">sql</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">select * from [Order]</span>
+    <span class="pi">-</span> <span class="s">select * from [NewOrder]</span>
+<span class="c1">#=============================================</span>
+<span class="pi">-</span> <span class="na">title</span><span class="pi">:</span> <span class="s">order details</span>
+  <span class="na">sql</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">select * from [OrderDetails_V]</span>
+    <span class="pi">-</span> <span class="s">select * from [NewOrderDetails_V]</span>
+  <span class="na">diff_relative</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">UnitPriceProduct</span>
+</code></pre>
+
+</div>
+
+
+
+<p>We have added some new options here:</p>
+
+<ul>
+<li>
+<code>summary: HTML</code> creates an HTML overview page with links to the single comparisons</li>
+<li>
+<code>report_diff_row</code> adds an additional line to each difference showing the deviation for each column (for numerical
+values the default is the absolute difference).</li>
+<li>with <code>diff_relative</code> the relative difference can be shown in the added diff row (per column)
+</li>
+</ul>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nv">$ </span>spreadcomp <span class="nt">-c</span> nw_base2.yml <span class="nt">-q</span>
+nw_base2/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000073 MIS:000001 ADD:000001 DUP:000000
+nw_base2/order details
+LEF:002155 RIG:002153 SAM:001071 DIF:001082 LIM:001013 MIS:000002 ADD:000000 DUP:000000
+</code></pre>
+
+</div>
+
+
+
+<p>Let's look at the summary HTML page <code>nw_base2.html</code>:</p>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--mRscvsHH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/ubj4v0dgn1281fiw0vo4.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--mRscvsHH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/ubj4v0dgn1281fiw0vo4.png" alt="summary displayed as HTML"></a></p>
+
+<p>The summary only consists of the same status information as the one given on the command line. But we have a menu on the left where we can browse through the comparisons.</p>
+
+<p>Here the differences for the second comparison.</p>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--0ak-hnvN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vzd0bi5u93jehtgkbesw.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--0ak-hnvN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vzd0bi5u93jehtgkbesw.png" alt="differences displayed as HTML"></a></p>
+
+<h2>
+  <a href="#building-a-suite" class="anchor">
+  </a>
+  Building a Suite
+</h2>
+
+<p>To be able to handle a large number of comparisons in an organized way, you can use a starting configuration that branches out to subconfigurations with the <code>suite</code> option. It takes a list of configuration filenames and can have it's own <code>__GLOBAL__</code> section.</p>
+
+<p>Here an example:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="s">--------</span>
+<span class="pi">-</span> <span class="na">title</span><span class="pi">:</span>              <span class="s">__GLOBAL__</span>
+  <span class="na">reporter</span><span class="pi">:</span>           <span class="s">HTML</span>
+  <span class="na">summary</span><span class="pi">:</span>            <span class="s">HTML</span>
+  <span class="na">rootdir</span><span class="pi">:</span>            <span class="s">${TESTDIR}/suite</span>
+  <span class="na">left</span><span class="pi">:</span>               <span class="s">Reference Data</span>
+  <span class="na">right</span><span class="pi">:</span>              <span class="s">Current Data</span>
+  <span class="na">report_filename</span><span class="pi">:</span>    <span class="s">reports/%{title}.html</span>
+  <span class="na">summary_filename</span><span class="pi">:</span>   <span class="s">reports/suite_summary.html</span>
+  <span class="na">report_diff_row</span><span class="pi">:</span>    <span class="m">1</span>
+  <span class="na">report_line_source</span><span class="pi">:</span> <span class="m">1</span>
+<span class="c1">#=============================================</span>
+<span class="pi">-</span> <span class="na">suite</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">DB/Overview.yml</span>
+    <span class="pi">-</span> <span class="s">DB/OrderDetails.yml</span>
+<span class="c1">#=============================================</span>
+<span class="pi">-</span> <span class="na">suite</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">CSV/Overview.yml</span>
+    <span class="pi">-</span> <span class="s">CSV/OrderDetails.yml</span>
+<span class="c1">#=============================================</span>
+<span class="pi">-</span> <span class="na">suite</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="s">FIX/Overview.yml</span>
+    <span class="pi">-</span> <span class="s">FIX/OrderDetails.yml</span>
+</code></pre>
+
+</div>
+
+
+
+<p>And the corresponding report:</p>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--g6676HD0--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/gb6wu56iaai3pk09ltvj.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--g6676HD0--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/gb6wu56iaai3pk09ltvj.png" alt="differences displayed as HTML"></a></p>
+
+<h2>
+  <a href="#more" class="anchor">
+  </a>
+  More?
+</h2>
+
+<p>This should be enough for a short introduction. If there should be any feedback, I could do a part 2 with advanced options. If you want to you can comment here or head over to the <a href="https://github.com/tomk3003/spreadsheet-compare/discussions">Github Discussions Page</a>. </p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by tomk3003
+     on Tuesday 06 April 2021 16:08</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/the-attraction-of-test-fatal-in-perl-16mi">The attraction of Test::Fatal in Perl</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>In February I wrote an <a href="https://phoenixtrap.com/2021/02/22/exceptional-perl-failure-is-an-option/">article surveying exception handling in Perl</a>, recommending that developers <a href="https://phoenixtrap.com/2021/02/22/exceptional-perl-failure-is-an-option/#testing">use Test::Exception</a> to make sure their code behaves as expected. A commenter on Reddit <a href="https://www.reddit.com/r/perl/comments/lq5iu5/exceptional_perl_failure_is_an_option/gofr7u4/?context=3">suggested I check out Test::Fatal</a> as an alternative. <strong>What advantages does it hold over Test::Exception?</strong></p>
@@ -82,7 +530,7 @@
      on Tuesday 06 April 2021 14:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/tenjin">Tenjin templating system</a></h2>
             </div> <!-- card-header -->
@@ -97,7 +545,7 @@ The <a href="https://metacpan.org/release/Tenjin">Tenjin templating system</a> a
      on Tuesday 06 April 2021 09:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/counter-with-dancer-using-in-memory-sqlite-database">Counter with Dancer using in-memory SQLite database</a></h2>
             </div> <!-- card-header -->
@@ -112,7 +560,7 @@ A <a href="https://code-maven.com/counter">counter example</a> using <a href="/d
      on Tuesday 06 April 2021 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/04/perl-weekly-challenge-107-self-descripting-numbers-and-list-methods.html">Perl Weekly Challenge 107: Self-Descripting Numbers and List Methods</a></h2>
             </div> <!-- card-header -->
@@ -400,7 +848,7 @@ div
      on Tuesday 06 April 2021 02:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposals_march_2021">Grant Proposals: March 2021</a></h2>
             </div> <!-- card-header -->
@@ -420,7 +868,7 @@ div
      on Monday 05 April 2021 10:01</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/sx1">The Future is Now! Perl Role in Malaysia</a></h2>
             </div> <!-- card-header -->
@@ -432,7 +880,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/1r2">Grow Your Karma with a Job that Does Good! Perl role in Australia</a></h2>
             </div> <!-- card-header -->
@@ -444,7 +892,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/ahf">Smart Shopper = Smart Saver. Perl role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -456,7 +904,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/53q">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -468,7 +916,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/mg6">Mad Men (and women) of London. Perl in London</a></h2>
             </div> <!-- card-header -->
@@ -480,7 +928,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021</a></h2>
             </div> <!-- card-header -->
@@ -492,7 +940,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Git Hooks(Client-side)</a></h2>
             </div> <!-- card-header -->
@@ -504,7 +952,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -516,7 +964,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -528,7 +976,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -540,7 +988,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting: Pairwise and Lightning Talks</a></h2>
             </div> <!-- card-header -->
@@ -552,7 +1000,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/charlotte-pm/">Charlotte Perl Mongers - Presenting Mojolicious Nine Point Oh!</a></h2>
             </div> <!-- card-header -->
@@ -564,7 +1012,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/report-2021-03.html">Gabor self reporting for 2021.03</a></h2>
             </div> <!-- card-header -->
@@ -576,7 +1024,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/live">Live events</a></h2>
             </div> <!-- card-header -->
@@ -588,7 +1036,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl-5">Exploring BDD in Perl - using Test::BDD::Cucumber - part 5 - with Erik Hülsmann</a></h2>
             </div> <!-- card-header -->
@@ -600,7 +1048,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -612,7 +1060,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/03/29/2021-13-games-pop/">2021.13 Games Pop</a></h2>
             </div> <!-- card-header -->
@@ -624,7 +1072,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://youtu.be/h8NppRqAZaE">Live Video - Maximum Gap by Mohammad Anwar</a></h2>
             </div> <!-- card-header -->
@@ -636,7 +1084,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://youtu.be/o67LcSa2bC8">Live Video - Fun Time by Mohammad Anwar</a></h2>
             </div> <!-- card-header -->
@@ -648,7 +1096,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=E4Bwh-FVTns">Live Video - Maximum Gap by Lance Wicks</a></h2>
             </div> <!-- card-header -->
@@ -660,7 +1108,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/generate-calendar-in-ical-format">Generate Calendar in ICal format</a></h2>
             </div> <!-- card-header -->
@@ -672,7 +1120,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/03/29/PWC106/">Perl Weekly Challenge 106.</a></h2>
             </div> <!-- card-header -->
@@ -684,7 +1132,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-106-1cn7">Weekly Challenge 106</a></h2>
             </div> <!-- card-header -->
@@ -696,7 +1144,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/03/Perl_Weekly_Challenge_106__Maximum_Decimal.html">Perl Weekly Challenge 106: Maximum Decimal</a></h2>
             </div> <!-- card-header -->
@@ -708,7 +1156,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/03/29/PerlWeeklyChallenge106.html">Perl Weekly Challenge 106: quick and easy</a></h2>
             </div> <!-- card-header -->
@@ -720,7 +1168,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/04/perl-weekly-challenge-106-maximum-gap-and-decimal-string.html">Perl Weekly Challenge 106: Maximum Gap and Decimal String</a></h2>
             </div> <!-- card-header -->
@@ -732,7 +1180,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/01/pwc106-decimal-string/">PWC106 - Decimal String</a></h2>
             </div> <!-- card-header -->
@@ -744,7 +1192,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/31/pwc106-maximum-gap/">PWC106 - Maximum Gap</a></h2>
             </div> <!-- card-header -->
@@ -756,7 +1204,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/04/03/just-got-poked-perl-weekly-challenge-106-and-other-news.html">Just Got Poked: Perl Weekly Challenge 106 and Other News</a></h2>
             </div> <!-- card-header -->
@@ -768,7 +1216,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/string-gap.html">String the Gap with Raku</a></h2>
             </div> <!-- card-header -->
@@ -780,7 +1228,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/04/04">Recursion and Repeated Decimals: The Weekly Challenge 106</a></h2>
             </div> <!-- card-header -->
@@ -792,7 +1240,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-106-2.html">Perl Weekly Challenge 106: Decimal String</a></h2>
             </div> <!-- card-header -->
@@ -804,7 +1252,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-106-1.html">Perl Weekly Challenge 106: Maximum Gap</a></h2>
             </div> <!-- card-header -->
@@ -816,7 +1264,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-106/">Perl Weekly Challenge 106</a></h2>
             </div> <!-- card-header -->
@@ -828,7 +1276,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-106">RECAP - The Weekly Challenge - 106</a></h2>
             </div> <!-- card-header -->
@@ -840,7 +1288,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-107">The Weekly Challenge - 107</a></h2>
             </div> <!-- card-header -->
@@ -852,7 +1300,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/04/date-parse/">Date::Parse</a></h2>
             </div> <!-- card-header -->
@@ -864,7 +1312,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/03/30/crypt-le-pr/">A pull request for Crypt::LE</a></h2>
             </div> <!-- card-header -->
@@ -876,7 +1324,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/haarg/distar-a-cpan-distribution-author-tool-5e95">Distar - A CPAN Distribution Author Tool</a></h2>
             </div> <!-- card-header -->
@@ -888,7 +1336,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/cpan-utils-4g4p">CPAN utils</a></h2>
             </div> <!-- card-header -->
@@ -900,7 +1348,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="http://neilb.org/2021/03/03/cpan-report-2021.html">CPAN Report 2020</a></h2>
             </div> <!-- card-header -->
@@ -912,7 +1360,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/04/monthly-report---march-2.html">Monthly Report - March</a></h2>
             </div> <!-- card-header -->
@@ -924,7 +1372,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ovid/the-zen-of-test-suites-304f">The Zen of Test Suites</a></h2>
             </div> <!-- card-header -->
@@ -936,7 +1384,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.urth.org/2021/03/29/security-issues-in-perl-ip-address-distros/">Security Issues in Perl IP Address distros</a></h2>
             </div> <!-- card-header -->
@@ -948,7 +1396,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ben_bullock/2021/03/switch-lots-of-things-on-at-once.html">Switch lots of things on at once</a></h2>
             </div> <!-- card-header -->
@@ -960,7 +1408,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprcic2021callforpapers">TPRCIC 2021 - Call for papers</a></h2>
             </div> <!-- card-header -->
@@ -972,7 +1420,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/neilb/2021/04/kent-fredrics-cpan-distributions.html">Kent Fredric's CPAN distributions are available for adoption</a></h2>
             </div> <!-- card-header -->
@@ -984,7 +1432,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.teachable.com/p/perl">Code Maven courses</a></h2>
             </div> <!-- card-header -->
@@ -996,7 +1444,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/506.html">#506 - Perl Memory Management</a></h2>
             </div> <!-- card-header -->
@@ -1011,7 +1459,7 @@ div
      on Monday 05 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/04/perl-weekly-challenge-106-maximum-gap-and-decimal-string.html">Perl Weekly Challenge 106: Maximum Gap and Decimal String</a></h2>
             </div> <!-- card-header -->
@@ -1350,7 +1798,7 @@ $ perl decimal_string.pl 5 66
      on Saturday 03 April 2021 02:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/04/04#pwc106">Recursion and Repeated Decimals: The Weekly Challenge 106</a></h2>
             </div> <!-- card-header -->
@@ -1494,7 +1942,7 @@ $ perl perl/ch-2.pl
      on Sunday 04 April 2021 17:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-106-1cn7">Weekly Challenge 106</a></h2>
             </div> <!-- card-header -->
@@ -1626,7 +2074,7 @@ $ perl perl/ch-2.pl
      on Sunday 04 April 2021 11:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/generate-calendar-in-ical-format">Generate Calendar in ICal format</a></h2>
             </div> <!-- card-header -->
@@ -1642,7 +2090,7 @@ Then people can add it to their calendar application and see the events you list
      on Sunday 04 April 2021 07:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_04_two_dist_zilla_questions.html">Two Dist::Zilla questions (META.yml; user config)</a></h2>
             </div> <!-- card-header -->
@@ -1688,7 +2136,7 @@ Then people can add it to their calendar application and see the events you list
      on Saturday 03 April 2021 20:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/04/cccxxxv-12-cpan-great-modules-released.html">(cccxxxv) 12 CPAN great modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1700,7 +2148,7 @@ Then people can add it to their calendar application and see the events you list
      on Saturday 03 April 2021 15:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/04/cdlxi-metacpan-weekly-report-mojolicious.html">(cdlxi) metacpan weekly report - Mojolicious</a></h2>
             </div> <!-- card-header -->
@@ -1712,7 +2160,7 @@ Then people can add it to their calendar application and see the events you list
      on Saturday 03 April 2021 15:27</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/04/cdlxxxiv-stackoverflow-perl-report.html">(cdlxxxiv) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -1724,7 +2172,7 @@ Then people can add it to their calendar application and see the events you list
      on Saturday 03 April 2021 15:16</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprcic2021callforpapers">TPRCIC 2021 - Call for papers</a></h2>
             </div> <!-- card-header -->
@@ -1735,7 +2183,7 @@ Then people can add it to their calendar application and see the events you list
 
 <p>We want to hear from you! We know that there are hundreds of people in our community with great things to share about Perl and Raku, database integration, drones, puppies, and any other topics that may be of general interest to Perl and Raku programmers. Take a look at the talk schedules from <a href="https://perlconference.us/tprc-2021-cloud/past-conferences/">previous years</a> to help with additional ideas.</p>
 
-<p>The call for papers is open NOW. You can submit your ideas for a talk to http://perlconference.us/speakers. Deadline for submissions is 18:00 UTC April 30, 2021.</p>
+<p>The call for papers is open NOW. You can submit your ideas for a talk to http://perlconference.us/speakers. Deadline for submissions is 18:00 UTC April 30, 2021. <strong>All speakers receive a FREE event pass.</strong></p>
 
 <p>We will be accepting proposals for the following session types:</p>
 
@@ -1756,7 +2204,7 @@ Then people can add it to their calendar application and see the events you list
      on Saturday 03 April 2021 03:15</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/neilb/2021/04/kent-fredrics-cpan-distributions.html">Kent Fredric's CPAN distributions are available for adoption</a></h2>
             </div> <!-- card-header -->
@@ -1834,7 +2282,7 @@ maybe this is a good time to <a href="https://pause.perl.org/pause/query?ACTION=
      on Thursday 01 April 2021 04:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/exploring-bdd-in-perl-5">Exploring BDD in Perl - using Test::BDD::Cucumber - part 5 - with Erik Hülsmann</a></h2>
             </div> <!-- card-header -->
@@ -1852,7 +2300,7 @@ This time it will be together with <a href="https://www.linkedin.com/in/erikhuel
      on Friday 02 April 2021 08:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/04/monthly-report---march-2.html">Monthly Report - March</a></h2>
             </div> <!-- card-header -->
@@ -1998,7 +2446,7 @@ This time it will be together with <a href="https://www.linkedin.com/in/erikhuel
      on Friday 02 April 2021 05:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/04/01/list-of-new-cpan-distributions-mar-2021/">List of new CPAN distributions – Mar 2021</a></h2>
             </div> <!-- card-header -->
@@ -2718,7 +3166,7 @@ This time it will be together with <a href="https://www.linkedin.com/in/erikhuel
      on Thursday 01 April 2021 11:26</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/cpan-utils-4g4p">CPAN utils</a></h2>
             </div> <!-- card-header -->
@@ -2875,7 +3323,7 @@ libtiff5-dev
      on Wednesday 31 March 2021 07:56</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/haarg/distar-a-cpan-distribution-author-tool-5e95">Distar - A CPAN Distribution Author Tool</a></h2>
             </div> <!-- card-header -->
@@ -3071,20 +3519,6 @@ make bump V='major --alpha'   # bump first digit component, but also add
 
               <p class="text-right"><small>Published by Graham Knop
      on Wednesday 31 March 2021 01:42</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_70">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/mjgardner/my-first-article-on-perl-com-59kk">My first article on Perl.com!</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>This month I <a href="https://www.perl.com/article/interview-trying-to-catch-paul-leonerd-evans/">interviewed Paul “LeoNerd” Evans</a> for Perl.com on the upcoming <code>try</code>/<code>catch</code> syntax he’s added to the language and other topics. Check it out!</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Mark Gardner
-     on Tuesday 30 March 2021 14:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_71">
@@ -3905,7 +4339,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 06 April 2021 15:48 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 06 April 2021 17:00 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->

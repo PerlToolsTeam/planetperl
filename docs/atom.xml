@@ -7,9 +7,459 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-04-06T15:48:50Z</updated>
+  <updated>2021-04-06T17:00:10Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Regression Testing Table Data with Spreadsheet::Compare</title>
+    <link rel="alternate" href="https://dev.to/tomk3003/regression-testing-table-data-with-spreadsheet-compare-34g6" type="text/html"/>
+    <content type="html">&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--jo5ZSqSv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dok1p7tpj1fz7ow5fk6z.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--jo5ZSqSv--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/dok1p7tpj1fz7ow5fk6z.png" alt="example of a result displayed as HTML"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;An often used method for regression testing software changes is comparing created data before and after deployment of the change. On systems that produce a lot of data, the deviations as well as the underlying causes may be numerous. &lt;/p&gt;
+
+&lt;p&gt;If you want to do that on a regular basis - e.g. with reference data in a nightly build process or during tests for a new version of a business application - you might want to define a number of fine tuned comparison definitions that help to get a quick overview where to look or what to fix first.&lt;/p&gt;
+
+&lt;p&gt;As an aid to make that task a bit easier, I have uploaded the new module [Spreadsheet::Compare]&lt;a href="https://metacpan.org/pod/Spreadsheet::Compare"&gt;https://metacpan.org/pod/Spreadsheet::Compare&lt;/a&gt;) to CPAN.&lt;/p&gt;
+
+&lt;p&gt;Here a list of the main features:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;define a list of comparisons as YAML configuration&lt;/li&gt;
+&lt;li&gt;read input data from CSV, fixed record files, databases and various spreadsheet formats (ODS, XLS, XLSX)&lt;/li&gt;
+&lt;li&gt;create reports with highlighted deviations in HTML or XLSX format&lt;/li&gt;
+&lt;li&gt;filter data (e.g. ignore columns or rows)&lt;/li&gt;
+&lt;li&gt;define limits for deviations in numerical values and highlight them in the reports&lt;/li&gt;
+&lt;li&gt;provide methods to limit memory usage for large amounts of data&lt;/li&gt;
+&lt;li&gt;run comparisons in parallel&lt;/li&gt;
+&lt;li&gt;run multiple comparison configurations as a suite&lt;/li&gt;
+&lt;li&gt;easily extendable by subclassing Reader or Reporter base classes&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Although the documentation of the available modules and configuration options is essentially complete, the module's documentation needs to be extended with a tutorial to elaborate on the possibilities and show how to translate that into configuration values.&lt;/p&gt;
+
+&lt;p&gt;So let's do that:&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#installation" class="anchor"&gt;
+  &lt;/a&gt;
+  Installation
+&lt;/h2&gt;
+
+&lt;p&gt;By installing Spreadsheet::Compare (e.g. with cpanm)&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight shell"&gt;&lt;code&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;cpanm Spreadsheet::Compare
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;you will get the basic set of modules, the command line utility &lt;code&gt;spreadcomp&lt;/code&gt; and a number of needed modules as dependencies. These include:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Mojolicious&lt;/li&gt;
+&lt;li&gt;Excel::Writer::XLSX&lt;/li&gt;
+&lt;li&gt;Log::Log4perl&lt;/li&gt;
+&lt;li&gt;Text::CSV&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;There are a few other modules not automatically installed. You may need those for being able to read certain data formats:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Text::CSV_XS (for significantly better CSV performance)&lt;/li&gt;
+&lt;li&gt;DBI and appropriate DBD modules for database connection&lt;/li&gt;
+&lt;li&gt;Spreadsheet::Read (for reading Spreadsheet formats) and at least one of:
+
+&lt;ul&gt;
+&lt;li&gt;Spreadsheet::ParseODS&lt;/li&gt;
+&lt;li&gt;Spreadsheet::ParseXLSX&lt;/li&gt;
+&lt;li&gt;Spreadsheet::ParseExcel&lt;/li&gt;
+&lt;/ul&gt;
+
+
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;For integration into your own Perl scripts use &lt;code&gt;Spreadsheet::Compare&lt;/code&gt; directly in your scripts. &lt;code&gt;spreadcomp&lt;/code&gt; is just a small wrapper around the main module. The command line options correspond to matching attributes.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;spreadcomp:
+
+    Compare spreadsheets or databases and create a report for the detected
+    differences. This is the command line frontend script for the Perl
+    module Spreadsheet::Compare.
+    See https://metacpan.org/pod/Spreadsheet::Compare for more information.
+
+Usage:
+        spreadcomp -c &amp;lt;YAML-config-file&amp;gt; [-d] [-j] [-q] [-h] [-m]
+
+        Options:
+            -c, --config
+                YAML config file for comparison (required)
+
+            -d, --debug
+                Set the debug level (optional), possible values are:
+                  TRACE, DEBUG, INFO, WARN, ERROR or FATAL
+                This can also be set with the environment variable
+                  SPREADSHEET_COMPARE_DEBUG
+
+            -j --jobs
+                Set the number of concurrent subprocesses to use (optional, defaults to 1)
+                This will use threads under Windows which means that the non thread safe
+                Text::CSV_XS cannot be used for CSV processing. By using Text::CSV_PP
+                processing can be slower than using the default.
+
+            -q --quiet
+                Don't show the line counter while running.
+
+            -h, --help
+                 Display this message
+
+            -m, --manual
+                 Display complete manual (e.g. config file specifications)
+
+            -v, --version
+                 Display version number and exit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h2&gt;
+  &lt;a href="#starting-simple" class="anchor"&gt;
+  &lt;/a&gt;
+  Starting simple
+&lt;/h2&gt;
+
+&lt;p&gt;For easy creation of sample data I have used the small version of the Northwind database available at&lt;br&gt;
+&lt;a href="https://github.com/jpwhite3/northwind-SQLite3"&gt;https://github.com/jpwhite3/northwind-SQLite3&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;I duplicated the tables &lt;strong&gt;Order&lt;/strong&gt;, and &lt;strong&gt;Product&lt;/strong&gt; as &lt;strong&gt;NewOrder&lt;/strong&gt;, and &lt;strong&gt;NewProduct&lt;/strong&gt; and changed some values to generate some discrepancies. So we are ready to start. Let's create a very basic comparison configuration:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight yaml"&gt;&lt;code&gt;&lt;span class="nn"&gt;---&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;"&lt;/span&gt;&lt;span class="s"&gt;order"&lt;/span&gt;
+  &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;  &lt;span class="s"&gt;DB&lt;/span&gt;
+  &lt;span class="na"&gt;dsns&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;dsn&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;'&lt;/span&gt;&lt;span class="s"&gt;dbi:SQLite:dbname=Northwind_small.sqlite'&lt;/span&gt;
+  &lt;span class="na"&gt;sql&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [Order]&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [NewOrder]&lt;/span&gt;
+  &lt;span class="na"&gt;identity&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;Id&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We are using just one database and compare the records returned from two different statements. It is also possible to use the same statement but different databases or keep this separate for both.&lt;/p&gt;
+
+&lt;p&gt;The most important part is defining the identity for a record. Here we use the column &lt;code&gt;Id&lt;/code&gt;. The option &lt;code&gt;identity&lt;/code&gt; takes a list of columns, so we could use a combination of columns here that define a unique record.&lt;/p&gt;
+
+&lt;p&gt;Saving this as &lt;code&gt;nw_base1.yml&lt;/code&gt; we can start the first comparison:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight shell"&gt;&lt;code&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;spreadcomp &lt;span class="nt"&gt;-c&lt;/span&gt; nw_base1.yml
+0000001660
+nw_base1/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000000 MIS:000001 ADD:000001 DUP:000000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We didn't configure any reporting yet, so all we get is a short summary about the findings. This looks a bit cryptic but is easily explained:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;the first line is the number of records read, the sum for both sides of the comparison; this is a running counter that
+will show progress for larger datasets and can be disabled by the &lt;code&gt;--quiet&lt;/code&gt; command line option.&lt;/li&gt;
+&lt;li&gt;the second line is just the file name and the title of the comparison&lt;/li&gt;
+&lt;li&gt;the third line shows the results of the comparison
+
+&lt;ul&gt;
+&lt;li&gt;LEF: the number of records read from he left side&lt;/li&gt;
+&lt;li&gt;RIG: the number of records read from he right side&lt;/li&gt;
+&lt;li&gt;SAM: the number of records with an identical match&lt;/li&gt;
+&lt;li&gt;DIF: the number of records with deviations&lt;/li&gt;
+&lt;li&gt;LIM: the number of deviations below configured limits&lt;/li&gt;
+&lt;li&gt;MIS: the number of records on the left without a match on the right&lt;/li&gt;
+&lt;li&gt;ADD: the number of records on the right without a match on the left&lt;/li&gt;
+&lt;li&gt;DUP: the number of duplicate Id values, the sum of left and right&lt;/li&gt;
+&lt;/ul&gt;
+
+
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2&gt;
+  &lt;a href="#adding-a-report" class="anchor"&gt;
+  &lt;/a&gt;
+  Adding a report
+&lt;/h2&gt;
+
+&lt;p&gt;So far so good, but to be able to do anything about those differences we need to see the values. So lets add some reporting:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight yaml"&gt;&lt;code&gt;&lt;span class="nn"&gt;---&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;    &lt;span class="s"&gt;order&lt;/span&gt;
+  &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;     &lt;span class="s"&gt;DB&lt;/span&gt;
+  &lt;span class="na"&gt;dsns&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;dsn&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;'&lt;/span&gt;&lt;span class="s"&gt;dbi:SQLite:dbname=Northwind_small.sqlite'&lt;/span&gt;
+  &lt;span class="na"&gt;sql&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [Order]&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [NewOrder]&lt;/span&gt;
+  &lt;span class="na"&gt;identity&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;Id&lt;/span&gt;
+  &lt;span class="na"&gt;reporter&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;HTML&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We could have used &lt;code&gt;reporter: XLSX&lt;/code&gt; as well.&lt;/p&gt;
+
+&lt;p&gt;Next try, now with debugging enabled to see, what's going on:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight shell"&gt;&lt;code&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;spreadcomp &lt;span class="nt"&gt;-c&lt;/span&gt; nw_base1.yml &lt;span class="nt"&gt;-d&lt;/span&gt; INFO &lt;span class="nt"&gt;-q&lt;/span&gt;
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] 
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] &lt;span class="o"&gt;==================================================&lt;/span&gt;
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] &lt;span class="o"&gt;||&lt;/span&gt; RUNNING TEST &lt;span class="o"&gt;&amp;gt;&amp;gt;&lt;/span&gt;order&amp;lt;&amp;lt;
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] &lt;span class="o"&gt;==================================================&lt;/span&gt;
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] loading Spreadsheet::Compare::Reader::DB
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] running comparison nw_base1/order
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] Reporter Args: &lt;span class="nt"&gt;---&lt;/span&gt; &lt;span class="o"&gt;{}&lt;/span&gt;
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] connecting to &lt;span class="o"&gt;&amp;gt;&amp;gt;&lt;/span&gt;dbi:SQLite:dbname&lt;span class="o"&gt;=&lt;/span&gt;Northwind_small.sqlite&amp;lt;&amp;lt;
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] connecting to &lt;span class="o"&gt;&amp;gt;&amp;gt;&lt;/span&gt;dbi:SQLite:dbname&lt;span class="o"&gt;=&lt;/span&gt;Northwind_small.sqlite&amp;lt;&amp;lt;
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] Fetched 830 records from left
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] Fetched 830 records from right
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] last_pass:1
+&lt;span class="o"&gt;[&lt;/span&gt;1277406] saving HTML report to &lt;span class="s1"&gt;'order.html'&lt;/span&gt;
+nw_base1/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000000 MIS:000001 ADD:000001 DUP:000000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The number in brackets is the process id. This gets relevant when we run the comparisons in parallel processes and need to know wich comparison the debug statement belongs to.&lt;/p&gt;
+
+&lt;p&gt;And this is, what &lt;code&gt;order.html&lt;/code&gt; looks like in a browser:&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--aXZsX5T9--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3pgt1tx28562i4tmskr4.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--aXZsX5T9--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3pgt1tx28562i4tmskr4.png" alt="differences displayed as HTML"&gt;&lt;/a&gt;&lt;br&gt;
+&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--MXVsrGCy--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xgzwe51que7fjtl6og6j.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--MXVsrGCy--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xgzwe51que7fjtl6og6j.png" alt="missing displayed as HTML"&gt;&lt;/a&gt;&lt;br&gt;
+&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--elDqI26q--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hooelqy49df1a08hf48u.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--elDqI26q--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hooelqy49df1a08hf48u.png" alt="additional of diff displayed as HTML"&gt;&lt;/a&gt;&lt;br&gt;
+&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Z0KGkZW_--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/eosqe2dsmyhq6tvshwx4.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Z0KGkZW_--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/eosqe2dsmyhq6tvshwx4.png" alt="duplicates of diff displayed as HTML"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Now we can see exactly which values differ with the rest of the data as context. By default, matching records are not displayed at all. It would just slow things down for large record sets. But there is an option &lt;code&gt;report_all_data&lt;/code&gt; for that.&lt;/p&gt;
+&lt;h2&gt;
+  &lt;a href="#using-limits" class="anchor"&gt;
+  &lt;/a&gt;
+  Using Limits
+&lt;/h2&gt;
+
+&lt;p&gt;Sometimes differences below a certain margin may be acceptable or are obscuring the bigger deviations that are more important. For that we can define limits on columns with numerical values. You can have absolute and/or relative limits.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight yaml"&gt;&lt;code&gt;&lt;span class="s"&gt;--------&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;    &lt;span class="s"&gt;order&lt;/span&gt;
+  &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;     &lt;span class="s"&gt;DB&lt;/span&gt;
+  &lt;span class="na"&gt;dsns&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;dsn&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;'&lt;/span&gt;&lt;span class="s"&gt;dbi:SQLite:dbname=Northwind_small.sqlite'&lt;/span&gt;
+  &lt;span class="na"&gt;sql&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [Order]&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [NewOrder]&lt;/span&gt;
+  &lt;span class="na"&gt;identity&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;Id&lt;/span&gt;
+  &lt;span class="na"&gt;reporter&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;HTML&lt;/span&gt;
+  &lt;span class="na"&gt;limit_rel&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;__default__&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;.1&lt;/span&gt;
+    &lt;span class="na"&gt;Freight&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;     &lt;span class="m"&gt;0.08&lt;/span&gt;
+  &lt;span class="na"&gt;limit_abs&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;__default__&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;none&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Limits are defined by column. There is a special column &lt;code&gt;__default__&lt;/code&gt; for setting a baseline. By setting a special limit of &lt;code&gt;none&lt;/code&gt;, the limit will not be checked at all. This is different from an undefined value or the value 0, which means no tolerance at all (this is the default).&lt;/p&gt;
+
+&lt;p&gt;We only want to have relative limits so we disabled the absolute ones with &lt;code&gt;__default__: none&lt;/code&gt;. Then we added a 10% limit as default and an 8% limit for the column Freight.&lt;/p&gt;
+
+&lt;p&gt;Now we get:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight shell"&gt;&lt;code&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;spreadcomp &lt;span class="nt"&gt;-c&lt;/span&gt; nw_base1.yml &lt;span class="nt"&gt;-q&lt;/span&gt;
+nw_base1/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000073 MIS:000001 ADD:000001 DUP:000000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;So 73 differences are below our relative limits. The report for that looks like this:&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--aM4K2eet--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3lqxevrfgjfh3gma2h69.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--aM4K2eet--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3lqxevrfgjfh3gma2h69.png" alt="differences displayed as HTML"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;If you are not interested about deviations below the limit, you can set&lt;br&gt;
+&lt;code&gt;below_limit_is_equal: 1&lt;/code&gt; and it will look exactly as if the values where equal.&lt;/p&gt;
+&lt;h2&gt;
+  &lt;a href="#more-comparisons" class="anchor"&gt;
+  &lt;/a&gt;
+  More Comparisons
+&lt;/h2&gt;
+
+&lt;p&gt;Now we will add another comparison to the configuration. To save typing we can factor out common settings into a special section wtih the special title &lt;code&gt;__DEFAULT__&lt;/code&gt;. All global values can be later overwritten in the individual sections.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight yaml"&gt;&lt;code&gt;&lt;span class="s"&gt;--------&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;           &lt;span class="s"&gt;__GLOBAL__&lt;/span&gt;
+  &lt;span class="na"&gt;reporter&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;        &lt;span class="s"&gt;HTML&lt;/span&gt;
+  &lt;span class="na"&gt;type&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;            &lt;span class="s"&gt;DB&lt;/span&gt;
+  &lt;span class="na"&gt;dsns&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;dsn&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;'&lt;/span&gt;&lt;span class="s"&gt;dbi:SQLite:dbname=Northwind_small.sqlite'&lt;/span&gt;
+  &lt;span class="na"&gt;summary&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;         &lt;span class="s"&gt;HTML&lt;/span&gt;
+  &lt;span class="na"&gt;report_diff_row&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="m"&gt;1&lt;/span&gt;
+  &lt;span class="na"&gt;identity&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;Id&lt;/span&gt;
+  &lt;span class="na"&gt;limit_rel&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;__default__&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;.1&lt;/span&gt;
+    &lt;span class="na"&gt;Freight&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;     &lt;span class="m"&gt;0.08&lt;/span&gt;
+  &lt;span class="na"&gt;limit_abs&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="na"&gt;__default__&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;none&lt;/span&gt;
+&lt;span class="c1"&gt;#=============================================&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;order&lt;/span&gt;
+  &lt;span class="na"&gt;sql&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [Order]&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [NewOrder]&lt;/span&gt;
+&lt;span class="c1"&gt;#=============================================&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="s"&gt;order details&lt;/span&gt;
+  &lt;span class="na"&gt;sql&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [OrderDetails_V]&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;select * from [NewOrderDetails_V]&lt;/span&gt;
+  &lt;span class="na"&gt;diff_relative&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;UnitPriceProduct&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We have added some new options here:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;
+&lt;code&gt;summary: HTML&lt;/code&gt; creates an HTML overview page with links to the single comparisons&lt;/li&gt;
+&lt;li&gt;
+&lt;code&gt;report_diff_row&lt;/code&gt; adds an additional line to each difference showing the deviation for each column (for numerical
+values the default is the absolute difference).&lt;/li&gt;
+&lt;li&gt;with &lt;code&gt;diff_relative&lt;/code&gt; the relative difference can be shown in the added diff row (per column)
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight shell"&gt;&lt;code&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;spreadcomp &lt;span class="nt"&gt;-c&lt;/span&gt; nw_base2.yml &lt;span class="nt"&gt;-q&lt;/span&gt;
+nw_base2/order
+LEF:000830 RIG:000830 SAM:000737 DIF:000092 LIM:000073 MIS:000001 ADD:000001 DUP:000000
+nw_base2/order details
+LEF:002155 RIG:002153 SAM:001071 DIF:001082 LIM:001013 MIS:000002 ADD:000000 DUP:000000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Let's look at the summary HTML page &lt;code&gt;nw_base2.html&lt;/code&gt;:&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--mRscvsHH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/ubj4v0dgn1281fiw0vo4.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--mRscvsHH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/ubj4v0dgn1281fiw0vo4.png" alt="summary displayed as HTML"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;The summary only consists of the same status information as the one given on the command line. But we have a menu on the left where we can browse through the comparisons.&lt;/p&gt;
+
+&lt;p&gt;Here the differences for the second comparison.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--0ak-hnvN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vzd0bi5u93jehtgkbesw.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--0ak-hnvN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vzd0bi5u93jehtgkbesw.png" alt="differences displayed as HTML"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#building-a-suite" class="anchor"&gt;
+  &lt;/a&gt;
+  Building a Suite
+&lt;/h2&gt;
+
+&lt;p&gt;To be able to handle a large number of comparisons in an organized way, you can use a starting configuration that branches out to subconfigurations with the &lt;code&gt;suite&lt;/code&gt; option. It takes a list of configuration filenames and can have it's own &lt;code&gt;__GLOBAL__&lt;/code&gt; section.&lt;/p&gt;
+
+&lt;p&gt;Here an example:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight yaml"&gt;&lt;code&gt;&lt;span class="s"&gt;--------&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;title&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;              &lt;span class="s"&gt;__GLOBAL__&lt;/span&gt;
+  &lt;span class="na"&gt;reporter&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;           &lt;span class="s"&gt;HTML&lt;/span&gt;
+  &lt;span class="na"&gt;summary&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;            &lt;span class="s"&gt;HTML&lt;/span&gt;
+  &lt;span class="na"&gt;rootdir&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;            &lt;span class="s"&gt;${TESTDIR}/suite&lt;/span&gt;
+  &lt;span class="na"&gt;left&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;               &lt;span class="s"&gt;Reference Data&lt;/span&gt;
+  &lt;span class="na"&gt;right&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;              &lt;span class="s"&gt;Current Data&lt;/span&gt;
+  &lt;span class="na"&gt;report_filename&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;    &lt;span class="s"&gt;reports/%{title}.html&lt;/span&gt;
+  &lt;span class="na"&gt;summary_filename&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;   &lt;span class="s"&gt;reports/suite_summary.html&lt;/span&gt;
+  &lt;span class="na"&gt;report_diff_row&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;    &lt;span class="m"&gt;1&lt;/span&gt;
+  &lt;span class="na"&gt;report_line_source&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt; &lt;span class="m"&gt;1&lt;/span&gt;
+&lt;span class="c1"&gt;#=============================================&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;suite&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;DB/Overview.yml&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;DB/OrderDetails.yml&lt;/span&gt;
+&lt;span class="c1"&gt;#=============================================&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;suite&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;CSV/Overview.yml&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;CSV/OrderDetails.yml&lt;/span&gt;
+&lt;span class="c1"&gt;#=============================================&lt;/span&gt;
+&lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="na"&gt;suite&lt;/span&gt;&lt;span class="pi"&gt;:&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;FIX/Overview.yml&lt;/span&gt;
+    &lt;span class="pi"&gt;-&lt;/span&gt; &lt;span class="s"&gt;FIX/OrderDetails.yml&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And the corresponding report:&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--g6676HD0--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/gb6wu56iaai3pk09ltvj.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--g6676HD0--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/gb6wu56iaai3pk09ltvj.png" alt="differences displayed as HTML"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#more" class="anchor"&gt;
+  &lt;/a&gt;
+  More?
+&lt;/h2&gt;
+
+&lt;p&gt;This should be enough for a short introduction. If there should be any feedback, I could do a part 2 with advanced options. If you want to you can comment here or head over to the &lt;a href="https://github.com/tomk3003/spreadsheet-compare/discussions"&gt;Github Discussions Page&lt;/a&gt;. &lt;/p&gt;
+
+</content>
+    <author>
+      <name>tomk3003</name>
+    </author>
+    <id>https://dev.to/tomk3003/regression-testing-table-data-with-spreadsheet-compare-34g6</id>
+    <published>2021-04-06T16:08:36Z</published>
+    <updated>2021-04-06T16:08:36Z</updated>
+    <category term="perl"/>
+    <category term="testing"/>
+    <category term="spreadsheet"/>
+  </entry>
   <entry>
     <title>The attraction of Test::Fatal in Perl</title>
     <link rel="alternate" href="https://dev.to/mjgardner/the-attraction-of-test-fatal-in-perl-16mi" type="text/html"/>
@@ -1620,7 +2070,7 @@ Then people can add it to their calendar application and see the events you list
 
 <p>We want to hear from you! We know that there are hundreds of people in our community with great things to share about Perl and Raku, database integration, drones, puppies, and any other topics that may be of general interest to Perl and Raku programmers. Take a look at the talk schedules from <a href="https://perlconference.us/tprc-2021-cloud/past-conferences/">previous years</a> to help with additional ideas.</p>
 
-<p>The call for papers is open NOW. You can submit your ideas for a talk to http://perlconference.us/speakers. Deadline for submissions is 18:00 UTC April 30, 2021.</p>
+<p>The call for papers is open NOW. You can submit your ideas for a talk to http://perlconference.us/speakers. Deadline for submissions is 18:00 UTC April 30, 2021. <strong>All speakers receive a FREE event pass.</strong></p>
 
 <p>We will be accepting proposals for the following session types:</p>
 
@@ -2964,25 +3414,6 @@ make bump V='major --alpha'   # bump first digit component, but also add
     <updated>2021-03-31T01:42:35Z</updated>
     <category term="perl"/>
     <category term="cpan"/>
-  </entry>
-  <entry>
-    <title>My first article on Perl.com!</title>
-    <link rel="alternate" href="https://dev.to/mjgardner/my-first-article-on-perl-com-59kk" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>This month I <a href="https://www.perl.com/article/interview-trying-to-catch-paul-leonerd-evans/">interviewed Paul “LeoNerd” Evans</a> for Perl.com on the upcoming <code>try</code>/<code>catch</code> syntax he’s added to the language and other topics. Check it out!</p>
-
-</div>
-    </content>
-    <author>
-      <name>Mark Gardner</name>
-    </author>
-    <id>https://dev.to/mjgardner/my-first-article-on-perl-com-59kk</id>
-    <published>2021-03-30T14:03:11Z</published>
-    <updated>2021-03-30T14:03:11Z</updated>
-    <category term="programming"/>
-    <category term="link"/>
-    <category term="perl"/>
-    <category term="exceptions"/>
   </entry>
   <entry>
     <title>Switch lots of things on at once</title>
