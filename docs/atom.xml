@@ -7,9 +7,125 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-04-11T21:47:16Z</updated>
+  <updated>2021-04-11T22:48:39Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Calculating EV battery charge pricing with Perl</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/itcharlie/2021/04/calculating-ev-battery-charge-with-perl.html"/>
+    <id>tag:blogs.perl.org,2021:/users/itcharlie//1220.10177</id>
+    <published>2021-04-12T01:09:48Z</published>
+    <updated>2021-04-12T03:28:03Z</updated>
+    <author>
+        <name>Charlie Gonzalez</name>
+        
+    </author>
+    <category term="ev" label="EV" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="perl5" label="perl5" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/itcharlie/">
+        <![CDATA[<p>Presently I have great interest in &#8220;EVs&#8221; Electric Vehicles but I haven&#8217;t seen any data on how much it would cost to charge an electric vehicle from 0 % to 100 % battery charge at home in NYC ( So I wrote a Perl script to do just that ) but before we dig in into it I explain a few things about Electric Vehicles.</p>
+
+<p>Electric Vehicles will have a battery capacity that is represented by  kilowatt-hour units or kWh for short. </p>
+
+<p>An EV&#8217;s driving range is represented in miles units ( In the US ) and the average mileage is determined by the EPA battery range rating ( the bigger the battery capacity usually means the more driving range you will have in a car ) after conducting a few tests ( so in reality your mileage will vary ).</p>
+
+<p>Electric vehicles have an onboard charger which determines its charging rate in Kilowatt per Hour and it varies by car makers. Most EV car owners will install a Level 2 charger that is usually capable of charging cars up to 7.2 kWH rate using 220 volt electric circuit with 32 amps of power ( but there are chargers that can go at a higher rate ). </p>
+
+<p>Ok now that I explained a few things lets dig into the data used to make my script.</p>
+
+<p>I checked my electric bill and found that my electricity rate in NYC is $0.13 cents per kWh.</p>
+
+<p>For comparison I phoned a friend in Florida to get electricity rates where he lives which is $ 0.07 cents per kWh. ( Almost half of NY rate ) </p>
+
+<p>I took as an example this car a <a href="https://electrek.co/2020/11/10/tesla-model-3-82-kwh-battery-pack-new-cells/">2021 Tesla Model 3 Long Range </a>with a battery capacity of 82kWh. It has an EPA mileage of 353 miles.</p>
+
+<pre><code>
+#### Tesla Model 3 
+#
+say "Tesla Model 3 2021 Long Range: 82kwh battery pack";
+say "All Electric range: 353 miles";
+my $tesla_total_price = 82 * .13 ;
+my $tesla_total_price_fl = 82 * .07 ;
+my $tesla_charge_time = 82 / 7.2;  # 7.2 is the onboard charger rate ( it can also be 3.3 kwh  rate )  
+my $tesla_miles_per_kWh = 353 / 82;
+
+say "NYC Full charge price: \$ " .  sprintf("%.2f" , $tesla_total_price);
+say "FL Full charge price: \$ " .  sprintf("%.2f" , $tesla_total_price_fl);
+say "Time to charge: " . sprintf("%.2f" , $tesla_charge_time) . " hours";
+say "Miles per kWh : " . sprintf("%.2f" , $tesla_miles_per_kWh) . " miles";
+
+print "\n";
+</code></pre>
+
+which will output the following:
+<pre>
+Tesla Model 3 2021 Long Range: 82kwh battery pack
+All Electric range: 353 miles
+NYC Full charge price: $ 10.66
+FL Full charge price: $ 5.74
+Time to charge: 11.39 hours
+Miles per kWh : 4.30 miles
+</pre>
+
+<p>$10.66 dollars for a 353 miles in New York City driving is pretty sweet deal!</p>
+
+<p>I looked into a few other cars and started to copy and paste code which resulted in this script:
+<a href="https://github.com/itcharlie/ev-calc-pricing/blob/main/ev_charge_price_calculator.pl">https://github.com/itcharlie/ev-calc-pricing/blob/main/ev<em>charge</em>price_calculator.pl
+</a></p>
+
+<p>and of course there is more than one way to do it so I rewrote the script with a Hash of EV cars:
+<a href="https://github.com/itcharlie/ev-calc-pricing/blob/main/rewrite_ev_charge_price_calculator.pl">https://github.com/itcharlie/ev-calc-pricing/blob/main/rewrite<em>ev</em>charge<em>price</em>calculator.pl
+</a></p>
+
+<pre><code>
+
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+use Data::Dumper;
+use feature 'say';
+
+
+my %cars;
+
+$cars{'EV'}->{'KIA'}->{'NIRO'} = { 'year' => 2020 , 'battery_size' => 64, 'onboard_charger_rate' => 7.2 , 'aer' => 239 };
+$cars{'EV'}->{'TESLA'}->{'MODEL 3'} = { 'year' => 2021 , 'battery_size' => 82, 'onboard_charger_rate' => 7.2 , 'aer' => 353 };
+$cars{'EV'}->{'CHEVY'}->{'BOLT'} = { 'year' => 2021 , 'battery_size' => 60, 'onboard_charger_rate' => 7.2 , 'aer' => 259 };
+
+my %electric_rate;
+
+$electric_rate{'NY'} = '0.13';
+$electric_rate{'FL'} = '0.07';
+
+foreach my $ev_brand ( keys %{$cars{'EV'}} ) {
+
+    print "-" x 50;
+
+    foreach my $model ( keys %{$cars{'EV'}->{$ev_brand}} )  {
+        print "\n";
+        say "$ev_brand  $model $cars{'EV'}->{$ev_brand}->{$model}->{'year'}";
+        say "All electric range: $cars{'EV'}->{$ev_brand}->{$model}->{'aer'} miles";
+        my $charge_time = $cars{'EV'}->{$ev_brand}->{$model}->{'battery_size'}  / $cars{'EV'}->{$ev_brand}->{$model}->{'onboard_charger_rate'} ; 
+        my $miles_per_kWh =  $cars{'EV'}->{$ev_brand}->{$model}->{'aer'}   /  $cars{'EV'}->{$ev_brand}->{$model}->{'battery_size'}  ;
+        say "Time to charge: " . sprintf("%.2f" , $charge_time ) . " hours";
+        say "Miles per kWh : " . sprintf("%.2f" , $miles_per_kWh) . " miles";
+        print "\n";
+
+        foreach my $state ( keys %electric_rate )  {
+           my $total_price = $cars{'EV'}->{$ev_brand}->{$model}->{'battery_size'}  * $electric_rate{$state} ;
+           say "$state state 0-100% battery charge price: \$ " .  sprintf("%.2f" , $total_price);
+        }
+    }
+}
+</code> </pre>
+
+<p>Thank you for your time and hope you enjoyed this post!</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>In defence of OOP</title>
     <link rel="alternate" href="http://blogs.perl.org/users/lichtkind/2021/03/in-defence-of-oop.html"/>
@@ -40,6 +156,131 @@ Once you get a lot of subs, you prevent name collisions with name spaces (packag
 <p>With the ability to capsule data you can guarantee to oblige to contracts, since no-one else touched the data than the little code you have inside your small class.  Most importantly - strict abstraction layer walls will let you know if your abstraction layers are appropriate (if there is no need to violate them or if your classes or methods get to big). These are clear signs that code has to be refactored. And if you have too many classes - it is a sign you don't have enough high order classes. OOP can be used in a very functional manner which is often less painful (in larger projects) than being strictly functional and fighting with the harsh rules of monads all the time. But how exactly do that will be content of the next part ....</p>]]>
     </content>
 </entry>
+  <entry>
+    <title>Static Analysis and Self Describing Numbers (now with Threads!): The Weekly Challenge 107</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/04/11#pwc107" type="text/html"/>
+    <content type="html">&lt;p&gt;&lt;em&gt;The examples used here are from the weekly challenge problem statement and demonstrate the working solution.&lt;/em&gt;&lt;/p&gt;
+&lt;h2 id="part-1"&gt;Part 1&lt;/h2&gt;
+&lt;p&gt;&lt;em&gt;Write a script to generate self-descriptive numbers.&lt;/em&gt;&lt;/p&gt;
+&lt;h3 id="solution"&gt;Solution&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use Thread; 
+use boolean;
+use constant SDN_COUNT =&gt; 3;
+use constant THREAD_COUNT =&gt; 4;
+use constant RANGE_SIZE =&gt; 10_000;
+
+sub self_describing{
+    my($i) = @_;
+    my @digits = split(//, $i);
+    for my $x (0 .. @digits - 1){
+        my $count = 0;
+        for my $j (0 .. @digits - 1){
+            $count++ if($digits[$j] == $x);
+            return false if($count &gt; $digits[$x]);
+        }
+        return false if($count != $digits[$x]);
+    }
+    return true;
+}
+
+sub self_describing_number{
+    my($start, $end) = @_;  
+    my @r = (); 
+    for(my $i = $start; $i &lt; $end; $i++){
+        push @r, [length($i), $i] if(self_describing($i));  
+    }   
+    return \@r;  
+}
+
+MAIN:{
+    my @threads; 
+    my $count = 0; 
+    my $lower = 1; 
+    my $upper = RANGE_SIZE; 
+    do{
+        for(0..(THREAD_COUNT - 1)){  
+            my $t = Thread-&gt;new(\&amp;self_describing_number, ($lower, $upper));
+            push @threads, $t;  
+            $lower = $upper + 1;  
+            $upper = $lower +  RANGE_SIZE;  
+        }  
+        foreach my $t (@threads){  
+            my $sdns = $t-&gt;join();                 
+            foreach my $sdn (@{$sdns}){ 
+                print "Base " . $sdn-&gt;[0] . ":" .  $sdn-&gt;[1] . "\n" if $count &lt; SDN_COUNT; 
+                $count++;  
+            }  
+        }   
+        @threads = ();   
+    } while($count &lt; SDN_COUNT);
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="sample-run"&gt;Sample Run&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-1.pl
+Base 4:1210
+Base 4:2020 
+Base 5:21200
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="notes"&gt;Notes&lt;/h3&gt;
+&lt;p&gt;Part 1 this week is repeated from Challenge 043. In order to provide something fresh for the same problem I modified the previous code to be multi-threaded.&lt;/p&gt;
+&lt;h2 id="part-2"&gt;Part 2&lt;/h2&gt;
+&lt;p&gt;&lt;em&gt;Write a script to list methods of a package/class.&lt;/em&gt;&lt;/p&gt;
+&lt;h3 id="solution-1"&gt;Solution&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+
+sub analyze{
+    my($file) = @_;
+    my @subs;
+    my @uses; 
+    my @subroutines;
+    my $subs = `perlanalyst $file --analysis Sub`;
+    $subs =~ s/$file://;
+    @subs = split(/\n/, $subs);   
+    my $uses = `perlanalyst $file --analysis Use`;
+    $uses =~ s/$file://;
+    @uses = split(/\n/, $uses);   
+    for my $s (@subs){
+        $s =~ s/\s+//;
+        my @fields = split(/:/, $s); 
+        push @subroutines, $fields[1] if(length($s) &gt; 0); 
+    }
+    push @subroutines, "BEGIN" if(@uses); 
+    return @subroutines; 
+}
+
+MAIN:{
+    my $FILE = $ARGV[0];
+    my @subroutines = analyze($FILE);
+    print join("\n", sort {$a cmp $b} @subroutines) . "\n"; 
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="sample-run-1"&gt;Sample Run&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl perl/Calc.pm 
+BEGIN
+DESTROY
+add
+div
+mul
+new
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="notes-1"&gt;Notes&lt;/h3&gt;
+&lt;p&gt;Getting a list of methods can &lt;em&gt;mostly&lt;/em&gt; be done via just some plain analysis of the code. Rather than re-invent the wheel I am using a module, Perl::Analysis::Static, to do that for me. This is a pretty neat tool but has been left in an alpha state. The most stable way to use it is via the command line instead of its incomplete API. In this code I call the &lt;code&gt;perlanalyst&lt;/code&gt; command and then parse the output.&lt;/p&gt;
+&lt;p&gt;If given a &lt;code&gt;BEGIN&lt;/code&gt; block or if &lt;code&gt;use&lt;/code&gt;-ing a module Perl will execute a &lt;code&gt;BEGIN&lt;/code&gt; at compile time. &lt;em&gt;I would argue that this is out of scope for this challenge.&lt;/em&gt; However, as given in the problem statement we are expected to catch this it seems. I do this by inspecting the &lt;code&gt;perlanalyst&lt;/code&gt; output for &lt;code&gt;use&lt;/code&gt; lines. I could have done a few other things as well but decided not to do more with this since it seems like a funny requirement anyway!&lt;/p&gt;
+&lt;h2 id="references"&gt;References&lt;/h2&gt;
+&lt;p&gt;&lt;a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-107/"&gt;Challenge 107&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href="https://adamcrussell.livejournal.com/14361.html"&gt;Challenge 043&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/release/GGOLDBACH/Perl-Analysis-Static-0.003-TRIAL/lib/Perl/Analysis/Static.pm"&gt;Perl::Analysis::Static&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc107</id>
+    <published>2021-04-11T17:51:00-04:00Z</published>
+    <category term="/perl"/>
+  </entry>
   <entry>
     <title>Releases of Perl Distributions Crypt::OpenSSL::PKCS12 and Crypt::OpenSSL::X509</title>
     <link rel="alternate" href="https://dev.to/jonasbn/releases-of-perl-distributions-crypt-openssl-pkcs12-and-crypt-openssl-x509-3947" type="text/html"/>
@@ -2410,153 +2651,6 @@ It's a great way to give back to the Perl community.</p>
 <p>If you don't already have a PAUSE account,
 maybe this is a good time to <a href="https://pause.perl.org/pause/query?ACTION=request_id">sign up for one</a>?</p>
 ]]>
-    </content>
-</entry>
-  <entry>
-    <title>Monthly Report - March</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/mohammad_s_anwar/2021/04/monthly-report---march-2.html"/>
-    <id>tag:blogs.perl.org,2021:/users/mohammad_s_anwar//990.10168</id>
-    <published>2021-04-02T05:58:20Z</published>
-    <updated>2021-04-02T06:28:44Z</updated>
-    <author>
-        <name>Mohammad S Anwar</name>
-        <uri>http://www.manwar.org/</uri>
-    </author>
-    <category term="perlmothlyreport" label="perl mothly report" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/mohammad_s_anwar/">
-        <![CDATA[<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/header-2021-03.jpg"/></p>
-
-<p><strong>Celebration time ...</strong></p>
-
-<p>The month of <strong>March</strong> is very special to me. It was in this month 2 years ago, I started my dream project <a href="https://perlweeklychallenge.org/">The Weekly Challenge (a.k.a. Perl Weekly Challenge)</a>.</p>
-
-<p>For <strong>Team PWC</strong>, it was back to back celebrations. We celebrated <strong>100th</strong> week challenge in <strong>February</strong> first followed by completion of <strong>2 years</strong> in <strong>March</strong>. In fact for the second year anniversary, I had planned something bigger but unfortunately it didn't work out for some reason. Having said that, for me the biggest achievement is that we now have a platform where everyone is welcome. It doesn't matter whether you like <strong>Perl</strong> or <strong>Raku</strong> or for that matter any other programming language. And the best part of it, the same person who happens to be an expert in <strong>Perl</strong>, goes on and do it <strong>20+ different languages</strong> as well. Then there is this guy who is very famous for his <strong>Raku</strong> skill, suddenly decided to share solutions in <strong>Perl</strong> as well. How cool it is? This is something you wouldn't have imagine 2 years ago.</p>
-
-<p>Let me share my own story, few years ago at the <strong>London Perl Workshop</strong> event, I was gifted a book on <strong>Raku</strong> for my contributions to <strong>CPAN</strong>. For the next one year, I didn't get chance to read even a single page. Then came the weekly challenge where I got the opportunity to see the work of many <strong>Raku</strong> experts. I was inspired by each one of them and decided to get my hand dirty too. As of today, I contributed <strong>73 Perl</strong> solutions and <strong>67 Raku</strong> solutions. Not a bad stats for a first timer.</p>
-
-<p>Generally <strong>Perl</strong> and <strong>Raku</strong> are the two most popular languages the weekly challenge rely on but that doesn't stop members trying different languages every week. As of today, we have received solutions in <strong>60+ different languages</strong> other than <strong>Perl</strong> and <strong>Raku</strong>. Any guess who tops the list? Well, it is none other than <strong>Python</strong>. I have recently started learning <strong>Python</strong>. Soon I would be contributing in <strong>Python</strong> too. Since the tag line of the weekly challenge is <em><strong>"You don't have to be an expert"</strong></em>, as soon as I feel little comfortable I am going to jump straight away. There is no harm, since nobody is going to judge me here and one day I can be as good as I am in <strong>Perl</strong> today.</p>
-
-<p>It is no longer secret any more, most of my spare time is devoted to the weekly challenge management. It is a tough job and at times, I feel really tired. In the recent weeks, I purposely stayed away for few days without doing any work on the weekly challenge. In the end, I felt bad for not doing anything. I then clear the entire backlog in one sitting. I play with my emotions at times and it is fun. When I am not doing anything serious, I spend time looking at the various <a href="https://perlweeklychallenge.org/chart">charts</a>. It tells me so many interesting stories every time I look at it. For example, if you look at the Leaders board, there is a story behind every names.</p>
-
-<p><strong>Do you think the weekly challenge is the only thing that keeps me busy all the time?</strong></p>
-
-<p>The short answer is <strong>No</strong>. I also take part in the monthly event <strong>"Pull Request Club"</strong>. Submitting <strong>Pull Request</strong> was my hobby before the weekly challenge took over and left no time for anything else. Thanks to the monthly nature of the event, I have successfully managed it till date since the beginning without missing a single month. And when I receive the response like below, do you think I am going to stop any time sooner?</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/prc-comment.png"/></p>
-
-<p>There is another surprise celebration that I am desperate to share with you all but I can't go public unless all the paper work done. I hope to get it done by end of next week. Unfortunately you all have to wait for the next monthly report that is when I will share the surprise with you all.</p>
-
-<p>Let's take a quick look through last month main activities.</p>
-
-<ul>
-<li><a href="#a">Pull Request</a></li>
-<li><a href="#b">Git Commits</a></li>
-<li><a href="#c">The Weekly Challenge</a></li>
-<li><a href="#d">YouTube Channel</a></li>
-<li><a href="#e">Meet The Champion</a></li>
-<li><a href="#f">Pull Request Club</a></li>
-<li><a href="#g">Perl Blog</a></li>
-<li><a href="#h">Perl Weekly Newsletter</a></li>
-<li><a href="#i">Patreon</a></li>
-</ul>
-
-<hr id="a"/>
-<h2>Pull Request</h2>
-
-<p><strong>3 Pull Requests</strong> submitted in the month of <strong>March 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-pr-2021-03.png"/></p>
-
-<p><strong>2354 Pull Requests</strong> altogether.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-pr-summary-2021-03.png"/></p>
-
-<hr id="b"/>
-<h2>Git Commits</h2>
-
-<p><strong>672 commits</strong> recorded in the month of <strong>March 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-commits-2021-03.png"/></p>
-
-<p>Overall <strong>2447 commits</strong> recorded in the <strong>year 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-commits-summary-2021-03.png"/></p>
-
-<hr id="c"/>
-<h2>The Weekly Challenge</h2>
-
-<p>Following weekly challenges proposed in the month of <strong>February 2021</strong>:</p>
-
-<ul>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-102">Challenge #102</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-103">Challenge #103</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-104">Challenge #104</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-105">Challenge #105</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-106">Challenge #106</a></li>
-</ul>
-
-<p>And <strong>RECAPS</strong> are listed as below:</p>
-
-<ul>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-101">RECAP Challenge #101</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-102">RECAP Challenge #102</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-103">RECAP Challenge #103</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-104">RECAP Challenge #104</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-105">RECAP Challenge #105</a></li>
-</ul>
-
-<hr id="d"/>
-<h2>YouTube Channel</h2>
-
-<p>There are plenty of videos available on my <a href="https://www.youtube.com/c/mohammadsajidanwar">YouTube Channel</a>. If you like the video then please do subscribe to my channel so that you don't miss the weekly fun live coding videos.</p>
-
-<p>No new video created last month, although I was supposed to do one to mark the completion of second year of the weekly challenge. I will do it in the coming weeks though.</p>
-
-<hr id="e"/>
-<h2>Meet The Champion</h2>
-
-<p>Last month, we declared <a href="https://perlweeklychallenge.org/blog/meet-the-champion-2021-02">James Smith</a> as the Champion of <strong>The Weekly Challenge</strong>.</p>
-
-<p>If you are interested in past champions interview then you can find it all <a href="https://perlweeklychallenge.org/champions">here</a>.</p>
-
-<hr id="f"/>
-<h2>Pull Request Club</h2>
-
-<p>Last month, I received <a href="https://metacpan.org/pod/OData::QueryParams::DBIC">OData::QueryParams::DBIC</a> by <strong>Renee Baecker</strong>. I submitted <a href="https://github.com/reneeb/OData-QueryParams-DBIC/pull/3">one</a> Pull Request and it has been already accepted and merged by <strong>Renee Baecker</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/pr-club-2021-03.png"/></p>
-
-<p>Overall participation to <strong>Pull Request Club</strong></p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/pr-club-summary-2021-03.png"/></p>
-
-<hr id="g"/>
-<h2>Perl Blog</h2>
-
-<p>Last month, I blogged about the following topics. </p>
-
-<ul>
-<li><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/03/monthly-report---february-2.html">Monthly Report - February</a></li>
-</ul>
-
-<hr id="h"/>
-<h2>Perl Weekly Newsletter</h2>
-
-<p>Last month, I edited two editions of the <strong>Perl Weekly Newsletter</strong> i.e. <a href="http://perlweekly.com/archive/502.html">Issue #502</a> and <a href="http://perlweekly.com/archive/504.html">Issue #504</a>.</p>
-
-<hr id="i"/>
-<h2>Patreon</h2>
-
-<p>At the end of last month, <strong>March 2021</strong>, the following people / organisation supported me in the past or continued supporting me even today. I am humbled by their generosity.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/patreon-2021-03.png"/></p>
-
-<p><strong>Do you want to sponsor my work?</strong> </p>
-
-<p>Please follow the <a href="https://www.patreon.com/manwar">Patreon</a> page. </p>
-
-<p><strong>Thank You</strong>.</p>]]>
-        
     </content>
 </entry>
   <entry>
