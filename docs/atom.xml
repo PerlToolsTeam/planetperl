@@ -7,9 +7,221 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-04-19T22:48:42Z</updated>
+  <updated>2021-04-19T23:47:46Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl performance on Apple M1</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/dimitrios_kechagias/2021/04/perl-performance-on-apple-m1.html"/>
+    <id>tag:blogs.perl.org,2021:/users/dimitrios_kechagias//3414.10188</id>
+    <published>2021-04-20T03:48:27Z</published>
+    <updated>2021-04-20T04:39:19Z</updated>
+    <author>
+        <name>Dimitrios Kechagias</name>
+        <uri>http://astro.ecuadors.net</uri>
+    </author>
+    <category term="applem1" label="Apple M1" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="macos" label="MacOS" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/dimitrios_kechagias/">
+        <![CDATA[<p><span style="font-size: 1em;"><a href="https://metacpan.org/pod/HTML::FormatText">https://metacpan.org/pod/HTML::FormatText</a>I recently got an <b>Apple M1 Mac Mini</b>, half out of curiosity, half because it was exactly what I would need: I have a low end Mac just to try out things like new Xcode betas etc, like a "canary" machine. My old 2012 Mac Mini stopped getting official Apple updates, so it could no longer do what I needed and the 8GB RAM, 256GB SSD M1 mini at $699 is easily the cheapest Mac you can buy.</span><br />
+Overall, unlike the typical Mac Minis of old which seemed to be on the slow side, it did feel quite fast from the start, so I thought I'd run some benchmarks on it for fun to see how Apple's ARM M1 fares against some x86 competition. And, as in my day job I use mostly Perl, I thought some perl-related benchmarks would be of interest to me.</p>
+
+<p>For those not aware, the <b>M1</b> is an ARM-based CPU (well, includes GPU, so SoC really), with 8 cores total (4x performance @ 3.2GHz/12MB L3, 4x efficiency @ 2GHz/4MB L3) built at 5nm and consuming up to 15W. Basically the "laptop" class CPU of what Apple has been building for iPhones/iPads. Apart from native ARM code, it can run x86 code through <a href="https://en.wikipedia.org/wiki/Rosetta_(software)#Rosetta_2">Rosetta 2</a>, but I still can't use it for work - our dev environment currently relies on VirtualBox which needs actual x86/VT-x silicon. I ran benchmarks against my work laptop, a Mid 2015 15" MacBook Pro with a <b>2.5GHz i7</b> Crystalwell. Even though it was Apple's top of the line at the time, it's a bit old now, I keep it for the non-butterfly keyboard and the full complement of ports, and until recently the newer Macs weren't much faster anyway. Although an older i7 will make it easier for the M1 to compete, I still find the comparison quite interesting, especially since the Mac Mini has always been the "slow/cheap" Mac - and it's now even cheaper. Plus I'll throw some tests with different hardware just for comparison.</p>
+
+<p><big><strong>The Benchmarks</strong></big></p>
+
+I will definitely not claim the benchmarks I ran are truly representative of real world performance, especially when I am of the opinion you should benchmark your own code - what you personally would run. But, I also added some typical things most perl users might do and some things that came up when looking for Perl "benchmarks", so that anybody can try them and get an idea of the relative performance of their own machine.<br /><div><br /><ul>
+	<li><b>Building perl 5.32.1</b></li>
+</ul>
+
+It's nice that Apple finally updated the MacOS system Perl. <strong>BigSur</strong> now comes with <strong>v5.28.2</strong> (threaded) by default, after being stuck at v5.18 for many years. However, I rarely rely on system Perl, so the first thing to do which is sort of a benchmark in itself, would be to get perlbrew and run:
+<pre>perlbrew install perl-5.32.1</pre>
+
+<ul><li><b>Moose 2.2015</b></li>
+</ul><div>The Moose test suite is, like the object system itself, a relatively slow affair. I'll time the default cpan installation which builds and runs the test-suite single-threaded:<br /><br /></div><div><pre style="font-size: 13px;">cpan Moose</pre>
+Then, I can try the test suite after preloading Moose with yath at 1, 4, 6 threads. In the last case, the M1 will have to use its efficiency cores, while the i7 will use HT:
+<pre style="font-size: 13px;">yath -PMoose
+yath -PMoose -j4
+yath -PMoose -j6</pre>
+
+<ul>
+	<li><b>prime.pl</b></li>
+</ul>
+
+I modified a bit the <a href="https://github.com/famzah/langs-performance/blob/master/primes.pl">primes.pl script from here</a> to:
+
+<pre><code>
+use strict;
+use warnings;
+
+use Time::HiRes 'time';
+my $time = time();
+
+my $n = $ARGV[0] || 100000000;
+my @s = ();
+for (my $i = 3; $i &lt; $n + 1; $i += 2) {
+    push(@s, $i);
+}
+my $mroot = $n**0.5;
+my $half  = scalar @s;
+my $i     = 0;
+my $m     = 3;
+while ($m &lt;= $mroot) {
+    if ($s[$i]) {
+        for (my $j = int(($m * $m - 3) / 2); $j &lt; $half; $j += $m) {
+            $s[$j] = 0;
+        }
+    }
+    $i++;
+    $m = 2 * $i + 3;
+}
+
+my @res = (2, grep($_, @s));
+warn "Found ".scalar(@res)." primes in ".(time()-$time)." sec.\n";
+
+</code></pre>
+
+I ran it as it is, and also on 4 threads with the argument <b>20000000</b> (to avoid hitting the 8GB M1 RAM limits).
+
+<br /><br /><ul>
+	<li><b>phoronix-test-suite-10.2.2</b></li>
+</ul>
+
+The only test suite that advertises perl tests, although it turns out in just has 2 small subtests for perl (interpreter, pod2html), with the command:
+<pre>phoronix-test-suite run pts/perl-benchmark</pre>
+
+<ul>
+	<li><b>BioPerl</b></li>
+</ul>
+I downloaded some bacteria from <a href="https://www.ncbi.nlm.nih.gov/genbank/release/221/">genbank</a> and benchmarked loading the sequences to count codons or monomers.
+<pre><code>
+use strict; 
+use Bio::SeqIO; 
+use Bio::Tools::SeqStats; 
+use Benchmark qw(:all);
+
+my $in = Bio::SeqIO-&gt;new(-file =&gt; "gbbct10.seq", -format =&gt; "genbank");
+
+timethis(1, sub {
+    my $seq = $in-&gt;next_seq;
+    my $seq_stats = Bio::Tools::SeqStats-&gt;new($seq); 
+    my $codon_ref = $seq_stats-&gt;count_codons(); 
+});
+
+timethis(1, sub {
+    my $builder = $in-&gt;sequence_builder();
+    $builder-&gt;want_none();
+    $builder-&gt;add_wanted_slot('display_id','seq');
+    for (1..10000) {
+        my $seq = $in-&gt;next_seq;
+        my $seq_stats = Bio::Tools::SeqStats-&gt;new($seq); 
+        my $weight = $seq_stats-&gt;get_mol_wt(); 
+        my $monomer_ref = $seq_stats-&gt;count_monomers();
+    }
+});
+</code></pre>
+
+<ul>
+	<li><b>Precession</b></li>
+</ul>
+Let's precess 1 million random celestial coordinates between random epochs using my <a href="https://metacpan.org/pod/Astro::Coord::Precession">Astro::Coord::Precession</a>.
+<pre><code>
+use Astro::Coord::Precession 'precess';
+
+my $precessed = precess([rand(24), rand(180)-90], rand(200)+1900, rand(200)+1900)
+    for (1..1000000);
+</code></pre>
+
+<ul>
+	<li><b>Text processing</b></li>
+</ul>
+
+I threw in a script (called DSOgenerate) that reads various astronomical catalogues and compiles the database for my <a href="https://astro.ecuadors.net/polar-scope-align/">Polar Scope Align</a> iOS app, and another that parses webpages to get articles (its slowest component is HTML::FormatText) that was used for a <a href="https://textmap.org/">university project</a> I worked on.</div><div><br /><p><big><strong>The Good (aka: The Results)</strong></big></p><p><big><google-sheets-html-origin style="color: rgb(0, 0, 0); font-size: medium;"></google-sheets-html-origin></big></p><table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout: fixed; font-size: 10pt; font-family: Arial; width: 0px; border-collapse: collapse; border: none;"><colgroup><col width="130"><col width="61"><col width="66"><col width="66"><col width="66"></colgroup><tbody><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Benchmark&quot;}" style="border: 1px solid rgb(0, 0, 0); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">Benchmark</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Units&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">Units</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;i7&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">i7</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;M1&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">M1</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;M1 Diff&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">M1 Diff</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Build perl 5.32.1&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">Build perl 5.32.1</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;min&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">min</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:21.516666666666666}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" data-sheets-formula="=22+(17-46)/60" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">21.52</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:13.783333333333333}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" data-sheets-formula="=14+(32-45)/60" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">13.78</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.5610640870616688}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">56.1%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;cpanm Moose&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">cpanm Moose</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:116.61}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">116.61</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:44.33}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">44.33</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.6304985337243403}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">163.0%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;yath -PMoose&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">yath -PMoose</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:47.63}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">47.63</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:18.43}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">18.43</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.5843733043950086}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">158.4%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;yath -PMoose -j4&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">yath -PMoose -j4</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:18.05}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">18.05</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:5.88}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">5.88</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:2.0697278911564627}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">207.0%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;yath -PMoose -j6&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">yath -PMoose -j6</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:16.94}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">16.94</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:5.77}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">5.77</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.935875216637782}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">193.6%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;prime,pl&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">prime,pl</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:23.22}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">23.22</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:15.56}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">15.56</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.492287917737789}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">49.2%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;prime.pl 4x&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">prime.pl 4x</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:4.8950000000000005}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" data-sheets-formula="=(4.86+4.87+4.89+4.96)/4" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">4.90</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:3.06}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">3.06</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.5996732026143793}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">60.0%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Phoronix pod2html&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">Phoronix pod2html</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;msec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">msec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:213.00457}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" data-sheets-formula="=R[6]C[-12]*1000" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">213.00</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:91.16566}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" data-sheets-formula="=R[6]C[-12]*1000" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">91.17</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.3364561831724795}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">133.6%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Phoronix Interpreter&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">Phoronix Interpreter</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;msec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">msec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:4.5683}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" data-sheets-formula="=R[6]C[-12]*1000" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">4.57</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.2453500000000002}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" data-sheets-formula="=R[6]C[-12]*1000" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">1.25</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:2.668286024009314}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">266.8%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;BioPerl codons&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">BioPerl codons</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:149.89}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">149.89</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:127.58}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">127.58</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.17487066938391604}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">17.5%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;BioPerl monomers&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">BioPerl monomers</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:16.64}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">16.64</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:7.82}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">7.82</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.1278772378516626}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">112.8%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Precession&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">Precession</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:6.85}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">6.85</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:3.27}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">3.27</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.09480122324159}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">109.5%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;DSOgenerate&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">DSOgenerate</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:13.12}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">13.12</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:5.71}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">5.71</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.297723292469352}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">129.8%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;HTML::FormatText&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom;">HTML::FormatText</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:8.52}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">8.52</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:4.7}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">4.70</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.8127659574468085}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">81.3%</td></tr><tr style="height: 21px;"><td rowspan="1" colspan="4" data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Average:&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">Average:</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.2418771957787538}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=AVERAGE(R[-14]C[0]:R[-1]C[0])" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); border-image: initial; overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: right;">124.2%</td></tr></tbody></table><p><br /><br />Or, if we want a nice comparison graph where the i7 is "1x" speed and plot the M1 in relation to it:</p></div><div><img alt="chart (2).png" src="http://blogs.perl.org/users/dimitrios_kechagias/chart%20%282%29.png" width="596" height="418" class="mt-image-none" /></div><div><br /></div><div>I found the results quite remarkable. I mean, the main reason I went through all these is that I could see the M1 going through the installation of cpan modules at a ridiculous pace compared to my i7 when I was setting it up, it was very obviously faster.</div><div>t turns out it is over 2x faster as a crude "average" of the above tests. You can see from the two multithreaded tests that it actually gains even more an advantage when using all its (performance) cores compared to the i7.</div><div>There is at least one test (the codons) where the M1 does not really "shine", so, as I said, benchmarking your own specific workload is important - the M1 does seem very fast at many common Perl tasks, but not *all*.</div><div>Could my old i7 be just too slow? Just to make sure, I had my colleagues with the 16" Mac with the fastest CPU available, the 8-core <b>2.4GHz i9</b>, run a couple of the single core benchmarks to make a comparison, one that did really well on the M1, one that did below average:</div><div><br /></div><div><google-sheets-html-origin style="color: rgb(0, 0, 0); font-size: medium;"><table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout: fixed; font-size: 10pt; font-family: Arial; width: 0px; border-collapse: collapse; border-width: initial; border-style: none;"><colgroup><col width="130"><col width="61"><col width="66"><col width="66"><col width="66"></colgroup><tbody><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Benchmark&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">Benchmark</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Units&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">Units</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;i9&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">i9</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;M1&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">M1</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;M1 Diff&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">M1 Diff</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;cpanm Moose&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); overflow: hidden; padding: 2px 3px; vertical-align: bottom;">cpanm Moose</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:86.14}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">86.14</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:44.33}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">44.33</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.9431536205729755}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">94.3%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;prime,pl&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); overflow: hidden; padding: 2px 3px; vertical-align: bottom;">prime,pl</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:19.35}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">19.35</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:15.56}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">15.56</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.24357326478149102}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">24.4%</td></tr></tbody></table></google-sheets-html-origin></div><div><br /></div>So while the i9 is generally 20-30% faster than the i7, it's still nowhere near the M1 being more than twice as fast. Note that the i9 has 8 full speed cores, so things might get tighter for workloads using more than 4 cores at a time.</div><div><br /></div><div><p><big><strong>The Bad</strong></big></p></div><div>Simply put, not everything works yet. Sometimes it's something simple, <a href="https://github.com/burak/CPAN-Sys-Info-Driver-OSX/pull/3">like a patch I submitted to Sys::Info::Driver::OSX</a> due to the different reporting of the asymmetric processor cores. But I have been unable to install some other CPAN modules or see test failures that are not easy to explain.</div><div><br /></div><div>At least Perl developers will have a native-running environment, even though there are some glitches that should get sorted out in time. I am saying this because while some things run fast even under Rosetta, I have encountered cases where non-native software runs slowly. For example, an Android project I tried, takes almost twice the time to compile on the M1. Android studio is not yet native and it shows, I would not recommend the platform to android devs. It is the opposite for iOS devs of course, the M1 is the ideal platform for obvious reasons.</div><div><br /></div><div>Additionally, the comparison shows the M1 can be much faster than the i7/i9, however that comparison is important only if you are limited to the Apple world. If you don't need a Mac specifically and will just run Linux (to not mention Windows), then you are not limited to what Apple has to offer. I am referring to <b>AMD</b> of course, for most workloads, a Zen 2 based CPU is quite a bit faster than intel per thread, and on top will offer more cores at a similar price. I don't have a Zen 2 CPU to try out right now, however I do have a ThinkPad X395 which has a Zen-1 based 2.1GHz <b>Ryzen 5 3500U</b>. While it's not an old CPU, the newer Zen-2 based 4000-series and 5000-series CPUs seem to be almost twice as fast per core in various benchmarks, which would probably make those faster than an M1, given that the "slow" 3500U is already a bit faster (around 15% on average it seems) than the i7:</div><div><br /></div><div><google-sheets-html-origin style="color: rgb(0, 0, 0); font-size: medium;"><table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout: fixed; font-size: 10pt; font-family: Arial; width: 0px; border-collapse: collapse; border-width: initial; border-style: none;"><colgroup><col width="130"><col width="61"><col width="66"><col width="66"><col width="66"></colgroup><tbody><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Benchmark&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">Benchmark</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;Units&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">Units</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;3500U&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">3500U</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;M1&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">M1</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;M1 Diff&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(0, 0, 0) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; font-weight: bold; text-align: center;">M1 Diff</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;cpanm Moose&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); overflow: hidden; padding: 2px 3px; vertical-align: bottom;">cpanm Moose</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:101.22}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">101.22</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:44.33}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">44.33</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:1.2833295736521544}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">128.3%</td></tr><tr style="height: 21px;"><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;prime.pl&quot;}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0); overflow: hidden; padding: 2px 3px; vertical-align: bottom;">prime.pl</td><td data-sheets-value="{&quot;1&quot;:2,&quot;2&quot;:&quot;sec&quot;}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: center;">sec</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:20.01}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">20.01</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:15.56}" data-sheets-numberformat="{&quot;1&quot;:2,&quot;2&quot;:&quot;#,##0.00&quot;,&quot;3&quot;:1}" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">15.56</td><td data-sheets-value="{&quot;1&quot;:3,&quot;3&quot;:0.2859897172236504}" data-sheets-numberformat="{&quot;1&quot;:3,&quot;2&quot;:&quot;0.0%&quot;,&quot;3&quot;:1}" data-sheets-formula="=(1/R[0]C[-1]-1/R[0]C[-2])*R[0]C[-2]" style="border-width: 1px; border-style: solid; border-color: rgb(204, 204, 204) rgb(0, 0, 0) rgb(0, 0, 0) rgb(204, 204, 204); overflow: hidden; padding: 2px 3px; vertical-align: bottom; text-align: right;">28.6%</td></tr></tbody></table></google-sheets-html-origin></div><div><br /></div><div>That M1 advantage over 3500U is probably not enough to hold off Zen 2 cpus, which also come with many more full-power cores than an M1.</div><div>Then again, the M1 is Apple's first "laptop/desktop" silicon and they were possibly targeting efficiency more than raw performance - as the latter was an easy win vs Intel, so I would keep an eye on what their next CPU will bring.</div><div><br /></div><div><b>The Ugly?</b></div><div><br /></div><div>The #1 criticism of the M1 Macs is not related to their CPU, but the fact that the SSD is soldered on. This means that when the SSD dies (will take several years, but depending on the usage SSDs will eventually fail), you can't just replace it (unless there's complete disassembly, desoldering etc). This "obsolescence by design" might not be that bad given the price of a Mac Mini compared to what Apple users are used to paying, but it is made worse by the fact that an M1 Mac has a signed system volume on the SSD, which is required for the Mac to boot even when booting from an external device. So when the SSD goes, you might not be able to boot your Mac at all - permanently. As I said, not a criticism of the M1 CPU directly, but of the devices that feature it.</div><div><br /></div><div>Lastly, while my benchmarks were reproducible in general, there was one benchmark - the prime.pl script - that gave me some trouble, exposing a strange and disconcerting issue. So, I run the benchmark for n=20000000 multiple times and I get consistent results. Also, if I run it by launching 4 instances in parallel background processes with a batch file, I also get consistent results. it goes a bit like this:</div>
+<pre><code>
+test % perl prime.pl
+Found 1270607 prime numbers in 2.7765851020813 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 2.78401112556458 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 2.77585196495056 sec.
+test % sh batch.prime.sh
+test % Found 1270607 prime numbers in 3.00496196746826 sec.
+Found 1270607 prime numbers in 3.01989006996155 sec.
+Found 1270607 prime numbers in 3.02487397193909 sec.
+Found 1270607 prime numbers in 3.02904796600342 sec.
+test % sh batch.prime.sh
+test % Found 1270607 prime numbers in 3.01903891563416 sec.
+Found 1270607 prime numbers in 3.02826595306396 sec.
+Found 1270607 prime numbers in 3.02855086326599 sec.
+Found 1270607 prime numbers in 3.03278708457947 sec.
+</code></pre>
+If I try again in a couple of hours or so, I will still see the same thing. But, if I try after a sufficiently long time (I am not clear on "sufficiently" seems like several hours, but definitely by the next day) - without using the Mac Mini in the interim, just left powered on - I start seeing this:
+<pre><code>
+test % perl prime.pl
+Found 1270607 prime numbers in 4.18084216117859 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 3.94040703773499 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 5.06315612792969 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 5.53617215156555 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 5.34210705757141 sec.
+test % sh batch.prime.sh
+test % Found 1270607 prime numbers in 3.04679107666016 sec.
+Found 1270607 prime numbers in 3.07015514373779 sec.
+Found 1270607 prime numbers in 3.07026290893555 sec.
+Found 1270607 prime numbers in 3.07335591316223 sec.
+test % sudo nice -20 perl prime.pl
+Found 1270607 prime numbers in 5.50178408622742 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 5.03745698928833 sec.
+test % sh batch.prime.sh
+test % Found 1270607 prime numbers in 3.04621696472168 sec.
+Found 1270607 prime numbers in 3.0637059211731 sec.
+Found 1270607 prime numbers in 3.07231998443604 sec.
+Found 1270607 prime numbers in 3.07551097869873 sec.
+</code></pre>
+Running a single process is suddenly unpredictably slow. The i7 takes 4.3s at this benchmark on a single thread, so the M1 can be much slower. However, once I batch run 4 parallel processes I get the same great performance I was seeing before. It is reproducible, it's not a matter of if, but a matter of when I will eventually will get into this problematic state which, it seems, I can only solve via a reboot. After a reboot everything is fine once more.
+I tried to see what's going on in several ways. Checking to see whether something like the efficiency cluster taking over, or the scheduler switching cores etc, I tried monitoring with <pre>powermetrics -s cpu_power</pre>
+The result is not interesting enough to post, because both when the system is in the "good" and the "bad" state, only the performance cores are used (but not just one of them as I expected - a random mix, different each time, but similarly random for both "states"). It's the same story using the CPU history window:<div><img alt="cores2 copy.png" src="http://blogs.perl.org/users/dimitrios_kechagias/cores2%20copy.png" width="472" height="232" class="mt-image-none" /><br /><div><br /></div></div><div>The graph above shows a couple of single-process runs of prime.pl while in a "good" state, it causes all 4 performance cores (numbers 8 on CPU monitor) to be used at random proportions and it's the same for "bad" status runs - just the bars are twice as wide, the calculation takes longer.</div><div><br /></div><div>To add another clue that makes things weirder rather than explain the issue, I checked to see if it's my compiled perl at fault, so ran with the built-in perl which I assume Apple made sure to compile correctly. System 5.28 is a bit slower in "good" status runs:</div>
+<pre><code>
+test % perl prime.pl
+Found 1270607 prime numbers in 2.77031397819519 sec.
+test % /usr/bin/perl prime.pl
+Found 1270607 prime numbers in 2.95687794685364 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 2.77954316139221 sec.
+test % /usr/bin/perl prime.pl
+Found 1270607 prime numbers in 2.95602297782898 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 2.77461099624634 sec.
+test % /usr/bin/perl prime.pl
+Found 1270607 prime numbers in 2.94599509239197 sec.
+</code></pre>
+
+But on "bad" status it is faster than my compiled perl (quite consistently, I've done this a few times) - although still much slower than after a reboot:
+<pre><code>
+test % perl prime.pl
+Found 1270607 prime numbers in 5.44245409965515 sec.
+test % /usr/bin/perl prime.pl
+Found 1270607 prime numbers in 4.92102980613708 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 5.34624910354614 sec.
+test % /usr/bin/perl prime.pl
+Found 1270607 prime numbers in 3.51168012619019 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 5.66441202163696 sec.
+test % /usr/bin/perl prime.pl
+Found 1270607 prime numbers in 3.62216806411743 sec.
+test % perl prime.pl
+Found 1270607 prime numbers in 5.46292304992676 sec.
+</code></pre>
+
+I did eventually find a good clue: I can trigger this weird behaviour if I force the Mini to sleep and then wake up - it wakes up in the bad state. However, as there are no battery settings (not a laptop), I can't find any "go to sleep" timer in the settings - and, as I said, just leaving it for an hour or two (the screen does go to sleep, there's a setting for that) does not get it in the weird state. In any case it's probably got something to do with the CPU sleep states that Apple has missed. Since I couldn't reproduce it with the other workloads I would assume it's not gonna be easy to track down. Reminds me a bit of the problems I had waking an older Macbook (the white ones) from sleep while connected with multiple monitors -&nbsp;they never actually fixed that, so it had put me off Macbooks for a few years. I seem to hit Apple sleep state bugs.<div><br /></div><div><b>Overall</b></div><div><br /></div><div>I'd say, despite some caveats, the M1 is showing some impressive potential, especially for people who use MacOS and would not get much choice other than Intel's not-that-impressive-lately offerings. If I was looking for my main work machine, I'd probably wait a bit longer for some teething troubles to be solved (unless I wanted to help solve potential perl-specific issues) - and perhaps wait for the rumoured release later this year of a faster chip ("M1X" or whatever).</div><div><br /></div>]]>
+        
+    </content>
+</entry>
   <entry>
   <title>March report of the Raku Development Grant of Jonathan Worthington</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/jonathan-2021-03"/>
@@ -2423,122 +2635,6 @@ In this experimental project <a href="https://phoenixtrap.com/">Mark Gardner</a>
     <author>
       <name>Gabor Szabo</name>
     </author>
-</entry>
-  <entry>
-    <title>Calculating EV battery charge pricing with Perl</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/itcharlie/2021/04/calculating-ev-battery-charge-with-perl.html"/>
-    <id>tag:blogs.perl.org,2021:/users/itcharlie//1220.10177</id>
-    <published>2021-04-12T01:09:48Z</published>
-    <updated>2021-04-12T03:28:03Z</updated>
-    <author>
-        <name>Charlie Gonzalez</name>
-        
-    </author>
-    <category term="ev" label="EV" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="perl5" label="perl5" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/itcharlie/">
-        <![CDATA[<p>Presently I have great interest in &#8220;EVs&#8221; Electric Vehicles but I haven&#8217;t seen any data on how much it would cost to charge an electric vehicle from 0 % to 100 % battery charge at home in NYC ( So I wrote a Perl script to do just that ) but before we dig in into it I explain a few things about Electric Vehicles.</p>
-
-<p>Electric Vehicles will have a battery capacity that is represented by  kilowatt-hour units or kWh for short. </p>
-
-<p>An EV&#8217;s driving range is represented in miles units ( In the US ) and the average mileage is determined by the EPA battery range rating ( the bigger the battery capacity usually means the more driving range you will have in a car ) after conducting a few tests ( so in reality your mileage will vary ).</p>
-
-<p>Electric vehicles have an onboard charger which determines its charging rate in Kilowatt per Hour and it varies by car makers. Most EV car owners will install a Level 2 charger that is usually capable of charging cars up to 7.2 kWH rate using 220 volt electric circuit with 32 amps of power ( but there are chargers that can go at a higher rate ). </p>
-
-<p>Ok now that I explained a few things lets dig into the data used to make my script.</p>
-
-<p>I checked my electric bill and found that my electricity rate in NYC is $0.13 cents per kWh.</p>
-
-<p>For comparison I phoned a friend in Florida to get electricity rates where he lives which is $ 0.07 cents per kWh. ( Almost half of NY rate ) </p>
-
-<p>I took as an example this car a <a href="https://electrek.co/2020/11/10/tesla-model-3-82-kwh-battery-pack-new-cells/">2021 Tesla Model 3 Long Range </a>with a battery capacity of 82kWh. It has an EPA mileage of 353 miles.</p>
-
-<pre><code>
-#### Tesla Model 3 
-#
-say "Tesla Model 3 2021 Long Range: 82kwh battery pack";
-say "All Electric range: 353 miles";
-my $tesla_total_price = 82 * .13 ;
-my $tesla_total_price_fl = 82 * .07 ;
-my $tesla_charge_time = 82 / 7.2;  # 7.2 is the onboard charger rate ( it can also be 3.3 kwh  rate )  
-my $tesla_miles_per_kWh = 353 / 82;
-
-say "NYC Full charge price: \$ " .  sprintf("%.2f" , $tesla_total_price);
-say "FL Full charge price: \$ " .  sprintf("%.2f" , $tesla_total_price_fl);
-say "Time to charge: " . sprintf("%.2f" , $tesla_charge_time) . " hours";
-say "Miles per kWh : " . sprintf("%.2f" , $tesla_miles_per_kWh) . " miles";
-
-print "\n";
-</code></pre>
-
-which will output the following:
-<pre>
-Tesla Model 3 2021 Long Range: 82kwh battery pack
-All Electric range: 353 miles
-NYC Full charge price: $ 10.66
-FL Full charge price: $ 5.74
-Time to charge: 11.39 hours
-Miles per kWh : 4.30 miles
-</pre>
-
-<p>$10.66 dollars for a 353 miles in New York City driving is pretty sweet deal!</p>
-
-<p>I looked into a few other cars and started to copy and paste code which resulted in this script:
-<a href="https://github.com/itcharlie/ev-calc-pricing/blob/main/ev_charge_price_calculator.pl">https://github.com/itcharlie/ev-calc-pricing/blob/main/ev<em>charge</em>price_calculator.pl
-</a></p>
-
-<p>and of course there is more than one way to do it so I rewrote the script with a Hash of EV cars:
-<a href="https://github.com/itcharlie/ev-calc-pricing/blob/main/rewrite_ev_charge_price_calculator.pl">https://github.com/itcharlie/ev-calc-pricing/blob/main/rewrite<em>ev</em>charge<em>price</em>calculator.pl
-</a></p>
-
-<pre><code>
-
-#!/usr/bin/perl
-use strict;
-use warnings;
-
-use Data::Dumper;
-use feature 'say';
-
-
-my %cars;
-
-$cars{'EV'}->{'KIA'}->{'NIRO'} = { 'year' => 2020 , 'battery_size' => 64, 'onboard_charger_rate' => 7.2 , 'aer' => 239 };
-$cars{'EV'}->{'TESLA'}->{'MODEL 3'} = { 'year' => 2021 , 'battery_size' => 82, 'onboard_charger_rate' => 7.2 , 'aer' => 353 };
-$cars{'EV'}->{'CHEVY'}->{'BOLT'} = { 'year' => 2021 , 'battery_size' => 60, 'onboard_charger_rate' => 7.2 , 'aer' => 259 };
-
-my %electric_rate;
-
-$electric_rate{'NY'} = '0.13';
-$electric_rate{'FL'} = '0.07';
-
-foreach my $ev_brand ( keys %{$cars{'EV'}} ) {
-
-    print "-" x 50;
-
-    foreach my $model ( keys %{$cars{'EV'}->{$ev_brand}} )  {
-        print "\n";
-        say "$ev_brand  $model $cars{'EV'}->{$ev_brand}->{$model}->{'year'}";
-        say "All electric range: $cars{'EV'}->{$ev_brand}->{$model}->{'aer'} miles";
-        my $charge_time = $cars{'EV'}->{$ev_brand}->{$model}->{'battery_size'}  / $cars{'EV'}->{$ev_brand}->{$model}->{'onboard_charger_rate'} ; 
-        my $miles_per_kWh =  $cars{'EV'}->{$ev_brand}->{$model}->{'aer'}   /  $cars{'EV'}->{$ev_brand}->{$model}->{'battery_size'}  ;
-        say "Time to charge: " . sprintf("%.2f" , $charge_time ) . " hours";
-        say "Miles per kWh : " . sprintf("%.2f" , $miles_per_kWh) . " miles";
-        print "\n";
-
-        foreach my $state ( keys %electric_rate )  {
-           my $total_price = $cars{'EV'}->{$ev_brand}->{$model}->{'battery_size'}  * $electric_rate{$state} ;
-           say "$state state 0-100% battery charge price: \$ " .  sprintf("%.2f" , $total_price);
-        }
-    }
-}
-</code> </pre>
-
-<p>Thank you for your time and hope you enjoyed this post!</p>
-]]>
-        
-
-    </content>
 </entry>
   <entry>
     <title>Static Analysis and Self Describing Numbers (now with Threads!): The Weekly Challenge 107</title>
