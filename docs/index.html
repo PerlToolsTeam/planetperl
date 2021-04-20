@@ -57,6 +57,261 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/ovid/use-immutable-objects-4pbl">Use Immutable Objects</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h1>
+  <a href="#immutable-objects">
+  </a>
+  Immutable Objects
+</h1>
+
+<p>I’ve been spending time designing <a href="https://github.com/Ovid/Cor/wiki">Corinna</a>, a new object system to be shipped with the Perl language. Amongst its many features, it’s designed to make it easier to create immutable objects, but not everyone is happy with that. For example, consider the following class:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">class</span> <span class="nv">Box</span> <span class="p">{</span>
+    <span class="nv">has</span> <span class="p">(</span><span class="nv">$height</span><span class="p">,</span> <span class="nv">$width</span><span class="p">,</span> <span class="nv">$depth</span><span class="p">)</span> <span class="p">:</span><span class="nv">reader</span> <span class="p">:</span><span class="k">new</span><span class="p">;</span>
+    <span class="nv">has</span> <span class="nv">$volume</span> <span class="p">:</span><span class="nv">reader</span> <span class="o">=</span> <span class="nv">$width</span> <span class="o">*</span> <span class="nv">$height</span> <span class="o">*</span> <span class="nv">$depth</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">my</span> <span class="nv">$original_box</span> <span class="o">=</span> <span class="nv">Box</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">height</span><span class="o">=&gt;</span><span class="mi">1</span><span class="p">,</span> <span class="s">width</span><span class="o">=&gt;</span><span class="mi">2</span><span class="p">,</span> <span class="s">depth</span><span class="o">=&gt;</span><span class="mi">3</span><span class="p">);</span>
+<span class="k">my</span> <span class="nv">$updated_box</span>  <span class="o">=</span> <span class="nv">$original_box</span><span class="o">-&gt;</span><span class="nv">clone</span><span class="p">(</span><span class="s">depth</span><span class="o">=&gt;</span><span class="mi">9</span><span class="p">);</span>  <span class="c1"># h=1, w=2, d=9</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Because none of the slots have a <code>:writer</code> attribute, there is no way to mutate this object. Instead you call a <code>clone</code> method, supplying an overriding value for the constructor argument you need to change. The <code>$volume</code> argument doesn’t get copied over because it’s derived from the constructor arguments.</p>
+
+<p><a href="https://github.com/Ovid/Cor/issues/8">But not everyone is happy with this approach</a>. Aside from arguments about utility of the <code>clone</code> method, the notion that objects should be immutable by default has frustrated some developers reading the Corinna proposal. Even when I point out just adding a <code>:writer</code> attribute is all you need to do to get your mutability, people still object. So let’s have a brief discussion about immutability and why it’s useful.</p>
+
+<p>But first, here’s my last 2020 Perl Conference presentation on Corinna (at the time, called "Cor").</p>
+
+<p><iframe width="710" height="399" src="https://www.youtube.com/embed/Tst-vs4Br2A">
+</iframe>
+</p>
+
+<h1>
+  <a href="#the-problem">
+  </a>
+  The Problem
+</h1>
+
+<p>Imagine, for example, that you have a very simple <code>Customer</code> object:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">my</span> <span class="nv">$customer</span> <span class="o">=</span> <span class="nv">Customer</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+    <span class="s">name</span>      <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">Ovid</span><span class="p">",</span> 
+    <span class="s">birthdate</span> <span class="o">=&gt;</span> <span class="nv">DateTime</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span> <span class="o">...</span> <span class="p">),</span>
+<span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>In the code above, we’ll assume the <code>$customer</code> can give us useful information about the state of that object. For example, we have a section of code guarded by a check to see if they are old enough to drink alcohol:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">if</span> <span class="p">(</span> <span class="nv">$ovid</span><span class="o">-&gt;</span><span class="nv">old_enough_to_drink_alcohol</span> <span class="p">)</span> <span class="p">{</span>
+    <span class="o">...</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>The above looks innocent enough and it’s the sort of thing we regularly see in code. But then this happens:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">if</span> <span class="p">(</span> <span class="nv">$ovid</span><span class="o">-&gt;</span><span class="nv">old_enough_to_drink_alcohol</span> <span class="p">)</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$date</span> <span class="o">=</span> <span class="nv">$ovid</span><span class="o">-&gt;</span><span class="nv">birthdate</span><span class="p">;</span>
+    <span class="o">...</span>
+    <span class="c1"># deep in the bowels of your code</span>
+    <span class="k">my</span> <span class="nv">$cutoff_date</span> <span class="o">=</span> <span class="nv">$date</span><span class="o">-&gt;</span><span class="nv">set</span><span class="p">(</span> <span class="s">year</span> <span class="o">=&gt;</span> <span class="nv">$last_year</span> <span class="p">);</span> <span class="c1"># oops!</span>
+    <span class="o">...</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>We had a guard to ensure that this code would not be executed if the customer wasn’t old enough to drink, but now in the middle of that code, due to how <code>DateTime</code> is designed, someone’s set the customer birth date to last year! The code, at this point, is probably in an invalid state and its behavior can no longer be considered correct.</p>
+
+<p>But clearly no one would do something so silly, would they?</p>
+
+<h1>
+  <a href="#global-state">
+  </a>
+  Global State
+</h1>
+
+<p>We’ve known about <a href="https://softwareengineering.stackexchange.com/questions/148108/why-is-global-state-so-evil">the dangers of global state</a> for a long time. For example, if I call the following subroutine, will the program halt or not?<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">next</span> <span class="p">($number) {</span>
+    <span class="k">if</span> <span class="p">(</span> <span class="nv">$ENV</span><span class="p">{</span><span class="nv">BLESS_ME_LARRY_FOR_I_HAVE_SINNED</span><span class="p">}</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="nb">die</span> <span class="p">"</span><span class="s2">This was a bad idea.</span><span class="p">";</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="nv">$number</span><span class="o">++</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>You literally <em>cannot</em> inspect the above code and tell me if it will <code>die</code> when called because you cannot know, by inspection, what the <code>BLESS_ME_LARRY_FOR_I_HAVE_SINNED</code> environment variable is set to. This is one of the reasons why global environment variables are discouraged.</p>
+
+<p>But here we’re talking about <em>mutable</em> state.  You don’t want the above code to die, so you do this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">$ENV</span><span class="p">{</span><span class="nv">BLESS_ME_LARRY_FOR_I_HAVE_SINNED</span><span class="p">}</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="nv">say</span> <span class="k">next</span><span class="p">(</span><span class="mi">4</span><span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Except that now you’ve altered that mutable state and anything else which relies on that environment variable being set is unpredicatable. So we need to use <code>local</code> to safely change that in the local scope:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="p">{</span>
+    <span class="nb">local</span> <span class="nv">$ENV</span><span class="p">{</span><span class="nv">BLESS_ME_LARRY_FOR_I_HAVE_SINNED</span><span class="p">}</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="nv">say</span> <span class="k">next</span><span class="p">(</span><span class="mi">4</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Even that is not good because there’s no indication of why we’re doing this but at least you can see how we can safely change that global variable in our local scope.</p>
+
+<h1>
+  <a href="#orms">
+  </a>
+  ORMs
+</h1>
+
+<p>And I can hear your objection now:</p>
+
+<blockquote>
+<p>“But Ovid, the DateTime object in your first example isn’t global!”</p>
+</blockquote>
+
+<p>That’s true. What we had was this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">if</span> <span class="p">(</span> <span class="nv">$ovid</span><span class="o">-&gt;</span><span class="nv">old_enough_to_drink_alcohol</span> <span class="p">)</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$date</span> <span class="o">=</span> <span class="nv">$ovid</span><span class="o">-&gt;</span><span class="nv">birthdate</span><span class="p">;</span>
+    <span class="o">...</span>
+    <span class="c1"># deep in the bowels of your code</span>
+    <span class="k">my</span> <span class="nv">$cutoff_date</span> <span class="o">=</span> <span class="nv">$date</span><span class="o">-&gt;</span><span class="nv">set</span><span class="p">(</span> <span class="s">year</span> <span class="o">=&gt;</span> <span class="nv">$last_year</span> <span class="p">);</span> <span class="c1"># oops!</span>
+    <span class="o">...</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>But the offending line should have been this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code>    <span class="c1"># note the clone().</span>
+    <span class="k">my</span> <span class="nv">$cutoff_date</span> <span class="o">=</span> <span class="nv">$date</span><span class="o">-&gt;</span><span class="nv">clone</span><span class="o">-&gt;</span><span class="nv">set</span><span class="p">(</span> <span class="s">year</span> <span class="o">=&gt;</span> <span class="nv">$last_year</span> <span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This is because the <code>set</code> method mutates the object in place, causing <em>everything holding a reference to that object to silently change</em>. It’s not global in the normal sense, but this <a href="https://rjbs.manxome.org/rubric/entry/1929">action at a distance is a source of very real bugs</a>.</p>
+
+<p>It’s a serious enough problem that <a href="https://metacpan.org/pod/DateTime::Moonpig">DateTime::Moonpig</a> and <a href="https://metacpan.org/pod/DateTimeX::Immutable">DateTimeX::Immutable</a> have both been written to provide immutable <code>DateTime</code> objects, and that brings me to <a href="https://metacpan.org/release/DBIx-Class">DBIx::Class</a>, an excellent ORM for Perl.</p>
+
+<p>As of this writing, it’s been around for about 15 years and provides a component called <a href="https://dev.toDBIx::Class::InflateColumn::DateTime">DBIx::Class::InflateColumn::DateTime</a>. This allows you to do things like this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Event</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">base</span> <span class="p">'</span><span class="s1">DBIx::Class::Core</span><span class="p">';</span>
+
+<span class="nv">__PACKAGE__</span><span class="o">-&gt;</span><span class="nv">load_components</span><span class="p">(</span><span class="sx">qw/InflateColumn::DateTime/</span><span class="p">);</span>
+<span class="nv">__PACKAGE__</span><span class="o">-&gt;</span><span class="nv">add_columns</span><span class="p">(</span>
+  <span class="s">starts_when</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="s">data_type</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">datetime</span><span class="p">'</span> <span class="p">}</span>
+  <span class="s">create_date</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="s">data_type</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">date</span><span class="p">'</span> <span class="p">}</span>
+<span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Now, whenever you call <code>starts_when</code> or <code>create_date</code> on an <code>Event</code> instance, you’ll get a <code>DateTime</code> object instead of just the raw string from the database. Further, you can <em>set</em> a <code>DateTime</code> object and not worry about your particular database’s date syntax. It <em>just works</em>.</p>
+
+<p>Except that the object is mutable and we don’t want that. You can fix this by writing your own <code>DBIx::Class</code> component to use immutable <code>DateTime</code> objects.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">My::Schema::Component::</span><span class="nv">ImmutableDateTime</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nn">DateTimeX::</span><span class="nv">Immutable</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">parent</span> <span class="p">'</span><span class="s1">DBIx::Class::InflateColumn::DateTime</span><span class="p">';</span>
+
+<span class="k">sub </span><span class="nf">_post_inflate_datetime</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">@args</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$dt</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="k">next</span><span class="o">::</span><span class="nv">method</span><span class="p">(</span><span class="nv">@args</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nn">DateTimeX::</span><span class="nv">Immutable</span><span class="o">-&gt;</span><span class="nv">from_object</span><span class="p">(</span> <span class="s">object</span> <span class="o">=&gt;</span> <span class="nv">$dt</span> <span class="p">);</span>
+<span class="p">}</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>And then load this component:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">__PACKAGE__</span><span class="o">-&gt;</span><span class="nv">load_components</span><span class="p">(</span>
+    <span class="sx">qw/+My::Schema::Component::ImmutableDateTime/</span>
+<span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>And now, when you fetch your objects from the database, you get nice, immutable <code>DateTime</code>s. And it will be interesting to see where your codebase fails!</p>
+
+<p>Does all of this mean we should never use mutable objects? Of course not.  Imagine creating an immutable cache where, if you wanted to add or delete an entry, you had to clone the entire cache to set the new state. That would likely defeat the main purpose of a cache: speeding things up. But in general, immutability is a good thing and is something to strive for. Trying to debug  why code far, far away from your code has reset your data is not fun.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Ovid
+     on Tuesday 20 April 2021 06:54</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dimitrios_kechagias/2021/04/perl-performance-on-apple-m1.html">Perl performance on Apple M1</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -265,7 +520,7 @@ I did eventually find a good clue: I can trigger this weird behaviour if I force
      on Tuesday 20 April 2021 03:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/jonathan-2021-03">March report of the Raku Development Grant of Jonathan Worthington</a></h2>
             </div> <!-- card-header -->
@@ -295,7 +550,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 15:21</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/cat-transparency-repor-19-april-2021">Community Affairs Team Transparency Report</a></h2>
             </div> <!-- card-header -->
@@ -341,7 +596,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 13:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/cat-update-19-april-2021">Community Affairs Team Update April 2021</a></h2>
             </div> <!-- card-header -->
@@ -367,7 +622,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 13:33</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/2mf">Join Our Merry Band of Perl Programmers</a></h2>
             </div> <!-- card-header -->
@@ -379,7 +634,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/vgl">Vienna Does it Best. Perl Developer role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -391,7 +646,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/y1d">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -403,7 +658,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/mu5">A Role that Makes Dollars (and Cents). Perl Developer Role in London</a></h2>
             </div> <!-- card-header -->
@@ -415,7 +670,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/zsi">US Based, Modern Perl Developer Role - 100% remote!</a></h2>
             </div> <!-- card-header -->
@@ -427,7 +682,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/savethedatetprc2021">The Perl and Raku Conference in the Cloud 2021</a></h2>
             </div> <!-- card-header -->
@@ -439,7 +694,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Git Hooks(Client-side)</a></h2>
             </div> <!-- card-header -->
@@ -451,7 +706,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -463,7 +718,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -475,7 +730,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/live-pair-programming.html">Live Pair programming </a></h2>
             </div> <!-- card-header -->
@@ -487,7 +742,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/implementing-a-feature-in-typescript-cucumber-playwright">Implementing a feature in the Typescript cucumber-playwright package with Tally Barak</a></h2>
             </div> <!-- card-header -->
@@ -499,7 +754,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -511,7 +766,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/04/13/2021-15-first-conf/">2021.15 First Conf</a></h2>
             </div> <!-- card-header -->
@@ -523,7 +778,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://youtu.be/dcF3Ojc_unQ">Live Video - Bell Numbers by Mohammad Anwar</a></h2>
             </div> <!-- card-header -->
@@ -535,7 +790,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://youtu.be/TZUOgXYlrgo">Live Video - Locate Memory by Mohammad Anwar</a></h2>
             </div> <!-- card-header -->
@@ -547,7 +802,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/detect-recursion-using-state">Detect recursion using state variables</a></h2>
             </div> <!-- card-header -->
@@ -559,7 +814,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/digital-ocean-api">Digital Ocean API using Perl</a></h2>
             </div> <!-- card-header -->
@@ -571,7 +826,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/course-management-app-in-mojolicious-3">Course Management Application in Mojolicious - part 3</a></h2>
             </div> <!-- card-header -->
@@ -583,7 +838,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/counter-dancer2-redis-docker">Counter using Dancer2 and Redis in a Docker container</a></h2>
             </div> <!-- card-header -->
@@ -595,7 +850,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/course-management-app-in-mojolicious-2">Course Management Application in Mojolicious - part 2</a></h2>
             </div> <!-- card-header -->
@@ -607,7 +862,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-108-3di2">Weekly Challenge 108</a></h2>
             </div> <!-- card-header -->
@@ -619,7 +874,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/04/Perl_Weekly_Challenge_108__Memory_Bell.html">Perl Weekly Challenge 108: Memory Bell</a></h2>
             </div> <!-- card-header -->
@@ -631,7 +886,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/04/12/PerlWeeklyChallenge108.html">Perl Weekly Challenge 108 - Memory Layout and Bell Numbers</a></h2>
             </div> <!-- card-header -->
@@ -643,7 +898,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/04/12/PWC108/">Perl Weekly Challenge 108</a></h2>
             </div> <!-- card-header -->
@@ -655,7 +910,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/04/perl-weekly-challenge-108-locate-memory-and-bell-numbers.html">Perl Weekly Challenge 108: Locate Memory and Bell Numbers</a></h2>
             </div> <!-- card-header -->
@@ -667,7 +922,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.braincells.com/perl/2021/04/perl_weekly_challenge_week_108.html">Perl Weekly Challenge: Week 108</a></h2>
             </div> <!-- card-header -->
@@ -679,7 +934,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/15/pwc108-bell-numbers/">PWC108 - Bell Numbers</a></h2>
             </div> <!-- card-header -->
@@ -691,7 +946,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/14/pwc108-locate-memory/">PWC108 - Locate Memory</a></h2>
             </div> <!-- card-header -->
@@ -703,7 +958,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/04/15/hells-bells-margaret-perl-weekly-challenge-108.html">Hell's Bells, Margaret: Perl Weekly Challenge #108</a></h2>
             </div> <!-- card-header -->
@@ -715,7 +970,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/04/16/partitions-in-memories-a-triangular-palace/">Partitions in Memories, A Triangular Palace</a></h2>
             </div> <!-- card-header -->
@@ -727,7 +982,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/locate-bell.html">Locate the Bell with Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -739,7 +994,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/04/18">Memory Addresses and Bell Numbers: The Weekly Challenge 108</a></h2>
             </div> <!-- card-header -->
@@ -751,7 +1006,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-108-2.html">Perl Weekly Challenge 108: Bell Numbers</a></h2>
             </div> <!-- card-header -->
@@ -763,7 +1018,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-108-1.html">Perl Weekly Challenge 108: Locate Memory</a></h2>
             </div> <!-- card-header -->
@@ -775,7 +1030,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-108/">Perl Weekly Challenge 108</a></h2>
             </div> <!-- card-header -->
@@ -787,7 +1042,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-106">Perl Review - Perl Weekly Challenge - 106</a></h2>
             </div> <!-- card-header -->
@@ -799,7 +1054,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-107">RECAP - The Weekly Challenge - 108</a></h2>
             </div> <!-- card-header -->
@@ -811,7 +1066,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-109">The Weekly Challenge - 109</a></h2>
             </div> <!-- card-header -->
@@ -823,7 +1078,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-rakuast-2021-03">RakuAST Grant Report 2021-03</a></h2>
             </div> <!-- card-header -->
@@ -835,7 +1090,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.theregister.com/2021/04/13/perl_dev_quits">Key Perl Core developer quits</a></h2>
             </div> <!-- card-header -->
@@ -847,7 +1102,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/leontimmermans/a-year-of-strife-16o9">A year of strife in Perl</a></h2>
             </div> <!-- card-header -->
@@ -859,7 +1114,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dean/2021/04/proposal-for-perl-foundation-memberships.html">Proposal for Perl Foundation Memberships</a></h2>
             </div> <!-- card-header -->
@@ -871,7 +1126,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/04/msg259909.html">On community hostility and the need for change on p5p</a></h2>
             </div> <!-- card-header -->
@@ -883,7 +1138,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/adoptaperlmodule-2oh2">#AdoptAPerlModule</a></h2>
             </div> <!-- card-header -->
@@ -895,7 +1150,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/17/local-lib/">Another trick for PERL5LIB</a></h2>
             </div> <!-- card-header -->
@@ -907,7 +1162,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/6-months-of-blogging-the-onion-46i3">6 months of blogging the onion</a></h2>
             </div> <!-- card-header -->
@@ -919,7 +1174,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/2021/04/13/avoid-cpan-conflicts-in-your-personal-perl-modules/">Avoid CPAN conflicts in your personal Perl modules</a></h2>
             </div> <!-- card-header -->
@@ -931,7 +1186,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/wiki/Google-Season-of-Docs-2021-project-proposals">Google Season of Docs 2021 project proposals</a></h2>
             </div> <!-- card-header -->
@@ -943,7 +1198,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/04/msg259929.html">Perl Steering Council</a></h2>
             </div> <!-- card-header -->
@@ -955,7 +1210,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://sourceforge.net/p/pdl/mailman/message/37263352/">PDL 2.037</a></h2>
             </div> <!-- card-header -->
@@ -967,7 +1222,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/04/dancer2-0301002-released.html">Dancer2 0.301002 Released</a></h2>
             </div> <!-- card-header -->
@@ -979,7 +1234,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/508.html">#508 - Perl Steering Committee (PSC)</a></h2>
             </div> <!-- card-header -->
@@ -995,7 +1250,7 @@ Total time worked:: 7 hours 29 minutes
      on Monday 19 April 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_5_march_report">Maintaining Perl 5 (Tony Cook): March 2021 Report</a></h2>
             </div> <!-- card-header -->
@@ -1079,7 +1334,7 @@ applied</p>
      on Monday 19 April 2021 09:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/course-management-app-in-mojolicious-3">Course Management Application in Mojolicious - part 3</a></h2>
             </div> <!-- card-header -->
@@ -1094,7 +1349,7 @@ The third part of the live development <a href="/course-management-app-in-mojoli
      on Monday 19 April 2021 09:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/digital-ocean-api">Digital Ocean API using Perl</a></h2>
             </div> <!-- card-header -->
@@ -1110,7 +1365,7 @@ and there is a Perl module called <a href="https://metacpan.org/pod/DigitalOcean
      on Monday 19 April 2021 07:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/part-3-video-of-pair-programming-a-perl-web-app-24hg">Part 3 video of pair programming a Perl web app</a></h2>
             </div> <!-- card-header -->
@@ -1124,7 +1379,7 @@ and there is a Perl module called <a href="https://metacpan.org/pod/DigitalOcean
      on Monday 19 April 2021 04:27</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/04/dancer2-0301002-released.html">Dancer2 0.301002 Released</a></h2>
             </div> <!-- card-header -->
@@ -1168,7 +1423,7 @@ CromeDome</p>
      on Monday 19 April 2021 00:52</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/04/18#pwc108">Memory Addresses and Bell Numbers: The Weekly Challenge 108</a></h2>
             </div> <!-- card-header -->
@@ -1264,7 +1519,7 @@ B_9: 21147
      on Sunday 18 April 2021 15:55</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/04/perl-weekly-challenge-108-locate-memory-and-bell-numbers.html">Perl Weekly Challenge 108: Locate Memory and Bell Numbers</a></h2>
             </div> <!-- card-header -->
@@ -1843,7 +2098,7 @@ func main() {
      on Tuesday 13 April 2021 22:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-108-3di2">Weekly Challenge 108</a></h2>
             </div> <!-- card-header -->
@@ -1964,7 +2219,7 @@ func main() {
      on Sunday 18 April 2021 14:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/counter-dancer2-redis-docker">Counter using Dancer2 and Redis in a Docker container</a></h2>
             </div> <!-- card-header -->
@@ -1982,7 +2237,7 @@ The code runs in a Docker container and we have another container running the Re
      on Sunday 18 April 2021 07:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/04/cccxxxvii-12-great-cpan-modules.html">(cccxxxvii) 12 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1994,7 +2249,7 @@ The code runs in a Docker container and we have another container running the Re
      on Saturday 17 April 2021 21:22</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/04/cdlxiii-metacpan-weekly-report.html">(cdlxiii) metacpan weekly report - XS::Parse::Keyword</a></h2>
             </div> <!-- card-header -->
@@ -2006,7 +2261,7 @@ The code runs in a Docker container and we have another container running the Re
      on Saturday 17 April 2021 21:18</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/04/cdlxxxvi-stackoverflow-perl-report.html">(cdlxxxvi) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -2018,7 +2273,7 @@ The code runs in a Docker container and we have another container running the Re
      on Saturday 17 April 2021 21:06</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/data-visualization-using-amcharts-in-react-js-with-mojo-29mh">Data visualization: Using amCharts in React.js with Mojo</a></h2>
             </div> <!-- card-header -->
@@ -2371,7 +2626,7 @@ amCharts logo taken form <a href="https://www.amcharts.com/about/press-kit/amcha
      on Saturday 17 April 2021 17:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/6-months-of-blogging-the-onion-46i3">6 months of blogging the onion</a></h2>
             </div> <!-- card-header -->
@@ -2469,7 +2724,7 @@ It reached a minimum steady number that make it a viable place to monitor for po
      on Friday 16 April 2021 12:46</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/detect-recursion-using-state">Detect recursion using state variables</a></h2>
             </div> <!-- card-header -->
@@ -2487,7 +2742,7 @@ variables. These are very similar to the static variables of C. You declare them
      on Friday 16 April 2021 08:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_72">
+          <div class="card" id="card_73">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dean/2021/04/proposal-for-perl-foundation-memberships.html">Proposal for Perl Foundation Memberships</a></h2>
             </div> <!-- card-header -->
@@ -2510,7 +2765,7 @@ variables. These are very similar to the static variables of C. You declare them
      on Friday 16 April 2021 00:21</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_73">
+          <div class="card" id="card_74">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant-rakuast-2021-03">RakuAST Grant Report 2021-03</a></h2>
             </div> <!-- card-header -->
@@ -2544,64 +2799,6 @@ compiler by 21, meaning it now entirely passes 246 spectest files.</p>
 
               <p class="text-right"><small>Published by Moritz Lenz
      on Thursday 15 April 2021 16:52</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_74">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/leontimmermans/a-year-of-strife-16o9">A year of strife in Perl</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p><em>Disclaimer: this is based on my own personal experience and perception. It's not The Truth, but it is my truth.</em></p>
-
-<p>Last year, in early May, I got an email that got me worried. Really really worried. Not because of disagreement (though I did disagree with it), but because I knew this would be the most controversial thing I've seen in my more than decade on perl5-porters (the mailing list where core contributors discuss the development of perl). If I was wrong it was only because controversial turned out not to be quite strong enough a word for what would happen.</p>
-
-<p>In it, a radical change was proposed. Radical in technology, but I'm not going to focus on that today. Radical in <a href="http://blogs.perl.org/users/leon_timmermans/2020/08/perl7-is-a-fork-of-values.html">values</a>, which really means it's radical for the community as well. It immediately divided both core contributors and much of the community into many factions with two main contingents.</p>
-
-<p>What may seem like a simple technical disagreement was everything but. It was a fight for the soul of the language and the community that we love. While there were a lot of (mostly silent) people in the middle, in the discourse there were two sides and both (or at least enough people on both sides) were entirely convinced that the language and community that we all love only has a future if their side wins, and that the other will drive it to ruin.</p>
-
-<p>If that doesn't sound like the prologue of a Greek tragedy, then I don't know what does.</p>
-
-<p>It led to vigorous discussion; initially behind the scenes, and after the Conference-in-the-Cloud also on <a href="https://www.nntp.perl.org/group/perl.perl5.porters/2020/06/msg257565.html">perl5-porters</a> and elsewhere. And quite frankly, this only stopped when people mostly stopped talking to each other after 2 weeks because there was little point to it.</p>
-
-<p><em>The alarm bells really should have gone off here.</em></p>
-
-<p>Soon enough the conflict moved to github. The unfortunate thing is that there were two groups of people: one with the will to make this happen but not quite the knowledge, and they started writing code. And one group that didn't want this to happen that did have the knowledge, who started reviewing said code. As you can probably guess, this soon became a mutually aggravating situation. After a few weeks of stepping on each other's toes, it became an open conflict.</p>
-
-<p>The stakes were astronomical. I've heard several people say (in private) that they felt they would be needing to look for a different career and community over this. Combine this with a pandemic that has all of us stressed out, this led to a situation which I can only summarize as <em>both sides kept pushing until the other side would give up</em>. Given the sheer stubbornness of the average perl contributor this could only end when a sufficient number of people have burned out that neither side is capable of doing pretty much anything. It was a dynamic that was quite frankly burning me out too, to the point where several of my loved ones told me I should give up on this for sake of my own mental health (and I've heard similar stories from others).</p>
-
-<p><strong>It's easy to assume that the things that happened were a few abusive assholes, but in my experience it was mostly a vicious cycle of previously reasonable and kind people lashing out at the people that were burning them out</strong>.</p>
-
-<p>And that's where the alarm bells became cold-war style air sirens, the kind you can hear from miles away (sorry gen-z, you probably have no idea what I'm talking about).</p>
-
-<p>This was the moment when we (or actually a bunch of community elders) started up a process to set up a new governance, because any decision making process that can generate this amount of strife is in need of repairs. Many people saw it as a diversion, but I don't agree. I think it was the only way to restart this conversation, and to get to a point (currently still in the future) where we can heal again.</p>
-
-<p>But when hell broke loose, another thing was finally spoken out, though it was easily missed in between all the unpleasantness, is a simple truth that there is a third option that had been unthinkable a year ago: forking. This changes everything about the equation, literally everything.</p>
-
-<p>Ultimately I believe that is what ended the discussion. It ended with the simple knowledge that the opposition was able and willing to fork if that's what it takes to prevent their worst-case scenario. In a way it was a Solomon's judgement for the steering committee. It ended the discussion not just because almost no one wants to fork the community, but because perl7 as announced last summer wouldn't be viable given a competitor that actually supports all of CPAN today and will continue to do so for the foreseeable future (just look at how long it took the python3 transition to take over, and that's without people wanting to keep supporting python2).</p>
-
-<p>It is a pyrrhic victory. Pyrrhic not just because "we" haven't really won anything. Everyone lost because friendships were damaged (and perhaps lost) over this. We lost because a bunch of the people who matter for moving perl forward are currently effectively burned out (a few loudly so, but many in painful silence). We lost because people stopped contributing over this (most prominently but not limited to former project lead Sawyer).</p>
-
-<h3>
-  <a href="#so-what-can-we-learn-from-this-and-how-can-we-move-forward">
-  </a>
-  So what can we learn from this, and how can we move forward?
-</h3>
-
-<ul>
-<li><p>We needed different governance, for a multitude of reasons. The old pumpking model had a tendency to burn people out, that was not sustainable (to be honest, Sawyer seemed burned out to me even before any of this happened, I can only imagine where he is now). Having more people in our executive, and having them there for bound terms (it's easier to stop when it takes effort to continue) will hopefully prevent that in the future. But also because it will lead to more diverse points of view. I suspect we'll be tweaking our governance for a while we gain more experience with it, but at least we have a foundation to do that with now.</p></li>
-<li><p>Going through this during a pandemic really didn't help. I honestly believe this situation would not have gotten so badly out of hand if we could meet up face to face and talk to each other with a beverage in our hands; if we weren't all so tense because we haven't seen many of our loved ones in ages. We should remember that. Some discussions should be done in real life; sometimes the right response to a conflict is "Ooh, I get the impression this may be a Chartreuse-level discussion. Are you up for that?"</p></li>
-<li><p>We should have more attention for our contributors' mental health; we need to remember the human on the other side of the conversation. It's perhaps cliche to say we should act with more empathy for each other, but frankly we collectively also acted with too little empathy for ourselves.</p></li>
-<li><p>It seems that the proponents initially mistook a lot of the grievances as mere bike-shedding, when they actually were meaningful concerns that wouldn't go away by themselves. They didn't seem to realize that they were <a href="https://www.dictionary.com/browse/cross--the--rubicon">crossing the Rubicon</a> by actually moving forward with their plans without a consensus. We should not set ourselves up for failure like that, there is no way that could have ended well.</p></li>
-<li><p>One thing we started doing much too late was mediation (Neil in particular has done great work there lately). We need people who can see all perspectives and bring them all back together. This is where we truly miss Larry more than anything, because bringing different needs together was his true talent. I don't think (or hope) we will be needing this often, but it's probably good to be prepared for such an eventuality.</p></li>
-<li><p>We talk a lot about speaking with kindness, but we don't talk nearly enough about listening with kindness. Unlike speaking, listening kindly can't really be enforced, but the speaking without listening can easily become dysfunctional. Achieving this requires a cultural change. I don't know how to get us there, but I do know that it will require leadership.</p></li>
-<li><p>The other thing that requires leadership is bringing us back together again. Perl is unique in the <a href="https://twitter.com/leon_timmermans/status/1376299679818874880">breadth</a> of its user base and that is both Perl's greatest strength as its greatest weakness. These conflicting interests were at the root of this conflict, and finding a path that serves all those interests (including the less loud ones) will be the main challenge for the steering committee.</p></li>
-</ul>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Leon Timmermans
-     on Wednesday 14 April 2021 19:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_75">
@@ -4033,7 +4230,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 20 April 2021 06:50 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 20 April 2021 07:47 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
