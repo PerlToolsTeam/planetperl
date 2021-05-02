@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-05-02T22:51:31Z</updated>
+  <updated>2021-05-02T23:48:07Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -385,6 +385,155 @@ sex,m,m,f,f
 
     </content>
 </entry>
+  <entry>
+    <title>Checking Phone Numbers and Transposing Tabular Data the Hard Way: The Weekly Challenge 110</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/05/02#pwc110" type="text/html"/>
+    <content type="html">&lt;p&gt;&lt;em&gt;The examples used here are from the weekly challenge problem statement and demonstrate the working solution.&lt;/em&gt;&lt;/p&gt;
+&lt;h2 id="part-1"&gt;Part 1&lt;/h2&gt;
+&lt;p&gt;&lt;em&gt;You are given a text file. Write a script to display all valid phone numbers in the given text file.&lt;/em&gt;&lt;/p&gt;
+&lt;h3 id="solution"&gt;Solution&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="perl"&gt;
+use Capture::Tiny q/capture_stdout/;
+use PhoneNumberParser;
+
+MAIN:{
+    my $parser = new PhoneNumberParser();
+    while(my $line = &lt;DATA&gt;){
+        $line =~ s/^\s+|\s+$//g;
+        my $syntax_error = capture_stdout {
+            $parser-&gt;parse($line); 
+        };
+        print("$line\n") if !$syntax_error;
+    }
+}   
+
+__DATA__
+0044 1148820341
+ +44 1148820341
+  44-11-4882-0341
+(44) 1148820341
+ 00 1148820341
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;The &lt;a href="https://metacpan.org/pod/Parse::Yapp"&gt;Parse::Yapp&lt;/a&gt; grammar.&lt;/p&gt;
+&lt;pre&gt;&lt;code class="perl"&gt;
+%token SPACE DIGIT OPEN CLOSE PLUS
+%%
+
+phone_number: prefix SPACE area_exchange_subscriber
+;
+
+prefix: DIGIT DIGIT DIGIT DIGIT
+    | OPEN DIGIT DIGIT CLOSE
+    | PLUS DIGIT DIGIT
+;   
+
+area_exchange_subscriber: DIGIT DIGIT DIGIT DIGIT DIGIT DIGIT DIGIT DIGIT DIGIT DIGIT
+;
+
+%%
+
+sub lexer{
+    my($parser) = @_;
+    $parser-&gt;YYData-&gt;{INPUT} or return('', undef);
+    ##
+    # send tokens to parser
+    ##
+    for($parser-&gt;YYData-&gt;{INPUT}){
+        s/^(\s)// and return ("SPACE", $1);
+        s/^(\d)// and return ("DIGIT", $1);
+        s/^(\()// and return ("OPEN", $1);
+        s/^(\))// and return ("CLOSE", $1);
+        s/^(\+)// and return ("PLUS", $1);
+    }  
+}
+
+sub error{
+    exists $_[0]-&gt;YYData-&gt;{ERRMSG}
+    and do{
+        print $_[0]-&gt;YYData-&gt;{ERRMSG};
+            return;
+    };
+    print "syntax error\n"; 
+}
+
+sub parse{
+    my($self, $input) = @_;
+    $self-&gt;YYData-&gt;{INPUT} = $input;
+    my $result = $self-&gt;YYParse(yylex =&gt; \&amp;lexer, yyerror =&gt; \&amp;error);
+    return $result;  
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="sample-run"&gt;Sample Run&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ yapp perl/PhoneNumberParser.yp
+$ perl -Iperl perl/ch-1.pl
+0044 1148820341
++44 1148820341
+(44) 1148820341
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="notes"&gt;Notes&lt;/h3&gt;
+&lt;p&gt;While a set of regular expression would have done the job quite nicely I figured I’d use this problem as a reason to shake the rust off my grammar writing skills. Not that I am a master parser writer or anything, but &lt;a href="https://metacpan.org/pod/Parse::Yapp"&gt;Parse::Yapp&lt;/a&gt; makes it easy enough!&lt;/p&gt;
+&lt;p&gt;Well, easy is a bit relative I suppose. This is definitely not the simplest way of performing this task.&lt;/p&gt;
+&lt;h2 id="part-2"&gt;Part 2&lt;/h2&gt;
+&lt;p&gt;&lt;em&gt;You are given a text file. Write a script to transpose the contents of the given file.&lt;/em&gt;&lt;/p&gt;
+&lt;h3 id="solution-1"&gt;Solution&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="perl"&gt;
+sub transpose{
+    my @columns = @_;
+    return transpose_r([], \@columns);  
+}
+
+sub transpose_r{
+    my($transposed, $remaining) = @_;
+    return $transposed if(@{$remaining} == 0);   
+    $transposed = transpose_row_r($transposed, $remaining-&gt;[0]);  
+    shift @{$remaining}; 
+    transpose_r($transposed, $remaining);  
+}
+
+sub transpose_row_r{
+    my($transposed, $row) = @_;
+    return $transposed if(@{$row} == 0); 
+    my $index = @{$row} - 1;
+    push @{$transposed-&gt;[$index]}, pop @{$row};  
+    transpose_row_r($transposed, $row);    
+}
+
+MAIN:{
+    my @columns;
+    while(my $line = &lt;DATA&gt;){
+        chomp($line);
+        my @fields = split(/,/, $line);   
+        push @columns, \@fields; 
+    }
+    my $transposed = transpose(@columns);   
+    for my $i (0 .. @{$transposed} - 1){
+        print join(",", @{$transposed-&gt;[$i]}) . "\n";       
+    }    
+}
+
+__DATA__
+name,age,sex
+Mohammad,45,m
+Joe,20,m
+Julie,35,f
+Cristina,10,f
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="sample-run-1"&gt;Sample Run&lt;/h3&gt;
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+name,Mohammad,Joe,Julie,Cristina
+age,45,20,35,10
+sex,m,m,f,f
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id="notes-1"&gt;Notes&lt;/h3&gt;
+&lt;p&gt;Similar to Part 1 this is also not the easiest way to perform this task. Here the same sort of recursion is used that is used in the &lt;a href="http://www.rabbitfarm.com/cgi-bin/blosxom/prolog/2021/05/02"&gt;Prolog version&lt;/a&gt; of the solution to this part. That is, we recurse over the table itself and then for each row perform a separate recursion to perform the transpostion.&lt;/p&gt;
+&lt;h2 id="references"&gt;References&lt;/h2&gt;
+&lt;p&gt;&lt;a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-110/"&gt;Challenge 110&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc110</id>
+    <published>2021-05-02T19:03:00-04:00Z</published>
+    <category term="/perl"/>
+  </entry>
   <entry>
   <title>Course Management Application in Mojolicious - part 5</title>
   <summary type="html"><![CDATA[<p>
@@ -837,6 +986,66 @@ In this experimental project <a href="https://phoenixtrap.com/">Mark Gardner</a>
       <name>Gabor Szabo</name>
     </author>
 </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-5844314466895359676</id>
+    <published>2021-05-01T16:39:00.000+02:00</published>
+    <updated>2021-05-01T16:39:05.016+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(cccxxxix) 12 great CPAN modules released last week</title>
+    <content type="html">Updates for &lt;i&gt;great CPAN modules&lt;/i&gt; released last week. A module is considered &lt;i&gt;great&lt;/i&gt; if its favorites count is greater or equal than 12.&lt;br/&gt;&lt;br/&gt;&lt;ol&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/PREACTION/Beam-Wire-1.024' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Beam::Wire&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Lightweight Dependency Injection Container &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.024&lt;/strong&gt; on 2021-04-27&lt;/li&gt;  &lt;li&gt;Votes: 15&lt;/li&gt;  &lt;li&gt;Previous version: 1.023 was 2 years, 1 month, 4 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/MIK/CryptX-0.072' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;CryptX&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Cryptographic toolkit &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.072&lt;/strong&gt; on 2021-04-29&lt;/li&gt;  &lt;li&gt;Votes: 41&lt;/li&gt;  &lt;li&gt;Previous version: 0.071 was 30 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/XMATH/Data-Alias-1.23' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Data::Alias&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Comprehensive set of aliasing operations &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.21&lt;/strong&gt; on 2021-04-30&lt;/li&gt;  &lt;li&gt;Votes: 15&lt;/li&gt;  &lt;li&gt;Previous version: 1.22 was 8 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/JKEENAN/Devel-NYTProf-6.08' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Devel::NYTProf&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Powerful fast feature-rich Perl source code profiler &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;6.08&lt;/strong&gt; on 2021-04-27&lt;/li&gt;  &lt;li&gt;Votes: 168&lt;/li&gt;  &lt;li&gt;Previous version: 6.07 was 23 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/LEONT/experimental-0.023' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;experimental&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Experimental features made easy &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.023&lt;/strong&gt; on 2021-04-30&lt;/li&gt;  &lt;li&gt;Votes: 29&lt;/li&gt;  &lt;li&gt;Previous version: 0.022 was 11 months, 26 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/PEVANS/Future-AsyncAwait-0.50' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Future::AsyncAwait&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - deferred subroutine syntax for futures &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.50&lt;/strong&gt; on 2021-04-30&lt;/li&gt;  &lt;li&gt;Votes: 37&lt;/li&gt;  &lt;li&gt;Previous version: 0.49 was 2 months, 6 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/JHTHORSEN/JSON-Validator-4.17' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;JSON::Validator&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Validate data against a JSON schema &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;4.17&lt;/strong&gt; on 2021-04-28&lt;/li&gt;  &lt;li&gt;Votes: 28&lt;/li&gt;  &lt;li&gt;Previous version: 4.16 was 1 month, 4 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/JHTHORSEN/Mojo-mysql-1.21' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Mojo::mysql&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Mojolicious and Async MySQL/MariaDB &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.21&lt;/strong&gt; on 2021-04-28&lt;/li&gt;  &lt;li&gt;Votes: 34&lt;/li&gt;  &lt;li&gt;Previous version: 1.22 was 4 months, 6 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/JHTHORSEN/Mojolicious-Plugin-OpenAPI-4.03' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Mojolicious::Plugin::OpenAPI&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - OpenAPI / Swagger plugin for Mojolicious &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;4.03&lt;/strong&gt; on 2021-04-28&lt;/li&gt;  &lt;li&gt;Votes: 40&lt;/li&gt;  &lt;li&gt;Previous version: 4.02 was 1 month, 4 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ETJ/PDL-2.044' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;PDL&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Perl Data Language &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;2.044&lt;/strong&gt; on 2021-05-01&lt;/li&gt;  &lt;li&gt;Votes: 41&lt;/li&gt;  &lt;li&gt;Previous version: 2.039 was 7 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/RTKH/Raisin-0.91' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Raisin&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - A REST API microframework for Perl. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.91&lt;/strong&gt; on 2021-04-28&lt;/li&gt;  &lt;li&gt;Votes: 40&lt;/li&gt;  &lt;li&gt;Previous version: 0.90 was 10 months, 6 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/KIMOTO/SPVM-0.0949' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;SPVM&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Static Perl Virtual Machine. Fast Calculation, Fast Array Operation, and Easy C/C++ Binding. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.0949&lt;/strong&gt; on 2021-04-30&lt;/li&gt;  &lt;li&gt;Votes: 21&lt;/li&gt;  &lt;li&gt;Previous version: 0.0946 was 7 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;/ol&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/5844314466895359676/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2021/05/cccxxxix-12-great-cpan-modules-released.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/5844314466895359676"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/5844314466895359676"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2021/05/cccxxxix-12-great-cpan-modules-released.html" title="(cccxxxix) 12 great CPAN modules released last week"/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-3052151456011882087</id>
+    <published>2021-05-01T16:34:00.000+02:00</published>
+    <updated>2021-05-01T16:34:09.395+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(cdlxv) metacpan weekly report - List::Keywords</title>
+    <content type="html">&lt;p&gt;This is the weekly favourites list of CPAN distributions. Votes count: 34&lt;/p&gt;&lt;p&gt;Week's winner: &lt;b&gt;&lt;a href="https://metacpan.org/module/List::Keywords" target="_blank"&gt;List::Keywords (+3)&lt;/a&gt;&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Build date: 2021/05/01 14:33:20 GMT&lt;/p&gt;&lt;br/&gt;&lt;p&gt;Clicked for &lt;u&gt;first time&lt;/u&gt;:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Data::Enum" target="_blank"&gt;Data::Enum&lt;/a&gt; - fast, immutable enumeration classes&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/DataTables" target="_blank"&gt;DataTables&lt;/a&gt; - a server-side solution for the jQuery DataTables plugin&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/LWP::UserAgent::Throttled" target="_blank"&gt;LWP::UserAgent::Throttled&lt;/a&gt; - Throttle requests to a site&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Pod::Coverage::TrustMe" target="_blank"&gt;Pod::Coverage::TrustMe&lt;/a&gt; - &lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Template::Tiny::Strict" target="_blank"&gt;Template::Tiny::Strict&lt;/a&gt; - Template Toolkit reimplemented in as little code as possible&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Win32::Symlinks" target="_blank"&gt;Win32::Symlinks&lt;/a&gt; - A maintained, working implementation of Perl symlink built in features for Windows.&lt;/li&gt;&lt;/ul&gt;&lt;br/&gt;&lt;p&gt;&lt;u&gt;Increasing&lt;/u&gt; its reputation:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Acme::MetaSyntactic::Themes" target="_blank"&gt;Acme::MetaSyntactic::Themes&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/App::perlimports" target="_blank"&gt;App::perlimports&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Avro" target="_blank"&gt;Avro&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/CGI::Tiny" target="_blank"&gt;CGI::Tiny&lt;/a&gt; (+2=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Data::Alias" target="_blank"&gt;Data::Alias&lt;/a&gt; (+1=15)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Deep::Encode" target="_blank"&gt;Deep::Encode&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Emailesque" target="_blank"&gt;Emailesque&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/experimental" target="_blank"&gt;experimental&lt;/a&gt; (+1=29)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Future" target="_blank"&gt;Future&lt;/a&gt; (+1=53)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Future::AsyncAwait" target="_blank"&gt;Future::AsyncAwait&lt;/a&gt; (+1=37)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/List::Keywords" target="_blank"&gt;List::Keywords&lt;/a&gt; (+3=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/MCE" target="_blank"&gt;MCE&lt;/a&gt; (+1=82)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mock::MonkeyPatch" target="_blank"&gt;Mock::MonkeyPatch&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mojo::SQLite" target="_blank"&gt;Mojo::SQLite&lt;/a&gt; (+1=23)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Parallel::ForkManager" target="_blank"&gt;Parallel::ForkManager&lt;/a&gt; (+1=87)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Parse::RecDescent" target="_blank"&gt;Parse::RecDescent&lt;/a&gt; (+1=19)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Pegex" target="_blank"&gt;Pegex&lt;/a&gt; (+1=22)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Perl::LanguageServer" target="_blank"&gt;Perl::LanguageServer&lt;/a&gt; (+1=19)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Plack" target="_blank"&gt;Plack&lt;/a&gt; (+1=222)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/POD2::Base" target="_blank"&gt;POD2::Base&lt;/a&gt; (+1=5)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/PSGI" target="_blank"&gt;PSGI&lt;/a&gt; (+1=49)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Script::Toolbox" target="_blank"&gt;Script::Toolbox&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Template::Tiny" target="_blank"&gt;Template::Tiny&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Test::Script" target="_blank"&gt;Test::Script&lt;/a&gt; (+1=6)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/WWW::Mechanize" target="_blank"&gt;WWW::Mechanize&lt;/a&gt; (+1=86)&lt;/li&gt;&lt;/ul&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/3052151456011882087/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2021/05/cdlxv-metacpan-weekly-report.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/3052151456011882087"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/3052151456011882087"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2021/05/cdlxv-metacpan-weekly-report.html" title="(cdlxv) metacpan weekly report - List::Keywords"/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-2265785990340966947</id>
+    <published>2021-05-01T16:28:00.000+02:00</published>
+    <updated>2021-05-01T16:28:04.665+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(cdlxxxviii) stackoverflow perl report</title>
+    <content type="html">&lt;p&gt;These are the ten most rated questions at &lt;a href="http://www.stackoverflow.com"&gt;Stack Overflow&lt;/a&gt; last week.&lt;br /&gt;Between brackets: [&lt;b&gt;question score&lt;/b&gt; / answers count]&lt;br /&gt;Build date: 2021-05-01 14:26:11 GMT&lt;/p&gt;&lt;hr /&gt;&lt;ol&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67250819" target="_blank"&gt;Is there a way to have dependencies defined by OS in a CPAN distribution?&lt;/a&gt; - [&lt;b&gt;6&lt;/b&gt;/1]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67319032" target="_blank"&gt;How can I quickly count the maximum number of consecutive single characters in a string?&lt;/a&gt; - [&lt;b&gt;3&lt;/b&gt;/4]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67292717" target="_blank"&gt;What does scalar mean in perl?&lt;/a&gt; - [&lt;b&gt;3&lt;/b&gt;/2]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67324732" target="_blank"&gt;Take Longitude/Latitude and get UTC Offset in Perl&lt;/a&gt; - [&lt;b&gt;3&lt;/b&gt;/1]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67320002" target="_blank"&gt;Perl PAWS SelectObjectContent - "Precondition Failed"&lt;/a&gt;&amp;nbsp;- [&lt;b&gt;3&lt;/b&gt;/0]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67248904" target="_blank"&gt;What means "Can't locate object method.." in this specific example using Perl?&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/2]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67264013" target="_blank"&gt;how to terminate a command that has started in a perl script, using 'system()'&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/1]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67327545" target="_blank"&gt;There are two files, pm and pl under one file. If you run the pl file, the pm package call is unsuccessful&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/1]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67309261" target="_blank"&gt;How to know when a PSGI nonblocking streaming writer is ready for more data in a PSGI compatible way?&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/0]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/67271710" target="_blank"&gt;Script correction for count positive values in text file&lt;/a&gt; - [&lt;b&gt;1&lt;/b&gt;/2]&lt;/li&gt;&lt;/ol&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/2265785990340966947/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2021/05/cdlxxxviii-stackoverflow-perl-report.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/2265785990340966947"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/2265785990340966947"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2021/05/cdlxxxviii-stackoverflow-perl-report.html" title="(cdlxxxviii) stackoverflow perl report"/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
   <entry>
     <title>Creating REST APIs with Perl, Mojolicious and OpenAPI</title>
     <link rel="alternate" href="https://dev.to/raigaurav/creating-rest-apis-with-perl-mojolicious-and-openapi-1bng" type="text/html"/>
@@ -3325,6 +3534,46 @@ Number of solutions: 8
         
     </content>
 </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-8022544487213407871</id>
+    <published>2021-04-24T21:15:00.000+02:00</published>
+    <updated>2021-04-24T21:15:23.925+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(cccxxxviii) 15 great CPAN modules released last week</title>
+    <content type="html">Updates for &lt;i&gt;great CPAN modules&lt;/i&gt; released last week. A module is considered &lt;i&gt;great&lt;/i&gt; if its favorites count is greater or equal than 12.&lt;br/&gt;&lt;br/&gt;&lt;ol&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/CROMEDOME/Dancer2-0.301002' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Dancer2&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Lightweight yet powerful web application framework &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.301002&lt;/strong&gt; on 2021-04-18&lt;/li&gt;  &lt;li&gt;Votes: 124&lt;/li&gt;  &lt;li&gt;Previous version: 0.301001 was 1 month, 1 day before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/XMATH/Data-Alias-1.22' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Data::Alias&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Comprehensive set of aliasing operations &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.21&lt;/strong&gt; on 2021-04-22&lt;/li&gt;  &lt;li&gt;Votes: 14&lt;/li&gt;  &lt;li&gt;Previous version: 1.21 was 3 years, 4 months, 14 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ETJ/Graph-0.9721' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Graph&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - graph data structures and algorithms &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.9721&lt;/strong&gt; on 2021-04-18&lt;/li&gt;  &lt;li&gt;Votes: 26&lt;/li&gt;  &lt;li&gt;Previous version: 0.9720 was 24 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ETJ/JavaScript-V8-0.10' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;JavaScript::V8&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Perl interface to the V8 JavaScript engine &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.10&lt;/strong&gt; on 2021-04-23&lt;/li&gt;  &lt;li&gt;Votes: 16&lt;/li&gt;  &lt;li&gt;Previous version: 0.09 was 2 years, 12 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/DROLSKY/List-AllUtils-0.19' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;List::AllUtils&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Combines List::Util, List::SomeUtils and List::UtilsBy in one bite-sized package &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.19&lt;/strong&gt; on 2021-04-23&lt;/li&gt;  &lt;li&gt;Votes: 30&lt;/li&gt;  &lt;li&gt;Previous version: 0.18 was 7 months, 18 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/BINGOS/Module-CoreList-5.20210420' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Module::CoreList&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - what modules shipped with versions of perl &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;5.20210420&lt;/strong&gt; on 2021-04-21&lt;/li&gt;  &lt;li&gt;Votes: 34&lt;/li&gt;  &lt;li&gt;Previous version: 5.20210320 was 1 month before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/RSCHUPP/Module-ScanDeps-1.31' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Module::ScanDeps&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Recursively scan Perl code for dependencies &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.31&lt;/strong&gt; on 2021-04-21&lt;/li&gt;  &lt;li&gt;Votes: 13&lt;/li&gt;  &lt;li&gt;Previous version: 1.30 was 3 months, 8 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/JJATRIA/Mojolicious-Plugin-Authentication-1.36' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Mojolicious::Plugin::Authentication&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - A plugin to make authentication a bit easier &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.36&lt;/strong&gt; on 2021-04-21&lt;/li&gt;  &lt;li&gt;Votes: 17&lt;/li&gt;  &lt;li&gt;Previous version: 1.33 was 3 years before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ETJ/PDL-2.039' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;PDL&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Perl Data Language &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;2.039&lt;/strong&gt; on 2021-04-24&lt;/li&gt;  &lt;li&gt;Votes: 41&lt;/li&gt;  &lt;li&gt;Previous version: 2.037 was 8 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ETJ/PDL-Stats-0.78' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;PDL::Stats&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - a collection of statistics modules in Perl Data Language, with a quick-start guide for non-PDL people. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.78&lt;/strong&gt; on 2021-04-24&lt;/li&gt;  &lt;li&gt;Votes: 14&lt;/li&gt;  &lt;li&gt;Previous version: 0.76 was 4 months, 5 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/DBOOK/Perl-MinimumVersion-1.40' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Perl::MinimumVersion&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Find a minimum required version of perl for Perl code &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.40&lt;/strong&gt; on 2021-04-22&lt;/li&gt;  &lt;li&gt;Votes: 18&lt;/li&gt;  &lt;li&gt;Previous version: 1.38 was 6 years, 8 months before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/RJBS/Pod-Weaver-4.017' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Pod::Weaver&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - weave together a Pod document from an outline &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;4.017&lt;/strong&gt; on 2021-04-17&lt;/li&gt;  &lt;li&gt;Votes: 32&lt;/li&gt;  &lt;li&gt;Previous version: 4.015 was 4 years, 6 months, 2 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/KARASIK/Prima-1.61' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Prima&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - a perl graphic toolkit &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.61&lt;/strong&gt; on 2021-04-23&lt;/li&gt;  &lt;li&gt;Votes: 33&lt;/li&gt;  &lt;li&gt;Previous version: 1.60 was 5 months, 23 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/KIMOTO/SPVM-0.0946' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;SPVM&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Static Perl Virtual Machine. Fast Calculation, Fast Array Operation, and Easy C/C++ Binding. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.0946&lt;/strong&gt; on 2021-04-23&lt;/li&gt;  &lt;li&gt;Votes: 21&lt;/li&gt;  &lt;li&gt;Previous version: 0.0942 was 8 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/MANWAR/SVG-2.86' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;SVG&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Perl extension for generating Scalable Vector Graphics (SVG) documents. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;2.86&lt;/strong&gt; on 2021-04-22&lt;/li&gt;  &lt;li&gt;Votes: 18&lt;/li&gt;  &lt;li&gt;Previous version: 2.85 was 9 months, 20 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;/ol&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/8022544487213407871/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2021/04/cccxxxviii-15-great-cpan-modules.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/8022544487213407871"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/8022544487213407871"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2021/04/cccxxxviii-15-great-cpan-modules.html" title="(cccxxxviii) 15 great CPAN modules released last week"/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-5587204421157334982</id>
+    <published>2021-04-24T21:11:00.005+02:00</published>
+    <updated>2021-04-24T21:11:42.970+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(cdlxiv) metacpan weekly report - App::perlimports </title>
+    <content type="html">&lt;p&gt;This is the weekly favourites list of CPAN distributions. Votes count: 45&lt;/p&gt;&lt;p&gt;Week's winners (+3):&lt;b&gt;&amp;nbsp;&lt;a href="https://metacpan.org/module/App::perlimports"&gt;App::perlimports&lt;/a&gt;&amp;nbsp;&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Build date: 2021/04/24 19:10:30 GMT&lt;/p&gt;&lt;br /&gt;&lt;p&gt;Clicked for &lt;u&gt;first time&lt;/u&gt;:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/AnyEvent::Monitor::CPU" target="_blank"&gt;AnyEvent::Monitor::CPU&lt;/a&gt; - monitors your process CPU usage, with high/low watermark triggers&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Atomic::Pipe" target="_blank"&gt;Atomic::Pipe&lt;/a&gt; - Send atomic messages from multiple writers across a POSIX pipe.&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/CGI::Tiny" target="_blank"&gt;CGI::Tiny&lt;/a&gt; - Common Gateway Interface, with no frills&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/CodeGen::Protection" target="_blank"&gt;CodeGen::Protection&lt;/a&gt; - Safely rewrite parts of generated code&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Function::Version" target="_blank"&gt;Function::Version&lt;/a&gt; - Define and use different function versions&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/IO::Slice" target="_blank"&gt;IO::Slice&lt;/a&gt; - restrict reads to a range in a file&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Myriad" target="_blank"&gt;Myriad&lt;/a&gt; - async microservice framework&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Proc::Application" target="_blank"&gt;Proc::Application&lt;/a&gt; - interface scoreboard class&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Sub::Versions" target="_blank"&gt;Sub::Versions&lt;/a&gt; - Subroutine versioning syntactic sugar&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Valiant" target="_blank"&gt;Valiant&lt;/a&gt; - Validation Library&lt;/li&gt;&lt;/ul&gt;&lt;br /&gt;&lt;p&gt;&lt;u&gt;Increasing&lt;/u&gt; its reputation:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/App::perlimports" target="_blank"&gt;App::perlimports&lt;/a&gt; (+3=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/App::XML::DocBook::Builder" target="_blank"&gt;App::XML::DocBook::Builder&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Carp::Assert::More" target="_blank"&gt;Carp::Assert::More&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Dancer2" target="_blank"&gt;Dancer2&lt;/a&gt; (+1=124)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Deep::Encode" target="_blank"&gt;Deep::Encode&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Dist::Zilla::PluginBundle::Starter" target="_blank"&gt;Dist::Zilla::PluginBundle::Starter&lt;/a&gt; (+1=5)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Feature::Compat::Try" target="_blank"&gt;Feature::Compat::Try&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/File::Temp" target="_blank"&gt;File::Temp&lt;/a&gt; (+1=57)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Getopt::Kingpin" target="_blank"&gt;Getopt::Kingpin&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/grpc::xs" target="_blank"&gt;grpc::xs&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Hash::Merge" target="_blank"&gt;Hash::Merge&lt;/a&gt; (+1=28)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/HTML::Untemplate" target="_blank"&gt;HTML::Untemplate&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Linux::APT" target="_blank"&gt;Linux::APT&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Minion" target="_blank"&gt;Minion&lt;/a&gt; (+1=83)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mojo::IOLoop::ReadWriteFork" target="_blank"&gt;Mojo::IOLoop::ReadWriteFork&lt;/a&gt; (+1=10)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mojo::mysql" target="_blank"&gt;Mojo::mysql&lt;/a&gt; (+1=34)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mom" target="_blank"&gt;Mom&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/namespace::autoclean::0.30" target="_blank"&gt;namespace::autoclean::0.30&lt;/a&gt; (+1=0)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/NativeCall" target="_blank"&gt;NativeCall&lt;/a&gt; (+1=12)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Parser::MGC" target="_blank"&gt;Parser::MGC&lt;/a&gt; (+1=11)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/perl" target="_blank"&gt;perl&lt;/a&gt; (+1=373)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Perl::LanguageServer" target="_blank"&gt;Perl::LanguageServer&lt;/a&gt; (+1=18)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/PPI" target="_blank"&gt;PPI&lt;/a&gt; (+1=50)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Proc::CPUUsage" target="_blank"&gt;Proc::CPUUsage&lt;/a&gt; (+1=5)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/RapidApp" target="_blank"&gt;RapidApp&lt;/a&gt; (+1=28)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/self" target="_blank"&gt;self&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Statistics::Descriptive" target="_blank"&gt;Statistics::Descriptive&lt;/a&gt; (+1=18)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/SVG" target="_blank"&gt;SVG&lt;/a&gt; (+2=18)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Syntax::Keyword::Match" target="_blank"&gt;Syntax::Keyword::Match&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Test::NoLeaks" target="_blank"&gt;Test::NoLeaks&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Text::LTSV" target="_blank"&gt;Text::LTSV&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/version" target="_blank"&gt;version&lt;/a&gt; (+1=18)&lt;/li&gt;&lt;/ul&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/5587204421157334982/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2021/04/cdlxiv-metacpan-weekly-report.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/5587204421157334982"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/5587204421157334982"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2021/04/cdlxiv-metacpan-weekly-report.html" title="(cdlxiv) metacpan weekly report - App::perlimports "/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
   <entry>
   <title>March report of the Raku Development Grant of Jonathan Worthington</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/jonathan-2021-03"/>
