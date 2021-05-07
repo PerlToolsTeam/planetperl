@@ -242,6 +242,204 @@
           </div><!-- card -->
           <div class="card" id="card_2">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/fgasper/perling-and-curling-2i10">Perling and Curling</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Most of us probably know <a href="https://curl.se/">curl</a> as a quick and easy way to send HTTP requests from the command line.</p>
+
+<p>That tool, though, is just an interface to the curl project’s real gold: the libcurl API. Using this API, applications in all sorts of languages have easy access to the awesome power that libcurl provides. This article will discuss how to use that power in Perl.</p>
+
+<h1>
+  <a href="#a-quick-example">
+  </a>
+  A Quick Example
+</h1>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use Net::Curl::Easier;
+
+my $easy = Net::Curl::Easier-&gt;new(
+    url =&gt; 'http://perl.org',
+    followlocation =&gt; 1,
+)-&gt;perform();
+
+print $easy-&gt;head(), $easy-&gt;body();
+</code></pre>
+
+</div>
+
+
+
+<p>Let’s talk about what just happened.</p>
+
+<p><a href="https://metacpan.org/pod/Net::Curl::Easier">Net::Curl::Easier</a> is a thin wrapper around <a href="https://metacpan.org/pod/Net::Curl">Net::Curl</a>’s “easy” interface—<a href="https://curl.se/libcurl/c/libcurl-easy.html">“easy” is what libcurl calls it!</a>—that smooths over some rough edges in Net::Curl.</p>
+
+<p>(Full disclosure: I am Net::Curl::Easier’s maintainer.)</p>
+
+<p>Once we create our “Easier” object, having given it the proper URL and told it to follow HTTP redirects (<code>followlocation</code> refers to <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Location">HTTP’s <code>Location</code> header</a>), we run <code>perform()</code> on the Easier object.</p>
+
+<p>After that, we print the HTTP response headers and body, and we’re done!</p>
+
+<h1>
+  <a href="#why-not-just-use-httptiny">
+  </a>
+  Why not just use <a href="https://metacpan.org/pod/HTTP::Tiny">HTTP::Tiny</a>?
+</h1>
+
+<p>Indeed. Well, error reporting, for one. Consider:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>Net::Curl::Easier-&gt;new(
+    url =&gt; 'http://blahblah',
+)-&gt;perform();
+</code></pre>
+
+</div>
+
+
+
+<p>If you run this you’ll probably just see <code>Couldn't resolve host name</code> printed to standard error. But if you dig deeper you’ll see something nifty:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use Net::Curl::Easier;
+use Data::Dumper;
+
+eval {
+    Net::Curl::Easier-&gt;new(
+        url =&gt; 'http://blahblah',
+    )-&gt;perform();
+};
+print Dumper $@;
+</code></pre>
+
+</div>
+
+
+
+<p>It turns out that that error isn’t just a string; it’s an exception <em>object</em>.</p>
+
+<p>In large systems I often want to handle certain failure types differently from others. HTTP::Tiny’s errors are just strings, so type-specific failure handling with HTTP::Tiny entails <em>parsing strings</em>, which is brittle. What if someone decides to reword some error message for clarity, thus breaking my string parser?</p>
+
+<p>With Net::Curl I can look for specific numeric error codes, documentation for which <a href="https://curl.se/libcurl/c/libcurl-errors.html">the curl project itself maintains</a>. This is much more robust.</p>
+
+<h1>
+  <a href="#dont-care-what-else-you-got">
+  </a>
+  Don’t care. What else you got?
+</h1>
+
+<p>OK. How about this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>my $easy = Net::Curl::Easier-&gt;new(
+    username =&gt; 'hal',
+    userpwd =&gt; 'itsasecret',
+    url =&gt; 'imap://mail.example.com/INBOX/;UID=123',
+)-&gt;perform();
+</code></pre>
+
+</div>
+
+
+
+<p>I just queried … an email inbox?!?</p>
+
+<p>Curl doesn’t just speak HTTP; it speaks many other protocols including IMAP, LDAP, SCP, and MQTT. To see the full list of protocols that your curl supports, run <code>curl --version</code>.</p>
+
+<h1>
+  <a href="#concurrency">
+  </a>
+  Concurrency
+</h1>
+
+<p>Curl can also run concurrent queries. To do that I recommend using <a href="https://metacpan.org/pod/Net::Curl::Promiser">Net::Curl::Promiser</a>. (Full disclosure: I also maintain this module.)</p>
+
+<p>Example, assuming use of <a href="http://metacpan.org/pod/Mojolicious">Mojolicious</a>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use Net::Curl::Easier;
+use Net::Curl::Promiser::Mojo;
+use Mojo::Promise;
+
+my $easy1 = Net::Curl::Easier-&gt;new(
+    url =&gt; 'http://perl.org',
+    followlocation =&gt; 1,
+);
+
+my $easy2 = Net::Curl::Easier-&gt;new(
+    username =&gt; 'hal',
+    userpwd =&gt; 'itsasecret',
+    url =&gt; 'imap://mail.example.com/INBOX/;UID=123',
+);
+
+my $easy3 = Net::Curl::Easier-&gt;new(
+    username =&gt; 'hal',
+    userpwd =&gt; 'itsasecret',
+    url =&gt; 'scp://tty.example.com/path/to/file',
+);
+
+my $promiser = Net::Curl::Promiser::Mojo-&gt;new();
+
+Mojo::Promise-&gt;all_settled(
+    $promiser-&gt;add_handle($easy1)-&gt;then( sub {
+        print $easy1-&gt;head(), $easy1-&gt;body();
+    } ),
+    $promiser-&gt;add_handle($easy2)-&gt;then( sub {
+        # ... whatever you want with the IMAP result
+    } ),
+    $promiser-&gt;add_handle($easy3)-&gt;then( sub {
+        # ... whatever you want with the SCP result
+    } ),
+)-&gt;wait();
+</code></pre>
+
+</div>
+
+
+
+<p>We just grabbed a web page, queried a mailbox, and downloaded a file via SCP, all in parallel!</p>
+
+<p>Net::Curl::Promiser also works natively with<br>
+<a href="http://metacpan.org/pod/AnyEvent">AnyEvent</a> and<br>
+<a href="http://metacpan.org/pod/IO::Async">IO::Async</a>, should those be of greater interest to you. It also provides a convenience layer for custom <a href="https://perldoc.perl.org/perlfunc#select-RBITS%2CWBITS%2CEBITS%2CTIMEOUT">select</a>-based event loops, in case that’s how you roll.</p>
+
+<h1>
+  <a href="#other-modules">
+  </a>
+  Other Modules
+</h1>
+
+<p>Some alternatives to modules presented above:</p>
+
+<ul>
+<li><p><a href="https://metacpan.org/pod/AnyEvent::YACurl">AnyEvent::YACurl</a>: A newer library than Net::Curl that simplifies the interface a bit. It assumes use of <a href="https://metacpan.org/pod/AnyEvent">AnyEvent</a>, though, so if you’re not using AE then this may not be for you.</p></li>
+<li><p><a href="https://metacpan.org/pod/WWW::Curl">WWW::Curl</a>: The library of which Net::Curl is a fork. It lacks access to libcurl’s advanced multi interface.</p></li>
+<li><p><a href="https://metacpan.org/pod/Net::Curl::Simple">Net::Curl::Simple</a>: A wrapper by Net::Curl’s original author. It provides some of the same conveniences as Net::Curl::Promiser and Net::Curl::Easier but uses callbacks rather than promises.</p></li>
+</ul>
+
+<h1>
+  <a href="#closing-thoughts">
+  </a>
+  Closing Thoughts
+</h1>
+
+<p>Curl exposes an awesome breadth of functionality, of which the above examples have just scratched the surface. Check it out!</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Felipe Gasper
+     on Friday 07 May 2021 04:36</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/byterock/2021/05/paws-anyone.html">Paws anyone?</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -271,7 +469,7 @@
      on Thursday 06 May 2021 22:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/raku-ci-bot-grant-2021-04">Raku CI Bot Grant Report 2021-04</a></h2>
             </div> <!-- card-header -->
@@ -304,7 +502,7 @@ application. I hope to publish a post about it soon.</p>
      on Thursday 06 May 2021 15:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/mejorar-una-libreria-utilizar-github-actions-3ado">Mejorar una librería, Utilizar GitHub Actions</a></h2>
             </div> <!-- card-header -->
@@ -330,7 +528,7 @@ application. I hope to publish a post about it soon.</p>
      on Thursday 06 May 2021 04:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-111-search-matrix-and-ordered-letters.html">Perl Weekly Challenge 111: Search Matrix and Ordered Letters</a></h2>
             </div> <!-- card-header -->
@@ -701,7 +899,7 @@ beefily billowy
      on Wednesday 05 May 2021 22:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/davorg/easier-web-sites-for-cpan-modules-1nn4">Easier web sites for CPAN modules</a></h2>
             </div> <!-- card-header -->
@@ -770,7 +968,7 @@ beefily billowy
      on Wednesday 05 May 2021 18:46</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/drhyde/cpandeps-end-of-life-1pdf">CPANdeps end of life</a></h2>
             </div> <!-- card-header -->
@@ -790,7 +988,7 @@ beefily billowy
      on Tuesday 04 May 2021 17:53</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mithaldu/2021/05/tpf-made-me-wait-301-hours-to-learn-my-punishment.html">TPF made me wait 301 hours to learn my punishment</a></h2>
             </div> <!-- card-header -->
@@ -824,7 +1022,7 @@ beefily billowy
      on Monday 03 May 2021 10:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/localizing-dates-in-a-perl-web-application-with-javascript-1n24">Localizing Dates in a Perl web application with JavaScript</a></h2>
             </div> <!-- card-header -->
@@ -864,7 +1062,7 @@ beefily billowy
      on Tuesday 04 May 2021 14:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/i18">US Based, Modern Perl Developer Role - 100% remote!</a></h2>
             </div> <!-- card-header -->
@@ -876,7 +1074,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/2x6">The Future is Now! Perl Role in Malaysia</a></h2>
             </div> <!-- card-header -->
@@ -888,7 +1086,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/mhx">That’s a Big Sandbox! Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -900,7 +1098,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/x90">Cooking Up Something Good. Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -912,7 +1110,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/sxl">Not All Heroes Wear Capes. Perl in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -924,7 +1122,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlconference.us/tprc-2021-cloud/">The Perl and Raku Conference in the Cloud 2021</a></h2>
             </div> <!-- card-header -->
@@ -936,7 +1134,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Git Hooks(Client-side)</a></h2>
             </div> <!-- card-header -->
@@ -948,7 +1146,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting: OpenMP &amp; Perl &amp; perl</a></h2>
             </div> <!-- card-header -->
@@ -960,7 +1158,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -972,7 +1170,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://dc.pm.org/">Washington, DC Perl (DCPM) - Bob King to discuss the Dancer Framework</a></h2>
             </div> <!-- card-header -->
@@ -984,7 +1182,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -996,7 +1194,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rakudoweekly.blog/2021/04/26/2021-17-releastable/">2021.17 Releastable</a></h2>
             </div> <!-- card-header -->
@@ -1008,7 +1206,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=wIx1m__r4SQ">Live Video - Transpose File by Mohammad Anwar</a></h2>
             </div> <!-- card-header -->
@@ -1020,7 +1218,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=nrL0sS-klo0">Live Video - Valid Phone Numbers by Mohammad Anwar</a></h2>
             </div> <!-- card-header -->
@@ -1032,7 +1230,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.youtube.com/watch?v=DvW9Jig42cg">Live Video - Four Squares Puzzle by Mohammad Anwar</a></h2>
             </div> <!-- card-header -->
@@ -1044,7 +1242,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/live">Further live events</a></h2>
             </div> <!-- card-header -->
@@ -1056,7 +1254,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/setting-up-ci-and-docker-for-course-management-app">DevOps work - setting up CI and Docker for the course management project</a></h2>
             </div> <!-- card-header -->
@@ -1068,7 +1266,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/working-on-s3path">s3path the Python File-System/Path like interface for AWS S3</a></h2>
             </div> <!-- card-header -->
@@ -1080,7 +1278,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/elk-with-rex">Setting up ELK using Rexify</a></h2>
             </div> <!-- card-header -->
@@ -1092,7 +1290,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/course-management-app-in-mojolicious-5">Course Management Application in Mojolicious - part 5</a></h2>
             </div> <!-- card-header -->
@@ -1104,7 +1302,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-110-22ao">Weekly Challenge 110</a></h2>
             </div> <!-- card-header -->
@@ -1116,7 +1314,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/04/Perl_Weekly_Challenge_110__Transpose_Numbers.html">Perl Weekly Challenge 110: Transpose Numbers</a></h2>
             </div> <!-- card-header -->
@@ -1128,7 +1326,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/04/26/PerlWeeklyChallenge110.html">Perl Weekly Challenge 110: Mangling Text File</a></h2>
             </div> <!-- card-header -->
@@ -1140,7 +1338,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/04/27/PWC110/">Perl Weekly Challenge 110</a></h2>
             </div> <!-- card-header -->
@@ -1152,7 +1350,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-110-valid-phone-numbers-and-transposed-file.html">Perl Weekly Challenge 110: Valid Phone Numbers and Transposed File</a></h2>
             </div> <!-- card-header -->
@@ -1164,7 +1362,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/drbaggy/perlweeklychallenge-club/tree/master/challenge-110/james-smith">Perl Weekly Challenge #110</a></h2>
             </div> <!-- card-header -->
@@ -1176,7 +1374,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.braincells.com/perl/2021/05/perl_weekly_challenge_week_110.html">Perl Weekly Challenge: Week 110</a></h2>
             </div> <!-- card-header -->
@@ -1188,7 +1386,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/29/pwc110-transpose-file/">PWC110 - Transpose File</a></h2>
             </div> <!-- card-header -->
@@ -1200,7 +1398,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/28/pwc110-valid-phone-numbers/">PWC110 - Valid Phone Numbers</a></h2>
             </div> <!-- card-header -->
@@ -1212,7 +1410,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/04/28/hanging-on-the-telephone-perl-weekly-challenge-110.html">Hanging On The Telephone: Perl Weekly Challenge #110</a></h2>
             </div> <!-- card-header -->
@@ -1224,7 +1422,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/05/02/flip-me-your-digits-baby/">Flip Me Your Digits, Baby</a></h2>
             </div> <!-- card-header -->
@@ -1236,7 +1434,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2021/05/cys-take-on-pwc110.html">CY's Take on PWC#110</a></h2>
             </div> <!-- card-header -->
@@ -1248,7 +1446,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/validly-transposed.html">Validly Transposed Raku and Perl</a></h2>
             </div> <!-- card-header -->
@@ -1260,7 +1458,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://andinus.tilde.institute/pwc/challenge-110/">Challenge 110</a></h2>
             </div> <!-- card-header -->
@@ -1272,7 +1470,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl/2021/05/02">Checking Phone Numbers and Transposing Tabular Data the Hard Way: The Weekly Challenge 110</a></h2>
             </div> <!-- card-header -->
@@ -1284,7 +1482,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-110-2.html">Perl Weekly Challenge 110: Transpose File</a></h2>
             </div> <!-- card-header -->
@@ -1296,7 +1494,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-110-1.html">Perl Weekly Challenge 110: Valid Phone Numbers</a></h2>
             </div> <!-- card-header -->
@@ -1308,7 +1506,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-110/">The Weekly Challenge - 110</a></h2>
             </div> <!-- card-header -->
@@ -1320,7 +1518,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/review-challenge-108">Perl Review - Perl Weekly Challenge - 108</a></h2>
             </div> <!-- card-header -->
@@ -1332,7 +1530,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-110">RECAP - The Weekly Challenge - 110</a></h2>
             </div> <!-- card-header -->
@@ -1344,7 +1542,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-111">The Weekly Challenge - 111</a></h2>
             </div> <!-- card-header -->
@@ -1356,7 +1554,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://metacpan.org/release/Scalar-Type">Scalar::Type</a></h2>
             </div> <!-- card-header -->
@@ -1368,7 +1566,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/2021/04/26/perl-test-coverage-when-you-dont-have-a-makefile/">Perl test coverage when you don’t have a Makefile</a></h2>
             </div> <!-- card-header -->
@@ -1380,7 +1578,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/creating-rest-apis-with-perl-mojolicious-and-openapi-1bng">Creating REST APIs with Perl, Mojolicious and OpenAPI</a></h2>
             </div> <!-- card-header -->
@@ -1392,7 +1590,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/itcharlie/2021/05/ev-charge-pricing-per-state-in-us.html">EV charge pricing per State in US</a></h2>
             </div> <!-- card-header -->
@@ -1404,7 +1602,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-tops-coding-salary-rankings-4fp3">Perl tops coding salary rankings</a></h2>
             </div> <!-- card-header -->
@@ -1416,7 +1614,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="http://neilb.org/2021/04/27/perl-communities.html">There's no such thing as &quot;The Perl Community&quot;</a></h2>
             </div> <!-- card-header -->
@@ -1428,7 +1626,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/04/30/heail/">Heail - head and tail together</a></h2>
             </div> <!-- card-header -->
@@ -1440,7 +1638,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/01/jsonify-string/">JSONify a string</a></h2>
             </div> <!-- card-header -->
@@ -1452,7 +1650,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.perl.com/article/downloading-and-installing-perl-in-2021/">Downloading and Installing Perl in 2021</a></h2>
             </div> <!-- card-header -->
@@ -1464,7 +1662,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/john_ankarstrom/2021/05/wxperl.html">Installing wxPerl for Strawberry Perl v5.32.0, or: Future of wxPerl?</a></h2>
             </div> <!-- card-header -->
@@ -1476,7 +1674,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/cat-transparency-report-updates0">Community Affairs Team Transparency Report Update</a></h2>
             </div> <!-- card-header -->
@@ -1488,7 +1686,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/510.html">#510 - The Perl Community?</a></h2>
             </div> <!-- card-header -->
@@ -1502,7 +1700,7 @@ beefily billowy
      on Monday 03 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-110-valid-phone-numbers-and-transposed-file.html">Perl Weekly Challenge 110: Valid Phone Numbers and Transposed File</a></h2>
             </div> <!-- card-header -->
@@ -1877,7 +2075,7 @@ sex,m,m,f,f
      on Saturday 01 May 2021 21:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/05/02#pwc110">Checking Phone Numbers and Transposing Tabular Data the Hard Way: The Weekly Challenge 110</a></h2>
             </div> <!-- card-header -->
@@ -2030,7 +2228,7 @@ sex,m,m,f,f
      on Sunday 02 May 2021 19:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/course-management-app-in-mojolicious-5">Course Management Application in Mojolicious - part 5</a></h2>
             </div> <!-- card-header -->
@@ -2043,28 +2241,6 @@ The fifth part of the live development <a href="/course-management-app-in-mojoli
 
               <p class="text-right"><small>Published by Gabor Szabo
      on Sunday 02 May 2021 22:30</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_66">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/mjgardner/part-5-video-of-pair-programming-a-perl-web-app-2oja">Part 5 video of pair programming a Perl web app</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Gábor’s already <a href="https://perlmaven.com/course-management-app-in-mojolicious-5">posted today’s video</a>!</p>
-
-<p><iframe width="710" height="399" src="https://www.youtube.com/embed/ooxYP38usgs">
-</iframe>
-</p>
-
-<p>It’s really interesting to see our different development styles work together. Gábor’s all about trying things immediately and searching the entire web for answers, while I like to read the documentation and work out its writers’ intent.</p>
-
-<p>I’m also embarrassed that we ended on a “cliffhanger” with an unresolved error, though Gábor posted that he managed to resolve it.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Mark Gardner
-     on Sunday 02 May 2021 21:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_67">
@@ -3775,7 +3951,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 07 May 2021 03:58 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 07 May 2021 05:01 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
