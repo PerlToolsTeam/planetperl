@@ -57,6 +57,826 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/raigaurav/getting-ready-for-production-jio">Getting ready for production</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>In <a href="https://dev.to/raigaurav/creating-rest-apis-with-perl-mojolicious-and-openapi-1bng">previous</a> article we have created few REST API's.<br>
+Now lets try to deploy it to production. It will be a long article so brace your self.<br>
+For production deployment we will be using few things -</p>
+
+<ol>
+<li><a href="https://httpd.apache.org/">Apache2 Server</a></li>
+<li><a href="https://uwsgi-docs.readthedocs.io/en/latest/">uWSGI</a></li>
+<li><a href="https://www.docker.com/">Docker</a></li>
+</ol>
+
+<p><a href="https://mojolicious.org/">Mojolicious</a> already comes with <a href="https://docs.mojolicious.org/hypnotoad">hypnotoad</a> which is a production grade server. You can use it and you will be ready in no time. This way is already mentioned in <a href="https://perlmaven.com/deploying-a-mojolicious-application">Deploying a Mojolicious Application using Hypnotoad and Apache</a>. If you are interested you can read it. When I first deployed my mojo app to production I followed that approach (thank you perlmaven 😃).</p>
+
+<p>There are several other ways which we will see. But before that I want to thank a unknown person. While exploring more about this deployment process and what to choose I stumble upon this link - <a href="https://codeday.me/es/qa/20190709/1032129.html">https://codeday.me/es/qa/20190709/1032129.html</a><br>
+This link is not working as of today(Don't try to run it on 'http' as it is redirecting to some malicious site). I am not sure who is the owner of this website. But this website contains a lot of useful information regarding Perl. Even though it was in Japanese language (AFAIK), which you can translate easily, I found a great amount of knowledge here. Its a shame its not working anymore. This is also a motivation for me to write this article as I don't want that knowledge to get lost on the internet. I hope someday it will come up and people can see lot of interesting article on it. The thing which I am going to write next is inspired from one of the article mentioned there(the uWSGI part). Right now even I am not sure whether that is the correct link or not, but that is the only one I have. So a big thanks to that unknown person.</p>
+
+<p>I encourage you to look at this <a href="https://stackoverflow.com/questions/12127566/an-explanation-of-the-nginx-starman-dancer-web-stack/12134555#12134555">stackoverflow answer</a> to understand the basic concepts. It talks about Nginx, PSGI, Plack, Starman and Dancer. It has one of the best explanation and it should be added in hall of fame if possible. 😁</p>
+
+<p>So lets get started.</p>
+<h1>
+  <a href="#why-uwsgi-">
+  </a>
+  Why uWSGI ?
+</h1>
+
+<p>According to uWSGI project - </p>
+
+<blockquote>
+<p>The uWSGI project aims at developing a full stack for building hosting services.<br>
+Versatility, performance, low-resource usage and reliability are the strengths of the project.<br>
+The "WSGI" part in the name is a tribute to the namesake Python standard, as it has been the first developed plugin for the project.</p>
+</blockquote>
+
+<p>Please note that uWSGI(highly-performant WSGI server implementation) is not any language specific. I am taking an example for Perl language, but it is almost similar to other language (Python, Ruby,PHP etc.). I will provide the option in between for other languages too.</p>
+
+<p>Sample Web App Architecture :</p>
+
+<p><strong>Perl</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>Code &lt;-&gt; Web framwork (Mojolicious, Dancer, Catalyst etc.) &lt;-&gt; PSGI &lt;-&gt; uWSGI &lt;-&gt; Web Server(apache, nginx) &lt;-&gt; Clients
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Python</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>Code &lt;-&gt; Web framwork (Django, Flask etc.) &lt;-&gt; WSGI &lt;-&gt; uWSGI &lt;-&gt; Web Server(apache, nginx) &lt;-&gt; Clients
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Ruby</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>Code &lt;-&gt; Web framwork (Rails etc.) &lt;-&gt; RACK &lt;-&gt; uWSGI &lt;-&gt; Web Server(apache, nginx) &lt;-&gt; Clients
+</code></pre>
+
+</div>
+
+
+
+<p>Please keep in mind that PSGI/WSGI/RACK is not Yet Another web application framework. PSGI/WSGI/RACK is a specification to decouple web server environments from web application framework code. Nor is PSGI a web application API. Web application developers (end users) will not run their web applications directly using the PSGI interface, but instead are encouraged to use frameworks that support PSGI.</p>
+
+<p>uWSGI is toolkit that contains PSGI/WSGI/RACK middleware, helpers and adapters to web servers. In other words, they are the implementation of PSGI/WSGI/RACK specification.</p>
+
+<p>There are several ways to setup the particular architecture mentioned above.</p>
+
+<ol>
+<li><p>Using <a href="https://gunicorn.org/">Gunicorn</a> or 'Green Unicorn' (inspired from Ruby 'Unicorn') for <strong>Python</strong><br>
+   OR<br>
+Using <a href="https://plackperl.org/">Plack</a>(inspired from Ruby 'Rack') and <a href="https://metacpan.org/pod/Starman">Starman</a> / <a href="https://metacpan.org/pod/Starlet">Starlet</a> / <a href="https://metacpan.org/pod/Gazelle">Gazelle</a> for <strong>Perl</strong>.</p></li>
+<li><p>Using (<a href="https://wsgi.readthedocs.io/en/latest/">WSGI</a> + uWSGI) for <strong>Python</strong> <br>
+   OR<br>
+(<a href="https://metacpan.org/pod/PSGI">PSGI</a> + uWSGI) for <strong>Perl</strong><br>
+  OR<br>
+(<a href="https://github.com/rack/rack">RACK</a> + uWSGI) for <strong>Ruby</strong>.</p></li>
+</ol>
+
+<p>All these WSGI/PSGI/RACK are plugin provided by uWSGI which extend across almost all languages.</p>
+
+<p>So the question is which option is best or which has more advantage over other - I will try to explain with help of Perl but I hope it is true across other language as everyone is inspired from each other.</p>
+
+<ol>
+<li><p>The PSGI 'protocol' (like WSGI) is essentially a calling convention for a subroutine. A request enters the application as a subroutine call with a hash as an argument. The application responds through the return value of the subroutine: an arrayref that contains an HTTP status code, HTTP headers and body. There is more than that, but those are the essential elements.</p></li>
+<li><p>What this means is that a process can only implement PSGI if the process contains a Perl interpreter. To achieve this, the process can be implemented in Perl or implemented in a language like C that can be loaded by the <code>libperl.so</code> shared library. Similarly, a process can only implement WSGI if it contains a Python interpreter.</p></li>
+<li><p>In reality the PSGI application is within the <code>Starman</code> process. So there are really only two parts (although both parts are multi-process containers).</p></li>
+<li><p>When we say that "nginx has uWSGI directly integrated", this does not mean that a WGSI application runs within the Nginx process. It means that the WSGI application runs in a separate uwsgi process and Nginx communicates with that process through a TCP socket using the uWSGI protocol. This is essentially the same model as Nginx with Starman behind, but with the distinction that the socket connection to Starman will use the HTTP protocol:<br>
+</p></li>
+</ol>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>    .----------------------.          .-----------.
+    |       Starman        |          |   Nginx   |
+    |                      |   HTTP   |      /    |   HTTP
+    | .------------------. |&lt;---------|   Apache  |&lt;-------(internet)
+    | | PSGI Application | |          |           |
+    | '------------------' |          |           |
+    '----------------------'          '-----------'
+</code></pre>
+
+</div>
+
+
+
+<p>The HTTP protocol has higher overhead than the uWSGI protocol(remember <a href="https://en.wikipedia.org/wiki/OSI_model">OSI Model</a> - HTTP at <code>Application Layer</code>(7) while TCP at <code>Transport Layer</code>(4)), so you can get better performance by running an application server that speaks the uWSGI socket protocol and can load libperl.so to implement the PSGI interface. uWSGI can do that :<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>    .----------------------.           .----------.
+    |        uWSGI         |           |  Nginx   |
+    |                      |   uWSGI   |     /    |   HTTP
+    | .------------------. |&lt;----------|  Apache  |&lt;-------(internet)
+    | | PSGI Application | |           |          |
+    | '------------------' |           |          |
+    '----------------------'           '----------'
+</code></pre>
+
+</div>
+
+
+
+<p>Hence it is encouraged to use uWSGI over any language specific implementation.</p>
+
+<p>All few thing to note here is that-</p>
+
+<ol>
+<li>uWSGI implementation is available in almost all language (no more mod_perl or mod_python (language specific))</li>
+<li>It can be implemented across CGI script also even mason too.</li>
+<li>Applicable across different Web server. So if tomorrow you want nginx instead of Apache, its 5 min of work. Even some has out of box support for it (e.g. Nginx).</li>
+<li>Scalability</li>
+<li>Speed</li>
+</ol>
+
+<h1>
+  <a href="#how-to-use-uwsgi-">
+  </a>
+  How to use uWSGI ?
+</h1>
+
+<ul>
+<li>First install 'uWSGI'. It is available as package in several OS/distributions. So at most you have to do
+</li>
+</ul>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nb">sudo </span>apt-get <span class="nb">install </span>uwsgi
+</code></pre>
+
+</div>
+
+
+
+<ul>
+<li>Install the plugin specific to language you are using. Each language has a plugin associated with it -
+</li>
+</ul>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>    uwsgi-plugin-psgi    -&gt; Perl
+    uwsgi-plugin-python3 -&gt; Python3
+    uwsgi-plugin-python  -&gt; Python2.7
+    uwsgi-plugin-ruby    -&gt; Ruby
+</code></pre>
+
+</div>
+
+
+
+<p>You can install these plugin using apt-get(which I prefer).<br>
+  OR<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>curl http://uwsgi.it/install | bash <span class="nt">-s</span> psgi /tmp/uwsgi
+</code></pre>
+
+</div>
+
+
+
+<ul>
+<li>Web server(Apache, Nginx) specific changes needed</li>
+</ul>
+
+<p>For <strong>Apache</strong> - <code>mod_proxy_uwsgi</code>. More info <a href="https://uwsgi-docs.readthedocs.io/en/latest/Apache.html">here</a><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nb">sudo </span>apt-get <span class="nb">install </span>libapache2-mod-proxy-uwsgi
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Nginx</strong> includes uwsgi protocol support out of the box. More info <a href="https://uwsgi-docs.readthedocs.io/en/latest/Nginx.html">here</a></p>
+
+<h1>
+  <a href="#how-to-run">
+  </a>
+  How to Run
+</h1>
+
+<h3>
+  <a href="#running-on-terminal-without-web-server">
+  </a>
+  Running on terminal (without web server)-
+</h3>
+
+<p><strong>Python</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>uwsgi <span class="nt">--http-socket</span> :8080 <span class="nt">--wsgi-file</span> &lt;Application Script&gt;
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Perl</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>uwsgi_psgi <span class="nt">--http-socket</span> :8080 <span class="nt">--psgi</span> script/my_app
+</code></pre>
+
+</div>
+
+
+
+<p>OR<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>uwsgi <span class="nt">--plugins</span> http,psgi <span class="nt">--http</span> :8080 <span class="nt">--http-modifier1</span> 5 <span class="nt">--psgi</span> script/my_app
+</code></pre>
+
+</div>
+
+
+
+<p>Please note that 'http-modifier' tag in option.</p>
+
+<ol>
+<li>uWSGI supports various languages and platform. When the server receives a request it has to know where to ‘route’ it.</li>
+<li>Each uWSGI plugin has an assigned number (the modifier), the perl/psgi one has the 5. So –http-modifier1 5 means “route to the psgi plugin”.</li>
+<li>ruby/rack has 7.</li>
+<li>lua has 6.</li>
+</ol>
+
+<h3>
+  <a href="#if-using-socket-through-web-server">
+  </a>
+  If using socket (through Web Server)-
+</h3>
+
+<p><strong>Python</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>uwsgi <span class="nt">--socket</span> 127.0.0.1:8080 <span class="nt">-w</span> wsgi
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Perl</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>uwsgi_psgi <span class="nt">--socket</span> :8080 <span class="nt">--protocol</span><span class="o">=</span>http <span class="nt">--psgi</span> script/my_app
+</code></pre>
+
+</div>
+
+
+
+<p>There are various command line parameters. Have a look at <a href="https://uwsgi-docs.readthedocs.io/en/latest/Options.html">Options</a> to understand them and use them as per your need. <br>
+Since it support a large range of options, we will be using the config file instead of command line params as it will be easy to read and maintain.</p>
+
+<p>Whatever we have read till now is generic introductions of uWSGI.<br>
+Now lets try to use it for our mojo app.</p>
+<h1>
+  <a href="#creating-apache-configuration">
+  </a>
+  Creating Apache configuration
+</h1>
+
+<p>You can use any web server you like. I am just using Apache(I have a soft corner for it 😅).<br>
+Create a file in <code>etc\apache2.conf</code><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>&lt;VirtualHost <span class="k">*</span>:80&gt;
+    ServerAdmin grai@gmail.com
+    ServerName  mojo-react-app.com
+
+    RewriteEngine on
+    <span class="c"># This checks to make sure the connection is not already HTTPS</span>
+    RewriteCond %<span class="o">{</span>HTTPS<span class="o">}</span> off <span class="o">[</span>OR]
+    RewriteCond %<span class="o">{</span>HTTP:X-Forwarded-Proto<span class="o">}</span> <span class="o">!</span>https
+
+    <span class="c"># Redirect http (port 80) to https (port 443)</span>
+    RewriteRule ^/?<span class="o">(</span>.<span class="k">*</span><span class="o">)</span> https://%<span class="o">{</span>SERVER_NAME<span class="o">}</span>/<span class="nv">$1</span> <span class="o">[</span>NC,R<span class="o">=</span>301,L]
+
+&lt;/VirtualHost&gt;
+
+&lt;VirtualHost <span class="k">*</span>:443&gt;
+    ServerAdmin grai@gmail.com
+    ServerName  mojo-react-app.com
+
+    SSLEngine on
+    SSLProxyEngine on
+    SSLProxyVerify none 
+    SSLProxyCheckPeerCN off
+    SSLProxyCheckPeerName off
+    SSLProxyCheckPeerExpire off
+    SSLCertificateFile /etc/ssl/certs/server.crt
+    SSLCertificateKeyFile /etc/ssl/private/server.key
+
+    DocumentRoot /var/www/html
+    &lt;Proxy <span class="k">*</span><span class="o">&gt;</span>
+        Order deny,allow
+        Allow from all
+    &lt;/Proxy&gt;
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyPass / uwsgi://127.0.0.1:6363/ <span class="nv">keepalive</span><span class="o">=</span>On
+    ProxyPassReverse / uwsgi://127.0.0.1:6363/
+    RequestHeader <span class="nb">set </span>X-Forwarded-Ssl on
+    RequestHeader <span class="nb">set </span>X-Forwarded-Proto <span class="s2">"https"</span>
+
+    ErrorLog <span class="k">${</span><span class="nv">APACHE_LOG_DIR</span><span class="k">}</span>/mojo-react-app-error.log
+    LogLevel warn
+    CustomLog <span class="k">${</span><span class="nv">APACHE_LOG_DIR</span><span class="k">}</span>/mojo-react-app-access.log combined
+&lt;/VirtualHost&gt;
+</code></pre>
+
+</div>
+
+
+
+<p>We have two host listening on <code>80</code>(http) and <code>443</code>(https). While the first one is doing nothing except redirecting to 443. It means if we try to access out website from browser as plain <code>http</code> it will redirect the connection to <code>https</code> and will force us to go through that path. We will look into it in real time. But its a good addition to a website. With just few lines of code we are supporting both http and https.<br>
+I really love that when a web site owner does this (redirect).</p>
+
+<p>The configuration is pretty standard. You can find more details <a href="https://httpd.apache.org/docs/2.4/ssl/ssl_howto.html">here</a> and <a href="https://httpd.apache.org/docs/2.4/vhosts/examples.html">here</a> about what each one of these means.<br>
+One thing I would like to point out is <code>ProxyPass</code> and <code>ProxyPassReverse</code>. Here we just doing the forwarding. <code>6363</code> is the port where our uWSGI app is listening. We are forwarding the incoming request to it which will forward it to back-end server. More details - <a href="https://httpd.apache.org/docs/current/howto/reverse_proxy.html">Reverse Proxy</a>.<br>
+<code>SSLCertificateFile</code> and <code>SSLCertificateKeyFile</code> contains the path to CA signed certificate file on your system.<br>
+Also, we have created a separate error and access log for our application(which you should do in case you have multiple application running). All the incoming request hitting Apache and error if any will be logged to those logs.</p>
+<h1>
+  <a href="#creating-uwsgi-configuration">
+  </a>
+  Creating uWSGI configuration
+</h1>
+
+<p>As I mentioned before we will be using config file for uWSGI instead of command line, so lets create that file. I am creating a <code>ini</code> format file but other formats are also acceptable(xml, json, yaml)<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="o">[</span>uwsgi]
+project <span class="o">=</span> MojoReactApp
+chdir <span class="o">=</span> /home/mojo_react_app
+<span class="c"># spawn the specified number of workers/processes</span>
+workers <span class="o">=</span> 4
+<span class="c"># enable master process</span>
+master <span class="o">=</span> <span class="nb">true</span>
+
+<span class="o">[</span>uwsgi_psgi]
+ini <span class="o">=</span> :uwsgi
+<span class="c"># Currently the module lacks the ability to set modifiers, though this will be fixed soon.</span>
+<span class="c"># An alternative is to set the plugin you want to use as the first one (0)</span>
+plugins <span class="o">=</span> 0:psgi
+psgi <span class="o">=</span> script/mojo_react_app
+<span class="c"># set uwsgi protocol modifier1 (perl/psgi is 5)</span>
+http-socket-modifier1 <span class="o">=</span> 5
+<span class="c"># do not catch $SIG{__DIE__}</span>
+perl-no-die-catch <span class="o">=</span> <span class="nb">true</span>
+
+<span class="o">[</span>development]
+<span class="c"># This will load the uwsgi section below</span>
+ini <span class="o">=</span> :uwsgi_psgi
+<span class="c"># set environment variable</span>
+<span class="nb">env</span> <span class="o">=</span> <span class="nv">PLACK_ENV</span><span class="o">=</span>development
+<span class="c"># bind to the specified UNIX/TCP socket using uwsgi protocol</span>
+socket <span class="o">=</span> 127.0.0.1:6363
+logto <span class="o">=</span> log/uwsgi_development.log
+
+<span class="o">[</span>staging]
+<span class="c"># This will load the uwsgi section below</span>
+ini <span class="o">=</span> :uwsgi_psgi
+<span class="c"># set environment variable</span>
+<span class="c"># staging is similar to production, there is no separate DB for staging</span>
+<span class="nb">env</span> <span class="o">=</span> <span class="nv">PLACK_ENV</span><span class="o">=</span>production
+<span class="c"># bind to the specified UNIX/TCP socket using uwsgi protocol</span>
+socket <span class="o">=</span> 127.0.0.1:6363
+logto <span class="o">=</span> log/uwsgi_staging.log
+
+<span class="o">[</span>production]
+<span class="c"># This will load the uwsgi section below</span>
+ini <span class="o">=</span> :uwsgi_psgi
+<span class="c"># set environment variable</span>
+<span class="nb">env</span> <span class="o">=</span> <span class="nv">PLACK_ENV</span><span class="o">=</span>production
+<span class="c"># bind to the specified UNIX/TCP socket using uwsgi protocol</span>
+socket <span class="o">=</span> 127.0.0.1:6363
+logto <span class="o">=</span> log/uwsgi_production.log
+</code></pre>
+
+</div>
+
+
+
+<p>Please have a look at <a href="https://uwsgi-docs.readthedocs.io/en/latest/Configuration.html">Configuration</a> for more details about each items. Check the <a href="https://uwsgi-docs.readthedocs.io/en/latest/Configuration.html#ini-files">ini-files</a> section for creating the ini config.</p>
+
+<blockquote>
+<p>By default, uWSGI uses the [uwsgi] section, but you can specify another section name while loading the INI file with the syntax <code>filename:section</code>, that is:</p>
+</blockquote>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>uwsgi --ini myconf.ini:app1
+</code></pre>
+
+</div>
+
+<blockquote>
+<p>Alternatively, you can load another section from the same file by omitting the filename and specifying just the section name.</p>
+</blockquote>
+
+<ul>
+<li>In our <code>[uwsgi]</code> section we have created the config which we want globally available.</li>
+<li>
+<code>[uwsgi_psgi]</code> section contain items specific to psgi plugin. If you are using some other plugin (e.g. ruby) you can update it for that. I have added the comment on each line to understand it better.</li>
+<li>I have created 3 more section - <code>[development]</code>, <code>[staging]</code> and <code>[production]</code>. This is something which I generally do for all my project. In all 3 I have loaded the [uwsgi_psgi] section and in [uwsgi_psgi] I have loaded [uwsgi] meaning all those items are available in these 3 section.</li>
+<li>You can add the params which you think is specific to particular environment(e.g. PLACK_ENV).</li>
+<li>
+<code>socket</code> contains the address where the request coming from Apache will be forwarded (remember <code>ProxyPass</code>). This is the address where your mojolicious app will be running.</li>
+<li>
+<code>logto</code> contains the filename where the logs will be generated.</li>
+</ul>
+
+<p>The reason I have created 3 sections - dev, stag and prod because it make everything so smooth. In just few min you have your specific environment ready. We will look into it more and what I meant by this statement.</p>
+
+<h1>
+  <a href="#creating-the-signed-certificate">
+  </a>
+  Creating the signed certificate
+</h1>
+
+<p>For now I am creating a <a href="https://en.wikipedia.org/wiki/Self-signed_certificate">self-signed certificate</a><br>
+ but for actual production use you should get a CA signed certificate. If your website is going to be in a public space accessible across world, better to get a proper certificate.<br>
+A self-signed certificate is ok till your usage is limited (intranet site etc.).</p>
+
+<p>There are plenty of place where you can learn how to create it. One of them is - <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-apache-in-ubuntu-16-04">How To Create a Self-Signed SSL Certificate</a><br>
+Also, you should not be committing this certificate in your repo(git, svn etc). I have just committed it for demo.<br>
+This is private to you, use it with utmost care.</p>
+<h1>
+  <a href="#creating-the-startup-script">
+  </a>
+  Creating the startup script
+</h1>
+
+<p>Lets create a wrapper script which will start our app.<br>
+Inside <code>script\start_mojo_react_app.sh</code><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="c">#!/bin/bash</span>
+<span class="c"># This script can be run by docker or directly by provide the parameter.</span>
+<span class="c"># Move it outside and run -</span>
+<span class="c"># ./start_mojo_react_app.sh -m "development" or</span>
+<span class="c"># ./start_mojo_react_app.sh -m "production"</span>
+
+<span class="c"># Restart Web server (here Apache)</span>
+service apache2 restart
+
+<span class="c"># start Mojo React App</span>
+<span class="k">while </span><span class="nb">getopts</span> <span class="s2">"m:"</span> opt<span class="p">;</span> <span class="k">do
+    case</span> <span class="k">${</span><span class="nv">opt</span><span class="k">}</span> <span class="k">in
+        </span>m<span class="p">)</span>
+            <span class="nv">mode</span><span class="o">=</span><span class="s2">"</span><span class="k">${</span><span class="nv">OPTARG</span><span class="k">}</span><span class="s2">"</span>
+            <span class="nb">echo</span> <span class="s2">"Running in '</span><span class="nv">$mode</span><span class="s2">' mode"</span>
+            <span class="k">if</span> <span class="o">[</span> <span class="s2">"</span><span class="nv">$mode</span><span class="s2">"</span> <span class="o">==</span> <span class="s2">"development"</span> <span class="o">]</span><span class="p">;</span> <span class="k">then</span>
+                <span class="c"># Since we are using uwsgi, we have commented the morbo</span>
+                <span class="c"># exec morbo -l "https://*:6363" script/mojo_react_app</span>
+                <span class="nb">exec </span>uwsgi <span class="nt">--ini</span> etc/uwsgi.conf:<span class="nv">$mode</span>
+            <span class="k">elif</span> <span class="o">[[</span> <span class="s2">"</span><span class="nv">$mode</span><span class="s2">"</span> <span class="o">=</span> <span class="s2">"production"</span> <span class="o">||</span> <span class="s2">"</span><span class="nv">$mode</span><span class="s2">"</span> <span class="o">=</span> <span class="s2">"staging"</span> <span class="o">]]</span><span class="p">;</span> <span class="k">then</span>
+                <span class="c"># exec hypnotoad -f script/mojo_react_app</span>
+                <span class="nb">exec </span>uwsgi <span class="nt">--ini</span> etc/uwsgi.conf:<span class="nv">$mode</span>
+            <span class="k">else 
+                </span><span class="nb">echo</span> <span class="s2">"Wrong mode provided. Accepted value - development, staging or production"</span> 1&gt;&amp;2
+            <span class="k">fi</span>
+            <span class="p">;;</span>
+        : <span class="p">)</span>
+            <span class="nb">echo</span> <span class="s2">"Invalid option: </span><span class="nv">$OPTARG</span><span class="s2"> requires an argument"</span> 1&gt;&amp;2
+    <span class="k">esac
+done</span>
+</code></pre>
+
+</div>
+
+
+
+<ul>
+<li>In my case I have merged the <code>staging</code> and <code>production</code> environment. But you can segregate them based on your need.</li>
+<li>I have commented the <a href="https://docs.mojolicious.org/morbo">morbo</a>(development server) and <a href="https://docs.mojolicious.org/hypnotoad">hypnotoad</a>(HTTP and WebSocket production server) line. The reason being we are using uWSGI. In case you don't want to use uWSGI you can uncomment those and remove uWSGI line. Also don't forget to add the hypnotoad specific config and update the <code>ProxyPass</code> and <code>ProxyPassReverse</code> in <code>apache2.conf</code> 😏
+</li>
+</ul>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>    ProxyPass / http://127.0.0.1:6363/ keepalive=On
+    ProxyPassReverse / http://127.0.0.1:6363/
+</code></pre>
+
+</div>
+
+
+
+<h1>
+  <a href="#creating-the-dockerfile">
+  </a>
+  Creating the Dockerfile
+</h1>
+
+<p>Now lets wrap our application with all the configuration file created above.<br>
+Create a Dockerfile in <code>mojo_react_app\Dockerfile</code><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight docker"><code><span class="c"># build environment</span>
+<span class="k">FROM</span><span class="s"> ubuntu:18.04</span>
+
+<span class="c"># By default will run in 'dev' mode</span>
+<span class="k">ENV</span><span class="s"> mode=development</span>
+
+<span class="c"># Needed dependencies</span>
+<span class="k">RUN </span>apt-get update <span class="o">&amp;&amp;</span> apt-get <span class="nb">install</span> <span class="nt">-y</span> <span class="se">\
+</span>    build-essential <span class="se">\
+</span>    gnupg <span class="se">\
+</span>    curl <span class="se">\
+</span>    vim <span class="se">\
+</span>    less <span class="se">\
+</span>    <span class="nv">openssl</span><span class="o">=</span>1.1.1-1ubuntu2.1~18.04.9 <span class="se">\
+</span>    libssl-dev <span class="se">\
+</span>    zlib1g-dev <span class="se">\
+</span>    apache2 <span class="se">\
+</span>    <span class="nv">uwsgi</span><span class="o">=</span>2.0.15-10.2ubuntu2.1 <span class="se">\
+</span>    uwsgi-plugin-psgi<span class="o">=</span>2.0.15-10.2ubuntu2.1 <span class="se">\
+</span>    libapache2-mod-proxy-uwsgi<span class="o">=</span>2.0.15-10.2ubuntu2.1
+
+<span class="c"># Needed dependencies specific to project</span>
+<span class="k">RUN </span>curl <span class="nt">-L</span> https://cpanmin.us | perl - <span class="nt">-M</span> https://cpan.metacpan.org <span class="nt">-n</span> Mojolicious@9.17
+<span class="k">RUN </span>curl <span class="nt">-L</span> https://cpanmin.us | perl - <span class="nt">-M</span> https://cpan.metacpan.org <span class="nt">-n</span> Mojolicious::Plugin::OpenAPI@4.03
+<span class="k">RUN </span>curl <span class="nt">-L</span> https://cpanmin.us | perl - <span class="nt">-M</span> https://cpan.metacpan.org <span class="nt">-n</span> Mojolicious::Plugin::SwaggerUI@0.0.4
+<span class="k">RUN </span>curl <span class="nt">-L</span> https://cpanmin.us | perl - <span class="nt">-M</span> https://cpan.metacpan.org <span class="nt">-n</span> IO::Socket::SSL@2.070
+<span class="k">RUN </span>curl <span class="nt">-L</span> https://cpanmin.us | perl - <span class="nt">-M</span> https://cpan.metacpan.org <span class="nt">-n</span> JSON::XS@4.03
+
+<span class="c"># Apache specific configuration</span>
+<span class="k">RUN </span><span class="se">\
+</span>    a2enmod headers <span class="o">&amp;&amp;</span> <span class="se">\
+</span>    a2enmod proxy <span class="o">&amp;&amp;</span> <span class="se">\
+</span>    a2enmod proxy_http <span class="o">&amp;&amp;</span> <span class="se">\
+</span>    a2enmod proxy_uwsgi <span class="o">&amp;&amp;</span> <span class="se">\
+</span>    a2enmod rewrite <span class="o">&amp;&amp;</span> <span class="se">\
+</span>    a2enmod ssl
+
+<span class="c"># Disable the default apache home page on port 80</span>
+<span class="k">RUN </span>a2dissite 000-default.conf
+
+<span class="c"># Copy your codebase from local to inside container</span>
+<span class="k">COPY</span><span class="s"> . /home/mojo_react_app</span>
+<span class="k">RUN </span><span class="nb">mkdir</span> <span class="nt">-p</span> /home/mojo_react_app/log/
+
+<span class="c"># These will be used while setting virtual host in apache.conf</span>
+<span class="k">ENV</span><span class="s"> APACHE_LOG_DIR /var/log/apache2</span>
+<span class="k">ENV</span><span class="s"> APACHE_LOCK_DIR /var/lock/apache2</span>
+<span class="k">ENV</span><span class="s"> APACHE_PID_FILE /var/run/apache2.pid</span>
+
+<span class="c"># Copy Apache config file</span>
+<span class="k">COPY</span><span class="s"> etc/apache2.conf /etc/apache2/sites-available/mojo_react_app.conf</span>
+<span class="k">RUN </span><span class="nb">ln</span> <span class="nt">-s</span> /etc/apache2/sites-available/mojo_react_app.conf /etc/apache2/sites-enabled/mojo_react_app.conf
+
+<span class="k">WORKDIR</span><span class="s"> /home/mojo_react_app</span>
+
+<span class="c"># Expose both http and https port</span>
+<span class="k">EXPOSE</span><span class="s"> 80 443</span>
+
+<span class="k">COPY</span><span class="s"> script/start_mojo_react_app.sh /start_mojo_react_app.sh</span>
+<span class="k">RUN </span><span class="nb">chmod </span>a+x /start_mojo_react_app.sh
+
+<span class="k">ENTRYPOINT</span><span class="s"> /start_mojo_react_app.sh -m "$mode"</span>
+</code></pre>
+
+</div>
+
+
+
+<p>I have added comment for better understanding.</p>
+
+<ul>
+<li><p>We are using the ubuntu(18.04) image. You can use the recent one (20.04) but still some plugins are missing for this version hence I have used 18.04. You can also use the official <a href="https://hub.docker.com/_/perl">Perl</a> docker image instead if you want (e.g. perl:5.32).</p></li>
+<li><p>By default we will running in <code>development</code> mode. You can override it by providing different value at runtime (e.g. staging or production). This is the one which will cause the the different section to pick in uwsgi.conf.</p></li>
+<li><p>Next we are installing some tools(e.g. vim). In case you don't want it you can remove those lines. Few notable plugins/tools are - <code>openssl</code>(for https), <code>apache2</code>, <code>uwsgi</code>, <code>uwsgi-plugin-psgi</code>(for perl), <code>libapache2-mod-proxy-uwsgi</code>(for apache2).<br>
+I have used some version which are specific to ubuntu(18.04), you can update that as per your image or not use at all.</p></li>
+<li><p>Next I have installed some dependencies specific to our Mojolicious app. I am using <a href="https://metacpan.org/pod/App::cpanminus">cpanminus</a> for this. I have added the version number also to get that specific version. There are again multiple way to achieve this. One of them is using <code>cpanm</code> from command line as mentioned <a href="https://metacpan.org/pod/distribution/App-cpanminus/bin/cpanm">here</a> and <a href="https://mvp.kablamo.org/dependencies/cpanm/">here</a>. Another is using <a href="https://metacpan.org/pod/Carton">Carton</a> which is dependency manager fro Perl(similar to Bundler in Ruby).<br>
+Since our scope is limited I have used it like that. In big project you may want to follow one of above mentioned approach.</p></li>
+<li><p>Next is some Apache specific configuration. We are enabling some modules in Apache. More info at <a href="https://manpages.ubuntu.com/manpages/trusty/man8/a2enmod.8.html">a2enmod</a>.<br>
+We are enabling the ability of handling HTTP proxy requests, handling the uWSGI protocol, ssl etc. Also we disable the default Apache homepage which is available on port 80.</p></li>
+<li><p>After that we are copying our <code>mojo_react_app</code> code base and placing it at <code>/home/mojo_react_app</code> inside container.</p></li>
+<li><p>We are setting some environment variables which we are using in <code>apache.conf</code> (remember <code>${APACHE_LOG_DIR}</code>).</p></li>
+<li><p>Next we copied our virtual host config file and copied it inside container(site-available). Also we created a symbolic link for it in <code>/etc/apache2/sites-enabled/</code>.</p></li>
+<li><p>Now we make the change our working dir to <code>/home/mojo_react_app</code> inside container where all our code base is.</p></li>
+<li><p>We have exposed the 80 and 443 port to outside world.</p></li>
+<li><p>We copied the startup script to our current working dir(which is /home/mojo_react_app).</p></li>
+<li><p>Finally we are running that startup script with <code>mode</code> as param (by default - development).</p></li>
+</ul>
+
+<p>All the docker keywords and there meaning is already available at - <a href="https://docs.docker.com/engine/reference/builder/">Dockerfile reference</a>. Check it out for more info.</p>
+
+<p>With that we are ready to start our application.</p>
+
+<h1>
+  <a href="#running-the-application">
+  </a>
+  Running the application
+</h1>
+
+<h3>
+  <a href="#build-the-dockerfile">
+  </a>
+  Build the dockerfile
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>docker build <span class="nt">--pull</span><span class="o">=</span><span class="nb">false</span> <span class="nt">--no-cache</span><span class="o">=</span><span class="nb">false</span> <span class="nt">-t</span> mojo_react_app:development <span class="nb">.</span>
+</code></pre>
+
+</div>
+
+
+
+<h3>
+  <a href="#create-the-container">
+  </a>
+  Create the container
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>docker create <span class="nt">--name</span> mojo_react_app_development <span class="nt">-t</span> <span class="se">\</span>
+       <span class="nt">-p</span> 0.0.0.0:80:80 <span class="nt">-p</span> 0.0.0.0:443:443 <span class="se">\</span>
+       <span class="nt">--env</span> <span class="nv">mode</span><span class="o">=</span>development docker create <span class="nt">--name</span> 
+</code></pre>
+
+</div>
+
+
+
+<h3>
+  <a href="#copy-the-signed-certificates">
+  </a>
+  Copy the signed certificates
+</h3>
+
+<p>We will copy the self signed certificate inside the created container. This certificate will be available somewhere on your prod machine(private). For now I am copying it from the project dir.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>docker <span class="nb">cp </span>mojo_react_app/apache-certificate/apache_certificate_development.crt mojo_react_app_development:/etc/ssl/certs/server.crt
+
+docker <span class="nb">cp </span>mojo_react_app/mojo_react_app/apache-certificate/apache_certificate_development.key mojo_react_app_development:/etc/ssl/private/server.key
+</code></pre>
+
+</div>
+
+
+
+<p>Remember the destination path is the one which we used in <code>apache2.conf</code> for virtual host configuration.</p>
+
+<h3>
+  <a href="#start-the-container">
+  </a>
+  Start the container
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>docker start mojo_react_app_development
+</code></pre>
+
+</div>
+
+
+
+<h3>
+  <a href="#show-running-containers">
+  </a>
+  Show running containers
+</h3>
+
+<p>Just to check whether our container is running or not<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>docker ps | <span class="nb">grep </span>mojo_react_app_development
+</code></pre>
+
+</div>
+
+
+
+<p>You can change the <code>development</code> in name and <code>mode</code> to <code>staging</code> or <code>production</code> for different environment.</p>
+
+<p>Lets login to container and see what is going on there.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>docker <span class="nb">exec</span> <span class="nt">-it</span> mojo_react_app_development bash
+</code></pre>
+
+</div>
+
+
+
+<p>Lets go to apache log dir to see the logs there<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--HY_IucgY--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hh318tqq7dpe93hknwi0.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--HY_IucgY--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hh318tqq7dpe93hknwi0.PNG" alt="apache_logs"></a><br>
+We can see our application access and error are getting generated here. Whatever the request apache received that will be logged here.</p>
+
+<p>Lets go to our project dir and see the uWSGI logs<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--5WqIScai--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/0pcck347vwn94g9ijm0o.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--5WqIScai--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/0pcck347vwn94g9ijm0o.PNG" alt="uwsgi_log"></a><br>
+All the mojolicious app log will be logged here.</p>
+
+<p>Lets tail this log and see whats inside<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--sANUj-AM--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/uo1hyy3ijq3nap9u9mm2.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--sANUj-AM--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/uo1hyy3ijq3nap9u9mm2.PNG" alt="tail_uwsgi"></a><br>
+Hmm, all the 4 works which we have configured in [uwsgi] section inside <code>uwsgi.conf</code> is ready to rock.</p>
+
+<p>Just open the browser and hit the <a href="http://localhost">http://localhost</a><br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--3XL0UTHz--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2zgu96v3srnrvvu0uhpw.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--3XL0UTHz--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2zgu96v3srnrvvu0uhpw.PNG" alt="redirect_301"></a></p>
+
+<ul>
+<li>Just look at the <em>Network</em> tab in browser. Even though you hit <code>http</code> it got redirected to <code>https</code>. The status code 301 says so.
+The url itself is now <a href="https://localhost">https://localhost</a> at the top.</li>
+<li>Also you can see the server is <em>Apache(2.4.29)</em> running on <em>Ubuntu</em> and not <em>Mojolicious(Perl)</em> since we are using the reverse proxy architecture.</li>
+</ul>
+
+<p>Lets go ahead and click to open the API page.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--_fHzoWBF--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pk7qe0ikn5qhoiuh9h5w.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--_fHzoWBF--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pk7qe0ikn5qhoiuh9h5w.PNG" alt="api"></a><br>
+Voila!!!. So far so good. It is similar to what we have seen previously except on <code>https</code>.</p>
+
+<p>Since we are already tailing the uWSGi log, lets see whats happens there -<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--gunLR5pH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/uaoolwc5i9mwpy9g8ppv.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--gunLR5pH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/uaoolwc5i9mwpy9g8ppv.PNG" alt="api_logs"></a><br>
+We got a <code>GET</code> request on <code>/api</code> and we render the template based on our internal logic. All the debug message will go away when you run it in production mode.</p>
+
+<p>Go ahead and try to do the <code>GET</code> request on the endpoints. You will be able to do it without any issue.</p>
+
+<p>A high level diagram of architecture we followed is -<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--5xeMyp1i--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/56y2t5k7cjbvulies9u3.PNG" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--5xeMyp1i--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/56y2t5k7cjbvulies9u3.PNG" alt="architecture"></a> </p>
+
+<h1>
+  <a href="#what-next">
+  </a>
+  What next
+</h1>
+
+<p>Well even though we are using docker, we have to run several command manually. We have to take care of different environment while creating and starting the image. Not to mention the copy of Apache certificate. What if we can automate it more.<br>
+What if we say - <code>make dev</code> and all the thing got taken cared of.<br>
+Similarly for <code>make stag</code> and <code>make prod</code>.<br>
+This thing will come handy when you will do the automated deployment using Jenkins or some other ways.<br>
+I can see the sparkle in your eyes.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--jOesmNxM--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_66%2Cw_880/https://data.whicdn.com/images/186559937/original.gif" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--jOesmNxM--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_66%2Cw_880/https://data.whicdn.com/images/186559937/original.gif" alt="One piece"></a><br>
+We will look into that in our next section.</p>
+
+<h1>
+  <a href="#honorable-mention-">
+  </a>
+  Honorable Mention -
+</h1>
+
+<p><a href="https://stackoverflow.com/questions/12127566/an-explanation-of-the-nginx-starman-dancer-web-stack/12134555#12134555">https://stackoverflow.com/questions/12127566/an-explanation-of-the-nginx-starman-dancer-web-stack/12134555#12134555</a><br>
+<a href="https://uwsgi-docs.readthedocs.io/en/latest/index.html">https://uwsgi-docs.readthedocs.io/en/latest/index.html</a><br>
+<a href="https://codeday.me/es/qa/20190709/1032129.html">https://codeday.me/es/qa/20190709/1032129.html</a><br>
+<a href="https://metacpan.org/pod/PSGI">https://metacpan.org/pod/PSGI</a><br>
+<a href="https://perlmaven.com/deploying-a-mojolicious-application">https://perlmaven.com/deploying-a-mojolicious-application</a></p>
+
+<p>And a lot of different articles read over the years, the source of which I don't remember. 😭</p>
+
+<p>The above code is also available at <a href="https://github.com/rai-gaurav/mojo_react_app/tree/main/with_jsx/server/mojo_react_app">github</a></p>
+
+<p>Perl onion logo taken from <a href="https://github.com/dnmfarrell/Perl-Icons/blob/master/Icons/Perl_Onion_Color.svg">here</a><br>
+Mojolicious logo taken from <a href="https://github.com/mojolicious/mojo/blob/master/lib/Mojolicious/resources/public/mojo/logo.png">here</a><br>
+OpenAPI logo taken from <a href="https://www.openapis.org/news/blogs/2016/07/you-can-get-involved-creating-openapi-specification-and-heres-how/attachment/openapi_pantone">here</a><br>
+uWSGI logo taken from <a href="https://www.seekpng.com/ipng/u2t4i1i1y3e6t4q8_official-uwsgi-logo-uwsgi-logo/">here</a><br>
+ Docker logo taken from <a href="https://www.docker.com/company/newsroom/media-resources">here</a><br>
+Apache logo taken from <a href="https://httpd.apache.org/">here</a><br>
+Ubuntu logo taken from <a href="https://design.ubuntu.com/brand/ubuntu-logo/">here</a></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Gaurav Rai
+     on Sunday 09 May 2021 09:41</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/penucuricode/openpilot-27eg">OpenPilot</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--UqQPoS0B--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/l217ily8u2hz5ap5qavz.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--UqQPoS0B--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/l217ily8u2hz5ap5qavz.png" alt="Alt Text"></a></p>
@@ -214,7 +1034,7 @@ openpilot is released under the MIT license. Some parts of the software are rele
      on Sunday 09 May 2021 08:06</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/neilb/2021/05/open-letter-to-the-perl-foundation-board.html">Open Letter to the Perl Foundation Board</a></h2>
             </div> <!-- card-header -->
@@ -273,7 +1093,7 @@ Thomas Klausner, event organiser, CPANTS Founder, White Camel award recipient</p
      on Sunday 09 May 2021 02:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cccxl-17-great-cpan-modules-released.html">(cccxl) 17 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -285,7 +1105,7 @@ Thomas Klausner, event organiser, CPANTS Founder, White Camel award recipient</p
      on Saturday 08 May 2021 19:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cdlxvi-metacpan-weekly-report.html">(cdlxvi) metacpan weekly report - Faster::Maths</a></h2>
             </div> <!-- card-header -->
@@ -297,7 +1117,7 @@ Thomas Klausner, event organiser, CPANTS Founder, White Camel award recipient</p
      on Saturday 08 May 2021 19:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cdlxxxix-stackoverflow-perl-report.html">(cdlxxxix) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -309,7 +1129,7 @@ Thomas Klausner, event organiser, CPANTS Founder, White Camel award recipient</p
      on Saturday 08 May 2021 19:38</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/byterock/2021/05/paws-anyone.html">Paws anyone?</a></h2>
             </div> <!-- card-header -->
@@ -340,7 +1160,7 @@ Thomas Klausner, event organiser, CPANTS Founder, White Camel award recipient</p
      on Thursday 06 May 2021 22:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/penucuricode/brute-force-tool-wordpress-joomla-drupal-opencart-magento-339o">Brute Force Tool 🔓 WordPress , Joomla , DruPal , OpenCart , Magento</a></h2>
             </div> <!-- card-header -->
@@ -396,7 +1216,7 @@ perl bprute.pl -l list.txt -p passwords.txt</p>
      on Friday 07 May 2021 05:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/05/monthly-report---april-2.html">Monthly Report - April</a></h2>
             </div> <!-- card-header -->
@@ -581,7 +1401,7 @@ perl bprute.pl -l list.txt -p passwords.txt</p>
      on Friday 07 May 2021 04:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/fgasper/perling-and-curling-2i10">Perling and Curling</a></h2>
             </div> <!-- card-header -->
@@ -781,7 +1601,7 @@ Mojo::Promise-&gt;all_settled(
      on Friday 07 May 2021 04:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/raku-ci-bot-grant-2021-04">Raku CI Bot Grant Report 2021-04</a></h2>
             </div> <!-- card-header -->
@@ -814,7 +1634,7 @@ application. I hope to publish a post about it soon.</p>
      on Thursday 06 May 2021 15:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/mejorar-una-libreria-utilizar-github-actions-3ado">Mejorar una librería, Utilizar GitHub Actions</a></h2>
             </div> <!-- card-header -->
@@ -840,7 +1660,7 @@ application. I hope to publish a post about it soon.</p>
      on Thursday 06 May 2021 04:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-111-search-matrix-and-ordered-letters.html">Perl Weekly Challenge 111: Search Matrix and Ordered Letters</a></h2>
             </div> <!-- card-header -->
@@ -1209,75 +2029,6 @@ beefily billowy
 
               <p class="text-right"><small>Published by laurent_r
      on Wednesday 05 May 2021 22:48</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_13">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/davorg/easier-web-sites-for-cpan-modules-1nn4">Easier web sites for CPAN modules</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>A few months ago, Gabor asked if <a href="https://dev.to/szabgab/perl-modules-with-their-own-web-site-2gmo">more CPAN modules should have their own web sites</a>. I replied, saying thought it was a good idea and pointing out <a href="https://dev.to/davorg/simple-cpan-module-web-sites-with-github-pages-29ka">how easy it was to create project web sites</a> on GitHub Pages.</p>
-
-<p>But since then, I've been wondering if could be made even easier. Perhaps we could make it easy enough that there was really no reason not to have a web site for your CPAN module.</p>
-
-<p>And today I've released <a href="https://metacpan.org/release/App-CPANModuleSite">App::CPANModuleSite</a> that does just that.</p>
-
-<p>The default usage is pretty easy.</p>
-
-<ul>
-<li>Install the module</li>
-<li>In your repo checkout run <code>mksite &lt;distribution-name&gt;</code>
-</li>
-<li>Run <code>git add docs</code> to add your new website directory to your repo</li>
-<li>Commit the changes and push the commit</li>
-<li>Configure your repo to support GitHub pages (I covered that in <a href="https://dev.to/davorg/simple-cpan-module-web-sites-with-github-pages-29ka">my earlier blog post</a>)</li>
-</ul>
-
-<p>And you'll have a basic web site for your module at the web address https://&lt;github-user&gt;.github.io/&lt;repo-name&gt;.</p>
-
-<p>The default site is pretty basic. And it has a big banner across the page saying that you haven't put any effort into the site yet. But that's simple enough to fix. Just add a file called <code>tt_lib/intro.tt</code> to your repo that contains a bit of HTML which explains more about what your module does. The next time you rebuild the site, that text will replace the default paragraph.</p>
-
-<p>Other than that, the default site contains:</p>
-
-<ul>
-<li>The documentation for all of the modules in your distribution</li>
-<li>Links to other standard pages about your module (CPAN, CPAN testers, CPANTS, things like that)</li>
-<li>Links to your code repo and issue tracker (if they are defined in your CPAN metadata)</li>
-</ul>
-
-<p>It's also simple to add more pages to your site. Just add files in a <code>site_src</code> directory in your repo. Any file in that directory whose name ends in <code>.tt</code> will be processed by the Template Toolkit and the output will be stored in the <code>/docs</code> directory (with the <code>.tt</code> stripped from the name). Any files without a <code>.tt</code> extension will just be copied into <code>/docs</code>. If you're adding pages, then you'll almost certainly also want to edit the navbar on the page to contain links to your new pages.</p>
-
-<p>Default versions of various template files in <code>/site_src</code> and <code>/tt_lib</code> are installed as part of App::CPANModuleSite's installation. To edit them, you just copy them into the same directory in your repo and edit the copied versions. Any files found inside your repo will take precedence over the versions in the default directories.</p>
-
-<p>Any templates that you write (or existing ones that you edit) will have access to a few template variables:</p>
-
-<ul>
-<li>
-<strong>distribution</strong> is a <a href="https://metacpan.org/pod/MetaCPAN::Client::Distribution">MetaCPAN::Client::Distribution</a> object containing details of your distribution</li>
-<li>
-<strong>release</strong> is a <a href="https://metacpan.org/pod/MetaCPAN::Client::Release">MetaCPAN::Client::Release</a> object containing details of the latest release of your distribution</li>
-<li>
-<strong>modules</strong> is an array reference, where each element of the array is a <a href="https://metacpan.org/pod/MetaCPAN::Client::Module">MetaCPAN::Client::Module</a> object containing details of one module in your distribution</li>
-</ul>
-
-<p>This is all pretty experimental currently. I'm very happy to add more information to the default pages, more variables to the template engine and make pretty much any other changes that any users suggest. Let's work together to make this a useful and powerful web site generation tool.</p>
-
-<p>I have a couple of thoughts for things I want to do next:</p>
-
-<ul>
-<li>I've already started work on creating a GitHub Action, so that you can automatically regenerate the site, for example, whenever you check in a change to your code</li>
-<li>The whole point of this is that more CPAN web sites mean better SEO for Perl. So I plan to think of ways that make the default sites as SEO-friendly as possible</li>
-</ul>
-
-<p>Please let me know what you think. Do you think this is a good idea? Will you use the module?</p>
-
-<p>Oh, and the site that App::CPANModuleSite generated for itself is at <a href="https://davorg.dev/app-cpanmodulesite/">https://davorg.dev/app-cpanmodulesite/</a>.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Dave Cross
-     on Wednesday 05 May 2021 18:46</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_14">
@@ -3796,7 +4547,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 09 May 2021 08:54 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 09 May 2021 09:54 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
