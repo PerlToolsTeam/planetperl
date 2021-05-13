@@ -7,9 +7,336 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-05-13T08:48:43Z</updated>
+  <updated>2021-05-13T09:48:27Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 112: Canonical Path and Climb Stairs</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-112-canonical-path-and-climb-stairs.html"/>
+    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10219</id>
+    <published>2021-05-13T14:10:29Z</published>
+    <updated>2021-05-13T14:13:54Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 112 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-112/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few  days (May 16, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Canonical Path</h2>
+
+<p><em>You are given a string path, starting with a slash ‘/&#8217;.</em></p>
+
+<p><em>Write a script to convert the given absolute path to the simplified canonical path.</em></p>
+
+<p><em>In a Unix-style file system:</em></p>
+
+<p><em>- A period &#8216;.&#8217; refers to the current directory</em></p>
+
+<p><em>- A double period &#8216;..&#8217; refers to the directory up a level</em></p>
+
+<p><em>- Multiple consecutive slashes (&#8216;//&#8217;) are treated as a single slash &#8216;/&#8217;</em></p>
+
+<p><em>The canonical path format:</em></p>
+
+<p><em>- The path starts with a single slash &#8216;/&#8217;.</em></p>
+
+<p><em>- Any two directories are separated by a single slash &#8216;/&#8217;.</em></p>
+
+<p><em>- The path does not end with a trailing &#8216;/&#8217;.</em></p>
+
+<p><em>- The path only contains the directories on the path from the root directory to the target file or directory</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: "/a/"
+Output: "/a"
+
+Input: "/a/b//c/"
+Output: "/a/b/c"
+
+Input: "/a/b/c/../.."
+Output: "/a"
+</code></pre>
+
+<p>Although it can surely be done differently, this is obviously a job for regular expressions or regexes.</p>
+
+<h3>Canonical Path in Raku</h3>
+
+<p>It would certainly make sense to write a grammar for performing the necessary transformations, but this is simple enough for a few regexes to do the job. It is in fact probably possible to do everything with a single regex, but I usually find it more legible to transform the input string step by step. </p>
+
+<p>Note that I&#8217;m not trying to validate the input paths, with just one exception: if there are too many <code>/../</code> compared to the previous path items, the script dies, rather than printing something incorrect.</p>
+
+<pre><code>use v6
+
+my @tests = &lt;/a/ /a/b//c/ /a/b/c/../.. /a/../../b/&gt;;
+for @tests &lt;-&gt; $path {
+    my $p = $path;
+    $path ~~ s:g|'//'+|/|;
+    $path ~~ s:g!^'/' | '/'$!!;
+    my @path-items;
+    for split /'/'+/, $path -&gt; $item {
+        next if $item eq '.';
+        if $item eq '..' {
+            die "Invalid path $p" unless @path-items;
+            pop @path-items;
+        } else {
+            push @path-items, $item;
+        }
+    };
+    say "$p =&gt; /", @path-items.join('/');
+}
+</code></pre>
+
+<p>The script displays the following output:</p>
+
+<pre><code>$ raku ./paths.raku
+/a/ =&gt; /a
+/a/b//c/ =&gt; /a/b/c
+/a/b/c/../.. =&gt; /a
+Invalid path /a/../../b/
+  in block  at ./main.raku line 12
+  in block &lt;unit&gt; at ./main.raku line 4
+</code></pre>
+
+<h3>Canonical Path in Perl</h3>
+
+<p>This a port to Perl of the Raku program above, except that when there are too many <code>/../</code> compared to the previous path items, the script issues a warning instead of dying, does not print any canonical path and proceeds with the next items.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @tests = ('/a/', '/a/b//c/', '/a/b/c/../..', '/a/../../b/', '/a/././b/');
+TEST: for my $path (@tests) {
+    my $p = $path;
+    $path =~ s|\/\/+|/|g;
+    $path =~ s!^\/|\/$!!g;
+    my @path_items;
+    for my $item (split /\/+/, $path) {
+        next if $item eq '.';
+        if ($item eq '..') {
+            warn "Invalid path $p" and next TEST unless @path_items;
+            pop @path_items;
+        } else {
+            push @path_items, $item;
+        }
+    };
+    say "$p =&gt; /", join '/', @path_items;
+}
+</code></pre>
+
+<p>The script displays the following output:</p>
+
+<pre><code>$ perl paths.pl
+/a/ =&gt; /a
+/a/b//c/ =&gt; /a/b/c
+/a/b/c/../.. =&gt; /a
+Invalid path /a/../../b/ at paths.pl line 14.
+/a/././b/ =&gt; /a/b
+</code></pre>
+
+<h2>Task 2: Climb Stairs</h2>
+
+<p><em>You are given <code>$n</code> steps to climb.</em></p>
+
+<p><em>Write a script to find out the distinct ways to climb to the top. You are allowed to climb either 1 or 2 steps at a time.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $n = 3
+Output: 3
+
+    Option 1: 1 step + 1 step + 1 step
+    Option 2: 1 step + 2 steps
+    Option 3: 2 steps + 1 step
+
+Input: $n = 4
+Output: 5
+
+    Option 1: 1 step + 1 step + 1 step + 1 step
+    Option 2: 1 step + 1 step + 2 steps
+    Option 3: 2 steps + 1 step + 1 step
+    Option 4: 1 step + 2 steps + 1 step
+    Option 5: 2 steps + 2 steps
+</code></pre>
+
+<p>It is not clear to me whether the output should contain all the information above, or just the number of possibilities, but since the assignment asks us &#8220;to find out the distinct ways to climb to the top&#8221;, I have decided to output the result in the format given above, although this leads to quite a bit of uninteresting boiler plate code.</p>
+
+<h3>Climb Stairs in Raku</h3>
+
+<p>I&#8217;ve decided to use a <code>try-steps</code> recursive subroutine to explore all possibilities. The script uses a <code>@*result</code> dynamic variable to store the various winning combinations of steps and to print them at the end. </p>
+
+<pre><code>use v6;
+
+sub print-result {
+    my $count = 0;  
+    for  @*result -&gt; @solution {
+        print "\tOption ", ++$count, ": ";
+        my @step_list;
+        push @step_list, "$_ " ~ ($_ ~~ /1/ ?? "step " !! "steps") for @solution;
+        say join " + ", @step_list;
+    }
+    say "";
+}
+
+sub try-steps ($nb-steps, @curr) {
+    for 1, 2 -&gt; $new-step {
+        my @new-cur = (|@curr, $new-step);
+        my $sum = [+] @new-cur;
+        next if $sum &gt; $nb-steps;
+        if $sum == $nb-steps {
+            push @*result, @new-cur;
+            last;
+        } else {
+            try-steps $nb-steps, @new-cur;
+        }
+    }
+}
+
+for 3, 4, 5 -&gt; $target {
+    my @*result;
+    try-steps $target, [];
+    say 'Input: $n = ', $target;
+    say "Output: ", @*result.elems;
+    # say @*result;
+    print-result;
+}
+</code></pre>
+
+<p>The script displays the following output:</p>
+
+<pre><code>$ raku ./steps.raku
+Input: $n = 3
+Output: 3
+    Option 1: 1 step  + 1 step  + 1 step 
+    Option 2: 1 step  + 2 steps
+    Option 3: 2 steps + 1 step 
+
+Input: $n = 4
+Output: 5
+    Option 1: 1 step  + 1 step  + 1 step  + 1 step 
+    Option 2: 1 step  + 1 step  + 2 steps
+    Option 3: 1 step  + 2 steps + 1 step 
+    Option 4: 2 steps + 1 step  + 1 step 
+    Option 5: 2 steps + 2 steps
+
+Input: $n = 5
+Output: 8
+    Option 1: 1 step  + 1 step  + 1 step  + 1 step  + 1 step 
+    Option 2: 1 step  + 1 step  + 1 step  + 2 steps
+    Option 3: 1 step  + 1 step  + 2 steps + 1 step 
+    Option 4: 1 step  + 2 steps + 1 step  + 1 step 
+    Option 5: 1 step  + 2 steps + 2 steps
+    Option 6: 2 steps + 1 step  + 1 step  + 1 step 
+    Option 7: 2 steps + 1 step  + 2 steps
+    Option 8: 2 steps + 2 steps + 1 step
+</code></pre>
+
+<p>Note that, if you don&#8217;t want this verbose output, you can just remove the <code>print-result</code> subroutine definition, comment out the last line (with the <code>print-result</code> subroutine call), and uncomment the previous code line:</p>
+
+<pre><code>    say @*result;
+    # print-result;
+</code></pre>
+
+<p>and obtain the following output:</p>
+
+<pre><code>$ raku ./steps.raku
+Input: $n = 3
+Output: 3
+[[1 1 1] [1 2] [2 1]]
+Input: $n = 4
+Output: 5
+[[1 1 1 1] [1 1 2] [1 2 1] [2 1 1] [2 2]]
+Input: $n = 5
+Output: 8
+[[1 1 1 1 1] [1 1 1 2] [1 1 2 1] [1 2 1 1] [1 2 2] [2 1 1 1] [2 1 2] [2 2 1]]
+</code></pre>
+
+<h3>Climb Stairs in Perl</h3>
+
+<p>This is a port to Perl of the above Raku program, with a <code>try_steps</code> recursive subroutine:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @result;
+
+sub print_result {
+    my $count = 0;
+    for  my $solution (@result) {
+        print "\tOption ", ++$count, ": ";
+        my @step_list;
+        push @step_list, "$_ " . ($_ =~ /1/ ? "step " : "steps") for @$solution;
+        say join " + ", @step_list;
+    }
+    say "";
+}
+
+sub try_steps  {
+    my ($nb_steps, $sum, @curr) = @_;
+    for my $new_step (1, 2) {
+        my $new_sum =  $sum + $new_step;
+        next if $new_sum &gt; $nb_steps;
+        my @new_cur = (@curr, $new_step);
+        if ($new_sum == $nb_steps) {
+            push @result, \@new_cur;
+            last;
+        } else {
+            try_steps($nb_steps, $new_sum, @new_cur);
+        }
+    }
+}
+
+for my $target (3, 4, 5) {
+    @result = ();
+    try_steps $target, 0, ();
+    say 'Input: $n = ', $target;
+    say "Output: ", scalar @result;
+    print_result;
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl  ./steps.pl
+Input: $n = 3
+Output: 3
+        Option 1: 1 step  + 1 step  + 1 step
+        Option 2: 1 step  + 2 steps
+        Option 3: 2 steps + 1 step
+
+Input: $n = 4
+Output: 5
+        Option 1: 1 step  + 1 step  + 1 step  + 1 step
+        Option 2: 1 step  + 1 step  + 2 steps
+        Option 3: 1 step  + 2 steps + 1 step
+        Option 4: 2 steps + 1 step  + 1 step
+        Option 5: 2 steps + 2 steps
+
+Input: $n = 5
+Output: 8
+        Option 1: 1 step  + 1 step  + 1 step  + 1 step  + 1 step
+        Option 2: 1 step  + 1 step  + 1 step  + 2 steps
+        Option 3: 1 step  + 1 step  + 2 steps + 1 step
+        Option 4: 1 step  + 2 steps + 1 step  + 1 step
+        Option 5: 1 step  + 2 steps + 2 steps
+        Option 6: 2 steps + 1 step  + 1 step  + 1 step
+        Option 7: 2 steps + 1 step  + 2 steps
+        Option 8: 2 steps + 2 steps + 1 step
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, May 23, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>Weekly Challenge 112</title>
     <link rel="alternate" href="https://dev.to/simongreennet/weekly-challenge-112-27l0" type="text/html"/>
@@ -2565,40 +2892,6 @@ application. I hope to publish a post about it soon.</p>
 
     ]]>
   </content>
-</entry>
-  <entry>
-    <title>TPF made me wait 301 hours to learn my punishment</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/mithaldu/2021/05/tpf-made-me-wait-301-hours-to-learn-my-punishment.html"/>
-    <id>tag:blogs.perl.org,2021:/users/mithaldu//415.10204</id>
-    <published>2021-05-03T10:48:39Z</published>
-    <updated>2021-05-04T14:10:02Z</updated>
-    <author>
-        <name>Mithaldu</name>
-        <uri>http://cat.eatsmou.se</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/mithaldu/">
-        <![CDATA[<p>Edit2: After further talk with CAT, i will acknowledge that it was not the intent of the CAT to make me wait, and they in fact did not even realize this was the effect.</p>
-
-<p>I am the "second individual", i am intimately familiar with the events of both their investigations.</p>
-
-<p>Shortly before the TPF informed me that their start-of-may update was nearly ready to be posted, i informed them that these were my expectations:</p>
-
-<p>2021-04-29 19:00<br />
-> all i care about are correct, accurate, truthful and useful consequences</p>
-
-<p>I was wholly disappointed.</p>
-
-<p>----</p>
-
-<p>Context: <a href="https://news.perlfoundation.org/post/cat-transparency-report-updates0">https://news.perlfoundation.org/post/cat-transparency-report-updates0</a></p>
-
-<p>----</p>
-
-<p>Edit:</p>
-
-<p>And interestingly the perl.reddit.com moderation team saw fit to censor the submission of this post. It can <a href="https://old.reddit.com/r/perl/comments/n3yv5q/tpf_made_me_wait_301_hours_to_learn_my_punishment/">still be seen directly</a>, but is <a href="https://gist.github.com/wchristian/ee943ee3884bb62440cd84e37aa47993/raw/22ffe3f79e8799bc9d3b91a2142511e866b51521/Screenshot%25202021-05-04%2520050457.png">not in the feed</a> anymore. This is notable as a wide variety of posts and comments that violate the "no personal attacks" rule, but also were in nature against the accused by the TPF, were allowed to remain up and are up to this day and hour, <a href="https://gist.github.com/wchristian/ee943ee3884bb62440cd84e37aa47993/raw/ba77effcf57d09ba7558df811cd3c0dc90134c79/Bild1.png">often with completely false claims about people</a>. chromatic and briandfoy are currently the most (and probably only) active moderators there.</p>]]>
-        
-    </content>
 </entry>
   <entry>
     <title>Checking Phone Numbers and Transposing Tabular Data the Hard Way: The Weekly Challenge 110</title>

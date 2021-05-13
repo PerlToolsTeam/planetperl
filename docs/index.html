@@ -57,6 +57,333 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-112-canonical-path-and-climb-stairs.html">Perl Weekly Challenge 112: Canonical Path and Climb Stairs</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 112 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-112/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few  days (May 16, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Canonical Path</h2>
+
+<p><em>You are given a string path, starting with a slash ‘/&#8217;.</em></p>
+
+<p><em>Write a script to convert the given absolute path to the simplified canonical path.</em></p>
+
+<p><em>In a Unix-style file system:</em></p>
+
+<p><em>- A period &#8216;.&#8217; refers to the current directory</em></p>
+
+<p><em>- A double period &#8216;..&#8217; refers to the directory up a level</em></p>
+
+<p><em>- Multiple consecutive slashes (&#8216;//&#8217;) are treated as a single slash &#8216;/&#8217;</em></p>
+
+<p><em>The canonical path format:</em></p>
+
+<p><em>- The path starts with a single slash &#8216;/&#8217;.</em></p>
+
+<p><em>- Any two directories are separated by a single slash &#8216;/&#8217;.</em></p>
+
+<p><em>- The path does not end with a trailing &#8216;/&#8217;.</em></p>
+
+<p><em>- The path only contains the directories on the path from the root directory to the target file or directory</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: "/a/"
+Output: "/a"
+
+Input: "/a/b//c/"
+Output: "/a/b/c"
+
+Input: "/a/b/c/../.."
+Output: "/a"
+</code></pre>
+
+<p>Although it can surely be done differently, this is obviously a job for regular expressions or regexes.</p>
+
+<h3>Canonical Path in Raku</h3>
+
+<p>It would certainly make sense to write a grammar for performing the necessary transformations, but this is simple enough for a few regexes to do the job. It is in fact probably possible to do everything with a single regex, but I usually find it more legible to transform the input string step by step. </p>
+
+<p>Note that I&#8217;m not trying to validate the input paths, with just one exception: if there are too many <code>/../</code> compared to the previous path items, the script dies, rather than printing something incorrect.</p>
+
+<pre><code>use v6
+
+my @tests = &lt;/a/ /a/b//c/ /a/b/c/../.. /a/../../b/&gt;;
+for @tests &lt;-&gt; $path {
+    my $p = $path;
+    $path ~~ s:g|'//'+|/|;
+    $path ~~ s:g!^'/' | '/'$!!;
+    my @path-items;
+    for split /'/'+/, $path -&gt; $item {
+        next if $item eq '.';
+        if $item eq '..' {
+            die "Invalid path $p" unless @path-items;
+            pop @path-items;
+        } else {
+            push @path-items, $item;
+        }
+    };
+    say "$p =&gt; /", @path-items.join('/');
+}
+</code></pre>
+
+<p>The script displays the following output:</p>
+
+<pre><code>$ raku ./paths.raku
+/a/ =&gt; /a
+/a/b//c/ =&gt; /a/b/c
+/a/b/c/../.. =&gt; /a
+Invalid path /a/../../b/
+  in block  at ./main.raku line 12
+  in block &lt;unit&gt; at ./main.raku line 4
+</code></pre>
+
+<h3>Canonical Path in Perl</h3>
+
+<p>This a port to Perl of the Raku program above, except that when there are too many <code>/../</code> compared to the previous path items, the script issues a warning instead of dying, does not print any canonical path and proceeds with the next items.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @tests = ('/a/', '/a/b//c/', '/a/b/c/../..', '/a/../../b/', '/a/././b/');
+TEST: for my $path (@tests) {
+    my $p = $path;
+    $path =~ s|\/\/+|/|g;
+    $path =~ s!^\/|\/$!!g;
+    my @path_items;
+    for my $item (split /\/+/, $path) {
+        next if $item eq '.';
+        if ($item eq '..') {
+            warn "Invalid path $p" and next TEST unless @path_items;
+            pop @path_items;
+        } else {
+            push @path_items, $item;
+        }
+    };
+    say "$p =&gt; /", join '/', @path_items;
+}
+</code></pre>
+
+<p>The script displays the following output:</p>
+
+<pre><code>$ perl paths.pl
+/a/ =&gt; /a
+/a/b//c/ =&gt; /a/b/c
+/a/b/c/../.. =&gt; /a
+Invalid path /a/../../b/ at paths.pl line 14.
+/a/././b/ =&gt; /a/b
+</code></pre>
+
+<h2>Task 2: Climb Stairs</h2>
+
+<p><em>You are given <code>$n</code> steps to climb.</em></p>
+
+<p><em>Write a script to find out the distinct ways to climb to the top. You are allowed to climb either 1 or 2 steps at a time.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $n = 3
+Output: 3
+
+    Option 1: 1 step + 1 step + 1 step
+    Option 2: 1 step + 2 steps
+    Option 3: 2 steps + 1 step
+
+Input: $n = 4
+Output: 5
+
+    Option 1: 1 step + 1 step + 1 step + 1 step
+    Option 2: 1 step + 1 step + 2 steps
+    Option 3: 2 steps + 1 step + 1 step
+    Option 4: 1 step + 2 steps + 1 step
+    Option 5: 2 steps + 2 steps
+</code></pre>
+
+<p>It is not clear to me whether the output should contain all the information above, or just the number of possibilities, but since the assignment asks us &#8220;to find out the distinct ways to climb to the top&#8221;, I have decided to output the result in the format given above, although this leads to quite a bit of uninteresting boiler plate code.</p>
+
+<h3>Climb Stairs in Raku</h3>
+
+<p>I&#8217;ve decided to use a <code>try-steps</code> recursive subroutine to explore all possibilities. The script uses a <code>@*result</code> dynamic variable to store the various winning combinations of steps and to print them at the end. </p>
+
+<pre><code>use v6;
+
+sub print-result {
+    my $count = 0;  
+    for  @*result -&gt; @solution {
+        print "\tOption ", ++$count, ": ";
+        my @step_list;
+        push @step_list, "$_ " ~ ($_ ~~ /1/ ?? "step " !! "steps") for @solution;
+        say join " + ", @step_list;
+    }
+    say "";
+}
+
+sub try-steps ($nb-steps, @curr) {
+    for 1, 2 -&gt; $new-step {
+        my @new-cur = (|@curr, $new-step);
+        my $sum = [+] @new-cur;
+        next if $sum &gt; $nb-steps;
+        if $sum == $nb-steps {
+            push @*result, @new-cur;
+            last;
+        } else {
+            try-steps $nb-steps, @new-cur;
+        }
+    }
+}
+
+for 3, 4, 5 -&gt; $target {
+    my @*result;
+    try-steps $target, [];
+    say 'Input: $n = ', $target;
+    say "Output: ", @*result.elems;
+    # say @*result;
+    print-result;
+}
+</code></pre>
+
+<p>The script displays the following output:</p>
+
+<pre><code>$ raku ./steps.raku
+Input: $n = 3
+Output: 3
+    Option 1: 1 step  + 1 step  + 1 step 
+    Option 2: 1 step  + 2 steps
+    Option 3: 2 steps + 1 step 
+
+Input: $n = 4
+Output: 5
+    Option 1: 1 step  + 1 step  + 1 step  + 1 step 
+    Option 2: 1 step  + 1 step  + 2 steps
+    Option 3: 1 step  + 2 steps + 1 step 
+    Option 4: 2 steps + 1 step  + 1 step 
+    Option 5: 2 steps + 2 steps
+
+Input: $n = 5
+Output: 8
+    Option 1: 1 step  + 1 step  + 1 step  + 1 step  + 1 step 
+    Option 2: 1 step  + 1 step  + 1 step  + 2 steps
+    Option 3: 1 step  + 1 step  + 2 steps + 1 step 
+    Option 4: 1 step  + 2 steps + 1 step  + 1 step 
+    Option 5: 1 step  + 2 steps + 2 steps
+    Option 6: 2 steps + 1 step  + 1 step  + 1 step 
+    Option 7: 2 steps + 1 step  + 2 steps
+    Option 8: 2 steps + 2 steps + 1 step
+</code></pre>
+
+<p>Note that, if you don&#8217;t want this verbose output, you can just remove the <code>print-result</code> subroutine definition, comment out the last line (with the <code>print-result</code> subroutine call), and uncomment the previous code line:</p>
+
+<pre><code>    say @*result;
+    # print-result;
+</code></pre>
+
+<p>and obtain the following output:</p>
+
+<pre><code>$ raku ./steps.raku
+Input: $n = 3
+Output: 3
+[[1 1 1] [1 2] [2 1]]
+Input: $n = 4
+Output: 5
+[[1 1 1 1] [1 1 2] [1 2 1] [2 1 1] [2 2]]
+Input: $n = 5
+Output: 8
+[[1 1 1 1 1] [1 1 1 2] [1 1 2 1] [1 2 1 1] [1 2 2] [2 1 1 1] [2 1 2] [2 2 1]]
+</code></pre>
+
+<h3>Climb Stairs in Perl</h3>
+
+<p>This is a port to Perl of the above Raku program, with a <code>try_steps</code> recursive subroutine:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @result;
+
+sub print_result {
+    my $count = 0;
+    for  my $solution (@result) {
+        print "\tOption ", ++$count, ": ";
+        my @step_list;
+        push @step_list, "$_ " . ($_ =~ /1/ ? "step " : "steps") for @$solution;
+        say join " + ", @step_list;
+    }
+    say "";
+}
+
+sub try_steps  {
+    my ($nb_steps, $sum, @curr) = @_;
+    for my $new_step (1, 2) {
+        my $new_sum =  $sum + $new_step;
+        next if $new_sum &gt; $nb_steps;
+        my @new_cur = (@curr, $new_step);
+        if ($new_sum == $nb_steps) {
+            push @result, \@new_cur;
+            last;
+        } else {
+            try_steps($nb_steps, $new_sum, @new_cur);
+        }
+    }
+}
+
+for my $target (3, 4, 5) {
+    @result = ();
+    try_steps $target, 0, ();
+    say 'Input: $n = ', $target;
+    say "Output: ", scalar @result;
+    print_result;
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl  ./steps.pl
+Input: $n = 3
+Output: 3
+        Option 1: 1 step  + 1 step  + 1 step
+        Option 2: 1 step  + 2 steps
+        Option 3: 2 steps + 1 step
+
+Input: $n = 4
+Output: 5
+        Option 1: 1 step  + 1 step  + 1 step  + 1 step
+        Option 2: 1 step  + 1 step  + 2 steps
+        Option 3: 1 step  + 2 steps + 1 step
+        Option 4: 2 steps + 1 step  + 1 step
+        Option 5: 2 steps + 2 steps
+
+Input: $n = 5
+Output: 8
+        Option 1: 1 step  + 1 step  + 1 step  + 1 step  + 1 step
+        Option 2: 1 step  + 1 step  + 1 step  + 2 steps
+        Option 3: 1 step  + 1 step  + 2 steps + 1 step
+        Option 4: 1 step  + 2 steps + 1 step  + 1 step
+        Option 5: 1 step  + 2 steps + 2 steps
+        Option 6: 2 steps + 1 step  + 1 step  + 1 step
+        Option 7: 2 steps + 1 step  + 2 steps
+        Option 8: 2 steps + 2 steps + 1 step
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, May 23, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+     on Thursday 13 May 2021 14:10</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-112-27l0">Weekly Challenge 112</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p><a href="">Challenge</a>, <a href="">My solutions</a></p>
@@ -194,7 +521,7 @@ Option 5: 2 steps + 2 steps
      on Wednesday 12 May 2021 12:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/perl-one-liners-part-1/">Perl / Unix One-liner Cage Match, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -389,7 +716,7 @@ it line XYZ a</code></pre></div>
      on Wednesday 12 May 2021 02:54</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/testing-perl-to-plan-or-not-to-plan-3plb">Testing Perl: To plan or not to plan</a></h2>
             </div> <!-- card-header -->
@@ -429,7 +756,7 @@ it line XYZ a</code></pre></div>
      on Tuesday 11 May 2021 14:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-modules-importing-calling-or-returning-l5o">Perl modules loading, calling or returning</a></h2>
             </div> <!-- card-header -->
@@ -767,7 +1094,7 @@ Bazinga!
      on Tuesday 11 May 2021 11:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/kfly8/tools-for-learning-perl-context-5ej3">Tools for learning Perl context</a></h2>
             </div> <!-- card-header -->
@@ -875,7 +1202,7 @@ Bazinga!
      on Monday 10 May 2021 12:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/15f">Grow Your Karma with a Job that Does Good! Perl role in Canberra, Australia</a></h2>
             </div> <!-- card-header -->
@@ -887,7 +1214,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/vcr">Big Dividends, Bigger Opportunity! Perl role with multiple location options</a></h2>
             </div> <!-- card-header -->
@@ -899,7 +1226,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/dzt">Vienna Does it Best. Perl Developer role in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -911,7 +1238,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/3uu">A New Adventure is only a Click Away. Perl Developer role, remote within UK</a></h2>
             </div> <!-- card-header -->
@@ -923,7 +1250,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/8o4">A Role that Makes Dollars (and Cents). Perl Developer Role in London</a></h2>
             </div> <!-- card-header -->
@@ -935,7 +1262,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlconference.us/tprc-2021-cloud/">The Perl and Raku Conference in the Cloud 2021</a></h2>
             </div> <!-- card-header -->
@@ -947,7 +1274,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://dc.pm.org/">Washington, DC Perl (DCPM)</a></h2>
             </div> <!-- card-header -->
@@ -959,7 +1286,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -971,7 +1298,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -983,7 +1310,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/SVPerl/">Silicon Valley Perl - Git Hooks(Client-side)</a></h2>
             </div> <!-- card-header -->
@@ -995,7 +1322,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://houston.pm.org/announce_meeting.html">Houston Perl Mongers Online Meeting: OpenMP &amp; Perl &amp; perl</a></h2>
             </div> <!-- card-header -->
@@ -1007,7 +1334,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1019,7 +1346,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/live">Upcoming live events</a></h2>
             </div> <!-- card-header -->
@@ -1031,7 +1358,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/pydigger-1">Working on PyDigger with Upasana Shukla</a></h2>
             </div> <!-- card-header -->
@@ -1043,7 +1370,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/workout-app">Working on the workout-app</a></h2>
             </div> <!-- card-header -->
@@ -1055,7 +1382,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/online-self-knowledge-workshop">Developing an application for organising online self knowledge workshops</a></h2>
             </div> <!-- card-header -->
@@ -1067,7 +1394,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1079,7 +1406,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://szabgab.com/report-2021-04.html">Self reporting for 2021.04</a></h2>
             </div> <!-- card-header -->
@@ -1091,7 +1418,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/05/monthly-report---april-2.html">Monthly Report - April</a></h2>
             </div> <!-- card-header -->
@@ -1103,7 +1430,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-111-291m">Weekly Challenge 111</a></h2>
             </div> <!-- card-header -->
@@ -1115,7 +1442,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.firedrake.org/archive/2021/05/Perl_Weekly_Challenge_111__Search_Letters.html">Perl Weekly Challenge 111: Search Letters</a></h2>
             </div> <!-- card-header -->
@@ -1127,7 +1454,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://fluca1978.github.io/2021/05/03/PerlWeeklyChallenge111.html">Perl Weekly Challenge 111: Words and Matrix</a></h2>
             </div> <!-- card-header -->
@@ -1139,7 +1466,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://wlmb.github.io/2021/05/03/PWC111/">Perl Weekly Challenge 111</a></h2>
             </div> <!-- card-header -->
@@ -1151,7 +1478,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-111-search-matrix-and-ordered-letters.html">Perl Weekly Challenge 111: Search Matrix and Ordered Letters</a></h2>
             </div> <!-- card-header -->
@@ -1163,7 +1490,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/drbaggy/perlweeklychallenge-club/blob/master/challenge-111/james-smith/README.md">Perl Weekly Challenge #111Perl Weekly Challenge #111</a></h2>
             </div> <!-- card-header -->
@@ -1175,7 +1502,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/06/pwc111-ordered-letters/">PWC111 - Ordered Letters</a></h2>
             </div> <!-- card-header -->
@@ -1187,7 +1514,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/05/pwc111-search-matrix/">PWC111 - Search Matrix</a></h2>
             </div> <!-- card-header -->
@@ -1199,7 +1526,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://jacoby.github.io/2021/05/03/efficient-ones-perl-challenge-111.html">Efficient Ones: Perl Challenge #111</a></h2>
             </div> <!-- card-header -->
@@ -1211,7 +1538,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://colincrain.com/2021/05/09/are-we-in-the-matrix-get-in-line-friend-get-in-line/">Are We in the Matrix? Get in Line, Friend, Get in Line.</a></h2>
             </div> <!-- card-header -->
@@ -1223,7 +1550,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://raku-musings.com/ordered-search.html">Ordered Search for Raku</a></h2>
             </div> <!-- card-header -->
@@ -1235,7 +1562,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-111-2.html">Perl Weekly Challenge 111: Ordered Letters</a></h2>
             </div> <!-- card-header -->
@@ -1247,7 +1574,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://abigail.github.io/HTML/Perl-Weekly-Challenge/week-111-1.html">Perl Weekly Challenge 111: Search Matrix</a></h2>
             </div> <!-- card-header -->
@@ -1259,7 +1586,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://aaronreidsmith.github.io/blog/perl-weekly-challenge-111/">Perl Weekly Challenge 111</a></h2>
             </div> <!-- card-header -->
@@ -1271,7 +1598,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-111">RECAP - The Weekly Challenge - 111</a></h2>
             </div> <!-- card-header -->
@@ -1283,7 +1610,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-112">The Weekly Challenge - 112</a></h2>
             </div> <!-- card-header -->
@@ -1295,7 +1622,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/raku-ci-bot-grant-2021-04">Raku CI Bot Grant Report 2021-04</a></h2>
             </div> <!-- card-header -->
@@ -1307,7 +1634,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/mejorar-una-libreria-utilizar-github-actions-3ado">Mejorar una librería, Utilizar GitHub Actions</a></h2>
             </div> <!-- card-header -->
@@ -1319,7 +1646,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/davorg/easier-web-sites-for-cpan-modules-1nn4">Easier web sites for CPAN modules </a></h2>
             </div> <!-- card-header -->
@@ -1331,7 +1658,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/raigaurav/getting-ready-for-production-jio">Getting ready for production </a></h2>
             </div> <!-- card-header -->
@@ -1343,7 +1670,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_45">
+          <div class="card" id="card_46">
             <div class="card-header">
               <h2 class="card-title"><a href="https://code-maven.com/dates-in-the-timezone-of-the-reader-javascript">Show dates in the timezone of the reader using JavaScript</a></h2>
             </div> <!-- card-header -->
@@ -1355,7 +1682,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_46">
+          <div class="card" id="card_47">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/2021/05/04/localizing-dates-in-a-perl-web-application-with-javascript/">Localizing dates in a Perl web application with JavaScript</a></h2>
             </div> <!-- card-header -->
@@ -1367,7 +1694,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_47">
+          <div class="card" id="card_48">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/neilb/2021/05/open-letter-to-the-perl-foundation-board.html">Open Letter to the Perl Foundation Board</a></h2>
             </div> <!-- card-header -->
@@ -1379,7 +1706,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_48">
+          <div class="card" id="card_49">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/09/substring-dwimmery/">Substring DWIMmery</a></h2>
             </div> <!-- card-header -->
@@ -1391,7 +1718,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_49">
+          <div class="card" id="card_50">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/08/perlrun-no-butterfly/">Avoid the 'butterfly operator' with command-line options</a></h2>
             </div> <!-- card-header -->
@@ -1403,7 +1730,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_50">
+          <div class="card" id="card_51">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.geekuni.com/2021/05/google-perl-problem.html">The problem learning Perl using Google</a></h2>
             </div> <!-- card-header -->
@@ -1415,7 +1742,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_51">
+          <div class="card" id="card_52">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.theregister.com/2021/05/07/perl_permaban/">Perl changes dev's permaban for 'unacceptable' behaviour to a year-long lockout after community response</a></h2>
             </div> <!-- card-header -->
@@ -1427,7 +1754,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_52">
+          <div class="card" id="card_53">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/n6hwyd/perl_evangelism_project_ive_been_working_on/">Perl evangelism project I've been working on</a></h2>
             </div> <!-- card-header -->
@@ -1439,7 +1766,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_53">
+          <div class="card" id="card_54">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/fgasper/perling-and-curling-2i10">Perling and Curling </a></h2>
             </div> <!-- card-header -->
@@ -1451,7 +1778,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_54">
+          <div class="card" id="card_55">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/07/all-partitions-wlm-style/">All partitions of a set - W. Luis Mochán style</a></h2>
             </div> <!-- card-header -->
@@ -1463,7 +1790,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_55">
+          <div class="card" id="card_56">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/byterock/2021/05/paws-anyone.html">Paws anyone?</a></h2>
             </div> <!-- card-header -->
@@ -1475,7 +1802,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_56">
+          <div class="card" id="card_57">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/drhyde/cpandeps-end-of-life-1pdf">CPANdeps end of life</a></h2>
             </div> <!-- card-header -->
@@ -1487,7 +1814,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_57">
+          <div class="card" id="card_58">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/03/xmpl-page-config/">xmpl - the page configuration API</a></h2>
             </div> <!-- card-header -->
@@ -1499,7 +1826,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_58">
+          <div class="card" id="card_59">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/n5ceq1/anybody_hacking_on_anything_cool_this_week/">Anybody hacking on anything cool this week?</a></h2>
             </div> <!-- card-header -->
@@ -1511,7 +1838,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_59">
+          <div class="card" id="card_60">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/511.html">#511 - I am exhausted</a></h2>
             </div> <!-- card-header -->
@@ -1528,7 +1855,7 @@ Bazinga!
      on Monday 10 May 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_60">
+          <div class="card" id="card_61">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/newcomer-survey-results-actions">The support developers need - survey results and actions taken</a></h2>
             </div> <!-- card-header -->
@@ -1617,7 +1944,7 @@ Bazinga!
      on Monday 10 May 2021 06:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_61">
+          <div class="card" id="card_62">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2021/05/weekend-outage.html">Weekend Outage</a></h2>
             </div> <!-- card-header -->
@@ -1629,7 +1956,7 @@ Bazinga!
      on Sunday 09 May 2021 21:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_62">
+          <div class="card" id="card_63">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/05/09#pwc111">Efficient Matrix Search: The Weekly Challenge 111</a></h2>
             </div> <!-- card-header -->
@@ -1760,7 +2087,7 @@ egilops
      on Sunday 09 May 2021 23:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_63">
+          <div class="card" id="card_64">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-111-search-matrix-and-ordered-letters.html">Perl Weekly Challenge 111: Search Matrix and Ordered Letters</a></h2>
             </div> <!-- card-header -->
@@ -2228,7 +2555,7 @@ beefily billowy
      on Wednesday 05 May 2021 22:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_64">
+          <div class="card" id="card_65">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/neilb/2021/05/open-letter-to-the-perl-foundation-board.html">Open Letter to the Perl Foundation Board</a></h2>
             </div> <!-- card-header -->
@@ -2289,7 +2616,7 @@ Tim Bunce, founder of the Module List, PAUSE Admin Emeritus, author of DBI, Whit
      on Sunday 09 May 2021 02:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_65">
+          <div class="card" id="card_66">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-111-291m">Weekly Challenge 111</a></h2>
             </div> <!-- card-header -->
@@ -2418,7 +2745,7 @@ Longest words are: billowy
      on Sunday 09 May 2021 11:20</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_66">
+          <div class="card" id="card_67">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cccxl-17-great-cpan-modules-released.html">(cccxl) 17 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -2430,7 +2757,7 @@ Longest words are: billowy
      on Saturday 08 May 2021 19:45</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_67">
+          <div class="card" id="card_68">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cdlxvi-metacpan-weekly-report.html">(cdlxvi) metacpan weekly report - Faster::Maths</a></h2>
             </div> <!-- card-header -->
@@ -2442,7 +2769,7 @@ Longest words are: billowy
      on Saturday 08 May 2021 19:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_68">
+          <div class="card" id="card_69">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cdlxxxix-stackoverflow-perl-report.html">(cdlxxxix) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -2454,7 +2781,7 @@ Longest words are: billowy
      on Saturday 08 May 2021 19:38</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_69">
+          <div class="card" id="card_70">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/byterock/2021/05/paws-anyone.html">Paws anyone?</a></h2>
             </div> <!-- card-header -->
@@ -2485,7 +2812,7 @@ Longest words are: billowy
      on Thursday 06 May 2021 22:11</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_70">
+          <div class="card" id="card_71">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/05/monthly-report---april-2.html">Monthly Report - April</a></h2>
             </div> <!-- card-header -->
@@ -2670,7 +2997,7 @@ Longest words are: billowy
      on Friday 07 May 2021 04:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_71">
+          <div class="card" id="card_72">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/raku-ci-bot-grant-2021-04">Raku CI Bot Grant Report 2021-04</a></h2>
             </div> <!-- card-header -->
@@ -2701,40 +3028,6 @@ application. I hope to publish a post about it soon.</p>
 
               <p class="text-right"><small>Published by Moritz Lenz
      on Thursday 06 May 2021 15:03</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_72">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/mithaldu/2021/05/tpf-made-me-wait-301-hours-to-learn-my-punishment.html">TPF made me wait 301 hours to learn my punishment</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Edit2: After further talk with CAT, i will acknowledge that it was not the intent of the CAT to make me wait, and they in fact did not even realize this was the effect.</p>
-
-<p>I am the "second individual", i am intimately familiar with the events of both their investigations.</p>
-
-<p>Shortly before the TPF informed me that their start-of-may update was nearly ready to be posted, i informed them that these were my expectations:</p>
-
-<p>2021-04-29 19:00<br />
-> all i care about are correct, accurate, truthful and useful consequences</p>
-
-<p>I was wholly disappointed.</p>
-
-<p>----</p>
-
-<p>Context: <a href="https://news.perlfoundation.org/post/cat-transparency-report-updates0">https://news.perlfoundation.org/post/cat-transparency-report-updates0</a></p>
-
-<p>----</p>
-
-<p>Edit:</p>
-
-<p>And interestingly the perl.reddit.com moderation team saw fit to censor the submission of this post. It can <a href="https://old.reddit.com/r/perl/comments/n3yv5q/tpf_made_me_wait_301_hours_to_learn_my_punishment/">still be seen directly</a>, but is <a href="https://gist.github.com/wchristian/ee943ee3884bb62440cd84e37aa47993/raw/22ffe3f79e8799bc9d3b91a2142511e866b51521/Screenshot%25202021-05-04%2520050457.png">not in the feed</a> anymore. This is notable as a wide variety of posts and comments that violate the "no personal attacks" rule, but also were in nature against the accused by the TPF, were allowed to remain up and are up to this day and hour, <a href="https://gist.github.com/wchristian/ee943ee3884bb62440cd84e37aa47993/raw/ba77effcf57d09ba7558df811cd3c0dc90134c79/Bild1.png">often with completely false claims about people</a>. chromatic and briandfoy are currently the most (and probably only) active moderators there.</p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Mithaldu
-     on Monday 03 May 2021 10:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_73">
@@ -4426,7 +4719,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 13 May 2021 08:48 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 13 May 2021 09:48 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
