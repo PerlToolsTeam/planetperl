@@ -57,6 +57,391 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/raigaurav/a-fusion-of-makefile-and-docker-45an">A fusion of Makefile and Docker</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>In our <a href="https://dev.to/raigaurav/getting-ready-for-production-jio">previous</a> article we have created a Dockerfile for our <a href="https://mojolicious.org/">Mojolicious</a> application. In there I mentioned that we have to run several docker command and when we map it across different environment we have to take care of different permutations and combinations.<br>
+What if we can automate it more. What if we can abstract the complexity and as a user I just have to run minimum command to get it working.<br>
+Here comes the Makefile. We will be using this to make our process more easier. For windows you can use <code>gmake.exe</code> utility instead of <code>make</code>. It comes with Strawberry Perl.<br>
+Lets create a Make file in <code>mojo_react_app/Makefile</code><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight make"><code><span class="nv">DOCKER_TAG</span> <span class="o">?=</span> mojo_react_app:development
+<span class="nv">NO_CACHE</span> <span class="o">?=</span> <span class="nb">false</span>
+<span class="nv">PULL</span> <span class="o">?=</span> <span class="nb">false</span>
+<span class="nv">BUILD_TYPE</span> <span class="o">?=</span> development
+<span class="nv">CONTAINER_NAME</span> <span class="o">?=</span> mojo_react_app
+<span class="nv">HTTPS_OUT_PORT</span> <span class="o">?=</span> 443
+<span class="nv">HTTPS_IN_PORT</span> <span class="o">?=</span> 443
+<span class="nv">HTTP_OUT_PORT</span> <span class="o">?=</span> 80
+<span class="nv">HTTP_IN_PORT</span> <span class="o">?=</span> 80
+<span class="nv">DOCKER_REPO</span> <span class="o">?=</span> &lt;docker_repo_url&gt;
+<span class="nv">ADDRESS</span> <span class="o">?=</span> 0.0.0.0
+<span class="nv">DOCKER_CFG</span> <span class="o">=</span> &lt;path to docker config on machine&gt;
+
+<span class="nl">build</span><span class="o">:</span>
+    <span class="c"># Build the dockerfile</span>
+    docker build <span class="nt">--pull</span><span class="o">=</span><span class="nv">${PULL}</span> <span class="nt">--no-cache</span><span class="o">=</span><span class="nv">$(NO_CACHE)</span> <span class="nt">-t</span> <span class="nv">$(DOCKER_TAG)</span> .
+
+<span class="nl">create</span><span class="o">:</span>
+    <span class="c"># Create the container and copy the certificates</span>
+    <span class="nb">echo</span> <span class="s1">'Creating container for </span><span class="nv">${ADDRESS}</span><span class="s1">'</span>
+    docker create <span class="nt">--name</span> <span class="nv">${CONTAINER_NAME}</span>_<span class="nv">${BUILD_TYPE}</span> <span class="nt">-t</span> <span class="se">\</span>
+        <span class="nt">-p</span> <span class="nv">${ADDRESS}</span>:<span class="nv">$(HTTPS_OUT_PORT)</span>:<span class="nv">$(HTTPS_IN_PORT)</span> <span class="nt">-p</span> <span class="nv">${ADDRESS}</span>:<span class="nv">$(HTTP_OUT_PORT)</span>:<span class="nv">$(HTTP_IN_PORT)</span> <span class="nt">--env</span> <span class="nv">mode</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span> <span class="se">\</span>
+        <span class="nv">${DOCKER_TAG}</span>
+    docker <span class="nb">cp</span> <span class="nv">${DOCKER_CFG}</span>/mojo_react_app/apache-certificate/apache_certificate_<span class="nv">${BUILD_TYPE}</span>.crt <span class="nv">${CONTAINER_NAME}</span>_<span class="nv">${BUILD_TYPE}</span>:/etc/ssl/certs/server.crt
+    docker <span class="nb">cp</span> <span class="nv">${DOCKER_CFG}</span>/mojo_react_app/apache-certificate/apache_certificate_<span class="nv">${BUILD_TYPE}</span>.key <span class="nv">${CONTAINER_NAME}</span>_<span class="nv">${BUILD_TYPE}</span>:/etc/ssl/private/server.key
+
+<span class="nl">start</span><span class="o">:</span>
+    <span class="c"># Start a container</span>
+    docker start <span class="nv">${CONTAINER_NAME}</span>_<span class="nv">${BUILD_TYPE}</span>
+
+<span class="nl">run</span><span class="o">:</span>
+    <span class="c"># Create and start the container</span>
+    make create <span class="nt">-e</span> <span class="nv">ADDRESS</span><span class="o">=</span><span class="nv">${ADDRESS}</span> <span class="nv">HTTPS_OUT_PORT</span><span class="o">=</span><span class="nv">${HTTPS_OUT_PORT}</span> <span class="nv">HTTPS_IN_PORT</span><span class="o">=</span><span class="nv">${HTTPS_IN_PORT}</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span> <span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+    make start <span class="nt">-e</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span>
+    make show
+
+<span class="nl">stop</span><span class="o">:</span>
+    <span class="c"># Stop a running container</span>
+    docker stop <span class="nv">${CONTAINER_NAME}</span>_<span class="nv">${BUILD_TYPE}</span><span class="p">;</span>
+
+<span class="nl">clean_container</span><span class="o">:</span>
+    <span class="c"># remove previous container</span>
+    docker <span class="nb">rm</span> <span class="nt">-f</span> <span class="nv">${CONTAINER_NAME}</span>_<span class="nv">${BUILD_TYPE}</span> 2&gt;/dev/null <span class="se">\</span>
+    <span class="o">&amp;&amp;</span> <span class="nb">echo</span> <span class="s1">'Container for "</span><span class="nv">${CONTAINER_NAME}</span><span class="s1">_</span><span class="nv">${BUILD_TYPE}</span><span class="s1">" removed.'</span> <span class="se">\</span>
+    <span class="o">||</span> <span class="nb">echo</span> <span class="s1">'Container for "</span><span class="nv">${CONTAINER_NAME}</span><span class="s1">_</span><span class="nv">${BUILD_TYPE}</span><span class="s1">" already removed or not found.'</span>
+
+<span class="nl">clean_image</span><span class="o">:</span>
+    <span class="c"># remove created image</span>
+    docker rmi <span class="nv">${DOCKER_TAG}</span> 2&gt;/dev/null <span class="se">\</span>
+    <span class="o">&amp;&amp;</span> <span class="nb">echo</span> <span class="s1">'Image(s) for "</span><span class="nv">${DOCKER_TAG}</span><span class="s1">" removed.'</span> <span class="se">\</span>
+    <span class="o">||</span> <span class="nb">echo</span> <span class="s1">'Image(s) for "</span><span class="nv">${DOCKER_TAG}</span><span class="s1">" already removed or not found.'</span>
+
+<span class="nl">dev</span><span class="o">:</span> 
+    make build <span class="nt">-e</span> <span class="nv">PULL</span><span class="o">=</span><span class="nv">${PULL}</span> <span class="nv">NO_CACHE</span><span class="o">=</span><span class="nv">${NO_CACHE}</span>
+    make clean_container
+    make create
+    make start
+    make show
+
+<span class="nl">stag</span><span class="o">:</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override <span class="nv">BUILD_TYPE</span><span class="o">=</span>staging<span class="nf">)</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override <span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${CONTAINER_NAME}</span>:<span class="nv">${BUILD_TYPE}</span><span class="nf">)</span>
+    <span class="c"># This will return only the IP address associated with the domain name ans assign it to ADDRESS</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override <span class="nv">ADDRESS</span><span class="o">=</span><span class="nf">$(</span><span class="nb">shell</span> dig +short &lt;your staging URL e.g. mojo-react-app-staging.com&gt;<span class="nf">))</span>
+
+    <span class="err">make</span> <span class="err">build</span> <span class="err">-e</span> <span class="nv">PULL</span><span class="o">=</span><span class="nb">true </span><span class="nv">NO_CACHE</span><span class="o">=</span><span class="nb">true </span><span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+    <span class="err">make</span> <span class="err">clean_container</span> <span class="err">-e</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span>
+    <span class="err">make</span> <span class="err">create</span> <span class="err">-e</span> <span class="nv">ADDRESS</span><span class="o">=</span><span class="nv">${ADDRESS}</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span> <span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+    <span class="err">make</span> <span class="err">start</span> <span class="err">-e</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span>
+    <span class="err">make</span> <span class="err">show</span>
+
+<span class="nl">prod</span><span class="o">:</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override <span class="nv">BUILD_TYPE</span><span class="o">=</span>production<span class="nf">)</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override DOCKER_TAG <span class="o">=</span> <span class="nv">${CONTAINER_NAME}</span>:<span class="nv">${BUILD_TYPE}</span><span class="nf">)</span>
+    <span class="c"># This will return only the IP address associated with the domain name ans assign it to ADDRESS</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override <span class="nv">ADDRESS</span><span class="o">=</span><span class="nf">$(</span><span class="nb">shell</span> dig +short &lt;your production URL e.g. mojo-react-app.com<span class="nf">))</span>
+
+    <span class="err">make</span> <span class="err">build</span> <span class="err">-e</span> <span class="nv">PULL</span><span class="o">=</span><span class="nb">true </span><span class="nv">NO_CACHE</span><span class="o">=</span><span class="nb">true </span><span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+    <span class="err">make</span> <span class="err">clean_container</span> <span class="err">-e</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span>
+    <span class="err">make</span> <span class="err">create</span> <span class="err">-e</span> <span class="nv">ADDRESS</span><span class="o">=</span><span class="nv">${ADDRESS}</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span> <span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+    <span class="err">make</span> <span class="err">start</span> <span class="err">-e</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span>
+    <span class="err">make</span> <span class="err">show</span>
+
+<span class="nl">show</span><span class="o">:</span>
+    <span class="c"># show running containers</span>
+    docker ps | <span class="nb">grep</span> <span class="nv">${CONTAINER_NAME}</span>
+
+<span class="nl">rebuild</span><span class="o">:</span>
+    <span class="c"># rebuilt the dockerfile</span>
+    make clean_container <span class="nt">-e</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span>
+    make build <span class="nt">-e</span> <span class="nv">PULL</span><span class="o">=</span><span class="nb">true </span><span class="nv">NO_CACHE</span><span class="o">=</span><span class="nb">true </span><span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+
+<span class="nl">up</span><span class="o">:</span>
+    <span class="c"># Run container on port</span>
+    make build <span class="nt">-e</span> <span class="nv">PULL</span><span class="o">=</span><span class="nb">true </span><span class="nv">NO_CACHE</span><span class="o">=</span><span class="nb">true </span><span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+    make run <span class="nt">-e</span> <span class="nv">HTTPS_OUT_PORT</span><span class="o">=</span><span class="nv">${HTTPS_OUT_PORT}</span> <span class="nv">HTTPS_IN_PORT</span><span class="o">=</span><span class="nv">${HTTPS_IN_PORT}</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span><span class="nv">${BUILD_TYPE}</span> <span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+
+<span class="nl">login</span><span class="o">:</span>
+    <span class="c"># run as a service and attach to it</span>
+    docker <span class="nb">exec</span> <span class="nt">-it</span> <span class="nv">${CONTAINER_NAME}</span>_<span class="nv">${BUILD_TYPE}</span> bash
+
+<span class="nl">release</span><span class="o">:</span>
+    make build <span class="nt">-e</span> <span class="nv">PULL</span><span class="o">=</span><span class="nb">true </span><span class="nv">NO_CACHE</span><span class="o">=</span><span class="nb">true </span><span class="nv">DOCKER_TAG</span><span class="o">=</span><span class="nv">${DOCKER_TAG}</span>
+    make push <span class="nt">-e</span> <span class="nv">VERSION</span><span class="o">=</span><span class="nv">${VERSION}</span>
+
+<span class="nl">push</span><span class="o">:</span>
+    docker push <span class="nv">$(DOCKER_REPO)</span>/<span class="nv">$(CONTAINER_NAME)</span>:<span class="nv">$(VERSION)</span>
+
+<span class="nl">pull</span><span class="o">:</span>
+    docker pull <span class="nv">$(DOCKER_REPO)</span>/<span class="nv">$(CONTAINER_NAME)</span>:<span class="nv">$(VERSION)</span>
+
+<span class="c"># Docker tagging
+</span><span class="nl">tag</span><span class="o">:</span>
+    <span class="c">## Generate container tags for the `{version</span><span class="o">}</span><span class="sb">`</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'create tag </span><span class="nv">$(VERSION)</span><span class="s1">'</span>
+    docker tag <span class="nv">$(DOCKER_TAG)</span> <span class="nv">$(DOCKER_REPO)</span>/<span class="nv">$(CONTAINER_NAME)</span>:<span class="nv">$(VERSION)</span>
+
+<span class="nl">help</span><span class="o">:</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">''</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'Usage: make [TARGET] [EXTRA_ARGUMENTS]'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'Targets:'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'  build      build docker --image--'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'  rebuild    rebuild docker --image--'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'  dev        run docker --container-- in development mode =&gt; </span><span class="nv">$(DOCKER_TAG)</span><span class="s1">'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'  stag       run docker --container-- in staging mode'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'  prod       run docker --container-- in production mode'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'  login      run as service and login --container--'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'  clean_image        remove docker --image-- '</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">''</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'Extra arguments:'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'CONTAINER_NAME=:     make clean_container -e CONTAINER_NAME=my_app (no need to provide this param, it will be set by default)'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'BUILD_TYPE=:     make clean_container -e CONTAINER_NAME=my_app BUILD_TYPE=staging (whether the build type is '</span>development<span class="s1">', '</span>staging<span class="s1">' or '</span>production<span class="s1">')'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'DOCKER_TAG=:     make build -e DOCKER_TAG=my_app:staging'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'HTTPS_OUT_PORT=:     make create -e HTTPS_IN_PORT=8080 (port from which the request will come- outside world)'</span>
+    <span class="p">@</span><span class="nb">echo</span> <span class="s1">'HTTPS_IN_PORT=:      make create -e HTTPS_IN_PORT=443 (port to which the request will be forwarded)'</span>
+</code></pre>
+
+</div>
+
+
+
+<p>I know its overwhelming. Lets go through each one of them.</p>
+
+<ul>
+<li>Initial 12 lines are the default parameters. In case you will not provide any parameter it will take those arguments. By default everything is in <code>development</code> mode. You will have to overwrite it for different modes.
+</li>
+</ul>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>DOCKER_TAG     =&gt;  Name of your app with the env name (e.g. mojo_react_app:development)
+NO_CACHE       =&gt;  Whether to start the build from scratch (true|false). Default - false
+PULL           =&gt;  Whether to pull a newer version of the image (true|false). Default - false
+BUILD_TYPE     =&gt;  Build environment (development|staging|production). Default - development
+CONTAINER_NAME =&gt;  Name of the container (e.g. mojo_react_app)
+HTTPS_OUT_PORT =&gt;  HTTPS host port visible to outside world while publishing the container(443)
+HTTPS_IN_PORT  =&gt;  HTTPS container port on which traffic will be coming inside the container(443)
+HTTP_OUT_PORT  =&gt;  HTTP host port visible to outside world while publishing the container(80)
+HTTP_IN_PORT   =&gt;  HTTP container port on which traffic will be coming inside the container(80)
+DOCKER_REPO    =&gt;  URL of the docker repo where you want to push or pull image.
+ADDRESS        =&gt;  IP address of the container from where the outside word can access it. Default - 0.0.0.0
+DOCKER_CFG     =?  Path to docker config files on host machine. This will contain the apache certificate and will be private to you.
+</code></pre>
+
+</div>
+
+
+
+<ul>
+<li>
+<code>build</code> will build your dockerfile</li>
+<li>
+<code>create</code> will create the container and copy the apache certificates</li>
+<li>
+<code>start</code> will start the container</li>
+<li>
+<code>run</code> will create and start the container. It will internally call the <code>create</code> and <code>start</code> command.</li>
+<li>
+<code>stop</code> will stop the running container.</li>
+<li>
+<code>clean_container</code> will remove/delete the remove previous container if exist.</li>
+<li>
+<code>clean_image</code> will remove/delete created image if exist.</li>
+<li>
+<code>show</code> will show the info about running container.</li>
+<li>
+<code>rebuild</code> will rebuilt the dockerfile. It will just call <code>clean_container</code> and <code>build</code> the image again.</li>
+<li>
+<code>up</code> will run the container on given port. It will always pull  the new image.</li>
+<li>
+<code>login</code> will login to the container. Using this you can see the  traffic logs and what is going on inside the container.</li>
+<li>
+<code>release</code> <code>push</code> <code>pull</code> <code>tag</code> - These commands you will be using when you want to create tag and push it to docker repo url(somewhere where you can access it and you don't have to create the image again). This is handful in Jenkins deployments, otherwise in normal dev work its not that important and will not be used much.</li>
+<li>
+<code>help</code> will give you the info about different param and what they do.</li>
+<li>Now 3 important commands which we will be using more often is -
+</li>
+</ul>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>    make dev
+    make stag
+    make prod
+</code></pre>
+
+</div>
+
+
+
+<h1>
+  <a href="#make-dev">
+  </a>
+  make dev
+</h1>
+
+<p><code>dev</code> is written in such a way that you don't have to worry about your container name and param. Just update the default value with your project specific value one time and your dev environment will be ready in no time.<br>
+It will build the container, create it and run it with single command.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>make dev
+</code></pre>
+
+</div>
+
+
+
+<p>Run this command.<br>
+Here are the screenshot at different point of time for this command. For the first time this command will take few minutes but subsequent run will be completed within few seconds.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--pEf7xN68--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/make_dev.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--pEf7xN68--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/make_dev.png" alt="make_dev"></a><br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s---PwTLAcM--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/Mojo_installation.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s---PwTLAcM--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/Mojo_installation.png" alt="mojo_installation"></a><br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--_Y3rwP-Y--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/container_up.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--_Y3rwP-Y--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/container_up.png" alt="container_up"></a><br>
+I have highlighted different section for better understanding.<br>
+You can access your app on <a href="https://localhost/">https://localhost/</a><br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--fuBsDcBl--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/HomePage.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--fuBsDcBl--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/HomePage.png" alt="HomePage"></a></p>
+<h1>
+  <a href="#make-stag">
+  </a>
+  make stag
+</h1>
+
+<p>This command you will be running when you want to deploy your application in staging environment.<br>
+If you look closely we are overriding the default config for staging in initial few lines.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight make"><code>    <span class="err">$(eval</span> <span class="err">override</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span>staging<span class="o">)</span>
+    <span class="nl">$(eval override DOCKER_TAG=${CONTAINER_NAME}</span><span class="o">:</span><span class="nf">${BUILD_TYPE})</span>
+    <span class="c"># This will return only the IP address associated with the domain name ans assign it to ADDRESS</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override <span class="nv">ADDRESS</span><span class="o">=</span><span class="nf">$(</span><span class="nb">shell</span> dig +short &lt;your staging URL e.g. mojo-react-app-staging.com&gt;<span class="nf">))</span>
+</code></pre>
+
+</div>
+
+
+
+<p>The 4th lines is where you have to make your changes as per your requirement. We are overriding the default value of address(0.0.0.0) with your domain name of staging environment. We are using the <code>dig</code> utility to generate the IP address from that domain name and assigning it to ADDRESS.<br>
+Just run<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>make stag
+</code></pre>
+
+</div>
+
+
+
+<p>and you can access your staging environment.<br>
+E.g. <br>
+      <a href="https://mojo-react-app-staging.com/">https://mojo-react-app-staging.com/</a> <br>
+<strong>or</strong><br>
+      <a href="https://staging-ip-add/">https://staging-ip-add/</a></p>
+<h1>
+  <a href="#make-prod">
+  </a>
+  make prod
+</h1>
+
+<p>This command you will be running when you want to deploy your application in production environment.<br>
+Again, you can see we are overriding the default config for production in initial few lines.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight make"><code>    <span class="err">$(eval</span> <span class="err">override</span> <span class="nv">BUILD_TYPE</span><span class="o">=</span>production<span class="o">)</span>
+    <span class="nl">$(eval override DOCKER_TAG = ${CONTAINER_NAME}</span><span class="o">:</span><span class="nf">${BUILD_TYPE})</span>
+    <span class="c"># This will return only the IP address associated with the domain name ans assign it to ADDRESS</span>
+    <span class="nf">$(</span><span class="nb">eval</span> override <span class="nv">ADDRESS</span><span class="o">=</span><span class="nf">$(</span><span class="nb">shell</span> dig +short &lt;your production URL e.g. mojo-react-app.com<span class="nf">))</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Here again in 4th lines is where you have to make your changes as per your requirement. Update it to your prod environment hostname. We are using the <code>dig</code> utility to generate the IP address from that domain name and assigning it to ADDRESS.<br>
+Just run<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>make prod
+</code></pre>
+
+</div>
+
+
+
+<p>and you can access your staging environment.<br>
+E.g. <br>
+      <a href="https://mojo-react-app.com/">https://mojo-react-app.com/</a> <br>
+<strong>or</strong><br>
+      <a href="https://production-ip-add/">https://production-ip-add/</a></p>
+
+<h1>
+  <a href="#stop-the-container">
+  </a>
+  Stop the container
+</h1>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>make stop
+</code></pre>
+
+</div>
+
+
+
+<p>By default it will stop the dev container. Pass different param for stag or prod env.</p>
+
+<h1>
+  <a href="#login-to-container">
+  </a>
+  Login to container
+</h1>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>make login
+</code></pre>
+
+</div>
+
+
+
+<p>Again it will login to dev one by default. You can pass param to override that behavior.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--7di2ioyf--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/make_login.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--7di2ioyf--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://raw.githubusercontent.com/rai-gaurav/mojo_react_app/main/with_jsx/server/output_screenshot/make_login.png" alt="LoginContainer"></a></p>
+
+<h1>
+  <a href="#conclusion">
+  </a>
+  Conclusion
+</h1>
+
+<p>This Makefile is just a wrapper around different docker commands.<br>
+Especially during development you can enable live reload and your changes in host will be available in docker container also . More info <a href="https://www.freecodecamp.org/news/how-to-enable-live-reload-on-docker-based-applications/">here</a>.<br>
+You can use it for any Dockerfile. Here I am using a Mojolicious application. But the same Makefile can be used for a Django application or any other.</p>
+
+<p>I hope this is useful for you and make your life more smoother.<br>
+The Makefile is also available on <a href="https://github.com/rai-gaurav/mojo_react_app/tree/main/with_jsx/server/mojo_react_app">github</a></p>
+
+<p>Perl onion logo taken from <a href="https://github.com/dnmfarrell/Perl-Icons/blob/master/Icons/Perl_Onion_Color.svg">here</a><br>
+Mojolicious logo taken from <a href="https://github.com/mojolicious/mojo/blob/master/lib/Mojolicious/resources/public/mojo/logo.png">here</a><br>
+Docker logo taken from <a href="https://www.docker.com/company/newsroom/media-resources">here</a><br>
+GNU logo taken from <a href="https://www.gnu.org/software/make/">here</a></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Gaurav Rai
+     on Sunday 16 May 2021 17:48</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/05/16/disk-space-usage-of-cpan-authors-may-16-2021-edition/">Disk space usage of CPAN authors (May 16, 2021 edition)</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Prompted by <a href="http://neilb.org/2021/05/10/delete-your-old-releases.html">this post</a> on PAUSE running out of disk space, I thought I&#039;d refresh my own post &quot;<a href="https://perlancar.wordpress.com/2019/12/26/top-50-authors-by-disk-space-on-backpan/">Top 50 authors by disk space on BackPAN&quot;</a> (Dec 26, 2019) and add a stat for CPAN too. Hopefully this will be a regular post, ish. </p>
@@ -199,7 +584,7 @@ EARONESTY  370.6MB ( 0.5%)
      on Sunday 16 May 2021 08:48</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cccxli-15-great-cpan-modules-released.html">(cccxli) 15 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -211,7 +596,7 @@ EARONESTY  370.6MB ( 0.5%)
      on Saturday 15 May 2021 21:13</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cdlxvii-metacpan-weekly-report-typetiny.html">(cdlxvii) metacpan weekly report - Type::Tiny</a></h2>
             </div> <!-- card-header -->
@@ -223,7 +608,7 @@ EARONESTY  370.6MB ( 0.5%)
      on Saturday 15 May 2021 20:56</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/05/cdxc-stackoverflow-perl-report.html">(cdxc) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -235,7 +620,7 @@ EARONESTY  370.6MB ( 0.5%)
      on Saturday 15 May 2021 20:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprc-newsletter-may-2021">TPRC Newsletter - May 2021</a></h2>
             </div> <!-- card-header -->
@@ -306,7 +691,7 @@ Right now we need volunteers to help moderate rooms. Room moderators monitor the
      on Friday 14 May 2021 11:55</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dean/2021/05/a-perl-community-dashboard.html">A Perl Community Dashboard</a></h2>
             </div> <!-- card-header -->
@@ -399,7 +784,7 @@ Right now we need volunteers to help moderate rooms. Room moderators monitor the
      on Thursday 13 May 2021 16:09</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/releases-of-perl-distribution-of-crypt-openssl-x509-1-904-and-1-905-a-story-about-epic-failure-1810">Releases of Perl distribution of Crypt::OpenSSL::X509 1.904 and 1.905 - a story about epic failure </a></h2>
             </div> <!-- card-header -->
@@ -490,7 +875,7 @@ if (pv &amp;&amp; len &gt; 1) {
      on Thursday 13 May 2021 15:25</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-112-canonical-path-and-climb-stairs.html">Perl Weekly Challenge 112: Canonical Path and Climb Stairs</a></h2>
             </div> <!-- card-header -->
@@ -817,7 +1202,7 @@ Output: 8
      on Thursday 13 May 2021 14:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-54-of-perl-workflow-a-minor-feature-release-29ia">Release 1.54 of perl-workflow, a minor feature release</a></h2>
             </div> <!-- card-header -->
@@ -868,7 +1253,7 @@ Output: 8
      on Thursday 13 May 2021 12:19</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/perl-gsod-2021">Perl is part of Google's Season of Docs 2021</a></h2>
             </div> <!-- card-header -->
@@ -898,7 +1283,7 @@ Output: 8
      on Thursday 13 May 2021 12:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-112-27l0">Weekly Challenge 112</a></h2>
             </div> <!-- card-header -->
@@ -1037,7 +1422,7 @@ Option 5: 2 steps + 2 steps
      on Wednesday 12 May 2021 12:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/perl-one-liners-part-1/">Perl / Unix One-liner Cage Match, Part 1</a></h2>
             </div> <!-- card-header -->
@@ -1232,7 +1617,7 @@ it line XYZ a</code></pre></div>
      on Wednesday 12 May 2021 02:54</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/testing-perl-to-plan-or-not-to-plan-3plb">Testing Perl: To plan or not to plan</a></h2>
             </div> <!-- card-header -->
@@ -1270,344 +1655,6 @@ it line XYZ a</code></pre></div>
 
               <p class="text-right"><small>Published by Mark Gardner
      on Tuesday 11 May 2021 14:00</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_14">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-modules-importing-calling-or-returning-l5o">Perl modules loading, calling or returning</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Modules (and CPAN) are one of the "killer feature" of Perl, this article will discuss module loading/calling and some subtleties around this topic.</p>
-
-<h2>
-  <a href="#where-modules-live-do-not-dictate-how-they-are-called">
-  </a>
-  Where modules live do not dictate how they are called.
-</h2>
-
-<p>It is something important to understand early when you learn Perl programming, how you will load a module does not dictate its future package name (how it will be called). </p>
-
-<p>Let's start with a simple example with a empty module stored in a <code>File.pm</code> in a subdirectory:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>Directory
-└── Directory
-    └── File.pm
-</code></pre>
-
-</div>
-
-
-
-<p><code>File.pm</code> contains nothing but a <code>true</code> return value:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>1;
-</code></pre>
-
-</div>
-
-
-
-<p>The import is done by pointing to the <strong>path</strong> of the <strong>pm</strong> file:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="k">use</span> <span class="nn">Directory::Directory::</span><span class="nv">File</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>So far, all good! :D</p>
-
-<p>But it is too simple, so let's continue with a more real world example that actually <em>calls something</em>:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Directory::Directory::</span><span class="nv">File</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">foobar</span><span class="p">()</span> <span class="p">{</span>
-        <span class="k">print</span> <span class="p">"</span><span class="s2">Foo Bar!</span><span class="se">\n</span><span class="p">";</span>
-<span class="p">}</span>
-
-<span class="mi">1</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>It is imported and called like the following:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="c1"># Import </span>
-<span class="k">use</span> <span class="nn">Directory::Directory::</span><span class="nv">File</span><span class="p">;</span>
-
-<span class="c1"># Call</span>
-<span class="nn">Directory::Directory::File::</span><span class="nv">foobar</span><span class="p">();</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Notice that <code>Directory::Directory::File::foobar();</code> matches the package declaration in the module file... Where actually when <em>calling</em> the modules functions/variables, we have to follow the package name decided by the author for its module (read the doc).</p>
-
-<p>It could be <code>Directory::Directory::File::foobar()</code> or something totally different from the <strong>path</strong>.</p>
-
-<p>Look at this new example:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>Directory
-└── Directory
-    └── File.pm
-</code></pre>
-
-</div>
-
-
-
-<p>The module is stored in <code>Directory/Directory/File.pm</code> but belongs to package <strong>"Misleading"</strong> and declares/defines once again a function <code>foobar</code>:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Misleading</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">foobar</span><span class="p">()</span> <span class="p">{</span>
-        <span class="k">print</span> <span class="p">"</span><span class="s2">Foo Bar!</span><span class="se">\n</span><span class="p">";</span>
-<span class="p">}</span>
-
-<span class="mi">1</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>On importer side, the <code>use</code> and later the function call are not using the same "id" name:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="c1"># Import </span>
-<span class="k">use</span> <span class="nn">Directory::Directory::</span><span class="nv">File</span><span class="p">;</span>
-
-<span class="c1"># But package is actually named "Misleading" !!!</span>
-<span class="nn">Misleading::</span><span class="nv">foobar</span><span class="p">();</span>
-
-<span class="c1"># WON'T WORK!</span>
-<span class="c1"># Directory::Directory::File::foobar();</span>
-</code></pre>
-
-</div>
-
-
-
-<p>N.B.: Please note that the good practice is to make match path and package name. But you can meet <a href="https://metacpan.org/pod/DDP">aliases</a></p>
-
-<h2>
-  <a href="#use-vs-require">
-  </a>
-  use vs require
-</h2>
-
-<p>The <code>use</code> and <code>require</code> are doing <em>almost</em> the same thing but at different phases.</p>
-
-<p>The <a href="https://perldoc.perl.org/functions/require">require documentation</a> ends with "For a yet-more-powerful import facility, see <code>use</code> and perlmod."</p>
-
-<p>The <code>use</code> keyword executes at compilation phase means before execution even if it's the last line of your program.</p>
-
-<p>Here is my sample "Bazinga" module:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">Bazinga</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">joke</span><span class="p">()</span> <span class="p">{</span>
-    <span class="k">print</span> <span class="p">"</span><span class="s2">Bazinga!</span><span class="se">\n</span><span class="p">";</span>
-<span class="p">}</span>
-
-<span class="mi">1</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>And trying to call the function <code>joke</code> before to actually load it works very well:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ perl -I. -e 'Bazinga::joke(); use Bazinga;'
-Bazinga!
-</code></pre>
-
-</div>
-
-
-
-<p>It would not be the same with imports at runtime.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ perl -I. -e 'Bazinga::joke(); require Bazinga;'
-Undefined subroutine &amp;Bazinga::joke called at -e line 1.
-</code></pre>
-
-</div>
-
-
-
-<p>With runtime imports, I can also import conditionally a module.</p>
-
-<p>The following example will reload a module:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">require</span> <span class="nv">Bazinga</span><span class="p">;</span>
-
-<span class="nv">joke</span><span class="p">();</span>
-
-<span class="c1"># Is it already loaded?</span>
-<span class="k">if</span> <span class="p">(</span><span class="nv">$INC</span><span class="p">{"</span><span class="s2">Bazinga.pm</span><span class="p">"})</span> <span class="p">{</span>
-    <span class="k">print</span> <span class="p">"</span><span class="s2">Press ENTER to reload module:</span><span class="p">";</span>
-    <span class="o">&lt;</span><span class="bp">STDIN</span><span class="o">&gt;</span><span class="p">;</span>
-    <span class="nb">delete</span> <span class="nv">$INC</span><span class="p">{"</span><span class="s2">Bazinga.pm</span><span class="p">"};</span> <span class="c1"># Remove it from list</span>
-    <span class="nb">require</span> <span class="nv">Bazinga</span><span class="p">;</span> <span class="c1"># Reload it</span>
-    <span class="nv">joke</span><span class="p">();</span>
-<span class="p">};</span>
-</code></pre>
-
-</div>
-
-
-
-<p>When you run this code, it will import and execute <code>joke</code> then reload the module on "Enter" (and run <code>joke</code> again).<br>
-Since it reloads the module, I can even change the module (the content of the <code>joke</code> function) during the execution of the program:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">joke</span><span class="p">()</span> <span class="p">{</span>
-    <span class="k">print</span> <span class="p">"</span><span class="s2">Knock Knock Knock Penny!</span><span class="se">\n</span><span class="p">";</span>
-    <span class="k">print</span> <span class="p">"</span><span class="s2">Knock Knock Knock Penny!</span><span class="se">\n</span><span class="p">";</span>
-    <span class="k">print</span> <span class="p">"</span><span class="s2">Knock Knock Knock Penny!</span><span class="se">\n</span><span class="p">";</span>
-<span class="p">}</span>
-
-<span class="mi">1</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>And everything becomes more <em>dynamic</em>:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nv">Bazinga</span><span class="o">!</span>
-<span class="nv">Press</span> <span class="nv">ENTER</span> <span class="nv">to</span> <span class="nv">reload</span> <span class="nv">module:</span>    
-<span class="nv">Knock</span> <span class="nv">Knock</span> <span class="nv">Knock</span> <span class="nv">Penny</span><span class="o">!</span>
-<span class="nv">Knock</span> <span class="nv">Knock</span> <span class="nv">Knock</span> <span class="nv">Penny</span><span class="o">!</span>
-<span class="nv">Knock</span> <span class="nv">Knock</span> <span class="nv">Knock</span> <span class="nv">Penny</span><span class="o">!</span>
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  <a href="#perl-module-return-value">
-  </a>
-  Perl module return value
-</h2>
-
-<p>Modules have to return a "true" value, it sometimes confuse beginners, but I read somewhere that it comes from <code>Perl 4</code> where importing a module was much more like executing a subscript. </p>
-
-<p>So what if we try to return a "false" value?<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="mi">0</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>When importing it, we get in trouble:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ perl -I. -e 'use Boom;'
-Boom.pm did not return a true value at -e line.
-BEGIN failed--compilation aborted at -e line 1.
-</code></pre>
-
-</div>
-
-
-
-<p>Why are there is 2 messages here? <br>
-There is one about importing and one about compilation because of the "phases" I mentioned just above.</p>
-
-<p>Just replace <code>use</code> per <code>require</code> to change the phase where the import is processed and it will now only print the import failure:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ perl -I. -e 'require Boom;'
-Boom.pm did not return a true value at -e line 1.
-</code></pre>
-
-</div>
-
-
-
-<p>Some people are playing with modules return codes like <a href="https://github.com/schwern">Michael G Schwern</a> see <a href="https://stackoverflow.com/a/1864035">his stackoverflow response</a> or more recently <strong>PEVANS</strong> with a <code>0x55AA</code> in its <a href="https://metacpan.org/release/Faster-Maths/source/lib/Faster/Maths.pm#L104">Faster::Math</a></p>
-
-<p>You can find more example of return values thanks to <a href="https://returnvalues.plix.at/values.html">Acme::ReturnValue</a></p>
-
-<h2>
-  <a href="#m">
-  </a>
-  -M
-</h2>
-
-<p>You can import a module with command line switch <code>-M</code> like the following:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ perl -I. -MBazinga -e 'joke()'
-Bazinga!
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  <a href="#visibility">
-  </a>
-  Visibility
-</h2>
-
-<p>Namespace pollution and symbols export is an important topic that I will not discuss today but I leave you in <a href="https://perldoc.perl.org/Exporter#Selecting-What-to-Export">a good company</a> 😀</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
-     on Tuesday 11 May 2021 11:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_15">
@@ -4701,7 +4748,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 16 May 2021 16:59 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 16 May 2021 17:58 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
