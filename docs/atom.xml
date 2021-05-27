@@ -7,9 +7,205 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-05-27T02:26:26Z</updated>
+  <updated>2021-05-27T03:26:41Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl’s SvPV Menace</title>
+    <link rel="alternate" href="https://dev.to/fgasper/perl-s-svpv-menace-5515" type="text/html"/>
+    <content type="html">&lt;p&gt;If you’ve read my &lt;a href="https://dev.to/fgasper/perl-unicode-and-bytes-5cg7"&gt;Perl, Unicode, and Bytes&lt;/a&gt; or &lt;a href="https://dev.to/fgasper/use-sys-binmode-4e6o"&gt;Sys::Binmode&lt;/a&gt; posts, you know about the complexities of character encoding in Perl. A bit after I wrote that first post I had a little epiphany I thought worth sharing.&lt;/p&gt;
+
+&lt;p&gt;One day I noticed that &lt;a href="https://metacpan.org/pod/URI::XSEscape"&gt;URI::XSEscape&lt;/a&gt; was mangling its output: I’d pass in &lt;code&gt;épée&lt;/code&gt; and get out &lt;code&gt;%C3%83%C2%A9p%C3%83%C2%A9e&lt;/code&gt;. I recognized this as an extra UTF-8 encode: rather than URI-encoding my 6 bytes of &lt;code&gt;épée&lt;/code&gt;, it was UTF-8 encoding—so now 10 bytes—then URI-encoding that.&lt;/p&gt;
+
+&lt;p&gt;I pulled out &lt;a href="https://metacpan.org/pod/Devel::Peek"&gt;Devel::Peek&lt;/a&gt; and saw that something prior to the URI-encoding step had “upgraded” my string’s internal storage: Perl itself stored my string as 10 bytes, even though the Perl scalar still consisted of 6 &lt;em&gt;characters&lt;/em&gt;. Ordinarily this is nothing of importance since Perl code doesn’t need to care how Perl itself stores its strings.&lt;/p&gt;
+
+&lt;p&gt;… until it &lt;em&gt;does&lt;/em&gt; need to care, that is.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#what-is-svpv"&gt;
+  &lt;/a&gt;
+  What is SvPV?
+&lt;/h1&gt;
+
+&lt;p&gt;Perl’s C API—the set of macros and functions available to work with Perl from C—is a classic C API: lots of different ways to do &lt;em&gt;almost&lt;/em&gt; the same thing. To translate a Perl scalar to a C signed integer, for example, you can use &lt;code&gt;SvIV&lt;/code&gt;, &lt;code&gt;SvIV_nomg&lt;/code&gt;, &lt;code&gt;SvIVX&lt;/code&gt;, or &lt;code&gt;SvIVx&lt;/code&gt;. (&lt;code&gt;IV&lt;/code&gt; here signifying an “integer value”) A similar set of macros exists for unsigned integers (&lt;code&gt;UV&lt;/code&gt;s).&lt;/p&gt;
+
+&lt;p&gt;Converting a Perl scalar to a C string is similar. There are many tools available, but the 3 “fundamental” ones are:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;&lt;code&gt;SvPVbyte&lt;/code&gt;: Takes the code points of your Perl string and gives back a C buffer whose bytes match those code points. Thus, any code point that exceeds 255 doesn’t work, and an exception is thrown.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;&lt;code&gt;SvPVutf8&lt;/code&gt;: Like &lt;code&gt;SvPVbyte&lt;/code&gt; but gives the &lt;em&gt;UTF-8-encoded&lt;/em&gt; bytes for your Perl string’s code points. This works for any code point that Perl can store, but for code points 128-255 it’ll give different results from &lt;code&gt;SvPVbyte&lt;/code&gt;. (cf. &lt;a href="https://perldoc.perl.org/perlunicode#The-%22Unicode-Bug%22"&gt;perldoc perlunicode&lt;/a&gt;)&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;&lt;code&gt;SvPV&lt;/code&gt;: Gives you the Perl string’s internal buffer, aka its “PV” (“pointer value”). It could be bytes, or it could be UTF-8. It’s like a C analogue to Perl’s &lt;code&gt;use bytes&lt;/code&gt;.&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;code&gt;SvPV&lt;/code&gt;, of course, is what URI::XSEscape was using.&lt;/p&gt;
+
+&lt;p&gt;(NB: &lt;code&gt;PV&lt;/code&gt; stands for “pointer value”.)&lt;/p&gt;
+
+&lt;p&gt;For &lt;code&gt;SvPV&lt;/code&gt; to be meaningful it has to be used in tandem with &lt;code&gt;SvUTF8&lt;/code&gt;, a macro that tells you which form the PV is: bytes, or UTF-8. So if &lt;code&gt;SvUTF8&lt;/code&gt; is true, then &lt;code&gt;SvPV&lt;/code&gt;’s output is UTF-8; otherwise &lt;code&gt;SvPV&lt;/code&gt;’s output is bytes. But URI::XSEscape wasn’t checking &lt;code&gt;SvUTF8&lt;/code&gt;; it was just URI-encoding &lt;code&gt;SvPV&lt;/code&gt; directly.&lt;/p&gt;
+
+&lt;p&gt;The big problem with &lt;code&gt;SvPV&lt;/code&gt; is that the number of contexts &lt;em&gt;other&lt;/em&gt; than Perl where it’s sensible to have a C string that could be bytes &lt;em&gt;or&lt;/em&gt; UTF-8 is … small. Nevertheless, uses of this macro (and its variants) to interact with contexts outside Perl are all over CPAN.&lt;/p&gt;
+
+&lt;p&gt;URI::XSEscape, like &lt;a href="https://metacpan.org/pod/URI::Escape"&gt;its pure-Perl counterpart&lt;/a&gt;, presents interfaces appropriate for both “byte-oriented” and “character-oriented” Perl code (cf. &lt;a href="https://dev.to/fgasper/perl-unicode-and-bytes-5cg7"&gt;Perl, Unicode, and Bytes&lt;/a&gt;). Since the byte-oriented interface is what I was using, switching URI::XSEscape from &lt;code&gt;SvPV&lt;/code&gt; to &lt;code&gt;SvPVbyte&lt;/code&gt; was the simple fix to this problem.&lt;/p&gt;
+
+&lt;p&gt;In essence, C code like URI::XSEscape should approach Perl strings the same way that pure-Perl code does, without caring about Perl’s internal string storage. &lt;em&gt;Most&lt;/em&gt; C code should thus avoid &lt;code&gt;SvPV&lt;/code&gt; for the same reason that most Perl should not &lt;code&gt;use bytes&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#the-plot-thickens-"&gt;
+  &lt;/a&gt;
+  The plot thickens …
+&lt;/h1&gt;
+
+&lt;p&gt;A quick scan through some popular XS modules showed more occurrences of this problem:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/DBD::SQLite"&gt;DBD::SQLite&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/Net::Curl"&gt;Net::Curl&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;a href="https://metacpan.org/pod/DNS::Unbound"&gt;DNS::Unbound&lt;/a&gt; (mea culpa!)&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/DNS::LDNS"&gt;DNS::LDNS&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/YAML::Syck"&gt;YAML::Syck&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/HTTP::Parser::XS"&gt;HTTP::Parser::XS&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;a href="https://metacpan.org/pod/Socket"&gt;Socket&lt;/a&gt; (a core module!)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;These offer a non-default mode that auto-encodes to UTF-8, but their default setup has the same bug:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/CDB_File"&gt;CDB_File&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://metacpan.org/pod/LMDB_File"&gt;LMDB_File&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;There are likely many more; those are just ones I’ve found.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#how-did-this-come-to-be"&gt;
+  &lt;/a&gt;
+  How did this come to be?
+&lt;/h1&gt;
+
+&lt;p&gt;I suspect it’s that:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;&lt;code&gt;SvPV&lt;/code&gt; is the shortest of the above-named methods for converting a Perl scalar to a C string. Thus, it’s easier to type and looks less “intimidating”.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;Historically, Perl’s documentation favoured &lt;code&gt;SvPV&lt;/code&gt; in its examples of scalar-to-string conversion; the other two were seldom discussed. &lt;a href="https://github.com/Perl/perl5/commit/3c3f883d1ac1fc6048277d2d60015c66c211ac9b"&gt;I fixed this recently&lt;/a&gt;, but it’ll be years before everyone’s local &lt;code&gt;perldoc&lt;/code&gt; reflects that change.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;Perl’s default &lt;a href="https://perldoc.perl.org/perlxstypemap"&gt;XS typemap&lt;/a&gt; uses &lt;code&gt;SvPV&lt;/code&gt; (without consulting &lt;code&gt;SvUTF8&lt;/code&gt;) to convert a scalar to a string. Thus, the following XSUB, called as &lt;code&gt;printstr($mystr)&lt;/code&gt;:&lt;br&gt;
+&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;void
+printstr (const char *str)
+  CODE:
+    fprintf(stdout, str);
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;… prints Perl’s internals, which a Perl caller isn’t supposed to care about. Ideally language defaults like this would be the “safe” ways to do things, but this particular one is nonsensical.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#does-this-problem-affect-your-code"&gt;
+  &lt;/a&gt;
+  Does this problem affect your code?
+&lt;/h1&gt;
+
+&lt;p&gt;A simple way to test for this problem is to &lt;code&gt;utf8::upgrade&lt;/code&gt; your strings before you give them to the tested code—ensuring, of course, that you’re testing with some code points in the 128-255 range. Your test should verify that your program’s behaviour is the same with &lt;code&gt;utf8::upgrade&lt;/code&gt;d strings as with non-upgraded strings.&lt;/p&gt;
+
+&lt;p&gt;You wouldn’t normally upgrade strings manually in production (since it makes your Perl code think about Perl’s internals, which it shouldn’t do), but for testing it’s fine and useful.&lt;/p&gt;
+
+&lt;p&gt;For example, I found the URI::XSEscape problem by doing:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;my $foo = "épée";
+utf8::upgrade($foo);
+print URI::XSEscape::uri_escape($foo);
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h1&gt;
+  &lt;a href="#not-just-any-old-bug-"&gt;
+  &lt;/a&gt;
+  Not just any old bug …
+&lt;/h1&gt;
+
+&lt;p&gt;The worst part of all this is that modules like CDB_File &lt;em&gt;can’t&lt;/em&gt; replace &lt;code&gt;SvPV&lt;/code&gt; without breaking existing applications that may depend on that &lt;code&gt;use bytes&lt;/code&gt;-ish behaviour. So there’s not much to do except build new, corrected interfaces, deprecating the old ones … which of course will &lt;em&gt;eventually&lt;/em&gt; necessitate changes to existing code. For Perl “gurus” that may be simple, but for everyone else changing existing code could be expensive, painful, and even harmful to Perl’s reputation as a language that prizes backward compatibility.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#but-thats-not-all-"&gt;
+  &lt;/a&gt;
+  But that’s not all …
+&lt;/h1&gt;
+
+&lt;p&gt;XS code isn’t the only place where this bug appears; &lt;em&gt;Perl itself&lt;/em&gt; has it, too! Read all about it at “&lt;a href="https://dev.to/fgasper/use-sys-binmode-4e6o"&gt;use Sys::Binmode;&lt;/a&gt;”.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#how-can-we-fix-this"&gt;
+  &lt;/a&gt;
+  How can we fix this?
+&lt;/h1&gt;
+
+&lt;p&gt;I think &lt;em&gt;most&lt;/em&gt; code that uses &lt;code&gt;SvPV&lt;/code&gt; to convert a Perl string to a C string intends for Perl code points to correspond to bytes in the C string; thus, such code should actually use &lt;code&gt;SvPVbyte&lt;/code&gt; or one of its variants. (UTF-8-aware C code, of course, would use &lt;code&gt;SvPVutf8&lt;/code&gt;.) Toward that end, we &lt;strong&gt;MUST&lt;/strong&gt; discourage further use of &lt;code&gt;SvPV&lt;/code&gt;. I propose to the Perl community, then, a few  changes: some that don’t break anything, and others that will probably break some things:&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#fixing-this-the-easy-parts"&gt;
+  &lt;/a&gt;
+  Fixing this: The easy parts!
+&lt;/h2&gt;
+
+&lt;p&gt;1) Rename &lt;code&gt;SvPV&lt;/code&gt; and friends. We can’t &lt;em&gt;remove&lt;/em&gt; them, but we can create longer, “scarier-looking” aliases for them and use those names in the documentation. I propose &lt;code&gt;SvPVinternal&lt;/code&gt;, &lt;code&gt;SvPVinternal_const&lt;/code&gt;, etc.&lt;/p&gt;
+
+&lt;p&gt;2) Make &lt;code&gt;xsubpp&lt;/code&gt; warn when it sees SvPV or variants in a typemap.&lt;/p&gt;
+
+&lt;p&gt;3) Use &lt;a href="https://dev.to/fgasper/use-sys-binmode-4e6o"&gt;Sys::Binmode&lt;/a&gt; in all new code to fix Perl’s own buggy behaviour.&lt;/p&gt;
+
+&lt;p&gt;4) Submit bug reports! Audit the XS modules that you use, and if you find different behaviour between upgraded and downgraded strings, let the maintainers know—ideally by sending them patches!&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#fixing-this-the-hard-part-"&gt;
+  &lt;/a&gt;
+  Fixing this: The hard part …
+&lt;/h2&gt;
+
+&lt;p&gt;You can’t make an omelet without breaking some eggs, and you often can’t fix things like this without breaking &lt;em&gt;some&lt;/em&gt; current applications. Nevertheless …&lt;/p&gt;
+
+&lt;p&gt;5) Make &lt;code&gt;char *&lt;/code&gt; and &lt;code&gt;const char *&lt;/code&gt; in Perl’s default typemap use &lt;code&gt;SvPVbyte&lt;/code&gt;. (Actually &lt;code&gt;SvPVbyte_nolen&lt;/code&gt;, but hey.) For the vast majority of XS modules this probably would be just a bug fix, though for apps that depend on a &lt;code&gt;use bytes&lt;/code&gt;-ish status quo there would be breakage. Thankfully, though: a) the most widely-used XS modules (e.g., &lt;a href="https://metacpan.org/pod/MIME::Base64"&gt;MIME::Base64&lt;/a&gt;, &lt;a href="https://metacpan.org/pod/JSON::XS"&gt;JSON::XS&lt;/a&gt;) where this &lt;em&gt;could&lt;/em&gt; be a problem don’t appear to be vulnerable, and b) any breakage would be easy to fix: module authors merely have to adopt &lt;code&gt;SvPVutf8&lt;/code&gt; if that’s what they want, optionally creating separate functions if support for both is desired.&lt;/p&gt;
+
+&lt;p&gt;6) Make &lt;a href="https://metacpan.org/pod/Sys::Binmode"&gt;Sys::Binmode&lt;/a&gt;’s behaviour Perl’s own behaviour. This is more contentious because it sidesteps the much larger problem of Perl’s lacklustre support for Windows filesystems; still, Sys::Binmode-type behaviour is no &lt;em&gt;worse&lt;/em&gt; than Perl’s status quo, and it fixes a significant leak in Perl’s string abstraction.&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#fixing-this-the-moonshot-"&gt;
+  &lt;/a&gt;
+  Fixing this: The moon-shot …
+&lt;/h2&gt;
+
+&lt;p&gt;7) Perl needs to differentiate byte sequences from text strings. This would fix a plethora of “shin-bumpers” that afflict users of the language. This is a fairly difficult problem to solve, but I don’t think it’s insurmountable.&lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#in-the-meantime-"&gt;
+  &lt;/a&gt;
+  In the meantime …
+&lt;/h1&gt;
+
+&lt;p&gt;Absent fixes like the above, we just have to avoid this issue. You’ll always have consistent behaviour if you send &lt;em&gt;encoded&lt;/em&gt; strings to the operating system and &lt;em&gt;downgrade&lt;/em&gt; them prior to output; this way Perl doesn’t store any strings as UTF-8, so &lt;code&gt;SvPV&lt;/code&gt; and &lt;code&gt;SvPVbyte&lt;/code&gt; give the same result.&lt;/p&gt;
+
+&lt;p&gt;IMPORTANT: If you don’t &lt;em&gt;decode&lt;/em&gt; your strings, then by definition they’re already encoded, so in this case &lt;em&gt;don’t&lt;/em&gt; encode them manually, or you’ll mangle your output.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Felipe Gasper</name>
+    </author>
+    <id>https://dev.to/fgasper/perl-s-svpv-menace-5515</id>
+    <published>2021-05-27T02:42:30Z</published>
+    <updated>2021-05-27T02:42:30Z</updated>
+    <category term="perl"/>
+  </entry>
   <entry>
     <title>Perl Weekly Challenge 114: Next Palindrome Number and Higher Integer Set Bits</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-114-next-palindrome-number-and-higher-integer-set-bits.html"/>
@@ -2305,136 +2501,6 @@ is an excellent book with a very in depth chapter on Graphs.</p></div>
     <thr:total>0</thr:total>
   </entry>
   <entry>
-    <title>Solving simple problems</title>
-    <link rel="alternate" href="https://dev.to/davorg/solving-simple-problems-4p2f" type="text/html"/>
-    <content type="html">&lt;p&gt;I write a lot of Perl. Currently, I'm spending two days a week working for a client - maintaining an old Perl codebase that drives a successful financial business. On the other days of the week, I'm writing a large Dancer application that I hope to turn into a business in the future. But sometimes, it's fun to use Perl to solve simpler problems too. Here's how I spent fifteen minutes or so this morning.&lt;/p&gt;
-
-&lt;p&gt;I listen to music while I work. One of the joys of working from home is that I can fill the room with music and don't have to wear headphones. I tend to listen to a single artist for a couple of hours at a time. I'll just say "Hey Google, play music by [someone]" and listen until I fancy something different.&lt;/p&gt;
-
-&lt;p&gt;But it's easy to get into a bit of a rut. I've noticed that I've spent a lot of time listening to four or five artists and, therefore, ignoring all of the other artists I enjoy listening to. This morning I had an idea of how I could work round that.&lt;/p&gt;
-
-&lt;p&gt;I've been scrobbling most of my listening for about fifteen years. For those who don't know, "scrobbling" is the act of logging what you're listening to using an external service so that, over time, you build up an accurate picture of who you listen to. I use &lt;a href="https://last.fm"&gt;Last.FM&lt;/a&gt; and you can see &lt;a href="https://www.last.fm/user/davorg/library"&gt;what I've been listening to&lt;/a&gt; on their site.&lt;/p&gt;
-
-&lt;p&gt;Another page on the site shows &lt;a href="https://www.last.fm/user/davorg/library/artists"&gt;my scrobbles by artist for all time&lt;/a&gt;. From there, it's easy to spot the artists who have been receiving too much attention from me recently.&lt;/p&gt;
-
-&lt;p&gt;So I decided, I'd write a Perl program to solve this problem. This was the basic design:&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Scrape my "artists scrobbled" page to get a list of artists and the number of scrobbles&lt;/li&gt;
-&lt;li&gt;Ignore anything with over a thousand scrobbles (as that's the artists I listen to too much)&lt;/li&gt;
-&lt;li&gt;Ignore anything with fewer than five hundred scrobbles (as I'm not sure how much I like those artists)&lt;/li&gt;
-&lt;li&gt;Pick an artist at random from the remaining list&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;It didn't take long to write. The &lt;a href="https://github.com/davorg/pickanartist"&gt;code is on GitHub&lt;/a&gt; and I've reproduced it below.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/perl&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;strict&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;warnings&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;say&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;HTML::&lt;/span&gt;&lt;span class="nv"&gt;TreeBuilder&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$username&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;shift&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;davorg&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$url&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;https://www.last.fm/user/&lt;/span&gt;&lt;span class="si"&gt;$username&lt;/span&gt;&lt;span class="s2"&gt;/library/artists&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$tree&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;HTML::&lt;/span&gt;&lt;span class="nv"&gt;TreeBuilder&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;new_from_url&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$url&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$table&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt;  &lt;span class="nv"&gt;$tree&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;look_down&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
-  &lt;span class="s"&gt;class&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="sx"&gt;qr/\bchartlist\b/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-&lt;span class="p"&gt;);&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;@artists&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;@rows&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$table&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;look_down&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;_tag&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;tr&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="s"&gt;class&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="sx"&gt;qr/chartlist-row/&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-&lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@rows&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-  &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$name&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;look_down&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;_tag&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;td&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="s"&gt;class&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="sx"&gt;qr/chartlist-name/&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-  &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$count&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;look_down&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;_tag&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;span&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="s"&gt;class&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="sx"&gt;qw/chartlist-count-bar-value/&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-  &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$x&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$count&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;content&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=~&lt;/span&gt; &lt;span class="sr"&gt;s/,//gr&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-  &lt;span class="k"&gt;next&lt;/span&gt; &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nv"&gt;$x&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;=&lt;/span&gt; &lt;span class="mi"&gt;1000&lt;/span&gt; &lt;span class="ow"&gt;or&lt;/span&gt; &lt;span class="nv"&gt;$x&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;=&lt;/span&gt; &lt;span class="mi"&gt;500&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-  &lt;span class="nb"&gt;push&lt;/span&gt; &lt;span class="nv"&gt;@artists&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$name&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;look_down&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;_tag&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;a&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;content&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;];&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="nv"&gt;say&lt;/span&gt; &lt;span class="nv"&gt;$artists&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="nb"&gt;rand&lt;/span&gt; &lt;span class="nv"&gt;@artists&lt;/span&gt; &lt;span class="p"&gt;];&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;I used &lt;a href="https://metacpan.org/pod/HTML::TreeBuilder"&gt;HTML::TreeBuilder&lt;/a&gt; because I had been reminded of its existence earlier in the week but, honestly, I'm not convinced it was the best choice. I might have a go at rewriting it using something like &lt;a href="https://metacpan.org/pod/Web::Scraper"&gt;Web::Scraper&lt;/a&gt; at some point.&lt;/p&gt;
-
-&lt;p&gt;And as I'm writing this, I'm thinking "Doesn't Last.FM have an API? Shouldn't I have used that?" (Answer: &lt;a href="https://www.last.fm/api"&gt;yes it does&lt;/a&gt; and yes you should - so that's another fix I should make in the future.)&lt;/p&gt;
-
-&lt;p&gt;But anyway, that's what I threw together in fifteen minutes this morning. It works, so I don't really have much incentive to do much to it (Oh, who am I trying to kid? Of course, I'm desperate to spend the next two weeks "improving" it!)&lt;/p&gt;
-
-&lt;p&gt;I didn't expect it to be useful to anyone else, so I didn't even bother tweeting about it. But before long I got &lt;a href="https://twitter.com/wantarray/status/1395692432948355075"&gt;a tweet from @wantarray&lt;/a&gt; saying he'd taken the basic logic and used it as the basic of a program which uses &lt;a href="https://metacpan.org/pod/Audio::MPD"&gt;Audio::MPD&lt;/a&gt; to actually play the music.&lt;/p&gt;
-
-&lt;p&gt;So I thought I'd blog about it because a) it turns out to be more useful than I thought and b) I wanted to share the joy of using a powerful programming language to solve a trivial problem in my life.&lt;/p&gt;
-
-&lt;p&gt;How do you use Perl to make your life better?&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;Update:&lt;/strong&gt; I couldn't resist rewriting it to use the Last.FM API. It looks much nicer now.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/perl&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;strict&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;warnings&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;say&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Net::&lt;/span&gt;&lt;span class="nv"&gt;LastFM&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$username&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;shift&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;davorg&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt;   &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;user.getTopArtists&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$lastfm&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Net::&lt;/span&gt;&lt;span class="nv"&gt;LastFM&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
-  &lt;span class="s"&gt;api_key&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$ENV&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;LASTFM_API_KEY&lt;/span&gt;&lt;span class="p"&gt;},&lt;/span&gt;
-  &lt;span class="s"&gt;api_secret&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$ENV&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;LASTFM_SECRET&lt;/span&gt;&lt;span class="p"&gt;},&lt;/span&gt;
-&lt;span class="p"&gt;);&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$data&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$lastfm&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;request_signed&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
-  &lt;span class="s"&gt;method&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-  &lt;span class="s"&gt;user&lt;/span&gt;   &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$username&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-&lt;span class="p"&gt;);&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;@artists&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;$data&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;topartists&lt;/span&gt;&lt;span class="p"&gt;}{&lt;/span&gt;&lt;span class="nv"&gt;artist&lt;/span&gt;&lt;span class="p"&gt;}})&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-  &lt;span class="k"&gt;next&lt;/span&gt; &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;playcount&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;=&lt;/span&gt; &lt;span class="mi"&gt;1000&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-  &lt;span class="k"&gt;next&lt;/span&gt; &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;playcount&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;=&lt;/span&gt; &lt;span class="mi"&gt;500&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-  &lt;span class="nb"&gt;push&lt;/span&gt; &lt;span class="nv"&gt;@artists&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;name&lt;/span&gt;&lt;span class="p"&gt;};&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="nv"&gt;say&lt;/span&gt; &lt;span class="nv"&gt;$artists&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="nb"&gt;rand&lt;/span&gt; &lt;span class="nv"&gt;@artists&lt;/span&gt; &lt;span class="p"&gt;];&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Of course, you now need to register for a &lt;a href="https://www.last.fm/api/account/create"&gt;Last.FM API key&lt;/a&gt;.&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Dave Cross</name>
-    </author>
-    <id>https://dev.to/davorg/solving-simple-problems-4p2f</id>
-    <published>2021-05-21T13:02:25Z</published>
-    <updated>2021-05-21T13:02:25Z</updated>
-    <category term="perl"/>
-    <category term="music"/>
-    <category term="scrobbling"/>
-    <category term="lastfm"/>
-  </entry>
-  <entry>
   <title>CAT: Addressing the issues, planning ahead</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/cat-addressing-the-issues-planning-ahead"/>
   <id>tag:news.perlfoundation.org,2021-05-19:/post/cat-addressing-the-issues-planning-ahead</id>
@@ -2894,9 +2960,9 @@ EARONESTY  370.6MB ( 0.5%)
     <id>http://perlancar.wordpress.com/?p=1943</id>
     <published>2021-05-16T08:48:50Z</published>
     <updated>2021-05-16T08:48:50Z</updated>
-    <category term="perl"/>
-    <category term="cpan"/>
     <category term="backpan"/>
+    <category term="cpan"/>
+    <category term="perl"/>
   </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-7204722919735501600</id>
@@ -4245,8 +4311,8 @@ In this experimental project <a href="https://phoenixtrap.com/">Mark Gardner</a>
     <id>http://perlancar.wordpress.com/?p=1941</id>
     <published>2021-05-01T00:37:07Z</published>
     <updated>2021-05-01T00:37:07Z</updated>
-    <category term="perl"/>
     <category term="cpan"/>
+    <category term="perl"/>
   </entry>
   <entry>
     <title>Live coding session with Gabor Szabo</title>
