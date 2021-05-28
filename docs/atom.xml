@@ -7,9 +7,441 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-05-28T14:02:57Z</updated>
+  <updated>2021-05-28T14:53:16Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Date handling modularized</title>
+    <link rel="alternate" href="https://dev.to/vkroll/date-handling-modularized-10h9" type="text/html"/>
+    <content type="html">&lt;p&gt;Thanks to mentioning my first post on the &lt;a href="https://perlweekly.com/archive/513.html"&gt;perl weekly newsletter&lt;/a&gt; a lot people read the first part of this serie of articles. (Don't know yet, how many parts it will be.) So I decided to write a follow-up. &lt;/p&gt;
+
+&lt;p&gt;What can you expect:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Moving functions to modules&lt;/li&gt;
+&lt;li&gt;testing functions automatically&lt;/li&gt;
+&lt;li&gt;change a module to a class&lt;/li&gt;
+&lt;li&gt;inherit the class from a base class&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;To summarize where we left our little skript in part one:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use strict;
+
+use Getopt::Long;
+use DateTime;
+use DateTime::Duration;
+
+my $date;   ## the starting date argument
+my $dt;     ## DateTime Object of starting date
+
+
+GetOptions(
+        "date=s"         =&amp;gt; \$date,
+        );
+
+$dt = get_dt($date);
+my $today = DateTime-&amp;gt;today();
+
+
+
+if(!$dt) {
+    print "submitted value $date is no date\n";
+}
+if(is_last_week($dt)) {
+    print "submitted date was in the last week\n";
+}
+
+sub is_last_week {
+    my $dt = shift;
+    return unless ref $dt eq "DateTime";
+    return if($dt &amp;gt; $today) ;
+
+    my $dur = DateTime::Duration-&amp;gt;new(days =&amp;gt; 7);
+    $today-&amp;gt;subtract_duration($dur);
+    return 1 if $today &amp;lt; $dt;
+}
+
+
+sub get_dt {
+    my $date = shift;
+
+    my($y, $m, $d) = $date =~ /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
+    my $dt;
+    eval {
+        $dt = DateTime-&amp;gt;new(year =&amp;gt; $y, month =&amp;gt; $m, day =&amp;gt; $d);
+    }; 
+    if ($@) {
+        print STDERR "Error while generating DateTime: $@\n";
+        return 0;
+    }
+    else {
+        return $dt;
+    }
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The script checks a parameter -d if it is a valid date and that the date is in the last week.&lt;/p&gt;
+
+&lt;p&gt;Calling the script without a paremeter end with a not so nice error:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;perl skript.pl &lt;br&gt;
+Error while generating DateTime: Validation failed for type named DayOfMonth declared in package DateTime::Types (/home/kroll/.plenv/versions/5.32.1/lib/perl5/site_perl/5.32.1/x86_64-linux/DateTime/Types.pm) at line 29 in sub named (eval) with value undef&lt;/p&gt;
+
+&lt;p&gt;Trace begun at Specio::Exception-&amp;gt;new line 57&lt;br&gt;
+Specio::Exception::throw('Specio::Exception', 'message', 'Validation failed for type named DayOfMonth declared in package DateTime::Types (/home/kroll/.plenv/versions/5.32.1/lib/perl5/site_perl/5.32.1/x86_64-linux/DateTime/Types.pm) at line 29 in sub named (eval) with value undef', 'type', 'Specio::Constraint::Simple=HASH(0x55a2fa53c0a8)', 'value', undef) called at (eval 201) line 91&lt;br&gt;
+DateTime::_check_new_params('year', undef, 'month', undef, 'day', undef) called at /home/kroll/.plenv/versions/5.32.1/lib/perl5/site_perl/5.32.1/x86_64-linux/DateTime.pm line 176&lt;br&gt;
+DateTime::new('DateTime', 'year', undef, 'month', undef, 'day', undef) called at skript.pl line 45&lt;br&gt;
+eval {...} at skript.pl line 44&lt;br&gt;
+main::get_dt(undef) called at skript.pl line 15&lt;/p&gt;
+
+&lt;p&gt;submitted value  is no date&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;We will write this on our to-do-list for later.&lt;/p&gt;
+
+&lt;p&gt;But for today we want to put the date handling out of the script in a module, so that the script later can do the heavy lifting but the date handling can be reused in other scripts. &lt;/p&gt;
+
+&lt;h1&gt;
+  &lt;a href="#generating-a-new-and-empty-module"&gt;
+  &lt;/a&gt;
+  Generating a new and empty module
+&lt;/h1&gt;
+
+&lt;p&gt;For the perl people it is quite obvious, you generate a directory lib and put the module in and do the normal perl boilerplate:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;package Date;
+
+use strict;
+
+use DateTime;
+use DateTime::Duration;
+
+
+1;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And as the test-driven guy I am usually, I added my first test too. In t/date.t you will find:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use Test::More;
+
+use_ok("Date");
+
+done_testing();
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And of course this will result green: &lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;$ prove -lv&lt;br&gt;
+t/date.t .. &lt;br&gt;
+ok 1 - use Date;&lt;br&gt;
+1..1&lt;br&gt;
+ok&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;So we can commit it:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;Author: Volker Kroll &lt;br&gt;
+Date:   Thu May 6 11:59:53 2021 +0200&lt;/p&gt;
+
+&lt;p&gt;new Module Date&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Date is empty&lt;/li&gt;
+&lt;li&gt;t/date.t has a test, that it loads correctly&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/blockquote&gt;
+
+&lt;h1&gt;
+  &lt;a href="#move-the-getdt-in-datepm"&gt;
+  &lt;/a&gt;
+  Move the get_dt in Date.pm
+&lt;/h1&gt;
+
+&lt;p&gt;Not much to do then get the code from the script and paste it in our module. But because I prefer modules to be a little more object-oriented I also added a constructor in the - little weird old oo-perl style.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub new {
+    my $class = shift;
+    my $datestring = shift|| undef;
+    if ($datestring) {
+        bless get_dt($datestring), $class;
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And a little more testing of course:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use_ok("Date");
+
+my $d = Date::get_dt('2020-01-02');
+isa_ok($d, DateTime);
+my $date = Date-&amp;gt;new('2020-01-02');
+isa_ok($date, "Date");
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Resulting in:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;$ prove -lv&lt;br&gt;
+t/date.t .. &lt;br&gt;
+ok 1 - use Date;&lt;br&gt;
+ok 2 - An object of class 'DateTime' isa 'DateTime'&lt;br&gt;
+ok 3 - An object of class 'Date' isa 'Date'&lt;br&gt;
+1..3&lt;br&gt;
+ok&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Enough code to commit it:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;Author: Volker Kroll &lt;a href="mailto:kroll@strato.de"&gt;kroll@strato.de&lt;/a&gt;&lt;br&gt;
+Date:   Thu May 6 12:11:15 2021 +0200&lt;/p&gt;
+
+&lt;p&gt;get_dt now in Date&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;get_dt is called like in skript.pl Date::get_dt(yyyy-mm-dd)&lt;/li&gt;
+&lt;li&gt;additionally you can do a Date-&amp;gt;new(yyyy-mm-dd)
+ returned is an object of class Date (that is a DateTime)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/blockquote&gt;
+
+&lt;h1&gt;
+  &lt;a href="#why-not-make-date-a-child-of-datetime"&gt;
+  &lt;/a&gt;
+  Why not make Date a child of DateTime?
+&lt;/h1&gt;
+
+&lt;p&gt;While working on my module I thought it might be a good idea to inherit from DateTime so that if I do a Date-&amp;gt;new(...) I get a DateTime object back. But, that did not work immediatly, because I need to add a lot of code of DateTime then for follow that constructor. (And to be honest, I forgot how to only add a little in my constructor and letting the "real constructor" do the heavy lifting of DateTime, so I decided for this project to rename my constructor to create (that's easy in perl, where you can name your constructor like you want to).&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;package Date;
+
+use strict;
+
+use base qw(DateTime);
+use DateTime;
+use DateTime::Duration;
+
+
+sub create {
+    my $class = shift;
+    my $datestring = shift|| undef;
+    if ($datestring) {
+        return bless get_dt($datestring), $class;
+    }
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Also I wanted my function is_last_week in the module too, we had it before in our little script. For making the tests more easy, I added the possibility to "cheat with today" as A. mentioned. When I add a parameter today in the call it uses that not the "real today":&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub is_last_week {
+    my $dt = shift;
+    return unless ref $dt;
+    my $today = shift ||  DateTime-&amp;gt;today();
+    return if($dt &amp;gt; $today) ;
+
+    my $dur = DateTime::Duration-&amp;gt;new(days =&amp;gt; 7);
+    $dt-&amp;gt;add_duration($dur);
+    return 1 if $today &amp;lt; $dt;
+    return 0;
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Now I was able to add some more testing:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use Test::More;
+use Data::Dumper;
+use DateTime;
+
+use_ok("Date");
+test_new();
+test_is_last_week();
+done_testing();
+
+sub test_new {
+    my $d = Date::get_dt('2020-01-02');
+    isa_ok($d, DateTime);
+    my $date = Date-&amp;gt;create('2020-01-02');
+    isa_ok($date, Date);
+    isa_ok($date, DateTime);
+}
+
+sub test_is_last_week {
+    my $date = Date-&amp;gt;create('2020-01-02');
+    my $today = DateTime-&amp;gt;new(year =&amp;gt; 2020, month =&amp;gt; 01, day =&amp;gt; 05);
+    can_ok($date, "is_last_week");
+    isa_ok($date, "Date");
+    isa_ok($today, "DateTime");
+    is($date-&amp;gt;is_last_week($today), 1, "2020-01-02 was in the week before 2020-01-05 ");
+    is($date-&amp;gt;is_last_week(), 0, "2020-01-02 was not last week from today ");
+
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Again resulting in the expected output:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;$ prove -lv&lt;br&gt;
+t/date.t .. &lt;br&gt;
+ok 1 - use Date;&lt;br&gt;
+ok 2 - An object of class 'DateTime' isa 'DateTime'&lt;br&gt;
+ok 3 - An object of class 'Date' isa 'Date'&lt;br&gt;
+ok 4 - An object of class 'Date' isa 'DateTime'&lt;br&gt;
+ok 5 - Date-&amp;gt;can('is_last_week')&lt;br&gt;
+ok 6 - An object of class 'Date' isa 'Date'&lt;br&gt;
+ok 7 - An object of class 'DateTime' isa 'DateTime'&lt;br&gt;
+ok 8 - 2020-01-02 was in the week before 2020-01-05 &lt;br&gt;
+ok 9 - 2020-01-02 was not last week from today &lt;br&gt;
+1..9&lt;br&gt;
+ok&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;The next step is of course -- as usual -- the commit&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;Author: Volker Kroll &lt;br&gt;
+Date:   Fri May 7 11:38:11 2021 +0200&lt;/p&gt;
+
+&lt;p&gt;added Tests for date was in last week&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;changed new to create to not interfere with DateTime new&lt;/li&gt;
+&lt;li&gt;add function for is_last_week&lt;/li&gt;
+&lt;li&gt;for testing purposes it is possible to call is_last_week with a given
+ "today" so tests don't become red&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/blockquote&gt;
+
+&lt;h1&gt;
+  &lt;a href="#just-a-few-more-tests"&gt;
+  &lt;/a&gt;
+  Just a few more tests
+&lt;/h1&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub test_is_last_week {
+    my $date = Date-&amp;gt;create('2020-01-02');
+    my $today = DateTime-&amp;gt;new(year =&amp;gt; 2020, month =&amp;gt; 01, day =&amp;gt; 05);
+    can_ok($date, "is_last_week");
+    isa_ok($date, "Date");
+    isa_ok($today, "DateTime");
+    is($date-&amp;gt;is_last_week($today), 1, "2020-01-02 was in the week before 2020-01-05 ");
+    is($date-&amp;gt;is_last_week(), 0, "2020-01-02 was not last week from today ");
+    is($date-&amp;gt;is_last_week(), 0, "2020-01-02 was not last week from today ");
+
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Now the whole module is tested enough to use it. &lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;t/date.t .. &lt;br&gt;
+ok 1 - use Date;&lt;br&gt;
+ok 2 - An object of class 'DateTime' isa 'DateTime'&lt;br&gt;
+ok 3 - An object of class 'Date' isa 'Date'&lt;br&gt;
+ok 4 - An object of class 'Date' isa 'DateTime'&lt;br&gt;
+ok 5 - Date-&amp;gt;can('is_last_week')&lt;br&gt;
+ok 6 - An object of class 'Date' isa 'Date'&lt;br&gt;
+ok 7 - An object of class 'DateTime' isa 'DateTime'&lt;br&gt;
+ok 8 - 2020-01-02 was in the week before 2020-01-05 &lt;br&gt;
+ok 9 - 2020-01-02 was not last week from today &lt;br&gt;
+ok 10 - 2020-01-02 was not last week from today &lt;br&gt;
+1..10&lt;br&gt;
+ok&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Only a final commit&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;Author: Volker Kroll &lt;br&gt;
+Date:   Fri May 7 14:21:09 2021 +0200&lt;/p&gt;
+
+&lt;p&gt;some more testing in date.t&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h1&gt;
+  &lt;a href="#conclusion"&gt;
+  &lt;/a&gt;
+  Conclusion
+&lt;/h1&gt;
+
+&lt;p&gt;Only a few changes changed a lot. Now we are able to easily test the functions we developed. Additionally we can later reuse our (now DateTime) object. But the biggest benefit for the following work is to remove the date handling from the script that will have other work to do. So we separeted the different parts which make them more easy to modify and use.&lt;/p&gt;
+
+&lt;p&gt;What will be the next logical step? That is depended of the requirements and the users of the software. But I would probably fix the "bad error message" when called without a parameter. Usually I call the help function (that still needs to be written), when a mandatory parameter is missing. But that will be done in a third part -- maybe -- stay tuned.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Volker Kroll</name>
+    </author>
+    <id>https://dev.to/vkroll/date-handling-modularized-10h9</id>
+    <published>2021-05-28T14:34:08Z</published>
+    <updated>2021-05-28T14:34:08Z</updated>
+    <category term="perl"/>
+    <category term="beginners"/>
+    <category term="learning"/>
+    <category term="tdd"/>
+  </entry>
   <entry>
     <title>Perl, should you develop your strengths or correct your weaknesses?</title>
     <link rel="alternate" href="https://dev.to/thibaultduponchelle/perl-should-you-develop-your-strengths-or-correct-your-weaknesses-g42" type="text/html"/>
@@ -1346,69 +1778,6 @@ New tree
 
     </content>
 </entry>
-  <entry>
-    <title>First public release of Perl::Critic policy: *::ProhibitHighPrecedentLogicalOperatorErrorHandling</title>
-    <link rel="alternate" href="https://dev.to/jonasbn/first-public-release-of-perl-critic-policy-prohibithighprecedentlogicaloperatorerrorhandling-1p50" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>I have been cleaning up in my TODOs over the weekend. Monday is a national holiday in Denmark, so it has been a nice long weekend, with room for chores, dinner with friends, cleaning, gardening and of course open source software development.</p>
-
-<p>This has resulted in a few maintenance releases and a lot of commits to my GitHub repositories.</p>
-
-<p>I had some outstanding PRs I needed to review, one was a change to a <a href="https://metacpan.org/pod/Perl::Critic">Perl::Critic</a> policy I implemented some time ago, about two years to be exact. (Please <a href="https://dev.to/jonasbn/bugs---static-analysis-to-the-rescue-2m17">see the blog post</a>) related to the policy: <a href="https://metacpan.org/release/Perl-Critic-Policy-InputOutput-ProhibitHighPrecedentLogicalOperatorErrorHandling">Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling</a>.</p>
-
-<p>A kind developer, Nathan Mills, had taken the time to address <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling/issues/3">a question</a> I had raised in my own repository, but had somewhat forgotten about and had left <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling/pull/6">a PR</a> updating the documentation and the test suite and answering the question I had posed.</p>
-
-<blockquote>
-<p>Is the policy relevant for two-argument variation of open?</p>
-</blockquote>
-
-<p>The question was <em>yes</em> and Nathans PR demonstrated this with tests and documentation.</p>
-
-<p>The PR from Nathan had been pending for some time. I really wanted to merge the proposed changes, the issue to me was that the policy had never been adopted into the <a href="https://metacpan.org/pod/Perl::Critic">Perl::Critic core distribution</a>, together with another policy I had also created earlier: <a href="https://metacpan.org/release/Perl-Critic-Policy-RegularExpressions-RequireDefault">Perl::Critic::Policy::RegularExpressions::RequireDefault</a>.</p>
-
-<p>For Perl::Critic::Policy::RegularExpressions::RequireDefault I had actually released it to CPAN, but I was hoping on getting the policy adopted in to the core distribution. Where as <a href="https://metacpan.org/release/Perl-Critic-Policy-InputOutput-ProhibitHighPrecedentLogicalOperatorErrorHandling">Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling</a> was only available on GitHub.</p>
-
-<p>Last week I wrote <a href="https://dev.to/jonasbn/working-in-public-a-recommendation-not-a-review-32p2">a blog post</a> touching on the topics of contributing to significant projects instead of just releasing for yourself and hoping that somebody accidently discover your project and use it and perhaps even contribute back.</p>
-
-<p>Contributing to more significant repositories hold some benefits to <em>rolling your own</em>, such as:</p>
-
-<ul>
-<li>Your contribution get more visibility</li>
-<li>You feel you provide value by contributing back to a tool you might use and enjoy</li>
-<li>You feel a part of a community</li>
-<li>You boost your developer confidence, because you are actually able to contribute to a project involving developers, which are much more skilled than you</li>
-<li>You contributions get more attention and this might be good for your CV</li>
-</ul>
-
-<p>All of the above points are very subjective and therefor the backfire of not having your contribution accepted, can feed to <em>your inner imposter</em>. But as we all know with imposter syndome, it has to be ignored and we have to evolve beyond it. This sounds easy, but can actually be quite challenging and exhausting.</p>
-
-<p>I gathered that at least the release of this policy would benefit somebody, since Nathan had proposed changes and <a href="https://github.com/Perl-Critic/Perl-Critic/pull/850#issuecomment-639727904">another user had commented on my PR</a>. So instead of laying dormant in a PR queue I could just release the policies as stand-alone policies.</p>
-
-<p>I retracted the two PRs I had outstanding with Perl::Critic:</p>
-
-<ul>
-<li><a href="https://github.com/Perl-Critic/Perl-Critic/pull/850">"First shot at PR for new policy: ProhibitHighPrecedentLogicalOperatorErrorHandling"</a></li>
-<li><a href="https://github.com/Perl-Critic/Perl-Critic/pull/847">"Adoption of existing (new) policy Perl::Critic::Policy::RegularExpressions::RequireDefault"</a></li>
-</ul>
-
-<p>Do note - I have no issues with the Perl::Critic distribution or it's maintainers, I just could not wait any longer and I wanted to make Nathans PR valuable and worthwhile and <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling">Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling</a> has just been uploaded to PAUSE/CPAN and should be available for you to use.</p>
-
-<p>If you experience any issues or have any ideas for improvements, do not hesitate to contribute <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling">via GitHub</a>.</p>
-
-<p>Thanks to Nathan Mills for his contribution included in this second release, but first release to CPAN of Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling.</p>
-
-</div>
-    </content>
-    <author>
-      <name>jonasbn</name>
-    </author>
-    <id>https://dev.to/jonasbn/first-public-release-of-perl-critic-policy-prohibithighprecedentlogicaloperatorerrorhandling-1p50</id>
-    <published>2021-05-24T13:34:57Z</published>
-    <updated>2021-05-24T13:34:57Z</updated>
-    <category term="opensource"/>
-    <category term="release"/>
-    <category term="perl"/>
-  </entry>
   <entry>
   <title>Maintaining Perl 5 (Tony Cook): April 2021 Report </title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/tony-2021-04"/>
@@ -2889,9 +3258,9 @@ EARONESTY  370.6MB ( 0.5%)
     <id>http://perlancar.wordpress.com/?p=1943</id>
     <published>2021-05-16T08:48:50Z</published>
     <updated>2021-05-16T08:48:50Z</updated>
-    <category term="backpan"/>
-    <category term="cpan"/>
     <category term="perl"/>
+    <category term="cpan"/>
+    <category term="backpan"/>
   </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-7204722919735501600</id>
@@ -4240,8 +4609,8 @@ In this experimental project <a href="https://phoenixtrap.com/">Mark Gardner</a>
     <id>http://perlancar.wordpress.com/?p=1941</id>
     <published>2021-05-01T00:37:07Z</published>
     <updated>2021-05-01T00:37:07Z</updated>
-    <category term="cpan"/>
     <category term="perl"/>
+    <category term="cpan"/>
   </entry>
   <entry>
     <title>Live coding session with Gabor Szabo</title>

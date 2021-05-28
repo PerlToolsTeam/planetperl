@@ -57,6 +57,435 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/vkroll/date-handling-modularized-10h9">Date handling modularized</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Thanks to mentioning my first post on the <a href="https://perlweekly.com/archive/513.html">perl weekly newsletter</a> a lot people read the first part of this serie of articles. (Don't know yet, how many parts it will be.) So I decided to write a follow-up. </p>
+
+<p>What can you expect:</p>
+
+<ul>
+<li>Moving functions to modules</li>
+<li>testing functions automatically</li>
+<li>change a module to a class</li>
+<li>inherit the class from a base class</li>
+</ul>
+
+<p>To summarize where we left our little skript in part one:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use strict;
+
+use Getopt::Long;
+use DateTime;
+use DateTime::Duration;
+
+my $date;   ## the starting date argument
+my $dt;     ## DateTime Object of starting date
+
+
+GetOptions(
+        "date=s"         =&gt; \$date,
+        );
+
+$dt = get_dt($date);
+my $today = DateTime-&gt;today();
+
+
+
+if(!$dt) {
+    print "submitted value $date is no date\n";
+}
+if(is_last_week($dt)) {
+    print "submitted date was in the last week\n";
+}
+
+sub is_last_week {
+    my $dt = shift;
+    return unless ref $dt eq "DateTime";
+    return if($dt &gt; $today) ;
+
+    my $dur = DateTime::Duration-&gt;new(days =&gt; 7);
+    $today-&gt;subtract_duration($dur);
+    return 1 if $today &lt; $dt;
+}
+
+
+sub get_dt {
+    my $date = shift;
+
+    my($y, $m, $d) = $date =~ /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
+    my $dt;
+    eval {
+        $dt = DateTime-&gt;new(year =&gt; $y, month =&gt; $m, day =&gt; $d);
+    }; 
+    if ($@) {
+        print STDERR "Error while generating DateTime: $@\n";
+        return 0;
+    }
+    else {
+        return $dt;
+    }
+}
+
+</code></pre>
+
+</div>
+
+
+
+<p>The script checks a parameter -d if it is a valid date and that the date is in the last week.</p>
+
+<p>Calling the script without a paremeter end with a not so nice error:</p>
+
+<blockquote>
+<p>perl skript.pl <br>
+Error while generating DateTime: Validation failed for type named DayOfMonth declared in package DateTime::Types (/home/kroll/.plenv/versions/5.32.1/lib/perl5/site_perl/5.32.1/x86_64-linux/DateTime/Types.pm) at line 29 in sub named (eval) with value undef</p>
+
+<p>Trace begun at Specio::Exception-&gt;new line 57<br>
+Specio::Exception::throw('Specio::Exception', 'message', 'Validation failed for type named DayOfMonth declared in package DateTime::Types (/home/kroll/.plenv/versions/5.32.1/lib/perl5/site_perl/5.32.1/x86_64-linux/DateTime/Types.pm) at line 29 in sub named (eval) with value undef', 'type', 'Specio::Constraint::Simple=HASH(0x55a2fa53c0a8)', 'value', undef) called at (eval 201) line 91<br>
+DateTime::_check_new_params('year', undef, 'month', undef, 'day', undef) called at /home/kroll/.plenv/versions/5.32.1/lib/perl5/site_perl/5.32.1/x86_64-linux/DateTime.pm line 176<br>
+DateTime::new('DateTime', 'year', undef, 'month', undef, 'day', undef) called at skript.pl line 45<br>
+eval {...} at skript.pl line 44<br>
+main::get_dt(undef) called at skript.pl line 15</p>
+
+<p>submitted value  is no date</p>
+</blockquote>
+
+<p>We will write this on our to-do-list for later.</p>
+
+<p>But for today we want to put the date handling out of the script in a module, so that the script later can do the heavy lifting but the date handling can be reused in other scripts. </p>
+
+<h1>
+  <a href="#generating-a-new-and-empty-module">
+  </a>
+  Generating a new and empty module
+</h1>
+
+<p>For the perl people it is quite obvious, you generate a directory lib and put the module in and do the normal perl boilerplate:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>package Date;
+
+use strict;
+
+use DateTime;
+use DateTime::Duration;
+
+
+1;
+</code></pre>
+
+</div>
+
+
+
+<p>And as the test-driven guy I am usually, I added my first test too. In t/date.t you will find:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use Test::More;
+
+use_ok("Date");
+
+done_testing();
+</code></pre>
+
+</div>
+
+
+
+<p>And of course this will result green: </p>
+
+<blockquote>
+<p>$ prove -lv<br>
+t/date.t .. <br>
+ok 1 - use Date;<br>
+1..1<br>
+ok</p>
+</blockquote>
+
+<p>So we can commit it:</p>
+
+<blockquote>
+<p>Author: Volker Kroll <br>
+Date:   Thu May 6 11:59:53 2021 +0200</p>
+
+<p>new Module Date</p>
+
+<ul>
+<li>Date is empty</li>
+<li>t/date.t has a test, that it loads correctly</li>
+</ul>
+</blockquote>
+
+<h1>
+  <a href="#move-the-getdt-in-datepm">
+  </a>
+  Move the get_dt in Date.pm
+</h1>
+
+<p>Not much to do then get the code from the script and paste it in our module. But because I prefer modules to be a little more object-oriented I also added a constructor in the - little weird old oo-perl style.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub new {
+    my $class = shift;
+    my $datestring = shift|| undef;
+    if ($datestring) {
+        bless get_dt($datestring), $class;
+    }
+}
+</code></pre>
+
+</div>
+
+
+
+<p>And a little more testing of course:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use_ok("Date");
+
+my $d = Date::get_dt('2020-01-02');
+isa_ok($d, DateTime);
+my $date = Date-&gt;new('2020-01-02');
+isa_ok($date, "Date");
+</code></pre>
+
+</div>
+
+
+
+<p>Resulting in:</p>
+
+<blockquote>
+<p>$ prove -lv<br>
+t/date.t .. <br>
+ok 1 - use Date;<br>
+ok 2 - An object of class 'DateTime' isa 'DateTime'<br>
+ok 3 - An object of class 'Date' isa 'Date'<br>
+1..3<br>
+ok</p>
+</blockquote>
+
+<p>Enough code to commit it:</p>
+
+<blockquote>
+<p>Author: Volker Kroll <a href="mailto:kroll@strato.de">kroll@strato.de</a><br>
+Date:   Thu May 6 12:11:15 2021 +0200</p>
+
+<p>get_dt now in Date</p>
+
+<ul>
+<li>get_dt is called like in skript.pl Date::get_dt(yyyy-mm-dd)</li>
+<li>additionally you can do a Date-&gt;new(yyyy-mm-dd)
+ returned is an object of class Date (that is a DateTime)</li>
+</ul>
+</blockquote>
+
+<h1>
+  <a href="#why-not-make-date-a-child-of-datetime">
+  </a>
+  Why not make Date a child of DateTime?
+</h1>
+
+<p>While working on my module I thought it might be a good idea to inherit from DateTime so that if I do a Date-&gt;new(...) I get a DateTime object back. But, that did not work immediatly, because I need to add a lot of code of DateTime then for follow that constructor. (And to be honest, I forgot how to only add a little in my constructor and letting the "real constructor" do the heavy lifting of DateTime, so I decided for this project to rename my constructor to create (that's easy in perl, where you can name your constructor like you want to).<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>package Date;
+
+use strict;
+
+use base qw(DateTime);
+use DateTime;
+use DateTime::Duration;
+
+
+sub create {
+    my $class = shift;
+    my $datestring = shift|| undef;
+    if ($datestring) {
+        return bless get_dt($datestring), $class;
+    }
+}
+
+</code></pre>
+
+</div>
+
+
+
+<p>Also I wanted my function is_last_week in the module too, we had it before in our little script. For making the tests more easy, I added the possibility to "cheat with today" as A. mentioned. When I add a parameter today in the call it uses that not the "real today":<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub is_last_week {
+    my $dt = shift;
+    return unless ref $dt;
+    my $today = shift ||  DateTime-&gt;today();
+    return if($dt &gt; $today) ;
+
+    my $dur = DateTime::Duration-&gt;new(days =&gt; 7);
+    $dt-&gt;add_duration($dur);
+    return 1 if $today &lt; $dt;
+    return 0;
+}
+</code></pre>
+
+</div>
+
+
+
+<p>Now I was able to add some more testing:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>use Test::More;
+use Data::Dumper;
+use DateTime;
+
+use_ok("Date");
+test_new();
+test_is_last_week();
+done_testing();
+
+sub test_new {
+    my $d = Date::get_dt('2020-01-02');
+    isa_ok($d, DateTime);
+    my $date = Date-&gt;create('2020-01-02');
+    isa_ok($date, Date);
+    isa_ok($date, DateTime);
+}
+
+sub test_is_last_week {
+    my $date = Date-&gt;create('2020-01-02');
+    my $today = DateTime-&gt;new(year =&gt; 2020, month =&gt; 01, day =&gt; 05);
+    can_ok($date, "is_last_week");
+    isa_ok($date, "Date");
+    isa_ok($today, "DateTime");
+    is($date-&gt;is_last_week($today), 1, "2020-01-02 was in the week before 2020-01-05 ");
+    is($date-&gt;is_last_week(), 0, "2020-01-02 was not last week from today ");
+
+}
+
+</code></pre>
+
+</div>
+
+
+
+<p>Again resulting in the expected output:</p>
+
+<blockquote>
+<p>$ prove -lv<br>
+t/date.t .. <br>
+ok 1 - use Date;<br>
+ok 2 - An object of class 'DateTime' isa 'DateTime'<br>
+ok 3 - An object of class 'Date' isa 'Date'<br>
+ok 4 - An object of class 'Date' isa 'DateTime'<br>
+ok 5 - Date-&gt;can('is_last_week')<br>
+ok 6 - An object of class 'Date' isa 'Date'<br>
+ok 7 - An object of class 'DateTime' isa 'DateTime'<br>
+ok 8 - 2020-01-02 was in the week before 2020-01-05 <br>
+ok 9 - 2020-01-02 was not last week from today <br>
+1..9<br>
+ok</p>
+</blockquote>
+
+<p>The next step is of course -- as usual -- the commit</p>
+
+<blockquote>
+<p>Author: Volker Kroll <br>
+Date:   Fri May 7 11:38:11 2021 +0200</p>
+
+<p>added Tests for date was in last week</p>
+
+<ul>
+<li>changed new to create to not interfere with DateTime new</li>
+<li>add function for is_last_week</li>
+<li>for testing purposes it is possible to call is_last_week with a given
+ "today" so tests don't become red</li>
+</ul>
+</blockquote>
+
+<h1>
+  <a href="#just-a-few-more-tests">
+  </a>
+  Just a few more tests
+</h1>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub test_is_last_week {
+    my $date = Date-&gt;create('2020-01-02');
+    my $today = DateTime-&gt;new(year =&gt; 2020, month =&gt; 01, day =&gt; 05);
+    can_ok($date, "is_last_week");
+    isa_ok($date, "Date");
+    isa_ok($today, "DateTime");
+    is($date-&gt;is_last_week($today), 1, "2020-01-02 was in the week before 2020-01-05 ");
+    is($date-&gt;is_last_week(), 0, "2020-01-02 was not last week from today ");
+    is($date-&gt;is_last_week(), 0, "2020-01-02 was not last week from today ");
+
+}
+
+</code></pre>
+
+</div>
+
+
+
+<p>Now the whole module is tested enough to use it. </p>
+
+<blockquote>
+<p>t/date.t .. <br>
+ok 1 - use Date;<br>
+ok 2 - An object of class 'DateTime' isa 'DateTime'<br>
+ok 3 - An object of class 'Date' isa 'Date'<br>
+ok 4 - An object of class 'Date' isa 'DateTime'<br>
+ok 5 - Date-&gt;can('is_last_week')<br>
+ok 6 - An object of class 'Date' isa 'Date'<br>
+ok 7 - An object of class 'DateTime' isa 'DateTime'<br>
+ok 8 - 2020-01-02 was in the week before 2020-01-05 <br>
+ok 9 - 2020-01-02 was not last week from today <br>
+ok 10 - 2020-01-02 was not last week from today <br>
+1..10<br>
+ok</p>
+</blockquote>
+
+<p>Only a final commit</p>
+
+<blockquote>
+<p>Author: Volker Kroll <br>
+Date:   Fri May 7 14:21:09 2021 +0200</p>
+
+<p>some more testing in date.t</p>
+</blockquote>
+
+<h1>
+  <a href="#conclusion">
+  </a>
+  Conclusion
+</h1>
+
+<p>Only a few changes changed a lot. Now we are able to easily test the functions we developed. Additionally we can later reuse our (now DateTime) object. But the biggest benefit for the following work is to remove the date handling from the script that will have other work to do. So we separeted the different parts which make them more easy to modify and use.</p>
+
+<p>What will be the next logical step? That is depended of the requirements and the users of the software. But I would probably fix the "bad error message" when called without a parameter. Usually I call the help function (that still needs to be written), when a mandatory parameter is missing. But that will be done in a third part -- maybe -- stay tuned.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Volker Kroll
+     on Friday 28 May 2021 14:34</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/perl-should-you-develop-your-strengths-or-correct-your-weaknesses-g42">Perl, should you develop your strengths or correct your weaknesses?</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>If you follow me and read some of my past posts, you know that I generally talk about correcting weaknesses. This is for 3 main reasons:</p>
@@ -90,7 +519,7 @@ Some weaknesses according to me: reputation, boilerplate, web presence...</p>
      on Friday 28 May 2021 13:46</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/fgasper/perl-s-svpv-menace-5515">Perl’s SvPV Menace</a></h2>
             </div> <!-- card-header -->
@@ -286,7 +715,7 @@ print URI::XSEscape::uri_escape($foo);
      on Thursday 27 May 2021 02:42</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-114-next-palindrome-number-and-higher-integer-set-bits.html">Perl Weekly Challenge 114: Next Palindrome Number and Higher Integer Set Bits</a></h2>
             </div> <!-- card-header -->
@@ -505,7 +934,7 @@ $ perl nextbin.pl 256
      on Thursday 27 May 2021 02:37</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/steve_bertrand/2021/05/berrybrew-version-134-released.html">berrybrew version 1.34 released!</a></h2>
             </div> <!-- card-header -->
@@ -541,7 +970,7 @@ $ perl nextbin.pl 256
      on Wednesday 26 May 2021 07:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-can-do-that-now-3doj">Perl can do that now!</a></h2>
             </div> <!-- card-header -->
@@ -706,7 +1135,7 @@ $ perl nextbin.pl 256
      on Tuesday 25 May 2021 14:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprcic-newsletter-26-may-2021">TPRCIC Newsletter 26 May 2021</a></h2>
             </div> <!-- card-header -->
@@ -794,7 +1223,7 @@ At the Conference in the Cloud there will be Perl, Raku, and other related techn
      on Tuesday 25 May 2021 12:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/matthew_persico/2021/05/perl-lists---a-partial-taxonomy.html">Perl Lists - a Partial Taxonomy</a></h2>
             </div> <!-- card-header -->
@@ -811,7 +1240,7 @@ At the Conference in the Cloud there will be Perl, Raku, and other related techn
      on Tuesday 25 May 2021 06:03</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perl.com/article/perl-one-liners-part-2/">Perl / Unix One-liner Cage Match, Part 2</a></h2>
             </div> <!-- card-header -->
@@ -1065,7 +1494,7 @@ real    0m0.351s</code></pre></div>
      on Tuesday 25 May 2021 02:54</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/matthewpersico/perl-lists-a-partial-taxonomy-g8p">Perl Lists - a Partial Taxonomy</a></h2>
             </div> <!-- card-header -->
@@ -1091,7 +1520,7 @@ real    0m0.351s</code></pre></div>
      on Tuesday 25 May 2021 00:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/05/perl-weekly-challenge-113-represent-integer-and-recreate-binary-tree.html">Perl Weekly Challenge 113: Represent Integer and Recreate Binary Tree</a></h2>
             </div> <!-- card-header -->
@@ -1376,65 +1805,6 @@ New tree
 
               <p class="text-right"><small>Published by laurent_r
      on Tuesday 25 May 2021 00:19</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_11">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/jonasbn/first-public-release-of-perl-critic-policy-prohibithighprecedentlogicaloperatorerrorhandling-1p50">First public release of Perl::Critic policy: *::ProhibitHighPrecedentLogicalOperatorErrorHandling</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>I have been cleaning up in my TODOs over the weekend. Monday is a national holiday in Denmark, so it has been a nice long weekend, with room for chores, dinner with friends, cleaning, gardening and of course open source software development.</p>
-
-<p>This has resulted in a few maintenance releases and a lot of commits to my GitHub repositories.</p>
-
-<p>I had some outstanding PRs I needed to review, one was a change to a <a href="https://metacpan.org/pod/Perl::Critic">Perl::Critic</a> policy I implemented some time ago, about two years to be exact. (Please <a href="https://dev.to/jonasbn/bugs---static-analysis-to-the-rescue-2m17">see the blog post</a>) related to the policy: <a href="https://metacpan.org/release/Perl-Critic-Policy-InputOutput-ProhibitHighPrecedentLogicalOperatorErrorHandling">Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling</a>.</p>
-
-<p>A kind developer, Nathan Mills, had taken the time to address <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling/issues/3">a question</a> I had raised in my own repository, but had somewhat forgotten about and had left <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling/pull/6">a PR</a> updating the documentation and the test suite and answering the question I had posed.</p>
-
-<blockquote>
-<p>Is the policy relevant for two-argument variation of open?</p>
-</blockquote>
-
-<p>The question was <em>yes</em> and Nathans PR demonstrated this with tests and documentation.</p>
-
-<p>The PR from Nathan had been pending for some time. I really wanted to merge the proposed changes, the issue to me was that the policy had never been adopted into the <a href="https://metacpan.org/pod/Perl::Critic">Perl::Critic core distribution</a>, together with another policy I had also created earlier: <a href="https://metacpan.org/release/Perl-Critic-Policy-RegularExpressions-RequireDefault">Perl::Critic::Policy::RegularExpressions::RequireDefault</a>.</p>
-
-<p>For Perl::Critic::Policy::RegularExpressions::RequireDefault I had actually released it to CPAN, but I was hoping on getting the policy adopted in to the core distribution. Where as <a href="https://metacpan.org/release/Perl-Critic-Policy-InputOutput-ProhibitHighPrecedentLogicalOperatorErrorHandling">Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling</a> was only available on GitHub.</p>
-
-<p>Last week I wrote <a href="https://dev.to/jonasbn/working-in-public-a-recommendation-not-a-review-32p2">a blog post</a> touching on the topics of contributing to significant projects instead of just releasing for yourself and hoping that somebody accidently discover your project and use it and perhaps even contribute back.</p>
-
-<p>Contributing to more significant repositories hold some benefits to <em>rolling your own</em>, such as:</p>
-
-<ul>
-<li>Your contribution get more visibility</li>
-<li>You feel you provide value by contributing back to a tool you might use and enjoy</li>
-<li>You feel a part of a community</li>
-<li>You boost your developer confidence, because you are actually able to contribute to a project involving developers, which are much more skilled than you</li>
-<li>You contributions get more attention and this might be good for your CV</li>
-</ul>
-
-<p>All of the above points are very subjective and therefor the backfire of not having your contribution accepted, can feed to <em>your inner imposter</em>. But as we all know with imposter syndome, it has to be ignored and we have to evolve beyond it. This sounds easy, but can actually be quite challenging and exhausting.</p>
-
-<p>I gathered that at least the release of this policy would benefit somebody, since Nathan had proposed changes and <a href="https://github.com/Perl-Critic/Perl-Critic/pull/850#issuecomment-639727904">another user had commented on my PR</a>. So instead of laying dormant in a PR queue I could just release the policies as stand-alone policies.</p>
-
-<p>I retracted the two PRs I had outstanding with Perl::Critic:</p>
-
-<ul>
-<li><a href="https://github.com/Perl-Critic/Perl-Critic/pull/850">"First shot at PR for new policy: ProhibitHighPrecedentLogicalOperatorErrorHandling"</a></li>
-<li><a href="https://github.com/Perl-Critic/Perl-Critic/pull/847">"Adoption of existing (new) policy Perl::Critic::Policy::RegularExpressions::RequireDefault"</a></li>
-</ul>
-
-<p>Do note - I have no issues with the Perl::Critic distribution or it's maintainers, I just could not wait any longer and I wanted to make Nathans PR valuable and worthwhile and <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling">Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling</a> has just been uploaded to PAUSE/CPAN and should be available for you to use.</p>
-
-<p>If you experience any issues or have any ideas for improvements, do not hesitate to contribute <a href="https://github.com/jonasbn/perl-critic-policy-inputoutput-prohibithighprecedentlogicaloperatorerrorhandling">via GitHub</a>.</p>
-
-<p>Thanks to Nathan Mills for his contribution included in this second release, but first release to CPAN of Perl::Critic::Policy::InputOutput::ProhibitHighPrecedentLogicalOperatorErrorHandling.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by jonasbn
-     on Monday 24 May 2021 13:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_12">
@@ -4368,7 +4738,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
       </div><!-- row -->
       <div class="row">
         <div class="col-md-12">
-      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 28 May 2021 14:02 UTC</address>
+      <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 28 May 2021 14:53 UTC</address>
         </div><!-- col-md-12 -->
       </div><!-- row -->
     </div><!-- container -->
