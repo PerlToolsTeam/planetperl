@@ -7,9 +7,50 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-05-30T15:56:24Z</updated>
+  <updated>2021-05-30T17:03:00Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>SQLite, Perl, and a Boolean</title>
+    <link rel="alternate" href="https://dev.to/fgasper/sqlite-perl-and-a-boolean-30d8" type="text/html"/>
+    <content type="html">&lt;p&gt;I’ve &lt;a href="https://dev.to/fgasper/use-sys-binmode-4e6o"&gt;written&lt;/a&gt; &lt;a href="https://dev.to/fgasper/perl-s-svpv-menace-5515"&gt;several&lt;/a&gt; &lt;a href="https://dev.toPerl,%20Unicode,%20and%20Bytes"&gt;articles&lt;/a&gt; &lt;a href="https://www.perl.com/article/json-unicode-and-perl-oh-my-/"&gt;now&lt;/a&gt; about the trials and tribulations of character encoding in Perl. Having gained the knowledge I have, I’ve also been finding bugs in libraries we use at $work and sending patches to their maintainers.&lt;/p&gt;
+
+&lt;p&gt;The latest one is &lt;a href="https://metacpan.org/pod/DBD::SQLite"&gt;DBD::SQLite&lt;/a&gt;, CPAN’s self-contained SQLite binding. It’s a great library that I’ve used for years, but I recently noted two problems in it:&lt;/p&gt;
+
+&lt;p&gt;1) In its default configuration it used the &lt;code&gt;SvPV&lt;/code&gt; macro to translate Perl strings to C strings, which is bad for reasons I detailed in “&lt;a href="https://dev.to/fgasper/perl-s-svpv-menace-5515"&gt;Perl’s SvPV Menace&lt;/a&gt;”.&lt;/p&gt;
+
+&lt;p&gt;2) In its (non-default) “unicode” configuration it used a “naïve” method of UTF-8 decoding that neglects validation. This mechanism can corrupt Perl’s internals by making it mistake invalid UTF-8 sequences for valid ones.&lt;/p&gt;
+
+&lt;p&gt;Neither of these is trivial to fix: applications may depend on the &lt;code&gt;SvPV&lt;/code&gt; problem—what one coworker of mine calls a “load-bearing bug” 😀—while adding UTF-8 validation entails a performance hit.&lt;/p&gt;
+
+&lt;p&gt;In reality, DBD::SQLite needed at least 4 modes of translating between Perl and C strings:&lt;/p&gt;
+
+&lt;p&gt;1) The current (“load-bearing-buggy”) default.&lt;br&gt;
+2) Same as #1, but use &lt;code&gt;SvPVbyte&lt;/code&gt; to avoid the &lt;code&gt;SvPV&lt;/code&gt; bug.&lt;br&gt;
+3) Current “naïve unicode” behaviour.&lt;br&gt;
+4) A “non-naïve unicode” mode that validates incoming UTF-8.&lt;/p&gt;
+
+&lt;p&gt;(I eventually made two variants of this last one: one that just warns on invalid data, and the other that throws an exception.)&lt;/p&gt;
+
+&lt;p&gt;There was another problem, though: DBD::SQLite’s interface for controlling this was a boolean. That meant only two modes were even &lt;em&gt;possible&lt;/em&gt;!&lt;/p&gt;
+
+&lt;p&gt;This exemplifies a principle a mentor of mine taught me years back: &lt;strong&gt;avoid boolean parameters.&lt;/strong&gt; They restrict your ability to add additional configurations.&lt;/p&gt;
+
+&lt;p&gt;(And for pity’s sake, abhor &lt;em&gt;unnamed&lt;/em&gt; booleans in particular! What does the 0 in &lt;code&gt;open_file($path, 0)&lt;/code&gt; mean??)&lt;/p&gt;
+
+&lt;p&gt;To fix this &lt;a href="https://github.com/DBD-SQLite/DBD-SQLite/pull/80"&gt;my pull request&lt;/a&gt; had to deprecate the existing &lt;code&gt;sqlite_unicode&lt;/code&gt; parameter. It’s an unfortunate step that’ll produce new warnings in existing applications, but the “omelet” here justifies the “broken egg”.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Felipe Gasper</name>
+    </author>
+    <id>https://dev.to/fgasper/sqlite-perl-and-a-boolean-30d8</id>
+    <published>2021-05-30T16:27:02Z</published>
+    <updated>2021-05-30T16:27:02Z</updated>
+    <category term="programming"/>
+    <category term="perl"/>
+    <category term="sql"/>
+  </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-5134727855626457964</id>
     <published>2021-05-29T20:39:00.000+02:00</published>
@@ -1519,37 +1560,6 @@ real    0m0.351s&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
     <id>https://perl.com/article/perl-one-liners-part-2/</id>
     <published>2021-05-25T02:54:23Z</published>
     <updated>2021-05-25T02:54:23Z</updated>
-  </entry>
-  <entry>
-    <title>Perl Lists - a Partial Taxonomy</title>
-    <link rel="alternate" href="https://dev.to/matthewpersico/perl-lists-a-partial-taxonomy-g8p" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p><a href="https://phoenixtrap.com/">Mark Garder</a> recently published the article <a href="https://phoenixtrap.com/2021/05/18/a-list-of-perl-list-processing-modules/">A list of Perl list processing modules</a>, a detailed and factual, unopinionated listing of eight Perl modules that manipulate lists. So, naturally, when his factual, unopinionated listing was cross posted to <a href="https://www.reddit.com/r/perl/comments/nfbhvt/a_list_of_perl_list_processing_modules/">Redit</a>, the first comment was the emotional, highly opinionated: <a href="https://www.reddit.com/r/perl/comments/nfbhvt/a_list_of_perl_list_processing_modules/gylv4co?utm_source=share&amp;utm_medium=web2x&amp;context=3">“So how do we go about fixing this mess? Because it is a mess.”</a>.</p>
-
-<p>Yes, the comment was mine.</p>
-
-<p>My intent was to see if we could create <em>One List:: To Rule Them All</em>. Not only does it confuse people who want to learn Perl to have various list functions in different modules (and to have functions that share a name across modules work differently), but it also confuses Perl veterans. </p>
-
-<p>And yes, once again, that’s me.</p>
-
-<p>After some consideration, some education and a conversation with the <a href="https://metacpan.org/author/PEVANS">current maintainer</a> of <a href="https://metacpan.org/pod/List::Util">List::Util</a>, the module of list functions that come with Perl itself, it seemed to me that the first order of operations was to detail just how much of a “mess” this was. So, on Sunday afternoon, while waiting to go to the airport to pick up my son, and while watching Phil Mickelson winning the PGA championship at a record 50 years old, I put together the following spreadsheet:</p>
-
-<p><a href="https://docs.google.com/spreadsheets/d/11gI89kOJvm5b30jEWrLaL0D77sZnPKMhMeAP5WcFnzs/">https://docs.google.com/spreadsheets/d/11gI89kOJvm5b30jEWrLaL0D77sZnPKMhMeAP5WcFnzs/</a></p>
-
-<p>I hope that this can serve a as reference for people to see what's available and where it is available. Yes, it may not have a long shelf life,  but I learned a bit more about the state of the <code>List::</code> namespace. Hopefully, you'll learn a bit too.</p>
-
-</div>
-    </content>
-    <author>
-      <name>Matthew O. Persico</name>
-    </author>
-    <id>https://dev.to/matthewpersico/perl-lists-a-partial-taxonomy-g8p</id>
-    <published>2021-05-25T00:58:54Z</published>
-    <updated>2021-05-25T00:58:54Z</updated>
-    <category term="perl"/>
-    <category term="lists"/>
-    <category term="arrays"/>
-    <category term="hashes"/>
   </entry>
   <entry>
     <title>Perl Weekly Challenge 113: Represent Integer and Recreate Binary Tree</title>
