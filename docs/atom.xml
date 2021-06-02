@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-06-02T00:00:32Z</updated>
+  <updated>2021-06-02T01:03:47Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -1853,6 +1853,338 @@ $ perl nextbin.pl 256
     <category term="cgi"/>
   </entry>
   <entry>
+  <title>Grant Proposal: Persistent Data Structures for Raku</title>
+  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/grant_proposal_persistent_data_structures_for_raku"/>
+  <id>tag:news.perlfoundation.org,2021-05-30:/post/grant_proposal_persistent_data_structures_for_raku</id>
+  <published>2021-05-30T20:58:00</published>
+  <updated>2021-05-30T20:58:00</updated>
+  <summary>
+  <![CDATA[
+     Name Daniel Sockwell Synopsis Immutable, persistent data structures give a program certain superpowers that it's very hard to have in any other way: they allow the program to "time travel" they allow let the program share data across threads or asynchronously save it to disk without needing locks; they enable a much more purely functional style of programming which results in code that many software developers find much easier to 
+   ]]>
+  </summary>
+  <author>
+    <name>Jason A. Crome</name>
+  </author>
+  <category term="Grants" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
+   <![CDATA[
+     
+     <h2>Name</h2>
+
+<p>Daniel Sockwell</p>
+
+<h2>Synopsis</h2>
+
+<p>Immutable, persistent data structures give a program certain superpowers that it's very hard to have
+in any other way: they allow the program to "time travel" (view previous application state); they
+allow let the program share data across threads or asynchronously save it to disk without needing
+locks; they enable a much more purely functional style of programming – which results in code that
+many software developers find much easier to reason about.  Because of these benefits, many
+languages with strong support for functional programming (Clojure, Elm, Haskell, etc) offer
+persistent data structures in their standard library.  And many multiparadigm languages that attempt
+to support programming in a fuctional style (C++, JavaScript, Java, Rust, Go, etc.) have
+well-maintained and popular libraries offering persistent data structures.</p>
+
+<p>However, despite these benefits and despite the extremely strong support Raku generally provides for
+functional programming, Raku does not provide any persistent data structures, either in core or in a
+library.  I am therefore seeking a grant to create a persistent data structures library for Raku.</p>
+
+<p>If this grant is funded, I will build this library as an external module that can be used as soon as
+I have completed it.  Additionally, I will structure the module in such a way that it can later be
+upstreamed into Rakudo if we decide that persistent data types are valuable enough to include in
+Roast/the core language (though accepting this grant proposal would, of course, not commit Raku to
+adding these types, and the types would provide most of the same benefits as a standalone library).</p>
+
+<h3>The Problem</h3>
+
+<p>As part of its support for functional programming, Raku provides several immutable data types – most
+notably, Lists, Maps, and Sets.  These types work well, but they suffer from two well-known
+problems: (1) shallow clones with interior mutability and (2) expensive copies.</p>
+
+<p>The problem of interior mutability can be seen in the following code</p>
+
+<pre><code>my Map $m1 = :key[].Map;
+my Map $m2 = $m1.clone; 
+$m2&lt;key&gt;.push: 2;
+say $m1; # OUTPUT: «Map.new((key =&amp;gt; [2]))»
+</code></pre>
+
+<p>That is, neither immutability nor clones are deep, so changes to $m2 end up causing changes to $m1.
+This behavior is not a bug; it is the intentional (and correct) consequence of the semantics of
+immutable types, Scalars, and clone.  This correct behavior, however, negates much of the benefit
+that <em>deeply</em> immutable types can provide in terms of reasoning about the code and safely sharing
+data between threads.</p>
+
+<p>You can overcome this problem (albeit at the cost of some verbosity) by manually deep-cloning
+data and/or ensuring that all the components of a type are themselves immutable.  However, solving
+this problem leads you directly to the second: a deep clone of an immutable object is very
+expensive, because it involves literally copying the entire object (even if the copy is only
+slightly different).  This makes using large immutable objects in Raku much slower than using their
+mutable equivalents.</p>
+
+<p>Because copying immutable data structures is both syntactically annoying and computationally
+expensive, copying data is a less appealing prospect in Raku than in languages with persistent data
+structures.  This, in turn, means that Raku programs are less likely make immutable copies of data
+and are more likely to share access to a mutable copy.  This is a shame in any context, because it
+makes code harder to reason about and thus more likely to contain bugs.  But it's especially
+problematic in concurrent programs – when programs share (rather than copy) data between threads,
+they have to use locks, which is both slower and more cumbersome.  Since Raku otherwise offers
+excellent support for concurrent programming, the expense of copying large data structures is a real
+problem. </p>
+
+<h3>The Solution</h3>
+
+<p>I mentioned that the problems of interior mutability and expensive copies are well known and,
+fortunately, they also have a well-known solution: <a href="https://en.wikipedia.org/wiki/Persistent_data_structure">persistent data
+structures</a> that provide structural
+sharing.  The basic idea is that when you copy an immutable object, you don't need to <em>literally</em>
+copy all the data in it, you just need to point back to the copied object (which can't change
+because it's immutable).  Then, the copy only needs to remember and ways it differs from the
+original rather than the entire object.  (At a high level, this is similar to how some version
+control systems or commands work – for example, with git-send-email, you don't send a new copy, just
+a patch). </p>
+
+<p>Many early persistent data structures provided these benefits, but only at an unacceptably high
+cost.  For example, a linked-list qualifies as a persistent data structure because you can add a
+node to the list without mutating it and multiple modified "copies" of a linked list can share much
+of their data without making literal copies (aka "tail sharing").  However, the performance profile
+of a linked list (especially its lack of cache coherence, given the relative cost of a cache miss on
+modern hardware) make it an extremely poor fit for most general purpose programming tasks today.</p>
+
+<p>However, in the past two decades, a new bread of persistent data structures have been developed –
+and these new structures combine the safely and cheap copying of previous data structures with a
+much-improved performance profile.</p>
+
+<h2>Prior Art</h2>
+
+<p>I have no interest in reinventing the wheel and persistent data structures have a long history both
+in academic computer science and in practical language implementations.  Most notably, Phil Bagwell
+described a practical design for a persistent data structures in a 2001 paper titled Idle Hash
+Trees.  This design describes a specific data structure called a Hash Array Mapped Trie.  Here's a
+simplified description of how a HAMT works:</p>
+
+<ul>
+<li>create a tree where each node contains either
+<ul>
+<li>a sparse array of length 32 with references to further nodes.</li>
+<li>a final value (i.e., it's a leaf node).</li>
+</ul></li>
+<li>To store the values of an array into the tree created above, parse the index of each element as
+a base 32 number and then convert that number into a list of digits.  Starting at the root of
+the tree, look at the array element that matches the value of the last digit and go to (or
+create) the node referenced by that element.  When you have done so, remove the digit from your
+list and repeat.  Once you are out of digit, store the value in the current node.</li>
+<li>^^^^ created a binary Trie, hence the name.</li>
+<li>Storing the values of a Hash is similar, except that the hash key must first be hashed into a 32
+bit integer and the final nodes need to be buckets to handle hash collisions.</li>
+<li>This data structure is immutable, but supports creating a copy with certain values added (or
+deleted).  Doing so only requires copying the nodes in the path from the root node to the
+inserted/deleted/changed node; the rest of the tree (which is unchanged) is shared between the
+copies.</li>
+<li>Note that the above omits some details, such as the use of a bitmap &amp; dense array in place of
+the sparse array.  For a more detailed explanation of how this works, refer to either the
+original paper or to https://hypirion.com/musings/understanding-persistent-vector-pt-1</li>
+</ul>
+
+<p>In algorithmic terms, this data structure provides access to nodes in O(log₃₂(n)) time.  A very
+pedantic academic might say that this should still be considered O(log(n)) time, but in practice it is
+much closer to O(n) – an HAMT with 6 levels can store over a billion items.  Memory use (compared to
+full copying) is reduced by a similar factor. </p>
+
+<p>In 2007, Clojure was released with HAMT-based persistent data structures backing all of its
+fundamental collection types.  Since then, HAMT-based data structures have been developed for many
+languages, either as a core part of the language or as a third-party library.</p>
+
+<p>While Raku does not have HAMT-based (or any) persistent data structures, it does have a few related
+features.  First, it has strong support for laziness which can, in some cases, give Lists/Arrays
+performance gains similar to those they would get from a persistent data structure (Jonathan
+Worthington helpfully explained this distinction to me on StackOverflow:
+https://stackoverflow.com/a/67035827/10173009).  This does not apply in all cases and does not apply
+at all to Hashes/Maps/Sets/etc. Second, Rakudo currently implements the Str type in a way that has
+some conceptual similarities to persistent data structures, though it does not offer the same
+guarantees and that implementation is not required by the Raku specification.  Third, Jonathan
+Worthington has also implemented a trio of concurrent data structures that use tail sharing (a
+similar technique for creating persistent data structures).  These modules – and, in particular, the
+Concurrent::Trie module – could be useful when implementing HAMT based data structures.</p>
+
+<p>Given this prior art, implementing HAMT-based data structures will have a clear roadmap, even if
+much implementation work remains to be done.</p>
+
+<h2>Deliverables</h2>
+
+<p>The primary deliverable from this grant would be a collection of persistent data types based on Hash
+Array Mapped Tries (which, for type-naming purposes, I tentatively plan to refer to as Hash
+Array-mapped Tries, yielding the abbreviation 'Hat' rather than 'HAMT').  I would plan to deliver
+some or all of the following (time/budget permitting, as discussed in the schedule below), along
+with corresponding pod6 documentation suitable for future inclusion on docs.raku.org and
+corresponding tests suitable for future inclusion in Roast:</p>
+
+<ul>
+<li>ListHat (persistent Array)</li>
+<li>MapHat  (persistent Hash)</li>
+<li>SetHat  (persistent SetHash)</li>
+<li>BagHat  (persistent BagHash)</li>
+<li>MixHat  (persistent MixHash)</li>
+</ul>
+
+<p>(Note: I don't love these names, since being backed by a HAMT is an implementation detail.  But I
+would like to find a name that's short and memorable enough to make the types easy to use;
+"PersistentList"s seem unlikely to get much use.  I'm open to ideas here.)</p>
+
+<p>This covers the Raku collection types other than Pairs; creating new Pairs is already simple enough
+that creating a PairHat type would be pointless</p>
+
+<p>Time permitting, I would also deliver benchmarks comparing the performance of the *Hat types with
+that of the corresponding deeply copied immutable types.</p>
+
+<h2>Project Details</h2>
+
+<h3>Proposed API for deliverable types</h3>
+
+<p>In general, when implementing immutable types, the copying API can be designed along two lines: it
+can either require the user to use explicit copying operations, or it can offer an API that mirrors
+the API of mutable types but that returns a new value rather than mutating one in place.  The
+current Raku immutable types provide an API of the first type.  This API allows code like:</p>
+
+<pre><code>my List $list = (1, 2, 3);
+my $new = |$l, |(4, 5, 6);  # correct
+my $new = $l.push: 4, 5, 6; # NO - throws an error
+</code></pre>
+
+<p>This design choice makes sense for the existing immutable types, given that they don't provide
+inexpensive copying and that Raku's | operator makes combining collections easier.  It also helps
+new users more quickly realize the difference between mutable and immutable types. However, even
+with the | operator, creating copies of immutable types can become syntactically cumbersome,
+especially if the type might be empty.</p>
+
+<pre><code># mutable
+class Foo {
+    has @!values;
+    method add($val) { @!values.push($val) }
+}
+
+# immutable 
+class Bar {
+    has List $!values;
+    method add($val) { $!values = (|($!values // Empty), |($val // Empty)) }
+} 
+</code></pre>
+
+<p>Again, this tradeoff makes sense for the existing types because copies are relatively expensive and
+so it makes sense to have syntax that implicitly discourages their use in non-trivial cases.
+However, since the *Hat types are designed for inexpensive copies, it makes sense to provide the
+second type of API:</p>
+
+<pre><code>my ListHat $l = (1, 2, 3);
+my $new = $l.push: 4, 5, 6;
+</code></pre>
+
+<p>This approach is similar to the one taken by many libraries that add persistent data structures to
+languages that aren't purely functional; as one example, immutable.js.  In other languages, this
+has the downside of creating a trap:</p>
+
+<pre><code>my Array $a = 1, 2, 3;
+$a.push: 4; # works
+my ListHat $l = 1, 2, 3;
+$l.push: 4; # seems to work, but actualy does nothing
+</code></pre>
+
+<p>However, Raku offers the <code>is pure</code> trait; by implementing the relevant methods for the *Hat types
+with that trait, the incorrect line would generate a warning that a pure function was used in sink
+context.</p>
+
+<p>I would also plan to offer an API for "batching" operations (which lets the data structure improve
+performance by skipping intermediate copies).  I'm less sure of this part of the API, but think that
+an API similar to the one provided by Immer could be a good fit:</p>
+
+<pre><code>my MapHat $m = (:key1&lt;val1&gt; :key2&lt;val2&gt;);
+my $m2 = $m.next: $draft -&amp;gt; { $draft&lt;key2&gt; = 'new val' };
+# Or, more concisely
+my $m3 = $m.next: *&lt;key2&gt; = 'new val';
+# $m2 and $m3 are both {:key&lt;val1&gt; :key2('new val')}
+</code></pre>
+
+<p>(This API is inspired by the JavaScript Immer, not the identically-named-but-unrelated C++ library,
+which provides a more traditional batch API based on a .commit method)</p>
+
+<p>Of course, I am sure I will learn more in the course of the implementation, so all of the APIs shown
+above could change/evolve, but I present it here as a general guideline.</p>
+
+<h3>Limitations on scope</h3>
+
+<p>To keep the project limited in scope, there are two sets of features that I explicitly do <em>not</em> plan
+to include in the work for this grant (though either could be added later on).</p>
+
+<p>First, I do not plan to implant the CHAMP optimizations to the HAMT data structure.  This
+optimization, which was described in the academic literature in 2015, further reduces memory use and
+increases the data's cache locality (which, given the relative significance of cache misses on
+modern CPUs, provides a speed boost as well).  However, it also significantly increases the
+implementation complexity.  Perhaps because of that complexity or perhaps just because it was more
+recently presented, CHAMPs have not been as widely implemented in non-academic settings. Moreover,
+adding the CHAMP optimizations would not change the overall performance profile, appropriate uses,
+or API of the data structure, so we could add it later if we determine that the performance gains
+justify the added complexity.</p>
+
+<p>Similarly, I do not plan to implement the *Hat types in a way that requires them to be included in
+Rakudo.  As illustrated by Jonathan Worthington's Concurrent::Stack, Concurrent::Queue, and
+Concurrent::Trie data structures, it is entirely possible to implement performant Raku data
+structures entirely is userland code, and I plan to follow that approach.</p>
+
+<p>It's possible that integrating more tightly with the compiler/VM could further increase performance.
+However I believe that it makes sense to defer that work until a working userland implementation
+proves the value of persistent data types via an external library.  Creating an external library
+will also allow users to provide feedback on the *Hat types earlier and, if necessary, allow us to
+evolve their API without breaking Raku's stability guarantees.</p>
+
+<h2>Proposed Schedule and Grant Amount</h2>
+
+<p>I propose to work on this grant for 10 hours/week for 14 weeks our until the completion of all
+deliverables described above and to work for a reduced rate of $50/hour.  Thus, I am seeking a grant
+of up to $7,000 (or less, if the implementation is completed before the end of the 14 weeks).</p>
+
+<h2>Benefits to the Raku Community</h2>
+
+<p>As mentioned above, adding persistent data types to Raku would have multiple benefits.  First and
+most directly, these types would significantly improve the performance of Raku code that uses
+immutable data.  Second, the new types would provide a more ergonomic API for copying immutable
+types.</p>
+
+<p>Together, these two direct benefits would encourage Raku programmers to make greater use of
+immutable types and other functional programming idioms.  This, in turn, would generally increase
+the likelihood that any given Raku module is robust and thread-safe (even if it was not written with
+thread safety in mind).  Increased thread safety will help make the Raku ecosystem more suitable for
+concurrent workloads (already a strength, given Raku's strong concurrency and parallelism primitives
+and the existence of excellent concurrent modules such as Cro).</p>
+
+<p>In addition to these practical benefits, adding these types (especially if they are eventually added
+to core Raku) will help in Raku's marketing/adoption efforts.  Languages that have implemented
+persistent data types include Clojure, Elm, Haskell, and Scala; all of these languages are (1)
+functional and (2) modern – two traits that it would be both helpful and accurate for more
+developers to associate with Raku.</p>
+
+<p>Finally, on a more personal note, this grant would benefit a project for which I am not seeking
+funding.  I am independently working on Épée, a web framework for Raku inspired by React, Svelte,
+Pollen, and Hoplon (and both inspired by and designed to integrate smoothly with Cro).  Épée uses
+immutable data via deep copies and thus would see performance benefits from my work on this grant.
+I mention this both as a benefit of the grant and to say that, although Épée would benefit from this
+grant, that benefit would not be high enough to make implementing these data structures worthwhile
+if the grant is not accepted (that is, I am not seeking a grant for work that I plan to do anyway!).
+I believe that my perspective as a future user of the API with a concrete use-case in mind would
+prove helpful during my work on this grant.</p>
+
+<h2>Biography</h2>
+
+<p>I am a contributor to Rakudo, Roast, and the Raku documentation; I serve on the Raku Steering
+Council and the Yet Another Society Legal Committee.  Prior to becoming a programmer, I was a
+practicing attorney at Davis Polk &amp; Wardwell, one of the top law firms in New York City – but
+decided to become a software developer after helping the firm build a web application that dealt
+with data breach law.  I have used JavaScript and Rust professionally, but now focus primarily on
+writing free software in Raku.</p>
+
+    ]]>
+  </content>
+</entry>
+  <entry>
     <title>The Weekly Challenge 114</title>
     <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/05/30#pwc114" type="text/html"/>
     <content type="html">
@@ -3314,97 +3646,6 @@ is an excellent book with a very in depth chapter on Graphs.</p></div>
     </author>
     <thr:total>0</thr:total>
   </entry>
-  <entry>
-  <title>CAT: Addressing the issues, planning ahead</title>
-  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/cat-addressing-the-issues-planning-ahead"/>
-  <id>tag:news.perlfoundation.org,2021-05-19:/post/cat-addressing-the-issues-planning-ahead</id>
-  <published>2021-05-19T13:57:25</published>
-  <updated>2021-05-19T13:57:25</updated>
-  <summary>
-  <![CDATA[
-     This is a statement from the TPF Board of Directors. We screwed up. The TPF Board failed to make sure that the first significant test of the new CAT team and process went well. For that, **we deeply apologize**. This post will go into detail on exactly what we think went wrong, clarify a number of points, and explain how we plan to do better in the future. Our first 
-   ]]>
-  </summary>
-  <author>
-    <name>Dave Rolsky</name>
-  </author>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
-   <![CDATA[
-     
-     <p>This is a statement from the TPF Board of Directors.</p>
-
-<p>We screwed up. The TPF Board failed to make sure that the first significant test of the new CAT team and process went well. For that, <strong>we deeply apologize</strong>.</p>
-
-<p>This post will go into detail on exactly what we think went wrong, clarify a number of points, and explain how we plan to do better in the future.</p>
-
-<p>Our first mistake was a focus on responding quickly to the incident reported to the CAT. Because of that, the <a href="https://news.perlfoundation.org/post/cat-transparency-repor-19-april-2021">first transparency report</a> that was published was based on a draft that had not been reviewed or approved by the board. This is because the board failed to clarify the process for publishing this report.</p>
-
-<p>Then, having moved too quickly, we were too slow to provide a correction. It took two weeks to publish <a href="https://news.perlfoundation.org/post/cat-transparency-report-updates0">the update</a>. In addition, that update did not do a good enough job of acknowledging that the first report should not have been published as is.</p>
-
-<p>Finally, it's taken us another three weeks to publish this apology.</p>
-
-<p>During this drawn out time, people in the Perl and Raku communities have been free to assume the worst, and a lot of misinformation has been going around uncorrected. This is entirely our fault.</p>
-
-<p><strong>All of this has harmed our communities, harmed TPF, and harmed Perl and Raku.</strong></p>
-
-<p>Why did this all drag out so long? Simply put, TPF is not an organization designed to move quickly. This is no one's fault. In the past, we haven't generally needed to do so. We are an entirely volunteer organization, including the board, which is made up of people spread around the world. Even finding a time where a quorum can meet is not straightforward.</p>
-
-<p>The board has not delegated significant authority to any one individual who could have handled this incident by themselves. We have no Executive Director or any similar role. This means decision making is always done through discussion and voting.</p>
-
-<p>Realistically, this aspect of TPF is unlikely to change. What we can do is work much harder to prevent situations that need quick responses from occurring in the first place.</p>
-
-<h2>Transparency Report Mistakes</h2>
-
-<p>The initial response asserted authority over aspects of the communities which are not TPF's responsibility, such as IRC, mailing lists, etc. <strong>That was simply wrong, because we do not have any authority over those services or spaces.</strong></p>
-
-<p><strong>The initial consequence was both too harsh and poorly worded.</strong> The lifetime ban was not intended to be a "permaban", but was supposed to be an <em>indefinite</em> ban that would be lifted when the person in question demonstrated that they would not repeat their unacceptable behavior. <strong>But as was noted in the update, a lifetime ban was too harsh.</strong> And the part about this ban being reversible was simply missing from the initial report.</p>
-
-<p>In the update, this was changed to a minimum 1 year ban. However, there were concerns in the community around this particular statement:</p>
-
-<p>&gt; Unacceptable behavior within that 1 year period could lead to an extension or modification of the length or the terms of the ban. This includes interactions between the Subject and others in the Perl and Raku communities, even outside of TPF events and online platforms.</p>
-
-<p>Some people interpreted "includes interactions between the Subject and others in the Perl and Raku communities" as saying that any interaction between the Subject and others in the Perl and Raku communities was grounds for extending the ban.</p>
-
-<p>That was not the intended reading. <strong>Instead, the intended reading is that further unacceptable behavior would be grounds for extending the ban.</strong> Unacceptable behavior includes treating others in a disrespectful manner, harassment, or not respecting another person's desire to end a conversation.</p>
-
-<h2>Other Concerns</h2>
-
-<p><strong>A number of people in the community have stated that the Subject received no communication from the CAT before the post on the TPF blog went live. This is not true.</strong> The Subject was invited to a meeting with the CAT before the post went live, agreed to meet at a specified time, and then did not show up at that time. However, the Subject has met with the CAT since the initial report was posted.</p>
-
-<p>Other people have expressed concern that the Subject was not allowed to present a case for their defense. The exact process of how Standards of Conduct violations should be handled is a larger topic than we can cover here. However, we do want to note that this is not a legal process, and cannot be modeled on such processes. We do not have the time, resources, or expertise to treat each case like a legal case, with a prosecution, defense, judge, and jury.</p>
-
-<p><strong>However, we can and do commit to developing a process for handling complaints with input from the community.</strong> See later in this post for more details.</p>
-
-<h2>Moving Forward</h2>
-
-<p>Even though we made many mistakes, there are some parts of this affair that we do stand by.</p>
-
-<p>Among our responsibilities, TPF runs the annual Perl and Raku Conference in North America. We cannot allow the conference to be an unsafe space. The conference is not the only space for which we are responsible, but it is our flagship. Because of that, we have an obligation to respond to Standards of Conduct complaints in order to make sure that all conference attendees feel welcome.</p>
-
-<p>A credible complaint was made to us that ongoing problem behavior was driving one or more people from the community. The CAT investigated and felt that this complaint was correct. Because of our commitment to creating a welcoming and inclusive environment, the CAT and the board agreed that there needed to be consequences for the Subject of the investigation. We still believe that to be the case, and we are not going to reverse the final decision to issue a minimum one year ban on conference participation or participation in other TPF activities and spaces, including the TPF Slack.</p>
-
-<p>Moreover, we are not going to dissolve the CAT or stop enforcing the Standards of Conduct, especially given that this year's conference is happening again in just four weeks.</p>
-
-<p>Our initial postings made it sound like we think TPF gets to make decisions about every place that people gather to talk about Perl. We don't think that. We would like to help establish common expectations of what kind of behavior creates a healthy environment for interaction. We know that our missteps here have created obstacles for us to overcome, but we think the mission is worth pursuing, and that we have a responsibility to pursue it.</p>
-
-<p>As it stands now, the CAT is in a holding pattern while the board reviews its charter and we work to define a process for handling these complaints. It won't be taking action until that's done, unless the board explicitly approves that action. We do plan to produce those documents, and we take that process seriously, both because we acknowledge the mistakes made so far and because we believe in the goal of making TPF spaces as welcoming as possible.</p>
-
-<p>We will form an SoC team solely for the conference. They will handle incident reports during the conference. Their powers will include:</p>
-
-<ul>
-<li>Issuing warnings to conference participants.</li>
-<li>Removing people from conference chat.</li>
-<li>Stop a presentation if it contains unacceptable content.</li>
-<li>Placing a temporary hold on publishing a presentation to YouTube.</li>
-<li>Temporarily removing an already published presentation.</li>
-</ul>
-
-<p>Any further consequences, including permanently removing a presentation from YouTube, will be reviewed by the board.</p>
-
-<p>If you would like to provide input on the charter or the process, please <a href="https://join.slack.com/t/perlfoundation/shared_invite/zt-phfb4e13-uAqqK956F0u8bTStSY8RTQ">join the #tpf-cat Slack channel</a>. (Note that this link expires on May 26. Email <a href="mailto:board@perlfoundation.org">board@perlfoundation.org</a> if you'd like to join after that time and we will invite you.)</p>
-
-    ]]>
-  </content>
-</entry>
   <entry>
     <title>The Weekly Challenge 112</title>
     <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/05/16#pwc112" type="text/html"/>
