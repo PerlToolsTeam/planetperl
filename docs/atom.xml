@@ -7,9 +7,141 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-06-04T21:57:42Z</updated>
+  <updated>2021-06-04T22:58:47Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Let's be friend ...</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/mohammad_s_anwar/2021/06/let.html"/>
+    <id>tag:blogs.perl.org,2021:/users/mohammad_s_anwar//990.10245</id>
+    <published>2021-06-05T03:23:46Z</published>
+    <updated>2021-06-05T03:31:13Z</updated>
+    <author>
+        <name>Mohammad S Anwar</name>
+        <uri>http://www.manwar.org/</uri>
+    </author>
+    <category term="perlweeklychallenge" label="perl weekly challenge" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/mohammad_s_anwar/">
+        <![CDATA[<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/lets-be-friend.jpg"/></p>
+
+<p>Let me share my views in response to the questions raised.</p>
+
+<p><a href="https://perlweeklychallenge.org/blog/lets-be-friend/">https://perlweeklychallenge.org/blog/lets-be-friend</a></p>]]>
+        
+    </content>
+</entry>
+  <entry>
+    <title># Perl Weekly Challenge 115: String Chain and Largest Multiple</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/-perl-weekly-challenge-115-string-chain-and-largest-multiple.html"/>
+    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10246</id>
+    <published>2021-06-05T03:24:45Z</published>
+    <updated>2021-06-05T03:25:33Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 115 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-115/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of  days (June 6, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>String Chain</h2>
+
+<p><em>You are given an array of strings.</em></p>
+
+<p><em>Write a script to find out if the given strings can be chained to form a circle. Print 1 if found otherwise 0.</em></p>
+
+<pre><code>A string $S can be put before another string $T in circle if the last character of $S is same as first character of $T.
+</code></pre>
+
+<p><em>Examples:</em></p>
+
+<pre><code>Input: @S = ("abc", "dea", "cd")
+Output: 1 as we can form circle e.g. "abc", "cd", "dea".
+
+Input: @S = ("ade", "cbd", "fgh")
+Output: 0 as we can't form circle.
+</code></pre>
+
+<p>I interpreted the task as follows: find a string chain among the input strings. In other words, I looked for a possible chain among the input strings, even if some of the input strings are not part of the circular string. Reading again the task specification, it appears that the circular chain should contain all input strings (or perhaps the task was updated after I originally read it). Anyway, the task as described above is significantly easier than what I did, but I have no time this week to redo it.</p>
+
+<h3>String Chains in Raku</h3>
+
+<p>Since we&#8217;re looking for possible partial circular chains, we need to look at all combinations of strings. The <code>find-circle</code> subroutine uses the <code>combinations</code> and <code>permutations</code> built-in methods of Raku and for each permutation generated, the <code>test-chain</code> subroutine checks that they form a circle. There can be several solutions, but since we&#8217;re only required to print O or 1, we stop as soon as we&#8217;ve found one solution.</p>
+
+<pre><code>my @s = "abc", "dea", "cd";
+
+sub test-chain (@input) {
+    return False if (substr @input[0], 0, 1) 
+        ne substr @input[*-1], (@input[*-1]).chars - 1, 1;
+    for 1..@input.end -&gt; $i {
+        return False if (substr @input[$i], 0, 1)
+            ne substr @input[$i-1], (@input[$i-1]).chars -1, 1;
+    }
+    True;
+}
+
+sub find-circle (@in) {
+    for @in.combinations(2..@in.elems) -&gt; $combin {
+        for $combin.permutations -&gt; $permute {
+            next unless test-chain $permute;
+            say $permute;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+say find-circle @s;
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku chain-str.raku
+(abc cd dea)
+1
+</code></pre>
+
+<p>I admit that I lazily used a brute-force approach here, that wouldn&#8217;t scale up too well for a large number of input string. There are better ways to solve the task, as we will see in the Perl implementation.</p>
+
+<h3>String Chains in Perl</h3>
+
+<p>Looking at translating the above program into Perl, my first idea was to implement the Raku built-in <code>combinations</code>/<code>permutations</code> methods in Perl. Nothing complicated, but a bit of a pain in the neck. Thinking about that, however another idea came to me: in a circular chain of strings, the list of first letters is the same as the list of last letters. So, if we can make a list of first letters that are also last letters, then we have a solution.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use Data::Dumper;
+
+my @s = ("abc", "dea", "cd", "xyz");
+
+sub find_circle {
+    # remove useless strings starting and ending with the same letter
+    my @s = grep { not /^(\w)\w+$0$/} @_;
+    my %first = map { (substr $_, 0, 1) =&gt; 1 } @s;
+    say Dumper \%first;
+    my %last = map { (substr $_, -1, 1) =&gt; 1 } grep { exists $first{substr $_, -1, 1 }}  @s;
+    return scalar keys %last &gt; 1 ? 1 : 0;
+}
+say find_circle @s;
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ perl chain-str.pl
+1
+</code></pre>
+
+<p>I have completed task 2, but will not be able to report on it before a day or two. This post will be updated with task 2 later.</p>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, June 13, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>Dancer2 0.301003 Released</title>
     <link rel="alternate" href="http://blogs.perl.org/users/jason_a_crome/2021/06/dancer2-0301003-released.html"/>
@@ -2707,48 +2839,6 @@ to this task is very similar to what was done in the first one this week.&lt;/p&
     <thr:total>0</thr:total>
   </entry>
   <entry>
-    <title>berrybrew version 1.34 released!</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/steve_bertrand/2021/05/berrybrew-version-134-released.html"/>
-    <id>tag:blogs.perl.org,2021:/users/steve_bertrand//2771.10239</id>
-    <published>2021-05-26T07:32:42Z</published>
-    <updated>2021-05-26T14:10:41Z</updated>
-    <author>
-        <name>Steve Bertrand</name>
-        
-    </author>
-    <category term="berrybrew" label="berrybrew" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="perl" label="perl" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="perl5" label="perl5" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="perlbrew" label="perlbrew" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="strawberry" label="strawberry" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="strawberryperl" label="strawberryperl" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/steve_bertrand/">
-        <![CDATA[<p>I've released version 1.34 of <a href="https://github.com/stevieb9/berrybrew">berrybrew</a>.</p>
-
-<p>Notable changes:</p>
-
-<ul>
-<li>UI elements now update on the fly, so all changes are reflected immediately</li>
-<li>You can 'use' any version of installed Perl from the UI, which opens up a new CLI window set to use the selected version</li>
-<li>You can now fetch the updated list of Strawberry Perls available through the UI</li>
-<li>Cloning installed Perls as well as a myriad of other operations can now be done through the UI</li>
-<li>The API has been updated so that internal objects are updated live-time. This makes having long-running processes possible</li>
-<li>Build/Test infrastructure updates</li>
-<li>Documentation updates</li>
-<li>Minor bug fixes</li>
-</ul>
-
-<p>I've just got a new full time job, programming in Perl... finally, after several years of looking for that perfect work environment. Some of it will be on Windows (which I haven't used except for developing <code>berrybrew</code>), so I'm actually looking forward to using my own software, especially how useful its become thanks to the new UI I've developed.</p>
-
-<p>Happy Perling!</p>
-
-<p>-stevieb</p>
-]]>
-        
-
-    </content>
-</entry>
-  <entry>
   <title>TPRCIC Newsletter 26 May 2021</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/tprcic-newsletter-26-may-2021"/>
   <id>tag:news.perlfoundation.org,2021-05-25:/post/tprcic-newsletter-26-may-2021</id>
@@ -2838,24 +2928,6 @@ At the Conference in the Cloud there will be Perl, Raku, and other related techn
 
     ]]>
   </content>
-</entry>
-  <entry>
-    <title>Perl Lists - a Partial Taxonomy</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/matthew_persico/2021/05/perl-lists---a-partial-taxonomy.html"/>
-    <id>tag:blogs.perl.org,2021:/users/matthew_persico//2139.10238</id>
-    <published>2021-05-25T06:03:11Z</published>
-    <updated>2021-05-25T06:08:32Z</updated>
-    <author>
-        <name>Matthew Persico</name>
-        
-    </author>
-    <category term="perllistarrayhash" label="perl list array hash" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/matthew_persico/">
-        <![CDATA[<p><br />
-<a href="https://dev.to/matthewpersico/perl-lists-a-partial-taxonomy-g8p">Follow-up</a> to Mark Gardner's article about Perl List:: modules.<br />
-</p>]]>
-        
-    </content>
 </entry>
   <entry>
     <title>Perl / Unix One-liner Cage Match, Part 2</title>
