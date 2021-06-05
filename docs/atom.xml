@@ -7,9 +7,217 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-06-05T21:52:39Z</updated>
+  <updated>2021-06-05T22:55:10Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title># Perl Weekly Challenge 115: String Chain and Largest Multiple</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/-perl-weekly-challenge-115-string-chain-and-largest-multiple.html"/>
+    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10246</id>
+    <published>2021-06-05T03:24:45Z</published>
+    <updated>2021-06-06T03:03:37Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 115 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-115/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of  days (June 6, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: String Chain</h2>
+
+<p><em>You are given an array of strings.</em></p>
+
+<p><em>Write a script to find out if the given strings can be chained to form a circle. Print 1 if found otherwise 0.</em></p>
+
+<pre><code>A string $S can be put before another string $T in circle if the last character of $S is same as first character of $T.
+</code></pre>
+
+<p><em>Examples:</em></p>
+
+<pre><code>Input: @S = ("abc", "dea", "cd")
+Output: 1 as we can form circle e.g. "abc", "cd", "dea".
+
+Input: @S = ("ade", "cbd", "fgh")
+Output: 0 as we can't form circle.
+</code></pre>
+
+<p>I interpreted the task as follows: find a string chain among the input strings. In other words, I looked for a possible chain among the input strings, even if some of the input strings are not part of the circular string. Reading again the task specification, it appears that the circular chain should contain all input strings (or perhaps the task was updated after I originally read it). Anyway, the task as described above is significantly easier than what I did, but I have no time this week to redo it.</p>
+
+<h3>String Chains in Raku</h3>
+
+<p>Since we&#8217;re looking for possible partial circular chains, we need to look at all combinations of strings. The <code>find-circle</code> subroutine uses the <code>combinations</code> and <code>permutations</code> built-in methods of Raku and for each permutation generated, the <code>test-chain</code> subroutine checks that they form a circle. There can be several solutions, but since we&#8217;re only required to print O or 1, we stop as soon as we&#8217;ve found one solution.</p>
+
+<pre><code>my @s = "abc", "dea", "cd";
+
+sub test-chain (@input) {
+    return False if (substr @input[0], 0, 1) 
+        ne substr @input[*-1], (@input[*-1]).chars - 1, 1;
+    for 1..@input.end -&gt; $i {
+        return False if (substr @input[$i], 0, 1)
+            ne substr @input[$i-1], (@input[$i-1]).chars -1, 1;
+    }
+    True;
+}
+
+sub find-circle (@in) {
+    for @in.combinations(2..@in.elems) -&gt; $combin {
+        for $combin.permutations -&gt; $permute {
+            next unless test-chain $permute;
+            say $permute;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+say find-circle @s;
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku chain-str.raku
+(abc cd dea)
+1
+</code></pre>
+
+<p>I admit that I lazily used a brute-force approach here, that wouldn&#8217;t scale up too well for a large number of input string. There are better ways to solve the task, as we will see in the Perl implementation.</p>
+
+<h3>String Chains in Perl</h3>
+
+<p>Looking at porting the above program into Perl, my first idea was to implement the Raku built-in <code>combinations</code>/<code>permutations</code> methods in Perl. Nothing complicated, but a bit of a pain in the neck. Thinking about that, however, another idea came to me: in a circular chain of strings, the list of first letters is the same as the list of last letters. So, if we can make a list of first letters that are also last letters, then we have a solution.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use Data::Dumper;
+
+my @s = ("abc", "dea", "cd", "xyz");
+
+sub find_circle {
+    # remove useless strings starting and ending with the same letter
+    my @s = grep { not /^(\w)\w+$0$/} @_;
+    my %first = map { (substr $_, 0, 1) =&gt; 1 } @s;
+    say Dumper \%first;
+    my %last = map { (substr $_, -1, 1) =&gt; 1 } grep { exists $first{substr $_, -1, 1 }}  @s;
+    return scalar keys %last &gt; 1 ? 1 : 0;
+}
+say find_circle @s;
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ perl chain-str.pl
+1
+</code></pre>
+
+<h2>Task 2: Largest multiple</h2>
+
+<p><em>You are given a list of positive integers (0-9), single digit.</em></p>
+
+<p><em>Write a script to find the largest multiple of 2 that can be formed from the list.</em></p>
+
+<p><em>Examples:</em></p>
+
+<pre><code>Input: @N = (1, 0, 2, 6)
+Output: 6210
+
+Input: @N = (1, 4, 2, 8)
+Output: 8412
+
+Input: @N = (4, 1, 7, 6)
+Output: 7614
+</code></pre>
+
+<p>I think that the simplest way to get the largest number from a list of digits is to sort the digits in descending order and concatenate them. Since we additionally need the number to be even, we can, if needed, swap the last digit with the last even digit. Note that the problem has no solution if all digits are odd.</p>
+
+<h3>Largest Multiple in Raku</h3>
+
+<p>This is a Raku implementation of the algorithm described above:</p>
+
+<pre><code>sub find-largest (@in) {
+    my @sorted = @in.sort.reverse;
+    return @sorted if @sorted[*-1] %% 2;
+    for (0..@in.end).reverse -&gt; $i {
+        # swap smallest even digit with last digit
+        if @sorted[$i] %% 2 {
+            @sorted[$i, *-1] = @sorted[*-1, $i];
+            return @sorted;
+        }
+    }
+    return (); # Failed, no even digit
+}
+for &lt;1 0 2 6&gt;, &lt;1 3 2 6&gt;, 
+    &lt;1 3 5 7&gt;, &lt;1 4 2 8&gt; -&gt; @test {
+    my @result = find-largest @test;
+    print @test, ": ";
+    if @result.elems &gt; 0 {
+        say "Solution: ", @result.join('');
+    } else {
+        say "No solution"; 
+    }
+}
+</code></pre>
+
+<p>This program displays the following output for the given test cases:</p>
+
+<pre><code>$ raku ./mult-of-2.raku
+1 0 2 6: Solution: 6210
+1 3 2 6: Solution: 6312
+1 3 5 7: No solution
+1 4 2 8: Solution: 8412
+</code></pre>
+
+<h3>Largest Multiple in Perl</h3>
+
+<p>This is an implementation of the same algorithm in Perl:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub find_largest {
+    my @sorted = reverse sort @_;
+    return @sorted if $sorted[-1] % 2 == 0;
+    for my $i (reverse 0..$#sorted) {
+        # swap smallest even digit with last digit
+        if ($sorted[$i] % 2 == 0) {
+            @sorted[$i, -1] = @sorted[-1, $i];
+            return @sorted;
+        }
+    }
+    return (); # Failed, no even digit
+}
+for my $test ( [qw&lt;1 0 2 6&gt;], [qw&lt;1 3 2 6&gt;], 
+               [qw&lt;1 3 5 7&gt;], [qw&lt;1 4 2 8&gt;] ) {
+    my @result = find_largest(@$test);
+    print @$test, ": ";
+    if (@result &gt; 0) {
+        say "Solution: ", join '', @result;
+    } else {
+        say "No solution"; 
+    }
+}
+</code></pre>
+
+<p>This program displays the following output for given test cases:</p>
+
+<pre><code>$ perl  multiple-of2.pl
+1026: Solution: 6210
+1326: Solution: 6312
+1357: No solution
+1428: Solution: 8412
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, June 13, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>VSCode as a Perl IDE</title>
     <link rel="alternate" href="https://dev.to/perldean/vscode-as-a-perl-ide-3cco" type="text/html"/>
@@ -198,118 +406,6 @@
 
 <p><a href="https://perlweeklychallenge.org/blog/lets-be-friend/">https://perlweeklychallenge.org/blog/lets-be-friend</a></p>]]>
         
-    </content>
-</entry>
-  <entry>
-    <title># Perl Weekly Challenge 115: String Chain and Largest Multiple</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/-perl-weekly-challenge-115-string-chain-and-largest-multiple.html"/>
-    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10246</id>
-    <published>2021-06-05T03:24:45Z</published>
-    <updated>2021-06-05T03:25:33Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 115 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-115/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of  days (June 6, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>String Chain</h2>
-
-<p><em>You are given an array of strings.</em></p>
-
-<p><em>Write a script to find out if the given strings can be chained to form a circle. Print 1 if found otherwise 0.</em></p>
-
-<pre><code>A string $S can be put before another string $T in circle if the last character of $S is same as first character of $T.
-</code></pre>
-
-<p><em>Examples:</em></p>
-
-<pre><code>Input: @S = ("abc", "dea", "cd")
-Output: 1 as we can form circle e.g. "abc", "cd", "dea".
-
-Input: @S = ("ade", "cbd", "fgh")
-Output: 0 as we can't form circle.
-</code></pre>
-
-<p>I interpreted the task as follows: find a string chain among the input strings. In other words, I looked for a possible chain among the input strings, even if some of the input strings are not part of the circular string. Reading again the task specification, it appears that the circular chain should contain all input strings (or perhaps the task was updated after I originally read it). Anyway, the task as described above is significantly easier than what I did, but I have no time this week to redo it.</p>
-
-<h3>String Chains in Raku</h3>
-
-<p>Since we&#8217;re looking for possible partial circular chains, we need to look at all combinations of strings. The <code>find-circle</code> subroutine uses the <code>combinations</code> and <code>permutations</code> built-in methods of Raku and for each permutation generated, the <code>test-chain</code> subroutine checks that they form a circle. There can be several solutions, but since we&#8217;re only required to print O or 1, we stop as soon as we&#8217;ve found one solution.</p>
-
-<pre><code>my @s = "abc", "dea", "cd";
-
-sub test-chain (@input) {
-    return False if (substr @input[0], 0, 1) 
-        ne substr @input[*-1], (@input[*-1]).chars - 1, 1;
-    for 1..@input.end -&gt; $i {
-        return False if (substr @input[$i], 0, 1)
-            ne substr @input[$i-1], (@input[$i-1]).chars -1, 1;
-    }
-    True;
-}
-
-sub find-circle (@in) {
-    for @in.combinations(2..@in.elems) -&gt; $combin {
-        for $combin.permutations -&gt; $permute {
-            next unless test-chain $permute;
-            say $permute;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-say find-circle @s;
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku chain-str.raku
-(abc cd dea)
-1
-</code></pre>
-
-<p>I admit that I lazily used a brute-force approach here, that wouldn&#8217;t scale up too well for a large number of input string. There are better ways to solve the task, as we will see in the Perl implementation.</p>
-
-<h3>String Chains in Perl</h3>
-
-<p>Looking at translating the above program into Perl, my first idea was to implement the Raku built-in <code>combinations</code>/<code>permutations</code> methods in Perl. Nothing complicated, but a bit of a pain in the neck. Thinking about that, however another idea came to me: in a circular chain of strings, the list of first letters is the same as the list of last letters. So, if we can make a list of first letters that are also last letters, then we have a solution.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use Data::Dumper;
-
-my @s = ("abc", "dea", "cd", "xyz");
-
-sub find_circle {
-    # remove useless strings starting and ending with the same letter
-    my @s = grep { not /^(\w)\w+$0$/} @_;
-    my %first = map { (substr $_, 0, 1) =&gt; 1 } @s;
-    say Dumper \%first;
-    my %last = map { (substr $_, -1, 1) =&gt; 1 } grep { exists $first{substr $_, -1, 1 }}  @s;
-    return scalar keys %last &gt; 1 ? 1 : 0;
-}
-say find_circle @s;
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ perl chain-str.pl
-1
-</code></pre>
-
-<p>I have completed task 2, but will not be able to report on it before a day or two. This post will be updated with task 2 later.</p>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, June 13, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
     </content>
 </entry>
   <entry>
