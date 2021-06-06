@@ -7,9 +7,222 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-06-06T03:19:59Z</updated>
+  <updated>2021-06-06T04:05:41Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>The Weekly Challenge 115</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/06/05#pwc115" type="text/html"/>
+    <content type="html">
+&lt;p&gt;&lt;em&gt;The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;You are given an array of strings. Write a script to find out if the given strings can be
+chained to form a circle. Print 1 if found otherwise 0. A string $S can be put before 
+another string $T in circle if the last character of $S is same as first character of $T.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use Graph;
+use Graph::Easy::Parser;
+
+sub build_graph{
+    my @words;
+    my %first_letter_name;
+    my $graph = new Graph();
+    while(my $s = &lt;DATA&gt;){
+        chomp($s);
+        my $first_letter = substr($s, 0, 1);
+        if($first_letter_name{$first_letter}){
+            push @{$first_letter_name{$first_letter}}, $s;
+        }
+        else{
+            $first_letter_name{$first_letter} = [$s];
+        }
+        push @words, $s;
+    }
+    for my $word (@words){
+        $graph-&gt;add_vertex($word) if !$graph-&gt;has_vertex($word);
+        my $child_nodes = $first_letter_name{substr($word, -1)};
+        for my $n (@{$child_nodes}){
+            $graph-&gt;add_vertex($n) if !$graph-&gt;has_vertex($n);
+            $graph-&gt;add_weighted_edge($word, $n, (-1 * length($n))) if !$graph-&gt;has_edge($word, $n);
+            $graph-&gt;delete_edge($word, $n) if $graph-&gt;has_a_cycle();
+        }
+    }
+    return $graph;
+}
+
+sub display_graph{
+    my($graph) = @_;
+    my $s = $graph-&gt;stringify();
+    my @s = split(/,/, $s);
+    my @lines;
+    for my $n (@s){
+        my @a = split(/-/, $n);
+        push @lines, "[ $a[0] ] =&gt; [ ]" if @a == 1;
+        push @lines, "[ $a[0] ] =&gt; [ $a[1] ]" if @a &gt; 1;
+    }
+    my $parser = new Graph::Easy::Parser();
+    my $graph_viz = $parser-&gt;from_text(join("", @lines));
+    print $graph_viz-&gt;as_ascii();
+}
+
+MAIN:{
+    my $graph = build_graph();
+    my @cc = $graph-&gt;weakly_connected_components();
+    print "1\n" if @cc == 1;
+    print "0\n" if @cc != 1;
+    display_graph($graph);
+}
+
+__DATA__
+ab
+bea
+cd
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-1.pl
+0
++----+     +-----+
+| ab | ==&gt; | bea |
++----+     +-----+
++----+
+| cd | ==&gt;
++----+
+$ perl perl/ch-1.pl
+1
++-----+     +-----+     +----+
+| dea | ==&gt; | abc | ==&gt; | cd |
++-----+     +-----+     +----+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;Task #1 is very similar to the 
+&lt;a href="https://adamcrussell.livejournal.com/9171.html"&gt;Pokemon Name Ladder&lt;/a&gt; task from Challenge
+025. This task is actually a part of that previous challenge in that here we do not need
+to compute the longest possible chain of strings; we just need to confirm that the chain
+exists.&lt;/p&gt;
+
+&lt;p&gt;The approach here is:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;read in the words and construct the directed graph
+&lt;/li&gt;
+&lt;li&gt;check to see that the number of &lt;em&gt;connected components&lt;/em&gt; is one. If so, print 1. Otherwise
+print 0.
+&lt;/li&gt;
+&lt;li&gt;display the graph (an optional data visualization step)
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;The function used to determine the number of connected components is 
+&lt;code&gt;weakly_connected_components()&lt;/code&gt;. This is because the chain is constructed as a directed
+graph and the idea of a connected component is defined for undirected graphs. Weakly
+connected components are determined by whether or not the nodes are connected if we ignore
+the direction of the edges. This is what we want for our use case here, as opposed to
+&lt;em&gt;strongly connected components&lt;/em&gt;. To determine strongly connected components we would
+need bi-directional edges for each link in the chain. No need to overcomplicate this with
+extra edges...the desired result is obtained just fine as is!&lt;/p&gt;
+
+&lt;p&gt;In the example output the first run shows two connected components, therefor no chain
+exists. In the second output the chain is shown, there is one connected component.&lt;/p&gt;
+
+&lt;h2&gt;Part 2&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;You are given a list of positive integers (0-9), single digit. Write a script to find the
+largest multiple of 2 that can be formed from the list.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+sub largest_multiple_2{
+    my @numbers = @_;
+    return unless grep { $_ % 2 == 0 } @numbers;
+    my @sorted = sort {$b &lt;=&gt; $a} @numbers;
+    if(@sorted &gt;= 2){
+        my $ultima = @sorted[@sorted - 1];
+        if($ultima % 2 != 0){
+            my $swap_index = -1;
+            for(my $i = @sorted - 2; $i &gt;= 0; $i--){
+                $swap_index = $i if $sorted[$i] % 2 == 0;
+                last if $swap_index &gt; 0;
+            }
+            $sorted[@sorted - 1] = $sorted[$swap_index];
+            $sorted[$swap_index] = $ultima;
+        }
+    }
+    return join("", @sorted);
+}
+
+MAIN:{
+    my @N;
+    @N = (1, 0, 2, 6);
+    print largest_multiple_2(@N) . "\n";
+    @N = (1, 4, 2, 8);
+    print largest_multiple_2(@N) . "\n";
+    @N = (4, 1, 7, 6);
+    print largest_multiple_2(@N) . "\n";
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+6210
+8412
+7614
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;Suppose we did not have the "multiple of 2" restriction and instead had to arrange a list
+of numbers to have maximal value when concatenated together. The solution, then, would be
+to sort the numbers in descending order and concatenate the digits in this sorted order.&lt;/p&gt;
+
+&lt;p&gt;Here we can still use that same logic but more care is needed. &lt;/p&gt;
+
+&lt;p&gt;First, let's remind ourselves that we can check to see if any number is a multiple of 2 by
+checking if it's rightmost digit is a multiple of 2 (including 0).&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;We need to make sure we have at least one digit which is a multiple of 2. If not, then
+there is no need to continue.
+&lt;/li&gt;
+&lt;li&gt;Sort the numbers, but then inspect the final digit in descending order. Is it a multiple
+of 2? If so, then we are done!
+&lt;/li&gt;
+&lt;li&gt;If the final digit is not a multiple of 2 then search the sorted list starting from the
+final digit and working "upwards". We had previously made sure we had at least one 
+multiple of 2 so we are certain to find one. When we find it we need to swap it with the 
+final digit to insure that the entire number itself is a multiple of 2.
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-115/"&gt;Challenge 115&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://adamcrussell.livejournal.com/9171.html"&gt;Pokemon Name Ladder&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://mathworld.wolfram.com/WeaklyConnectedComponent.html"&gt;Weakly Connected Component&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc115</id>
+    <published>2021-06-05T23:34:00-04:00</published>
+    <updated>2021-06-05T23:34:00-04:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry>
     <title># Perl Weekly Challenge 115: String Chain and Largest Multiple</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/-perl-weekly-challenge-115-string-chain-and-largest-multiple.html"/>
@@ -4038,9 +4251,9 @@ EARONESTY  370.6MB ( 0.5%)
     <id>http://perlancar.wordpress.com/?p=1943</id>
     <published>2021-05-16T08:48:50Z</published>
     <updated>2021-05-16T08:48:50Z</updated>
-    <category term="perl"/>
-    <category term="cpan"/>
     <category term="backpan"/>
+    <category term="cpan"/>
+    <category term="perl"/>
   </entry>
   <entry>
     <title>Perl / Unix One-liner Cage Match, Part 1</title>
