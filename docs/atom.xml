@@ -7,9 +7,166 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-06-08T13:52:22Z</updated>
+  <updated>2021-06-08T14:48:21Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Moving Perl Mojolicious routes to their own module</title>
+    <link rel="alternate" href="https://dev.to/mjgardner/moving-perl-mojolicious-routes-to-their-own-module-53c2" type="text/html"/>
+    <content type="html">&lt;p&gt;A mentee asked me over the weekend if there was a way within a &lt;a href="https://mojolicious.org/"&gt;Mojolicious&lt;/a&gt; web application to store the &lt;a href="https://docs.mojolicious.org/Mojolicious/Guides/Routing"&gt;routes&lt;/a&gt; separately from the main application class. Here’s one way. &lt;strong&gt;These instructions assume you’re using &lt;a href="https://www.perl.org/get.html"&gt;Perl 5.34&lt;/a&gt; and &lt;a href="https://metacpan.org/release/SRI/Mojolicious-9.19"&gt;Mojolicious 9.19&lt;/a&gt;&lt;/strong&gt; (the latest as of this writing) via the terminal command line on a Linux, Unix, or macOS system; make the appropriate changes if this doesn’t apply to you.&lt;/p&gt;
+
+&lt;p&gt;First, if you haven’t already, &lt;a href="https://docs.mojolicious.org/Mojolicious/Command/Author/generate/app"&gt;create your Mojolicious app&lt;/a&gt; at your shell prompt:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ mojo generate app Local::RouteDemo
+  [mkdir] /Users/mgardner/Projects/blog/local_route_demo/script
+  [write] /Users/mgardner/Projects/blog/local_route_demo/script/local_route_demo
+  [chmod] /Users/mgardner/Projects/blog/local_route_demo/script/local_route_demo 744
+  [mkdir] /Users/mgardner/Projects/blog/local_route_demo/lib/Local
+  [write] /Users/mgardner/Projects/blog/local_route_demo/lib/Local/RouteDemo.pm
+  [exist] /Users/mgardner/Projects/blog/local_route_demo
+  [write] /Users/mgardner/Projects/blog/local_route_demo/local-route_demo.yml
+  [mkdir] /Users/mgardner/Projects/blog/local_route_demo/lib/Local/RouteDemo/Controller
+  [write] /Users/mgardner/Projects/blog/local_route_demo/lib/Local/RouteDemo/Controller/Example.pm
+  [mkdir] /Users/mgardner/Projects/blog/local_route_demo/t
+  [write] /Users/mgardner/Projects/blog/local_route_demo/t/basic.t
+  [mkdir] /Users/mgardner/Projects/blog/local_route_demo/public
+  [write] /Users/mgardner/Projects/blog/local_route_demo/public/index.html
+  [mkdir] /Users/mgardner/Projects/blog/local_route_demo/templates/layouts
+  [write] /Users/mgardner/Projects/blog/local_route_demo/templates/layouts/default.html.ep
+  [mkdir] /Users/mgardner/Projects/blog/local_route_demo/templates/example
+  [write] /Users/mgardner/Projects/blog/local_route_demo/templates/example/welcome.html.ep
+$ cd local_route_demo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Create a new Perl module in your editor for storing your routes. Here we’re using &lt;code&gt;Local::RouteDemo::Routes&lt;/code&gt;:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ touch lib/Local/RouteDemo/Routes.pm
+$ $EDITOR lib/Local/RouteDemo/Routes.pm
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Make the module with a function that will create the routes you want, given a &lt;a href="https://docs.mojolicious.org/Mojolicious/Routes"&gt;Mojolicious::Routes&lt;/a&gt; object. Here we’re just bringing over the default route created when we created our app:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nn"&gt;Local::RouteDemo::&lt;/span&gt;&lt;span class="nv"&gt;Routes&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;strict&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;warnings&lt;/span&gt; &lt;span class="sx"&gt;qw(all -experimental::signatures)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;signatures&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;Exporter&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;import&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="k"&gt;our&lt;/span&gt; &lt;span class="nv"&gt;@EXPORT_OK&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="sx"&gt;qw(make_routes)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;make_routes&lt;/span&gt; &lt;span class="p"&gt;($router) {&lt;/span&gt;
+    &lt;span class="nv"&gt;$router&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;get&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;/&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;to&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;Example#welcome&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
+    &lt;span class="c1"&gt;# add more routes here&lt;/span&gt;
+
+    &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Adjust the application class to load your new Routes module and call its &lt;a href="https://perldoc.pl/Exporter"&gt;exported&lt;/a&gt; function:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nn"&gt;Local::&lt;/span&gt;&lt;span class="nv"&gt;RouteDemo&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Mojo::&lt;/span&gt;&lt;span class="nv"&gt;Base&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Mojolicious&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;signatures&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Local::RouteDemo::&lt;/span&gt;&lt;span class="nv"&gt;Routes&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;make_routes&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+
+&lt;span class="c1"&gt;# This method will run once at server start&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;startup&lt;/span&gt; &lt;span class="p"&gt;($self) {&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# Load configuration from config file&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$config&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;plugin&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;NotYAMLConfig&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# Configure the application&lt;/span&gt;
+    &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;secrets&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$config&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;secrets&lt;/span&gt;&lt;span class="p"&gt;});&lt;/span&gt;
+
+    &lt;span class="c1"&gt;# Make routes&lt;/span&gt;
+    &lt;span class="nv"&gt;make_routes&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;routes&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+    &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Finally, run your tests and/or manually test your routes to be sure everything works OK:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ prove -vlr t
+t/basic.t .. [2021-06-07 12:21:55.36917] [58779] [debug] [elVGykGVWlOt] GET "/"
+[2021-06-07 12:21:55.36972] [58779] [debug] [elVGykGVWlOt] Routing to controller "Local::RouteDemo::Controller::Example" and action "welcome"
+[2021-06-07 12:21:55.37137] [58779] [debug] [elVGykGVWlOt] Rendering template "example/welcome.html.ep"
+[2021-06-07 12:21:55.37343] [58779] [debug] [elVGykGVWlOt] Rendering template "layouts/default.html.ep"
+[2021-06-07 12:21:55.37495] [58779] [debug] [elVGykGVWlOt] 200 OK (0.005772s, 173.250/s)
+
+ok 1 - GET /
+ok 2 - 200 OK
+ok 3 - content is similar
+1..3
+ok
+All tests successful.
+Files=1, Tests=3, 1 wallclock secs ( 0.02 usr 0.01 sys + 0.38 cusr 0.11 csys = 0.52 CPU)
+Result: PASS
+$ script/local_route_demo get /
+[2021-06-07 12:22:29.55930] [58889] [debug] [f3YoaFhkwJ42] GET "/"
+[2021-06-07 12:22:29.55990] [58889] [debug] [f3YoaFhkwJ42] Routing to controller "Local::RouteDemo::Controller::Example" and action "welcome"
+[2021-06-07 12:22:29.56059] [58889] [debug] [f3YoaFhkwJ42] Rendering template "example/welcome.html.ep"
+[2021-06-07 12:22:29.56269] [58889] [debug] [f3YoaFhkwJ42] Rendering template "layouts/default.html.ep"
+[2021-06-07 12:22:29.56432] [58889] [debug] [f3YoaFhkwJ42] 200 OK (0.005004s, 199.840/s)
+&amp;lt;!DOCTYPE html&amp;gt;
+&amp;lt;html&amp;gt;
+  &amp;lt;head&amp;gt;&amp;lt;title&amp;gt;Welcome&amp;lt;/title&amp;gt;&amp;lt;/head&amp;gt;
+  &amp;lt;body&amp;gt;&amp;lt;h2&amp;gt;Welcome to the Mojolicious real-time web framework!&amp;lt;/h2&amp;gt;
+&amp;lt;p&amp;gt;
+  This page was generated from the template "templates/example/welcome.html.ep"
+  and the layout "templates/layouts/default.html.ep",
+  &amp;lt;a href="/"&amp;gt;click here&amp;lt;/a&amp;gt; to reload the page or
+  &amp;lt;a href="/index.html"&amp;gt;here&amp;lt;/a&amp;gt; to move forward to a static page.
+&amp;lt;/p&amp;gt;
+&amp;lt;/body&amp;gt;
+&amp;lt;/html&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;You can find &lt;a href="https://github.com/mjgardner/local_route_demo"&gt;a git repository of this work on GitHub&lt;/a&gt;, and here’s a &lt;a href="https://github.com/mjgardner/local_route_demo/commit/ea1226793ae689ce7e049b36caaebccabb581c57"&gt;commit of all the changes made to the default Mojolicious application&lt;/a&gt; so you can see the differences.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Mark Gardner</name>
+    </author>
+    <id>https://dev.to/mjgardner/moving-perl-mojolicious-routes-to-their-own-module-53c2</id>
+    <published>2021-06-08T14:00:00Z</published>
+    <updated>2021-06-08T14:00:00Z</updated>
+    <category term="mojolicious"/>
+    <category term="perl"/>
+    <category term="webdev"/>
+  </entry>
   <entry>
     <title>Perl Weekly Challenge 115: String Chain and Largest Multiple</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/-perl-weekly-challenge-115-string-chain-and-largest-multiple.html"/>
@@ -1565,36 +1722,6 @@ $ ./ch-2.pl 4 1 7 6
     <updated>2021-06-01T14:13:16Z</updated>
     <category term="perl"/>
     <category term="perlweeklychallenge"/>
-  </entry>
-  <entry>
-    <title>Should Perl die gracefully?</title>
-    <link rel="alternate" href="https://dev.to/mjgardner/should-perl-die-gracefully-3i60" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>A <a href="https://medium.com/@willsmithorg/as-somebody-who-wrote-loads-of-perl-in-the-2000-2005-time-frame-and-has-now-like-almost-everybody-6ced8384a977">comment</a> on the <a href="https://medium.com/codex/perl-can-do-that-now-10191006af0e">Medium version of last week’s article</a> got to me:</p>
-
-<blockquote>
-<p>I wish they’d just leave Perl static. Then we wouldn’t have to waste money retesting legacy Perl apps on the newest version every couple of years, in case new features we don’t want breaks code that’s been unchanged for years. […] Sometimes things should just be left to die gracefully.</p>
-
-<p><cite><a href="https://medium.com/@willsmithorg">William Smith</a></cite></p>
-</blockquote>
-
-<p>Programming languages, like all software, change to meet new challenges. Developers add new feature enhancements, users find bugs for them to fix, and occasional design errors need to be corrected. In Perl’s case, the Perl 5 Porters (the group of volunteers that develop and maintain Perl) have had an <a href="https://perldoc.pl/perlpolicy#BACKWARD-COMPATIBILITY-AND-DEPRECATION">explicit backward compatibility and deprecation policy</a> since 2011 that tries to protect the Perl user community from the breakage of old code while still moving the language forward. In short, they do their absolute best to <strong>minimize your testing and changes</strong>.</p>
-
-<p>To that end, the Perl developers have done an amazing job presenting new syntactical features as only enabled when adding the appropriate <code>use feature</code> or <code>use VERSION</code> construct. If you do not add this code, the new syntax will not be enabled and <strong>your legacy code will not break</strong>. Incompatible changes, if there are any, are always documented in a release’s <a href="https://perldoc.pl/perl#History"><code>perldelta</code> document</a> (hint: it’s under the heading “Incompatible Changes”).</p>
-
-<p>Given all this, <strong>it is a monstrous thing to demand an entire volunteer community stop enhancing their platform</strong> so that your particular applications can remain static while continuing to take advantage of the <a href="https://perldoc.pl/perlpolicy#MAINTENANCE-AND-SUPPORT">support policy generously offered</a> for recent releases. <strong>If you need an unchanging platform, don’t upgrade it</strong>—and take all the responsibility that implies, such as the backporting of security fixes beyond the three-year support commitment offered (again, <em>gratis</em>) by Perl’s developers.</p>
-
-<p>You have no right to demand Perl stands still and “dies gracefully” any more than anyone has the right to demand that of you.</p>
-
-</div>
-    </content>
-    <author>
-      <name>Mark Gardner</name>
-    </author>
-    <id>https://dev.to/mjgardner/should-perl-die-gracefully-3i60</id>
-    <published>2021-06-01T14:00:00Z</published>
-    <updated>2021-06-01T14:00:00Z</updated>
-    <category term="perl"/>
   </entry>
   <entry>
     <title>List of new CPAN distributions – May 2021</title>
