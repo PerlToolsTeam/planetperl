@@ -12,4 +12,4 @@ If you want to fix the broken way it parses a particular web feed, then you'll p
 
 The site is hosted on [GitHub Pages](https://pages.github.com/) and is automatically rebuilt using [GitHub Actions](https://docs.github.com/en/free-pro-team@latest/actions).
 
-Planet Perl (and Perlanet) are both created by [@davorg](https://twitter.com/davorg) who would love to know if you find them useful (and, if you find thme particularly useful, would love you to consider [sponsoring him](https://github.com/sponsors/davorg)).
+Planet Perl (and Perlanet) are both created by [@davorg](https://twitter.com/davorg) who would love to know if you find them useful (and, if you find them particularly useful, would love you to consider [sponsoring him](https://github.com/sponsors/davorg)).
