@@ -57,6 +57,322 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/06/perl-weekly-challenge-116-number-sequence-and-sum-of-squares.html">Perl Weekly Challenge 116: Number Sequence and Sum of Squares</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 116 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-116/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of  days (June 13, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Number Sequence</h2>
+
+<ul>
+<li><p>You are given a number <code>$N</code> >= 10.*</p></li>
+<li><p>Write a script to split the given number such that the difference between two consecutive numbers is always 1 and it shouldn’t have leading 0.*</p></li>
+</ul>
+
+<p><em>Print the given number if it impossible to split the number.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $N = 1234
+Output: 1,2,3,4
+
+Input: $N = 91011
+Output: 9,10,11
+
+Input: $N = 10203
+Output: 10203 as it is impossible to split satisfying the conditions.
+</code></pre>
+
+<h3>Number Sequence in Raku</h3>
+
+<p>One way to see it is to say that we want to partition the digits of the input number in such a way that each partition (with one or several digits) is a number one more than the preceding one.</p>
+
+<p>In Raku, my first idea was to use the <code>combinations</code> built-in method to generate the particions, but this turned out to be impractical. So I decided  to use a completely different route: in Raku, the regex sub-language has an <code>exhaustive</code> (or <code>ex</code> for short) adverb which generate all possible matches between a string and the searches pattern. With this adverb and a pattern such as <code>(\d+)+</code>, we can generate all possible combinations of digits of an input number. This leads to the following program:</p>
+
+<pre><code>use v6;
+
+sub num-seq (Int $in) {
+    MATCH: for $in ~~ m:ex/^(\d+)+$/ -&gt; $m {
+        my @match = $m[0].map({~$_}); # stringify the match object
+        next MATCH if @match.elems &lt; 2; 
+        for 1..@match.end -&gt; $i {
+            next MATCH if @match[$i] ~~ /^0/ or # remove a match starting with 0
+                @match[$i] - @match[$i - 1] != 1;
+        }
+        return @match;
+    }
+    return $in
+}
+
+for &lt;1234 91011 10203&gt; -&gt; $test {
+    say join ', ', num-seq $test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>raku ./num-seq.raku
+1, 2, 3, 4
+9, 10, 11
+10203
+</code></pre>
+
+<h3>Number Sequence in Perl</h3>
+
+<p>Perl regexes don&#8217;t have a functionality for <code>exhaustive</code> pattern matching. So our Perl solution will be entirely different.</p>
+
+<p>We use a <code>num_seq</code> recursive subroutine to potentially generate all possible partitions, except that we don&#8217;t really generate <em>all</em> partitions, as we filter out early in the process beginnings of partitions that cannot yield a solution, </p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+my $end_result;
+
+sub num_seq {
+    my $cur_val = shift; 
+    my $result = shift;
+    my @digits = @_;
+
+    my $len = length $cur_val;
+    return if scalar @digits &lt; $len;
+    $cur_val = $digits[0] - 1 unless $cur_val;
+    for my $i ($len - 1 .. $#digits) {
+        my $new_val = join "", @digits[0..$i];
+        next if $new_val - $cur_val != 1 or $new_val =~ /^0/;
+        push @{$result}, join "", @digits[0..$i];
+        # say "@$result";
+        if (scalar @digits &gt; $len) {
+            num_seq($new_val, $result, @digits[$i+1..$#digits]);
+        } else {
+            $end_result = $result;
+            return;
+        }
+    }
+}
+
+for my $test (qw&lt;1234 91011 10203&gt;) {
+    $end_result = "";
+    num_seq 0, [], split "", $test;
+    if ($end_result) { 
+        say join ", ", @$end_result;
+    } else {
+        say $test;
+    }
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl  num-seq.pl
+1, 2, 3, 4
+9, 10, 11
+10203
+</code></pre>
+
+<h2>Task 2: Sum of Squares</h2>
+
+<p><em>You are given a number <code>$N</code> >= 10.</em></p>
+
+<p><em>Write a script to find out if the given number <code>$N</code> is such that sum of squares of all digits is a perfect square. Print 1 if it is otherwise 0.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $N = 34
+Ouput: 1 as 3^2 + 4^2 =&gt; 9 + 16 =&gt; 25 =&gt; 5^2
+
+Input: $N = 50
+Output: 1 as 5^2 + 0^2 =&gt; 25 + 0 =&gt; 25 =&gt; 5^2
+
+Input: $N = 52
+Output: 0 as 5^2 + 2^2 =&gt; 25 + 4 =&gt; 29
+</code></pre>
+
+<p>Note that all multiples of ten until 100 satisfy the perfect square condition, as well as all multiples of 100 until 1000 (and so on). Also note that since 34 satisfies the condition, as shown in the example above, then its anagram 43 also does. </p>
+
+<h3>Sum of Squares in Raku</h3>
+
+<p>Just straight forward: for every number in the test input range, we check whether the sum of digit squares is a perfect square. </p>
+
+<pre><code>use v6;
+
+sub sum-squares (Int $n where * &gt;= 10) {
+    my $sum-sq = [+] $n.comb.map({$_²});
+    my $sqrt-int = $sum-sq.sqrt.Int;
+    return $sqrt-int² == $sum-sq ?? 1 !! 0;
+}
+say "$_: ", sum-squares $_ for 10..71;
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku  ./sum-squares.raku
+10: 1
+11: 0
+12: 0
+13: 0
+14: 0
+15: 0
+16: 0
+17: 0
+18: 0
+19: 0
+20: 1
+21: 0
+22: 0
+23: 0
+24: 0
+25: 0
+26: 0
+27: 0
+28: 0
+29: 0
+30: 1
+31: 0
+32: 0
+33: 0
+34: 1
+35: 0
+36: 0
+37: 0
+38: 0
+39: 0
+40: 1
+41: 0
+42: 0
+43: 1
+44: 0
+45: 0
+46: 0
+47: 0
+48: 0
+49: 0
+50: 1
+51: 0
+52: 0
+53: 0
+54: 0
+55: 0
+56: 0
+57: 0
+58: 0
+59: 0
+60: 1
+61: 0
+62: 0
+63: 0
+64: 0
+65: 0
+66: 0
+67: 0
+68: 1
+69: 0
+70: 1
+71: 0
+</code></pre>
+
+<h3>Sum of Squares in Raku</h3>
+
+<p>This is a port to Perl of the Raku program above:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub sum_squares {
+    my $n = shift;
+    my $sum_sq = 0;
+    $sum_sq += $_ ** 2 for split //, $n;
+    my $sqrt_int = int sqrt $sum_sq;
+    return $sqrt_int ** 2 == $sum_sq ? 1 : 0;
+}
+say "$_: ", sum_squares $_ for 10..71;
+</code></pre>
+
+<p>This program displays the same output as the Raku program above:</p>
+
+<pre><code>$ perl  ./sum-squares.pl
+10: 1
+11: 0
+12: 0
+13: 0
+14: 0
+15: 0
+16: 0
+17: 0
+18: 0
+19: 0
+20: 1
+21: 0
+22: 0
+23: 0
+24: 0
+25: 0
+26: 0
+27: 0
+28: 0
+29: 0
+30: 1
+31: 0
+32: 0
+33: 0
+34: 1
+35: 0
+36: 0
+37: 0
+38: 0
+39: 0
+40: 1
+41: 0
+42: 0
+43: 1
+44: 0
+45: 0
+46: 0
+47: 0
+48: 0
+49: 0
+50: 1
+51: 0
+52: 0
+53: 0
+54: 0
+55: 0
+56: 0
+57: 0
+58: 0
+59: 0
+60: 1
+61: 0
+62: 0
+63: 0
+64: 0
+65: 0
+66: 0
+67: 0
+68: 1
+69: 0
+70: 1
+71: 0
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, June 20, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+     on Sunday 13 June 2021 03:09</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/06/cccxlv-8-great-cpan-modules-released.html">(cccxlv) 8 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/PERLANCAR/App-lcpan-1.068' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::lcpan</span></b></a> - Manage your local CPAN mirror <ul>  <li>Version: <strong>1.068</strong> on 2021-06-05</li>  <li>Votes: 14</li>  <li>Previous version: 1.067 was  before</li></ul></li><li><a href='https://metacpan.org/release/CROMEDOME/Dancer2-0.301004' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Dancer2</span></b></a> - Lightweight yet powerful web application framework <ul>  <li>Version: <strong>0.301004</strong> on 2021-06-06</li>  <li>Votes: 125</li>  <li>Previous version: 0.301003 was 3 days before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Minion-10.22' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Minion</span></b></a> - Job queue <ul>  <li>Version: <strong>10.22</strong> on 2021-06-10</li>  <li>Votes: 84</li>  <li>Previous version: 10.21 was 2 months, 21 days before</li></ul></li><li><a href='https://metacpan.org/release/PREACTION/Minion-Backend-mysql-0.29' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Minion::Backend::mysql</span></b></a> - MySQL backend <ul>  <li>Version: <strong>0.29</strong> on 2021-06-07</li>  <li>Votes: 12</li>  <li>Previous version: 0.28 was 3 days before</li></ul></li><li><a href='https://metacpan.org/release/JJATRIA/Mojolicious-Plugin-Authentication-1.37' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojolicious::Plugin::Authentication</span></b></a> - A plugin to make authentication a bit easier <ul>  <li>Version: <strong>1.37</strong> on 2021-06-10</li>  <li>Votes: 17</li>  <li>Previous version: 1.36 was 1 month, 19 days before</li></ul></li><li><a href='https://metacpan.org/release/BINGOS/POE-Component-IRC-6.92' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>POE::Component::IRC</span></b></a> - A fully event-driven IRC client module <ul>  <li>Version: <strong>6.92</strong> on 2021-06-08</li>  <li>Votes: 12</li>  <li>Previous version: 6.91 was 3 days before</li></ul></li><li><a href='https://metacpan.org/release/KIMOTO/SPVM-0.9006' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>SPVM</span></b></a> - Static Perl Virtual Machine. Fast Calculation, Fast Array Operation, and Easy C/C++ Binding. <ul>  <li>Version: <strong>0.9006</strong> on 2021-06-11</li>  <li>Votes: 21</li>  <li>Previous version: 0.9005 was 15 days before</li></ul></li><li><a href='https://metacpan.org/release/PREACTION/Yancy-1.073' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Yancy</span></b></a> - The Best Web Framework Deserves the Best CMS <ul>  <li>Version: <strong>1.073</strong> on 2021-06-07</li>  <li>Votes: 39</li>  <li>Previous version: 1.072 was 12 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
@@ -67,7 +383,7 @@
      on Saturday 12 June 2021 16:40</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/06/cdlxxi-metacpan-weekly-report.html">(cdlxxi) metacpan weekly report - Perl::LanguageServer</a></h2>
             </div> <!-- card-header -->
@@ -79,7 +395,7 @@
      on Saturday 12 June 2021 16:35</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/06/cdxciv-stackoverflow-perl-report.html">(cdxciv) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -91,7 +407,7 @@
      on Saturday 12 June 2021 16:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/tprcic-2021-review-56k3">My TPRCiC 2021 review</a></h2>
             </div> <!-- card-header -->
@@ -361,7 +677,7 @@ I'm very proud for having joined the speaker side 💪 (have you seen?)</p>
      on Thursday 10 June 2021 22:02</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/gugod/visualization-of-perl-development-history-4afm">Visualization of perl development history</a></h2>
             </div> <!-- card-header -->
@@ -405,7 +721,7 @@ ffmpeg  -an -y -f image2pipe -vcodec ppm -i ~/var/gource-perl.ppm -r 30.000 ~/va
      on Thursday 10 June 2021 06:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/smonff/i-ll-attend-the-perl-conference-in-the-cloud-jlh">I’ll attend the Perl and Raku Conference In the Cloud</a></h2>
             </div> <!-- card-header -->
@@ -421,7 +737,7 @@ ffmpeg  -an -y -f image2pipe -vcodec ppm -i ~/var/gource-perl.ppm -r 30.000 ~/va
      on Wednesday 09 June 2021 13:53</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/moving-perl-mojolicious-routes-to-their-own-module-53c2">Moving Perl Mojolicious routes to their own module</a></h2>
             </div> <!-- card-header -->
@@ -636,7 +952,7 @@ $ script/local_route_demo get /
      on Tuesday 08 June 2021 14:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/06/-perl-weekly-challenge-115-string-chain-and-largest-multiple.html">Perl Weekly Challenge 115: String Chain and Largest Multiple</a></h2>
             </div> <!-- card-header -->
@@ -844,7 +1160,7 @@ for my $test ( [qw&lt;1 0 2 6&gt;], [qw&lt;1 3 2 6&gt;],
      on Saturday 05 June 2021 03:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-116-1mf7">Weekly Challenge 116</a></h2>
             </div> <!-- card-header -->
@@ -988,7 +1304,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 11:54</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/4ej">Let’s do an experiment! Perl role in Canberra, Australia</a></h2>
             </div> <!-- card-header -->
@@ -1000,7 +1316,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/7t1">Not All Heroes Wear Capes. Perl in Vienna</a></h2>
             </div> <!-- card-header -->
@@ -1012,7 +1328,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/vv3">Cooking Up Something Good. Perl role in London</a></h2>
             </div> <!-- card-header -->
@@ -1024,7 +1340,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/dj8">Doers Wanted. Perl Developer role in Pittsburgh, PA</a></h2>
             </div> <!-- card-header -->
@@ -1036,7 +1352,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://job.perl.careers/lku">A Gem of a Perl role. Remote within UK &amp; EU</a></h2>
             </div> <!-- card-header -->
@@ -1048,7 +1364,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Toronto-Perl-Mongers/">Toronto Perl Mongers Online Meeting</a></h2>
             </div> <!-- card-header -->
@@ -1060,7 +1376,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/Berlin-Perl-Mongers/">Berlin Perl Mongers</a></h2>
             </div> <!-- card-header -->
@@ -1072,7 +1388,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.meetup.com/hacklafayette/">Purdue Perl Mongers - HackLafayette</a></h2>
             </div> <!-- card-header -->
@@ -1084,7 +1400,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlconference.us/tprc-2021-cloud/">The Perl and Raku Conference in the Cloud 2021</a></h2>
             </div> <!-- card-header -->
@@ -1096,7 +1412,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://crystal-lang.org/">Crystal 1.0 Conference</a></h2>
             </div> <!-- card-header -->
@@ -1108,7 +1424,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.linkedin.com/posts/szabgab_test-automation-ci-activity-6802518496128331777-QUXo">Automation, Dockerization, CI/CD for your team</a></h2>
             </div> <!-- card-header -->
@@ -1120,7 +1436,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="http://niceperl.blogspot.com/">NICEPERL's lists</a></h2>
             </div> <!-- card-header -->
@@ -1132,7 +1448,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/recap-challenge-115">RECAP - The Weekly Challenge - 115</a></h2>
             </div> <!-- card-header -->
@@ -1144,7 +1460,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-116">The Weekly Challenge - 116</a></h2>
             </div> <!-- card-header -->
@@ -1156,7 +1472,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/20201-05-rakuast-grant-report">RakuAST Grant Report for May 2021</a></h2>
             </div> <!-- card-header -->
@@ -1168,7 +1484,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_recap_may_2021">Grant Proposal Recap: May 2021</a></h2>
             </div> <!-- card-header -->
@@ -1180,7 +1496,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://brtastic.xyz/blog/article/improving-pwc">Suggestions on improving the Perl Weekly Challenge</a></h2>
             </div> <!-- card-header -->
@@ -1192,7 +1508,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/ns4eky/whats_your_preferred_way_to_dirobj_ie_list/">What's your preferred way to &quot;dir(obj)&quot; i.e. list methods/subroutines of an object?</a></h2>
             </div> <!-- card-header -->
@@ -1204,7 +1520,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/06/06/mojolicious-plugin-authentication/">Mojolicious::Plugin::Authentication</a></h2>
             </div> <!-- card-header -->
@@ -1216,7 +1532,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/06/05/crypt-argon2/">Crypt::Argon2</a></h2>
             </div> <!-- card-header -->
@@ -1228,7 +1544,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/perldean/vscode-as-a-perl-ide-3cco">VSCode as a Perl IDE </a></h2>
             </div> <!-- card-header -->
@@ -1240,7 +1556,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/06/04/crypt-urandom/">Crypt::URandom</a></h2>
             </div> <!-- card-header -->
@@ -1252,7 +1568,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/06/01/open-sysopen-etc/">Open, sysopen, read, sysread... oh my!</a></h2>
             </div> <!-- card-header -->
@@ -1264,7 +1580,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/2021/06/01/should-perl-die-gracefully/">Should Perl die gracefully?</a></h2>
             </div> <!-- card-header -->
@@ -1276,7 +1592,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2021/05/31/random-bytes-and-co/">Random bytes and co.</a></h2>
             </div> <!-- card-header -->
@@ -1288,7 +1604,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://phoenixtrap.com/2021/05/31/part-7-video-of-pair-programming-a-perl-web-app/">Part 7 video of pair programming a Perl web app</a></h2>
             </div> <!-- card-header -->
@@ -1300,7 +1616,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/06/dancer2-0301003-released-1.html">Dancer2 0.301004 Released</a></h2>
             </div> <!-- card-header -->
@@ -1312,7 +1628,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/06/dancer2-0301003-released.html">Dancer2 0.301003 Released</a></h2>
             </div> <!-- card-header -->
@@ -1324,7 +1640,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/515.html">#515 - Events and blog posts</a></h2>
             </div> <!-- card-header -->
@@ -1339,7 +1655,7 @@ $ ./ch-2.pl 30.4
      on Monday 07 June 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_39">
+          <div class="card" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/06/dancer2-0301003-released-1.html">Dancer2 0.301004 Released</a></h2>
             </div> <!-- card-header -->
@@ -1362,7 +1678,7 @@ Jason/CromeDome<br />
      on Sunday 06 June 2021 22:32</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_40">
+          <div class="card" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/06/05#pwc115">The Weekly Challenge 115</a></h2>
             </div> <!-- card-header -->
@@ -1578,7 +1894,7 @@ final digit to insure that the entire number itself is a multiple of 2.
      on Saturday 05 June 2021 23:34</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_41">
+          <div class="card" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/06/cccxliv-12-great-cpan-modules-released.html">(cccxliv) 12 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1590,7 +1906,7 @@ final digit to insure that the entire number itself is a multiple of 2.
      on Saturday 05 June 2021 16:39</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_42">
+          <div class="card" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/06/cdlxx-metacpan-weekly-report.html">(cdlxx) metacpan weekly report </a></h2>
             </div> <!-- card-header -->
@@ -1602,7 +1918,7 @@ final digit to insure that the entire number itself is a multiple of 2.
      on Saturday 05 June 2021 16:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_43">
+          <div class="card" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/06/let.html">Let's be friend ...</a></h2>
             </div> <!-- card-header -->
@@ -1621,7 +1937,7 @@ final digit to insure that the entire number itself is a multiple of 2.
      on Saturday 05 June 2021 03:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_44">
+          <div class="card" id="card_45">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/06/dancer2-0301003-released.html">Dancer2 0.301003 Released</a></h2>
             </div> <!-- card-header -->
@@ -1650,175 +1966,6 @@ Jason/CromeDome</p>
 
               <p class="text-right"><small>Published by Jason A. Crome
      on Thursday 03 June 2021 18:30</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_45">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/06/monthly-report---may-2.html">Monthly Report - May</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p><img src="http://blogs.perl.org/users/mohammad_s_anwar/header-2021-05.jpg"/></p>
-
-<p><strong>Time to celebrate ...</strong></p>
-
-<p>As you all know, I joined <a href="https://www.oleeo.com/">Oleeo</a> last month, it was busy getting my head around the code base and infrastructure. I had to slow down my activities with regard to the routine <a href="https://perlweeklychallenge.org/">Perl Weekly Challenge</a> tasks.</p>
-
-<p>I would like to talk about two happy interactions last month. Ever since I started the <strong>Perl Weekly Challenge</strong> project, I hardly find time to contribute to CPAN whether it is my personal distributions or others. The only time I contribute to others work is when I get my monthly assignment from <strong>Pull Request Club</strong>. Lets get back to the subject, last month, I received <a href="https://rt.cpan.org/Ticket/Display.html?id=136670">RT #136670</a> from <strong>James Wright</strong> with regard to my distribution <a href="https://metacpan.org/pod/App::Search::BackPAN">App::Search::BackPAN</a>. He pointed out the code is broken and doesn't return expected result. He even proposed the fix, which is always handy. The very same day, I had the patch uploaded to <strong>CPAN</strong>. It feels nice that someone is using my distribution and on top of that cares to raise an issue they encounter. It brought back the good old memories when I used to upload patches to <strong>CPAN</strong> every day. I did that <strong>1027 days</strong> nonstop in the past.</p>
-
-<p>The second happy moment came when a colleague in my new office, <strong>Oleeo</strong>, asked for help with my distribution <a href="https://metacpan.org/pod/Test::Excel">Test::Excel</a>. She wanted to compare two excel files only certain cells and ignoring rest. My existing code would only work if you provide sheet name in the specification. Since she was generating the Excel file runtime, the sheet name is not always known before. I did quick patch and added the feature to support her requirements. With little help, she finally had what we was after to begin with. I was very happy to be able to help her.</p>
-
-<p><strong>How's everything else going on in new office?</strong></p>
-
-<p>Well, things are moving slowly but steady. First couple of weeks, I looked at some of the core Perl libraries to familiarize myself. After a long time, I saw code doing <strong>hash slicing</strong>. I must admit, it confused me initially. Right now I doing some DevOps basic, getting my hand dirty with <strong>Ansible</strong>. So far so good, I hope to write some Perl code soon. The work environment is very relax and friendly. There is always someone to help you in difficult times.</p>
-
-<p>Talking about my live coding sessions, I could only do few as I am too busy with my office work. Generally I don't get comment on my videos but this time I was lucky. <strong>Dave Cross</strong> commented in one of my recent videos and suggested cool hack. I am so grateful to him for his advice.</p>
-
-<p>As I mentioned above, I don't get time to contribute to others distribution on <strong>CPAN</strong>, my only adventure is when I receive the monthly assignment from <strong>Pull Request Club</strong>. I noticed that most of the time, I get distributions by one author, <strong>Renee Baecker</strong>. He is my personal favourite too as I get instant response to my <strong>Pull Request</strong>. The acceptance of <strong>Pull Request</strong> is always guaranteed. I must admit, my contributions is only limited to basics and nothing extravagant. I know there are players who do serious contributions. I used to do as well in the past when I had time.</p>
-
-<p>Some of my personal favourites with maximum acceptance rate.</p>
-
-<ul>
-<li><strong>Renee Baecker</strong>: PR submitted (104), Merged PR (96)</li>
-<li><strong>Gabor Szabo</strong>: PR submitted (101), Merged PR (101)</li>
-<li><strong>Dave Cross</strong>: PR submitted (32), Merged PR (32)</li>
-<li><strong>Olaf Alders</strong>: PR submitted (21), Merged PR (21)</li>
-</ul>
-
-<p>That's it for now. Stay safe and healthy.</p>
-
-<p>Let's take a quick look through last month main activities.</p>
-
-<ul>
-<li><a href="#a">Pull Request</a></li>
-<li><a href="#b">Git Commits</a></li>
-<li><a href="#c">The Weekly Challenge</a></li>
-<li><a href="#d">YouTube Channel</a></li>
-<li><a href="#e">Meet The Champion</a></li>
-<li><a href="#f">Pull Request Club</a></li>
-<li><a href="#g">Perl Blog</a></li>
-<li><a href="#h">Perl Weekly Newsletter</a></li>
-<li><a href="#i">Patreon</a></li>
-</ul>
-
-<hr id="a"/>
-<h2>Pull Request</h2>
-
-<p><strong>4 Pull Requests</strong> submitted in the month of <strong>May 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-pr-2021-05.png"/></p>
-
-<p><strong>2353 Pull Requests</strong> altogether.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-pr-summary-2021-05.png"/></p>
-
-<hr id="b"/>
-<h2>Git Commits</h2>
-
-<p><strong>672 commits</strong> recorded in the month of <strong>May 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-commits-2021-05.png"/></p>
-
-<p>Overall <strong>3803 commits</strong> recorded in the <strong>year 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-commits-summary-2021-05.png"/></p>
-
-<hr id="c"/>
-<h2>The Weekly Challenge</h2>
-
-<p>Following weekly challenges proposed in the month of <strong>May 2021</strong>:</p>
-
-<ul>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-111">Challenge #111</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-112">Challenge #112</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-113">Challenge #113</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-114">Challenge #114</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-115">Challenge #115</a></li>
-</ul>
-
-<p>And <strong>RECAPS</strong> are listed as below:</p>
-
-<ul>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-110">RECAP Challenge #110</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-111">RECAP Challenge #111</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-112">RECAP Challenge #112</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-113">RECAP Challenge #113</a></li>
-<li><a href="https://perlweeklychallenge.org/blog/recap-challenge-114">RECAP Challenge #114</a></li>
-</ul>
-
-<hr id="d"/>
-<h2>YouTube Channel</h2>
-
-<p>Last month, I created <strong>3 videos</strong> working on various tasks of the weekly challenges.</p>
-
-<h4>Perl Weekly Challenge - 111 (Task #2: Ordered Letters)</h4>
-<iframe width="560" height="315" src="https://www.youtube.com/embed/6wSYM6RrId4" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-
-<p><br><br></p>
-
-<h4>Perl Weekly Challenge - 114 (Task #1: Next Palindrome Number)</h4>
-<iframe width="560" height="315" src="https://www.youtube.com/embed/DrXU7nPOk8s" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-
-<p><br><br></p>
-
-<h4>Perl Weekly Challenge - 114 (Task #2: Higher Integer Set Bits)</h4>
-<iframe width="560" height="315" src="https://www.youtube.com/embed/wpxOxswh9YE" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-
-<p><br></p>
-
-<p>There are plenty of videos available on my <a href="https://www.youtube.com/c/mohammadsajidanwar">YouTube Channel</a>. If you like the video then please do subscribe to my channel so that you don't miss the weekly fun live coding videos.</p>
-
-<hr id="e"/>
-<h2>Meet The Champion</h2>
-
-<p>Last month, we declared <a href="https://perlweeklychallenge.org/blog/meet-the-champion-2021-04">Aaron Smith</a> as the Champion of <strong>The Weekly Challenge</strong>. <br />
-Little late, we got one more interview done with <a href="https://perlweeklychallenge.org/blog/meet-the-champion-2021-03">Tyler Wardhaugh</a>.</p>
-
-<p>If you are interested in past champions interview then you can find it all <a href="https://perlweeklychallenge.org/champions">here</a>.</p>
-
-<hr id="f"/>
-<h2>Pull Request Club</h2>
-
-<p>Last month, I received <a href="https://metacpan.org/pod/MySQL::Workbench::DBIC">MySQL::Workbench::DBIC</a> by <strong>Renee Baecker</strong>. I submitted <a href="https://github.com/reneeb/MySQL-Workbench-DBIC/pull/17">one</a> Pull Request and it has already been accepted and merged by <strong>Renee Baecker</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/pr-club-2021-05.png"/></p>
-
-<p>Overall participation to <strong>Pull Request Club</strong></p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/pr-club-summary-2021-05.png"/></p>
-
-<hr id="g"/>
-<h2>Perl Blog</h2>
-
-<p>Last month, I blogged about the following topics. </p>
-
-<ul>
-<li><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/05/monthly-report---april-2.html">Monthly Report - April</a></li>
-</ul>
-
-<hr id="h"/>
-<h2>Perl Weekly Newsletter</h2>
-
-<p>Last month, I edited three editions of the <strong>Perl Weekly Newsletter</strong> i.e. <a href="http://perlweekly.com/archive/510.html">Issue #510</a>, <a href="http://perlweekly.com/archive/512.html">Issue #512</a> and <a href="http://perlweekly.com/archive/514.html">Issue #514</a>.</p>
-
-<hr id="i"/>
-<h2>Patreon</h2>
-
-<p>At the end of last month, <strong>May 2021</strong>, the following people / organisation supported me in the past or continued supporting me even today. I am humbled by their generosity.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/patreon-2021-05.png"/></p>
-
-<p><strong>Do you want to sponsor my work?</strong> </p>
-
-<p>Please follow the <a href="https://www.patreon.com/manwar">Patreon</a> page. </p>
-
-<p><strong>Thank You</strong>.</p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Mohammad S Anwar
-     on Thursday 03 June 2021 05:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_46">
@@ -4309,7 +4456,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 12 June 2021 21:47 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 12 June 2021 22:47 UTC</address>
             </div>
           </div>
         </div><!-- container -->
