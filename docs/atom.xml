@@ -7,9 +7,224 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-06-13T19:43:28Z</updated>
+  <updated>2021-06-13T20:46:24Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>The Weekly Challenge 116</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/06/13#pwc116" type="text/html"/>
+    <content type="html">
+&lt;p&gt;&lt;em&gt;The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;You are given a number $N &gt;= 10. Write a script to split the given number such that the 
+difference between two consecutive numbers is always 1, and it shouldn't have a leading 0.
+Print the given number if it impossible to split the number.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use boolean;
+use AI::Genetic;
+
+use constant THRESHOLD =&gt; 0;
+use constant NUMBERS   =&gt; "1234";
+
+sub no_op{
+    my($x) = @_;
+    return (caller(0))[3] if !defined($x);
+    return $x;
+}
+
+sub get_1{
+    my($s) = @_;
+    return (caller(0))[3] if !defined($s);
+    return substr($s, 0, 1);
+}
+
+sub get_2{
+    my($s) = @_;
+    return (caller(0))[3] if !defined($s);
+    return substr($s, 0, 2);
+}
+
+sub get_3{
+    my($s) = @_;
+    return (caller(0))[3] if !defined($s);
+    return substr($s, 0, 3);
+}
+
+sub get_4{
+    my($s) = @_;
+    return (caller(0))[3] if !defined($s);
+    return substr($s, 0, 4);
+}
+
+sub fitness{
+    my($genes) = @_;
+    my $s = NUMBERS;
+    my $fitness = -1 * (length($s) -1);
+    my @operands;
+    for my $gene (@{$genes}){
+        if(my($i) = $gene-&gt;() =~ m/get_([1-4])/){
+            push @operands, $gene-&gt;($s);
+            return -1 * NUMBERS if length($s) &lt; $i;
+            $s = substr($s, $i) if length($s) &gt;= $i;
+        }
+    }
+    for(my $i = 0; $i &lt; @operands - 1; $i++){
+        $fitness += 1 if $operands[$i] == ($operands[$i + 1] - 1);
+    }
+    return $fitness;
+}
+
+sub terminate{
+    my($aig) = @_;
+    my $top_individual = $aig-&gt;getFittest();
+    if($top_individual-&gt;score == THRESHOLD){
+        my $genes = $top_individual-&gt;genes();
+        my $s = NUMBERS;
+        my @operands;
+        for my $gene (@{$genes}){
+            if(my($i) = $gene-&gt;() =~ m/get_([1-4])/){
+                push @operands, $gene-&gt;($s);
+                $s = substr($s, $i);
+            }
+        }
+        print join(",", @operands) . "\n";
+        return true;
+    }
+    print NUMBERS . "\n";
+    return false;
+}
+
+MAIN:{
+    my $aig = new AI::Genetic(
+        -fitness    =&gt; \&amp;fitness,
+        -type       =&gt; "listvector",
+        -population =&gt; 50000,
+        -crossover  =&gt; 0.9,
+        -mutation   =&gt; 0.1,
+        -terminate  =&gt; \&amp;terminate,
+    );
+    my $genes = [];
+    for (0 .. 7){
+        push @{$genes}, [\&amp;get_1, \&amp;get_2, \&amp;get_3, \&amp;get_4, \&amp;no_op],
+    }
+    $aig-&gt;init(
+        $genes
+    );
+    $aig-&gt;evolve("tournamentUniform", 1000);
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-1.pl
+1,2,3,4
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;Task #1 is slightly similar to the 
+&lt;a href="https://adamcrussell.livejournal.com/15036.html"&gt;Only 100, please&lt;/a&gt; task from Challenge
+044. In that previous task we are given a string of numbers and asked to split the string
+with only + or - operations to arrive at a value of 100. Here we must similarly split
+the string of numbers, but the criteria is different. Here we need to assemble the string
+into numbers that differ only by 1, if possible.&lt;/p&gt;
+
+&lt;p&gt;As done in that previous challenge we use a not so brutish, yet forceful, approach 
+using &lt;a href="https://metacpan.org/pod/AI::Genetic"&gt;AI::Genetic&lt;/a&gt;. In this way our program learns
+the best way to achieve our goal given a fitness function which allows it to evaluate
+different splitting patterns and smartly choose the next attempt.&lt;/p&gt;
+
+&lt;p&gt;While avoiding evaluating a great many possible combinations, I must admit to a certain 
+brutishness here in that I did not spend much time tuning the parameters used. Also, 
+the &lt;code&gt;get_&lt;/code&gt; functions will not scale very well for very long strings. It would be possible
+to generate these functions in a loop using a function programming style currying approach 
+dependent on the length of the input string. Imagine an input of 1 followed by 999 0s, 
+then a 1 followed by 998 0s and final 1. This use of AI::Genetic would certainly work
+with such an input given proper &lt;code&gt;get_&lt;/code&gt; functions, very many of which would be quickly
+be lost in the evolutionary dust, so to speak.&lt;/p&gt;
+
+&lt;h2&gt;Part 2&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;You are given a number $N &gt;= 10. Write a script to find out if the given number $N is 
+such that sum of squares of all digits is a perfect square. Print 1 if it is otherwise 0.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use POSIX;
+
+sub sum_squares{
+    my($n) = @_;
+    my @digits = split(//, $n);
+    my $sum = 0;
+    map { $sum += ($_ ** 2) } @digits;
+    return (ceil(sqrt($sum)) == floor(sqrt($sum)));
+}
+
+MAIN:{
+    my($N);
+    $N = 34;
+    if(sum_squares($N)){
+        print "1\n";
+    }
+    else{
+        print "0\n";
+    }
+    $N = 50;
+    if(sum_squares($N)){
+        print "1\n";
+    }
+    else{
+        print "0\n";
+    }
+    $N = 52;
+    if(sum_squares($N)){
+        print "1\n";
+    }
+    else{
+        print "0\n";
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+1
+1
+0
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;This task is well suited for Perl. We can make quick work of what might be a heavier lift
+in other languages by &lt;code&gt;split&lt;/code&gt;-ting the number into individual digits and then using a 
+&lt;code&gt;map&lt;/code&gt; to perform the summing of the squares. The &lt;a href="https://perldoc.perl.org/POSIX"&gt;POSIX&lt;/a&gt;
+module provides convenient &lt;code&gt;ceil&lt;/code&gt; and &lt;code&gt;floor&lt;/code&gt; functions for checking to see if the result
+is a perfect square.&lt;/p&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-116/"&gt;Challenge 116&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-044/"&gt;Challenge 044 | Only 100, please&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc116</id>
+    <published>2021-06-13T16:35:00-04:00</published>
+    <updated>2021-06-13T16:35:00-04:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry>
     <title>Perl Weekly Challenge 116: Number Sequence and Sum of Squares</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/perl-weekly-challenge-116-number-sequence-and-sum-of-squares.html"/>
