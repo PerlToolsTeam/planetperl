@@ -7,9 +7,238 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-06-19T16:56:13Z</updated>
+  <updated>2021-06-19T17:49:36Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 117: Missing Row and Possible Paths</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/perl-weekly-challenge-117-missing-row-and-possible-paths.html"/>
+    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10270</id>
+    <published>2021-06-19T22:33:40Z</published>
+    <updated>2021-06-19T22:35:14Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 117 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-117/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of  days (June 20, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Missing Row</h2>
+
+<p><em>You are given text file with rows numbered 1-15 in random order but there is a catch one row in missing in the file.</em></p>
+
+<pre><code>11, Line Eleven
+1, Line one
+9, Line Nine
+13, Line Thirteen
+2, Line two
+6, Line Six
+8, Line Eight
+10, Line Ten
+7, Line Seven
+4, Line Four
+14, Line Fourteen
+3, Line three
+15, Line Fifteen
+5, Line Five
+</code></pre>
+
+<p><em>Write a script to find the missing row number.</em></p>
+
+<p>If the numbers are really 1 to 15 and if only one number is missing, then we could sum the numbers that we have and subtract the result from the sum of all integers between 1 and 15 (120), which would give us the missing number. </p>
+
+<p>However, I&#8217;ll work on a task that is a bit more general: rather than only 1 to 15, I&#8217;ll use a range from 1 to any larger integer, and I&#8217;ll also suppose that there can be more than 1 number missing.</p>
+
+<h3>Missing Row in Raku</h3>
+
+<p>I will simulate the input file as a string variable. We read the input data and store in the <code>%seen</code> hash the row numbers. At the end, we go through the range and print out numbers that are not in the hash.</p>
+
+<pre><code>use v6;
+
+my $file = "11, Line Eleven
+1, Line one
+9, Line Nine
+13, Line Thirteen
+2, Line two
+6, Line Six
+8, Line Eight
+10, Line Ten
+7, Line Seven
+4, Line Four
+14, Line Fourteen
+3, Line three
+15, Line Fifteen
+5, Line Five";
+
+my %seen;
+my $max = 0;
+
+for $file.lines -&gt; $line {
+    my $num = $line ~~ /^(\d+)/;
+    %seen{$num} = 1;
+    $max = $num if $num &gt; $max;
+}
+for 1..$max -&gt; $i {
+    say "Missing number = ", $i unless %seen{$i}:exists;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>raku ./missing_row.raku
+Missing number = 12
+</code></pre>
+
+<h3>Missing Row in Perl</h3>
+
+<p>This is essentially a port to Perl of the Raku program above, except that we store the input in a <code>__DATA__</code> section:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my %seen;
+my $max = 0;
+
+while (my $line = &lt;DATA&gt;) {
+    my $num = $1 if $line =~ /^(\d+)/;
+    $seen{$num} = 1;
+    $max = $num if $num &gt; $max;
+}
+for my $i (1..$max) {
+    say "Missing number = ", $i unless exists $seen{$i};
+}
+
+__DATA__
+11, Line Eleven
+1, Line one
+9, Line Nine
+13, Line Thirteen
+2, Line two
+6, Line Six
+8, Line Eight
+10, Line Ten
+7, Line Seven
+4, Line Four
+14, Line Fourteen
+3, Line three
+15, Line Fifteen
+5, Line Five
+</code></pre>
+
+<p>This program displays the same output as the Raku program:</p>
+
+<pre><code>$ perl missing_row.pl
+Missing number = 12
+</code></pre>
+
+<h2>Task 2 - Find Possible Paths</h2>
+
+<p><em>You are given size of a triangle.</em></p>
+
+<p><em>Write a script to find all possible paths from top to the bottom right corner.</em></p>
+
+<p><em>In each step, we can either move horizontally to the right (H), or move downwards to the left (L) or right (R).</em></p>
+
+<p><em>BONUS: Try if it can handle triangle of size 10 or 20.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $N = 2
+
+           S
+          / \
+         / _ \
+        /\   /\
+       /__\ /__\ E
+
+Output: RR, LHR, LHLH, LLHH, RLH, LRH
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: $N = 1
+
+           S
+          / \
+         / _ \ E
+
+Output: R, LH
+</code></pre>
+
+<p>First, I will not try the bonus, because the result would just be insanely large: a triangle of size 10 has more than one million possible paths and a triangle of size 20 has billions or possibly trillions of paths.</p>
+
+<h3>Possible Paths in Raku</h3>
+
+<p>We use the recursive <code>visit</code> subroutine to build all possible paths.</p>
+
+<pre><code>use v6;
+
+sub visit ($row, $col, $path) {
+    print "$path " and return if $row == $col == $*end;
+    visit($row + 1, $col + 1, "{$path}R") if $row &lt; $*end and $col &lt; $*end;
+    visit($row, $col + 1, "{$path}H") if $col &lt; $row;
+    visit($row + 1, $col, "{$path}L") if $row &lt; $*end;
+}   
+
+sub MAIN(UInt $size = 3) {
+    my $*end = $size;
+    visit(0, 0, '');
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>raku ./possible_path.raku 3
+RRR RRLH RLRH RLHR RLHLH RLLHH LRRH LRHR LRHLH LRLHH LHRR LHRLH LHLRH LHLHR LHLHLH LHLLHH LLRHH LLHRH LLHHR LLHHLH LLHLHH LLLHHH
+</code></pre>
+
+<p>We can also find the number of paths with an input value of 10:</p>
+
+<pre><code>raku ./possible_path.raku 10 | wc
+      0 1037718 18474633
+</code></pre>
+
+<h3>Possible Paths in Perl</h3>
+
+<p>This a port to Perl of the above Raku program:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my $end = shift // 3;
+
+sub visit  { 
+    my ($row, $col, $path) = @_;
+    print "$path " and return if $row == $end and $col == $end;
+    visit($row + 1, $col + 1, "${path}R") if $row &lt; $end and $col &lt; $end;
+    visit($row, $col + 1, "${path}H") if $col &lt; $row;
+    visit($row + 1, $col, "${path}L") if $row &lt; $end;
+}   
+
+visit(0, 0, '');
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl possible_path.pl 3
+RRR RRLH RLRH RLHR RLHLH RLLHH LRRH LRHR LRHLH LRLHH LHRR LHRLH LHLRH LHLHR LHLHLH LHLLHH LLRHH LLHRH LLHHR LLHHLH LLHLHH LLLHHH
+
+$ perl possible_path.pl 2
+RR RLH LRH LHR LHLH LLHH
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, June 27, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-5091723297877540193</id>
     <published>2021-06-19T18:36:00.000+02:00</published>
@@ -3129,214 +3358,6 @@ ffmpeg  -an -y -f image2pipe -vcodec ppm -i ~/var/gource-perl.ppm -r 30.000 ~/va
     <category term="perl"/>
     <category term="gource"/>
   </entry>
-  <entry>
-    <title>Perl Weekly Challenge 115: String Chain and Largest Multiple</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/06/-perl-weekly-challenge-115-string-chain-and-largest-multiple.html"/>
-    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10246</id>
-    <published>2021-06-05T03:24:45Z</published>
-    <updated>2021-06-07T22:50:24Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 115 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-115/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of  days (June 6, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: String Chain</h2>
-
-<p><em>You are given an array of strings.</em></p>
-
-<p><em>Write a script to find out if the given strings can be chained to form a circle. Print 1 if found otherwise 0.</em></p>
-
-<pre><code>A string $S can be put before another string $T in circle if the last character of $S is same as first character of $T.
-</code></pre>
-
-<p><em>Examples:</em></p>
-
-<pre><code>Input: @S = ("abc", "dea", "cd")
-Output: 1 as we can form circle e.g. "abc", "cd", "dea".
-
-Input: @S = ("ade", "cbd", "fgh")
-Output: 0 as we can't form circle.
-</code></pre>
-
-<p>I interpreted the task as follows: find a string chain among the input strings. In other words, I looked for a possible chain among the input strings, even if some of the input strings are not part of the circular string. Reading again the task specification, it appears that the circular chain should contain all input strings (or perhaps the task was updated after I originally read it). Anyway, the task as described above is significantly easier than what I did, but I have no time this week to redo it.</p>
-
-<h3>String Chains in Raku</h3>
-
-<p>Since we&#8217;re looking for possible partial circular chains, we need to look at all combinations of strings. The <code>find-circle</code> subroutine uses the <code>combinations</code> and <code>permutations</code> built-in methods of Raku and for each permutation generated, the <code>test-chain</code> subroutine checks that they form a circle. There can be several solutions, but since we&#8217;re only required to print O or 1, we stop as soon as we&#8217;ve found one solution.</p>
-
-<pre><code>my @s = "abc", "dea", "cd";
-
-sub test-chain (@input) {
-    return False if (substr @input[0], 0, 1) 
-        ne substr @input[*-1], (@input[*-1]).chars - 1, 1;
-    for 1..@input.end -&gt; $i {
-        return False if (substr @input[$i], 0, 1)
-            ne substr @input[$i-1], (@input[$i-1]).chars -1, 1;
-    }
-    True;
-}
-
-sub find-circle (@in) {
-    for @in.combinations(2..@in.elems) -&gt; $combin {
-        for $combin.permutations -&gt; $permute {
-            next unless test-chain $permute;
-            say $permute;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-say find-circle @s;
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku chain-str.raku
-(abc cd dea)
-1
-</code></pre>
-
-<p>I admit that I lazily used a brute-force approach here, that wouldn&#8217;t scale up too well for a large number of input string. There are better ways to solve the task, as we will see in the Perl implementation.</p>
-
-<h3>String Chains in Perl</h3>
-
-<p>Looking at porting the above program into Perl, my first idea was to implement the Raku built-in <code>combinations</code>/<code>permutations</code> methods in Perl. Nothing complicated, but a bit of a pain in the neck. Thinking about that, however, another idea came to me: in a circular chain of strings, the list of first letters is the same as the list of last letters. So, if we can make a list of first letters that are also last letters, then we have a solution.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use Data::Dumper;
-
-my @s = ("abc", "dea", "cd", "xyz");
-
-sub find_circle {
-    # remove useless strings starting and ending with the same letter
-    my @s = grep { not /^(\w)\w+$0$/} @_;
-    my %first = map { (substr $_, 0, 1) =&gt; 1 } @s;
-    say Dumper \%first;
-    my %last = map { (substr $_, -1, 1) =&gt; 1 } grep { exists $first{substr $_, -1, 1 }}  @s;
-    return scalar keys %last &gt; 1 ? 1 : 0;
-}
-say find_circle @s;
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ perl chain-str.pl
-1
-</code></pre>
-
-<h2>Task 2: Largest multiple</h2>
-
-<p><em>You are given a list of positive integers (0-9), single digit.</em></p>
-
-<p><em>Write a script to find the largest multiple of 2 that can be formed from the list.</em></p>
-
-<p><em>Examples:</em></p>
-
-<pre><code>Input: @N = (1, 0, 2, 6)
-Output: 6210
-
-Input: @N = (1, 4, 2, 8)
-Output: 8412
-
-Input: @N = (4, 1, 7, 6)
-Output: 7614
-</code></pre>
-
-<p>I think that the simplest way to get the largest number from a list of digits is to sort the digits in descending order and concatenate them. Since we additionally need the number to be even, we can, if needed, swap the last digit with the last even digit. Note that the problem has no solution if all digits are odd.</p>
-
-<h3>Largest Multiple in Raku</h3>
-
-<p>This is a Raku implementation of the algorithm described above:</p>
-
-<pre><code>sub find-largest (@in) {
-    my @sorted = @in.sort.reverse;
-    return @sorted if @sorted[*-1] %% 2;
-    for (0..@in.end).reverse -&gt; $i {
-        # swap smallest even digit with last digit
-        if @sorted[$i] %% 2 {
-            @sorted[$i, *-1] = @sorted[*-1, $i];
-            return @sorted;
-        }
-    }
-    return (); # Failed, no even digit
-}
-for &lt;1 0 2 6&gt;, &lt;1 3 2 6&gt;, 
-    &lt;1 3 5 7&gt;, &lt;1 4 2 8&gt; -&gt; @test {
-    my @result = find-largest @test;
-    print @test, ": ";
-    if @result.elems &gt; 0 {
-        say "Solution: ", @result.join('');
-    } else {
-        say "No solution"; 
-    }
-}
-</code></pre>
-
-<p>This program displays the following output for the given test cases:</p>
-
-<pre><code>$ raku ./mult-of-2.raku
-1 0 2 6: Solution: 6210
-1 3 2 6: Solution: 6312
-1 3 5 7: No solution
-1 4 2 8: Solution: 8412
-</code></pre>
-
-<h3>Largest Multiple in Perl</h3>
-
-<p>This is an implementation of the same algorithm in Perl:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub find_largest {
-    my @sorted = reverse sort @_;
-    return @sorted if $sorted[-1] % 2 == 0;
-    for my $i (reverse 0..$#sorted) {
-        # swap smallest even digit with last digit
-        if ($sorted[$i] % 2 == 0) {
-            @sorted[$i, -1] = @sorted[-1, $i];
-            return @sorted;
-        }
-    }
-    return (); # Failed, no even digit
-}
-for my $test ( [qw&lt;1 0 2 6&gt;], [qw&lt;1 3 2 6&gt;], 
-               [qw&lt;1 3 5 7&gt;], [qw&lt;1 4 2 8&gt;] ) {
-    my @result = find_largest(@$test);
-    print @$test, ": ";
-    if (@result &gt; 0) {
-        say "Solution: ", join '', @result;
-    } else {
-        say "No solution"; 
-    }
-}
-</code></pre>
-
-<p>This program displays the following output for given test cases:</p>
-
-<pre><code>$ perl  multiple-of2.pl
-1026: Solution: 6210
-1326: Solution: 6312
-1357: No solution
-1428: Solution: 8412
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on Sunday, June 13, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
-    </content>
-</entry>
   <entry>
     <title>The Weekly Challenge 115</title>
     <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/06/05#pwc115" type="text/html"/>
