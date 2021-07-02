@@ -11,9 +11,11 @@ $(document).ready(function() {
   });
 
   $('.arrow-up').click(function() {
+    alert('Click up: ' + this);
     move_to($(this).parent().parent().parent.prev);
   });
   $('.arrow-down').click(function() {
+    alert('Click down: ' + this);
     move_to($(this).parent().parent().parent().next);
   });
 });
