@@ -57,6 +57,290 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/bruce_gray/2021/07/twc-119-les-nybb-and-the-arrhythmic-trio.html">TWC 119: Les Nybb and the Arrhythmic Trio</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>In which Raku solutions give shape to Perl solutions, and vice versa, and then Raku does what Raku does best.</p>
+
+<p>Task 1: Swap Nibbles - basic and extended solutions in Raku and Perl.</p>
+
+<p>Task 2: Sequence of symbols 123 without adjacent 1&#8217;s. Solutions in Raku and Perl, then a radically different approach that I would have never discovered in anything but Raku.</p>
+
+        <p>Special thanks to <a href="https://app.codesignal.com/profile/TheYeti">TheYeti</a> of CodeFights (now CodeSignal), who invited me to start participating in the Weekly Challenge way back in October 2019. That site no longer has messaging or forums, and I don&#8217;t know how to let them know directly, but this week is my response to their invitation. Thank you!</p>
+
+<h1><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-119/#TASK1">TWC Task #1, Swap Nibbles</a></h1>
+
+<p>Observations:</p>
+
+<ul>
+<li>A nibble (which I learned as &#8220;nybble&#8221;) is 4 bits, which is <em>exactly</em> <em>one</em> hex digit. So, in any approach that starts with translating to a binary string, I should consider hexadecimal instead of binary, in case it is clearer or more concise to code for 1|2 hex digits instead of groups of 4|8 bits.</li>
+<li>The task deliberately avoids discussing N>=256, so we have some freedom to decide on behavior if we also want to solve for an extended domain. I may choose differently for Perl than for Raku.</li>
+</ul>
+
+<h2>Raku</h2>
+
+<p>See <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/bruce-gray/raku/ch-1.raku">Util&#8217;s Raku solution</a> for complete program.</p>
+
+<pre><code>multi sub nib ( Int $n where ^256 ) {
+    return ( ($n +&amp; 0xF0) +&gt; 4 )
+         + ( ($n +&amp; 0x0F) +&lt; 4 );
+}
+
+multi sub nib ( Int $n where * &gt;= 0 ) {
+    my Str $hex = $n.base(16);
+    $hex [R~]= '0' if $hex.chars !%% 2;
+    return $hex.comb(2)».flip.join.parse-base(16);
+}
+</code></pre>
+
+<p>Thoughts, and notable elements:</p>
+
+<ul>
+<li><code>multi</code> allows subroutines with &#8220;duplicate&#8221; names; the ambiguity is resolved by comparing the subs&#8217; parameter lists to the arguments used in the actual subroutine call.</li>
+<li><code>^256</code> means the range <code>0..255</code></li>
+<li>&#8220;Bit-twiddling&#8221; is an approach from the C language. Masking with <code>+&amp; 0xF0</code> is not strictly needed, since <code>+&gt;</code> will right-shift those low bits into the bit bucket. I kept it there for clarity of intent.</li>
+<li>To extend the task past 255 (for my own curiosity), I decided to swap nybbles in each byte. This is different from my decision in the Perl code.</li>
+<li>The second <code>nib</code> sub would work just fine by itself. I took advantage of Raku&#8217;s <code>multi</code> to separate the solution for the task from my solution to the (invented) extended task.</li>
+<li><code>.comb(N)</code> splits a string into a list of sub-strings of length N.</li>
+<li><code>.flip</code> reverses a string; <code>'XYZ'.flip</code> gives you <code>'ZYX'</code>.</li>
+<li><code>».</code> makes a method (that would work on one thing) work on <em>each</em> thing in a list. </li>
+<li><code>.join</code>, without a parameter, joins its list using the empty string as a separator.</li>
+<li><code>!%% N</code> means &#8220;is not evenly divisible by N&#8221;, and returns <code>True</code> or <code>False</code>, without needing to tell you what the remainder would be.</li>
+<li>Pre-pending zero when <code>$hex</code> is an odd length is the easiest way to assure alignment before breaking into 2-character substrings.</li>
+<li>The <code>R</code> meta-operator reverses the operands of its operator. <code>4 / 5</code> is 0.80, but <code>4 R/ 5</code> is the same as <code>5 / 4</code>, or 1.25 .</li>
+<li>Just like <code>$foo ~= 9</code> would <em>append</em> nine to the contents of foo, <code>$foo [R~]= 9</code> will <em>prepend</em> nine. <code>R</code> is my least favorite meta-operator, but I have wanted a prepending op for a long time, and I think this could become a good idiom in Raku. Maybe.</li>
+<li>I could have used <code>.fmt</code> or <code>sprintf</code> instead of <code>.base(16)</code>. Those would have given opportunity to specify that I want a leading zero, without needing that extra line of <code>[R~]=</code>. However, how can we tell how many digits to request? We cannot just say &#8220;even number of digits&#8221;. We have to calculate the size, which is <code>2*$n.log(16²).ceiling</code>. That code is long enough to need its own line, so nothing is gained in brevity, and some clarity would be lost.</li>
+<li>The whole sub could be in one expression by using sprintf&#8217;s <code>.*</code> syntax for separate specification of size, which automatically has leading-zero turned on for hex digits: <code>return sprintf( '%.*X', 2*$n.log(16²).ceiling, $n ).comb(2)».flip.join.parse-base(16);</code>. Now, let&#8217;s pretend I never wrote that.</li>
+</ul>
+
+<p>Also, in the code (shown in the GitHub link above, not shown here) that auto-runs a test suite when no argument is given, I use two tricks:</p>
+
+<ul>
+<li>Since <code>0x65</code> and <code>101</code> are just two different ways of &#8220;spelling&#8221; the <em>exact</em> <em>same</em> number, I use hex format for the test data. That allows a human to easily calculate by hand the expected result.</li>
+<li>Since <code>nib(nib(X))</code> should equal <code>X</code>, any pairs of input and expected output should also be tested in reverse. Instead of repeating the <code>is</code> line with reverse arguments, I kept it DRY (Don&#8217;t Repeat Yourself) by combining the &#8220;hyper-method&#8221; syntax with the <code>.antipair</code> method that swaps key-and-value in a Pair object.</li>
+</ul>
+
+<h2>Perl</h2>
+
+<p>See <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/bruce-gray/perl/ch-1.pl">Util&#8217;s Perl solution</a> for complete program.</p>
+
+<pre><code>sub nib ( $n ) {
+    return   ($n &amp; 0xFFFFFF00)
+         + ( ($n &amp; 0xF0) &gt;&gt; 4 )
+         + ( ($n &amp; 0x0F) &lt;&lt; 4 );
+}
+</code></pre>
+
+<p>See <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/bruce-gray/perl/ch-1_bigint.pl">Util&#8217;s Perl <code>bigint</code> solution</a> for complete program.</p>
+
+<pre><code>use bigint;
+sub nib ( $n ) {
+    return   ($n &amp; ~0xFF)
+         + ( ($n &amp;  0xF0) &gt;&gt; 4 )
+         + ( ($n &amp;  0x0F) &lt;&lt; 4 );
+}
+</code></pre>
+
+<p>Thoughts, and notable elements:</p>
+
+<ul>
+<li>Clearly, this Perl code was influenced by my Raku solution.</li>
+<li>Instead of exchanging nybbles within every byte, I decided to only swap within the <em>last</em> byte. This is different from my decision in the Raku code.</li>
+<li>I used <code>0xFFFFFF00</code> in my original code, thinking that the mask is large enough to cover all input below <code>bigint</code> range, and that I would figure out how big to extend it later, when I would add larger test cases and <code>use bigint</code>. Then I forgot to extend it, and got failures in the new larger test cases. I learned the trick from <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/abigail/perl/ch-1.pl">Abigail</a> of how to make the mask however-big-you-need-it: bitwise negation via <code>~0xFF</code>.</li>
+<li>No 7+ character English words can be made from only the letters A-F, <code>perl -wlnE 'print if /^[a-f]{6,}$/i' unixdict.txt</code> , drastically limiting our options for test constants more clever than <code>0xDEADBEEF</code> .</li>
+</ul>
+
+<h1><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-119/#TASK2">TWC Task #2, Sequence without 1-on-1</a></h1>
+
+<p>Observations:</p>
+
+<ul>
+<li>Scanning through 1..∞ , and grep&#8217;ing for the right pattern, will be dirt-simple to write, and dog-slow to run. At N=258, you are already wasting 99.78% of the numbers to get &#8216;121212&#8217;, and the percentage of waste goes up as N grows. In Big-O notation, I think this approach is O(N²). The highest test number we are given is <code>60</code>, so both Perl and Raku will complete it in sub-second speed. I think I can do better, so I will see how much performance I can gain without completely abandoning clarity.</li>
+<li>Changing to base-4 (and filtering on <code>!/0|11/</code>) will greatly reduce the percentage of waste, but still have a worse-than-linear performance. I can&#8217;t decide if it&#8217;s Big-O just has a much smaller vanished constant, or is still N-squared for some lowered value of &#8220;squared&#8221;. :^)</li>
+<li>Base-3 seems ideal, but is unworkable because we will need to <code>tr/012/123/</code>, and no standard base has leading zeros, so we cannot generate any number with a leading <code>1</code>.</li>
+<li>1,2,3 are not &#8220;numbers&#8221; in this problem; they are &#8220;symbols&#8221;. The task could have specified A,B,C or Foo,Bar,Baz or ζ,η,θ and (after tr/// or s///g) the algorithms would be the same. I found it convenient to use 0,1,2 in some circular (modulo) manipulations, to use &#8220;first symbol&#8221;,&#8221;second symbol&#8221;,&#8221;third symbol&#8221; in my thinking, and 1,2,3 mainly in the output.</li>
+<li>All the combinations of symbols of length 5 can be generated from all of length 4, by pre-pending 1 to all of length 4, then 2 to all of length 4, then 3 to all of length 4, then filtering out any with adjacent ones. Because you can <em>generate</em> everything of length N from length N-1, I started thinking of each of those groups of same-length combinations as a &#8220;generation&#8221;.</li>
+<li>The numbers that represent the start of each generation (like where the final length-5 value <code>33333</code> increments to the first length-6 value <code>121212</code>) are: <code>1,4,12,34,94,258,706,1930,5274,14410,...</code>. That is the OEIS sequence <a href="https://oeis.org/A293005">A293005</a>, which gives a formula that will quickly generate the rest that generation-size sequence, but I did not find it helpful in producing individual elements of the generations.</li>
+<li>The count of members of each generation are: <code>1,3,8,22,60,164,448,1224,3344,9136,...</code>. That is the OEIS sequence <a href="https://oeis.org/A028859">A028859</a>, of which the first comment is &#8220;Number of words of length n without adjacent 0&#8217;s from the alphabet {0,1,2}&#8221;. Bingo! Also, the partial sums of this sequence produce <a href="https://oeis.org/A293005">A293005</a> above.</li>
+<li>::: (In writing this blog post, I now see that <a href="https://oeis.org/A028859">A028859</a> points us to <a href="https://www.jjj.de/fxt/#fxtbook">the fxtbook: &#8220;Matters Computational&#8221;</a> (formerly titled &#8220;Algorithms for Programmers&#8221;), section 14.9: &#8220;Strings with no two consecutive zeros&#8221;. My 2 A.M. scanning of that section yields no insights, but then I don&#8217;t understand Generating Functions even when I am awake.)</li>
+<li>Raku has the <code>Xop</code> meta-operator, which is ideal for combining 1,2,3 with a prior generation to create the next generation.</li>
+<li>Raku&#8217;s <code>...</code> sequence operator is designed to concisely support this &#8220;generate the next from the prior&#8221; computation, and allow it to be &#8220;lazy&#8221; (deferred until needed, and generating as much as demanded).</li>
+</ul>
+
+<h2>Raku</h2>
+
+<p>See <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/bruce-gray/raku/ch-2.raku">Util&#8217;s Raku solution</a> for complete program.</p>
+
+<pre><code>sub s123 ( Int $n where * &gt; 0 ) {
+    sub next_generation ( @a ) {
+        return [ ( &lt;1 2 3&gt; X~ @a ).grep: {!/11/} ];
+    }
+    constant @s = ( [""], &amp;next_generation ... * ).map(*.&lt;&gt;).flat;
+    return @s[$n];
+}
+</code></pre>
+
+<p>Notable:</p>
+
+<ul>
+<li>The &#8220;decontainerizing&#8221; operator <code>.&lt;&gt;</code> has to be mapped to undo the &#8220;hard&#8221; containerization that happens to each generation. Otherwise, <code>.flat</code> will fail to flatten them all into one nice long lazy stream.</li>
+<li>We cannot change <code>.map(*.&lt;&gt;)</code> to <code>».&lt;&gt;</code>, because the hyper-method syntax also implies that the method can be run on any element of the list in any order (the programmer is promising that parallel processing or out-of-order processing will cause no problems). This is not completely compatible with lazily-generated infinite lists, so the compiler disallows it (at least for now).</li>
+<li>The <code>@s</code> array is auto-caching. For example, after <code>s123(10_000)</code> is calculated, <code>s123(9_000)</code> can be returned without calculation.</li>
+<li>The only filtering needed the <code>/11/</code> specified in the task. There is no &#8220;waste&#8221; from generating non-123 digits.</li>
+<li>The performance is now <em>linear</em>: O(N). Whatever time it takes to calculate <code>s123(999)</code>, it should only take 1000x as long to calculate <code>s123(999*1000)</code>. That is a big win, compared to O(N²) which would take a 1000*1000x as long instead of just 1000x.</li>
+</ul>
+
+<h2>Perl</h2>
+
+<p>See <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/bruce-gray/perl/ch-2.pl">Util&#8217;s Perl solution</a> for complete program.</p>
+
+<p>As I was translating the Raku solution to Perl, I re-read the <code>grep: {!/11/}</code> code and had an epiphany. If /11/ does not already exist in a generation, then the only place it can occur during the production of the next generation is in those with a leading-1. If I keep each generation sub-grouped by leading digit, I can code to leave out the group containing leading-1 while creating the 1-group of the next generation. This will remove the need for the <code>grep</code> completely, leaving only the direct generation of the combinations wanted by the task. I implemented this idea only in the Perl code.</p>
+
+<pre><code>sub s123 ( $n ) {
+    state @s;
+    state $last = [ [], [], [""] ];
+    while ( not defined $s[$n] ) {
+        push @s,            @{$last-&gt;[0]},@{$last-&gt;[1]},@{$last-&gt;[2]};
+
+        $last = [
+            [ map { "1$_" }               @{$last-&gt;[1]},@{$last-&gt;[2]} ],
+            [ map { "2$_" } @{$last-&gt;[0]},@{$last-&gt;[1]},@{$last-&gt;[2]} ],
+            [ map { "3$_" } @{$last-&gt;[0]},@{$last-&gt;[1]},@{$last-&gt;[2]} ],
+        ];
+    }
+    return $s[$n];
+}
+</code></pre>
+
+<p>I would have then used the sub-group idea to improve the Raku code, but the underlying idea pointed to deeper understanding.</p>
+
+<p>More observations, and analysis:</p>
+
+<ul>
+<li>I want to use the same approach here that I would use to convert to base-N for any N: modulo, subtract, divide. This gives you one digit at a time, building from smallest digit to largest, in O(log N) time. That cannot work here, because the smallest digit is arrhythmic; every time a /11/ pattern occurs at a higher level, it disrupts the even rhythm of <code>123123123123...</code> that would allow the modulo operation to give the right answer. </li>
+<li>Digit-at-a-time can be processed from the other direction. We usually don&#8217;t, because of the extra effort. For example, converting 361 to base 5, we first ask &#8220;what is the highest power of 5 that is not bigger than our target?&#8221; <code>5**4=625</code> <em>is</em> bigger. <code>5**3==125</code> is <em>not</em> bigger. Now, how many 125&#8217;s can we get out of 361? We can extract 2 of them, <code>2*125==250</code>, and <code>361-250=111</code>, so the first digit will be <code>2</code>, and we continue the process with the remaining <code>111</code>. We continue on, <em>not</em> until the remainder is zero, but until we calculate 5**N all the way down to N==0 and so have handled the &#8220;ones&#8221; place. We could do the same thing here, if we just had a way to tell (ahead of time) what input numbers represented each &#8220;left-most digit&#8221;, like 3xxxx, 2xxxx, and 1xxxx. Also, we need the &#8220;distance&#8221; between 3xxxx and 2xxxx (and 2->1 and 1->0) in the source numbers.</li>
+<li><p>Instead of producing every number in every generation, we can calculate the <em>counts</em> in each generation using the sub-group idea from above; something like <code>raku -e 'my @s1 = [0,0,1], { [ @^a.sum - @^a[0], @^a.sum, @^a.sum ] } ... *; say .raku for @s1.head(5);'</code></p>
+
+<p>[0, 0, 1]
+[1, 1, 1]
+[2, 3, 3]
+[6, 8, 8]
+[16, 22, 22]
+[44, 60, 60]</p></li>
+<li><p>Using a flattened copy of those 3-sub-grouped counts, and a partial sum of the flattened copy, we can scan to find the first partial sum that cannot fit our target, and from its position calculate both the digit it should correspond to <em>and</em> the amount of the original target that it represents. For example: </p></li>
+</ul>
+
+<p>@s2 is a flattened copy of @s1: 0, 0, 1, 1, 1, 1, 2, 3, 3, 6, 8, 8, 16, 22, 22, 44, 60, 60, &#8230;</p>
+
+<p>@s3 is the partial sum of @s2: 0, 0, 1, 2, 3, 4, 6, 9, 12, 18, 26, 34, 50, 72, 94, 138, 198, 258, &#8230;</p>
+
+<p>200 is the target, and falls between @s3[16]==198 and @s3[17]==258;
+17 % 3 == 2, so the first digit will be 2+1==&#8221;3&#8221;, and we will be subtracting from 200 the values of @s2[17]==60 (to reduce 200 from representation 3xxxx to 2xxxx), @s2[16]==60 (to reduce from representation 2xxxx to 1xxxx), and @s2[15]==44 (to reduce from representation 1xxxx to xxxx).
+60+60+44==164.
+200-164==36.
+So, first digit is &#8220;3&#8221;, and the remaining target is 36.</p>
+
+<p>36 is the target, and falls between @s3[11]==34 and @s3[12]==50;
+12 % 3 == 0, so the next digit will be 0+1==&#8221;1&#8221;, and we will be subtracting from 36 the values of @s2[12]==16 (to reduce 36 from representation 1xxx to xxx).
+36-16==20
+So, next digit is &#8220;1&#8221;, and the remaining target is 20.</p>
+
+<p>20 is the target, and falls between @s3[9]==18 and @s3[10]==26;
+10 % 3 == 1, so the next digit will be 1+1==&#8221;2&#8221;, and we will be subtracting from 20 the values of @s2[10]==8 (to reduce 20 from representation 2xx to 1xx) and @s2[9]==6 (to reduce from representation 1xx to xx).
+6+8==14
+20-14==6
+So, next digit is &#8220;2&#8221;, and the remaining target is 6.</p>
+
+<p>And so on, until target is zero.</p>
+
+<h2>Raku</h2>
+
+<p>See <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/bruce-gray/raku/ch-2_logN.raku">Util&#8217;s Raku solution</a> for complete program.</p>
+
+<pre><code>sub s123 ( Int $n is copy where * &gt; 0 ) {
+    constant @s1 = [0,0,1], { my \s = @^a.sum; [ s - @^a[0], s, s ] } ... *;
+    constant @s2 = @s1.map(*.&lt;&gt;).flat;
+    constant @s3 = [\+] @s2;
+
+    return join '', gather {
+        while $n &gt; 0 {
+            my $k   = @s3.first: :k, * &gt; $n;
+            my $pos = $k % 3;
+
+            take $pos + 1; # Digit
+
+            $n -= @s2[ $k + (-$pos .. 0) ].sum
+        }
+
+        # Should be impossible, but I cannot prove it.
+        die "NEGATIVE N: ", $n if $n &lt; 0;
+    }
+}
+</code></pre>
+
+<p>Using even the fastest linear Perl code, <code>s123(10**120)</code> would take longer than the <a href="https://en.wikipedia.org/wiki/Graphical_timeline_from_Big_Bang_to_Heat_Death">heat death of the universe</a>, <em>if</em> my laptop had enough memory.</p>
+
+<p>Using this new logarithmic Raku code, <code>s123(10**120)</code> takes less than 1 second.</p>
+
+<h2>Perl</h2>
+
+<p>See <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-119/bruce-gray/perl/ch-2_logN.pl">Util&#8217;s Perl solution</a> for complete program.</p>
+
+<p>This Perl code is a straight translation of the Raku logN code, except that @s1 is skipped in favor of generating @s2 directly. In Raku, generating @s2 directly is <em>much</em> harder to understand, due to shifting positions of &#8220;the 3 values of the last generation&#8221; as each element has to look-back a different offset amount. This is the first situation that I have seen Perl&#8217;s &#8220;flatten everything always&#8221; approach allow for clearly better code.</p>
+
+<pre><code>sub s2 ( $n ) {
+    state $s2 = [ 0, 0, 1 ];
+    while ( not defined $s2-&gt;[$n] ) {
+        my $s = sum0 @{$s2}[-3,-2,-1];
+        push @{$s2}, $s - $s2-&gt;[-3], $s, $s;
+    }
+    return $s2-&gt;[$n];
+}
+sub s3 ( $n ) {
+    state $s3 = [ s2(0) + s2(1) ];
+    while ( not defined $s3-&gt;[$n] ) {
+        push @{$s3}, $s3-&gt;[-1] + s2($#{$s3} + 1);
+    }
+    return $s3-&gt;[$n];
+}
+sub s123 ( $n ) {
+    my $r;
+    while ( $n &gt; 0 ) {
+        my $k = first { s3($_) &gt; $n } 0..4200; # Enough for 10**600
+        my $pos = $k % 3;
+
+        $r .= $pos + 1; # Digit
+        $n -= sum0 map { s2($_) } ($k-$pos) .. $k;
+    }
+
+    # Should be impossible, but I cannot prove it.
+    die "NEGATIVE N: ", $n if $n &lt; 0;
+
+    return $r;
+}
+</code></pre>
+
+<p>In closing, I want to point out that although all my Raku code is cleaner than its Perl equivalent, that is due in large part to my solutions having leaned on features that Raku added to its Perl origins, so translating them back to Perl makes them &#8220;wordier&#8221;.</p>
+
+<p>The place where Raku was indispensable was in the support for higher-level thinking and lazy infinite lists.</p>
+
+<p>Re-reading my logN Raku code, the three constant lazy infinite arrays, and the block that uses them, feel elegant, almost obvious.
+In reality, it was a treacherous, tortuous trek to tease that algorithm from the torrent of tri-digits. Not remotely obvious. Only elegant at the end. </p>
+
+<p>I can now recreate this code in many languages, but I could not have <em>created</em> it in any language I know, except Raku.</p>
+
+<p><em>/me</em> <em>sleeps</em></p>
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Bruce Gray
+     on Monday 05 July 2021 07:50</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/519.html">#519 - Crystal conference and course</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Hi there!</p>
@@ -71,7 +355,7 @@
      on Monday 05 July 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/07/essence-of-perl-text-processing---perl-book.html">Essence of Perl Text Processing - Perl Book</a></h2>
             </div> <!-- card-header -->
@@ -102,7 +386,7 @@
      on Friday 02 July 2021 09:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jared_martin/2021/07/twc-119-task-1-swap-nibbles-task-2-sequence-without-1-on-1.html">TWC 119: Task #1, Swap Nibbles &amp; Task #2, Sequence without 1-on-1</a></h2>
             </div> <!-- card-header -->
@@ -164,7 +448,7 @@ ok 4 - First 15 in problem description is correct.
      on Monday 05 July 2021 02:07</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/the-perl-shebang-1ojg">The Perl Shebang</a></h2>
             </div> <!-- card-header -->
@@ -247,7 +531,7 @@ ok 4 - First 15 in problem description is correct.
      on Sunday 04 July 2021 22:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/07/monthly-report---june-2.html">Monthly Report - June</a></h2>
             </div> <!-- card-header -->
@@ -400,7 +684,7 @@ ok 4 - First 15 in problem description is correct.
      on Sunday 04 July 2021 18:06</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/hakonhagland/handling-of-symlinks-on-windows-perl-msys2-cygwin-52h3">Handling of symlinks on Windows (Perl, MSYS2, Cygwin)</a></h2>
             </div> <!-- card-header -->
@@ -655,7 +939,7 @@ b) If &lt;target&gt; does not exist, <code>ln -s</code> fails.</p></li>
      on Sunday 04 July 2021 16:14</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/07/04#pwc119">Packing and Unpacking from vacation: The Weekly Challenge 119</a></h2>
             </div> <!-- card-header -->
@@ -735,7 +1019,7 @@ is then reversed on the swapped bits to get the result we want.</p>
      on Sunday 04 July 2021 12:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/raku-ci-bot-grant-2021-06">Raku CI Bot Grant Report June 2021</a></h2>
             </div> <!-- card-header -->
@@ -776,7 +1060,7 @@ real-time.</li>
      on Sunday 04 July 2021 09:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/07/announcing-date-manipx-almanac.html">Announcing Date-ManipX-Almanac</a></h2>
             </div> <!-- card-header -->
@@ -859,7 +1143,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Sunday 04 July 2021 07:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cccxlviii-10-great-cpan-modules.html">(cccxlviii) 10 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -871,7 +1155,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Saturday 03 July 2021 17:12</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdlxxiv-metacpan-weekly-report-pls.html">(cdlxxiv) metacpan weekly report - PLS</a></h2>
             </div> <!-- card-header -->
@@ -883,7 +1167,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Saturday 03 July 2021 17:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdxcvii-stackoverflow-perl-report.html">(cdxcvii) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -893,210 +1177,6 @@ obvious patches. Those curious about my notion of obvious should consult
 
               <p class="text-right"><small>Published by Unknown
      on Saturday 03 July 2021 16:59</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_13">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/07/perl-weekly-challenge-119-swap-nibbles-and-sequence-without-1-on-1.html">Perl Weekly Challenge 119: Swap Nibbles and Sequence without 1-on-1</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 119 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-119/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of days, on Independence Day (July 4, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Swap Nibbles</h2>
-
-<p><em>You are given a positive integer <code>$N</code>.</em></p>
-
-<p><em>Write a script to swap the two nibbles of the binary representation of the given number and print the decimal number of the new binary representation.</em></p>
-
-<pre><code>A nibble is a four-bit aggregation, or half an octet.
-</code></pre>
-
-<p><em>To keep the task simple, we only allow integer less than or equal to 255.</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>Input: $N = 101
-Output: 86
-
-Binary representation of decimal 101 is 1100101 or as 2 nibbles (0110)(0101).
-The swapped nibbles would be (0101)(0110) same as decimal 86.
-
-Input: $N = 18
-Output: 33
-
-Binary representation of decimal 18 is 10010 or as 2 nibbles (0001)(0010).
-The swapped nibbles would be (0010)(0001) same as decimal 33.
-</code></pre>
-
-<h3>Swap Nibbles in Raku</h3>
-
-<p>Raku has a built-in <a href="https://docs.raku.org/routine/base">base</a> method to convert a number to a string representation in a given base, and a <a href="https://docs.raku.org/routine/parse-base">parse-base</a> method to perform the reverse operation. I thought it might be clever to use base 4 rather than base 2 to get directly two nibbles, but it turns out that it doesn&#8217;t make things any simpler than using a binary representation (as done in the Perl representation below). Note that we use the <code>fmt("%04s")</code> method invocation to pad the base-4 string representation with leading 0&#8217;s making the swap of the two nibbles very easy with a regex.</p>
-
-<pre><code>use v6;
-
-for 254, 101, 18 -&gt; $n {
-    my $b4 = $n.base(4).fmt("%04s");
-    # say $n.base(2).fmt("%08s");
-    $b4 ~~ s/(\d**2)(\d**2)/$1$0/;
-    # say $b4.parse-base(4).base(2).fmt("%08s");
-    say "$n -&gt; ", $b4.parse-base(4);
-}
-</code></pre>
-
-<p>With the built-in test cases, this script displays the following output:</p>
-
-<pre><code>$ raku ./swap-nibbles.raku
-254 -&gt; 239
-101 -&gt; 86
-18 -&gt; 33
-</code></pre>
-
-<h3>Swap Nibbles in Perl</h3>
-
-<p>In Perl, we use the built-in <code>sprintf</code> function to convert a number to a binary string representation. And since there is no built-in function to perform the reverse operation, we roll out our own <code>bin2dec</code> subroutine. Otherwise, the Perl implementation is essentially similar to the Raku implementation.</p>
-
-<pre><code>#!/usr/bin/perl
-use strict;
-use warnings;
-use feature qw/say/;
-
-sub bin2dec {
-    my $bin = shift;
-    my $sum = 0;
-    for my $i (split //, $bin) {
-        $sum = $sum * 2 + $i;
-    }
-    return $sum;
-}
-
-for my $test (254, 101, 18) {
-    my $b2 = sprintf "%08b", $test;
-    $b2 =~ s/(\d{4})(\d{4})/$2$1/;
-    say bin2dec $b2;;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  swap-nibbles.pl
-239
-86
-33
-</code></pre>
-
-<h2>Task 2: Sequence without 1-on-1</h2>
-
-<p><em>Write a script to generate sequence starting at 1. Consider the increasing sequence of integers which contain only 1’s, 2’s and 3’s, and do not have any doublets of 1’s like below. Please accept a positive integer <code>$N</code> and print the <code>$N</code>th term in the generated sequence.</em></p>
-
-<pre><code>1, 2, 3, 12, 13, 21, 22, 23, 31, 32, 33, 121, 122, 123, 131, …
-</code></pre>
-
-<p><em>Example:</em></p>
-
-<pre><code>Input: $N = 5
-Output: 13
-
-Input: $N = 10
-Output: 32
-
-Input: $N = 60
-Output: 2223
-</code></pre>
-
-<h3>Sequence without 1-on-1 in Raku</h3>
-
-<p>In Raku, we just build an infinite lazy list representing this sequence. Since it&#8217;s a lazy list, Raku will generate only the sequence numbers needed by the program. We convert a list of consecutive integers into base-4 representations and filter out numbers containing 0&#8217;s or consecutive 1&#8217;s. Note that when we need the <em>n</em>th term of the series, we have to use index <code>n - 1</code>.</p>
-
-<pre><code>use v6;
-
-my $seq-no_1 = grep { not /11 | 0 / }, map { $_.base(4) },
-    1..Inf;
-say $seq-no_1[$_ - 1] for 5, 10, 60;
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>raku ./seq_123.raku
-13
-32
-2223
-</code></pre>
-
-<h3>Sequence without 1-on-1 in Perl</h3>
-
-<p>If we wanted to use the same principle in Perl, since we don&#8217;t have lazy lists, we would have to select a large enough maximum value. For example:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-my @seq = grep { not /11/ } grep /^[1-3]+$/, 1..5000;
-say $seq[$_ + 1] for (5, 10, 60);
-</code></pre>
-
-<p>This would display the following correct output:</p>
-
-<pre><code>$ perl seq_123.pl
-22
-121
-2232
-</code></pre>
-
-<p>But this approach is not very satisfactory because we don&#8217;t know how to select a large enough value. If the selected value is too small, the program will fail, and it it is very large we might be doing a lot of useless computation.</p>
-
-<p>The alternative is to build the successive terms of the sequence. We use the <code>incr</code> subroutine to implement the unusual counting rules. And call it as many times as needed to get the proper result:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub incr {
-    my @num = @{$_[0]};
-    my $i = $#num;
-    while ($i &gt;= 0) {
-        if ($num[$i] &lt; 3) {
-            $num[$i] ++;
-            return \@num;
-        } else {
-            $num[$i] = 1;
-            $i --;
-        }
-    }
-    return [ 1, @num ];
-}
-
-for my $i (5, 10, 60) {
-    my $res =  [0];
-    for (1..$i) {
-        $res = incr $res;
-        $res = incr $res while (join "", @$res) =~ /11/;
-    }
-    say @$res;
-}
-</code></pre>
-
-<p>This yields the same output as before:</p>
-
-<pre><code>$ perl seq_123_2.pl
-13
-32
-2223
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on July 11, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
-     on Friday 02 July 2021 03:08</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_14">
@@ -3389,7 +3469,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 05 July 2021 09:47 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 05 July 2021 10:45 UTC</address>
             </div>
           </div>
         </div><!-- container -->
