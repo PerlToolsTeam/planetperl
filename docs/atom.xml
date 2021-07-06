@@ -7,9 +7,200 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-07-06T13:44:18Z</updated>
+  <updated>2021-07-06T14:44:01Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl debugger superpowers, part 2</title>
+    <link rel="alternate" href="https://dev.to/mjgardner/perl-debugger-superpowers-part-2-307j" type="text/html"/>
+    <content type="html">&lt;p&gt;In March I wrote &lt;a href="https://phoenixtrap.com/2021/03/09/perl-debugger-superpower/"&gt;&lt;em&gt;The Perl debugger can be your superpower&lt;/em&gt;&lt;/a&gt;, introducing the &lt;a href="https://perldoc.pl/perldebug"&gt;step debugger&lt;/a&gt; as a better way to debug your Perl code rather than littering your source with temporary &lt;code&gt;print&lt;/code&gt; statements or logging. I use the debugger all the time, and I’ve realized that some more techniques are worth covering.&lt;/p&gt;
+
+&lt;p&gt;Although I mentioned a &lt;a href="https://phoenixtrap.com/2021/03/09/perl-debugger-superpower/#caveat"&gt;caveat&lt;/a&gt; when debugging web applications, our apps at work all adhere to the Perl Web Server Gateway Interface (&lt;a href="https://metacpan.org/pod/PSGI"&gt;PSGI&lt;/a&gt;) specification and thus we can use tools like &lt;a href="https://metacpan.org/pod/Test::WWW::Mechanize::PSGI"&gt;Test::WWW::Mechanize::PSGI&lt;/a&gt; or &lt;a href="https://metacpan.org/pod/Plack::Test"&gt;Plack::Test&lt;/a&gt; to run tests and debugging sessions in the same Perl process. (Mojolicious users can use something like &lt;a href="https://metacpan.org/pod/Test::Mojo"&gt;Test::Mojo&lt;/a&gt; for the same effect.)&lt;/p&gt;
+
+&lt;p&gt;To demonstrate, let’s get started with something like this which tests that a given route (&lt;code&gt;/say-hello&lt;/code&gt;) returns a certain &lt;a href="https://en.wikipedia.org/wiki/JSON"&gt;JSON&lt;/a&gt; structure (&lt;code&gt;{"message": "Hello world!"}&lt;/code&gt;):&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/env perl&lt;/span&gt;
+
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Test::&lt;/span&gt;&lt;span class="nv"&gt;Most&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Test::WWW::Mechanize::&lt;/span&gt;&lt;span class="nv"&gt;PSGI&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;JSON::&lt;/span&gt;&lt;span class="nv"&gt;MaybeXS&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Local::&lt;/span&gt;&lt;span class="nv"&gt;MyApp&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# name of app's main module&lt;/span&gt;
+
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mech&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Test::WWW::Mechanize::&lt;/span&gt;&lt;span class="nv"&gt;PSGI&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+    &lt;span class="c1"&gt;# a Dancer2 app, so to_app returns a PSGI coderef&lt;/span&gt;
+    &lt;span class="s"&gt;app&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nn"&gt;Local::&lt;/span&gt;&lt;span class="nv"&gt;MyApp&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;to_app&lt;/span&gt;&lt;span class="p"&gt;(),&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;span class="nv"&gt;$mech&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;get_ok&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;/say-hello&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
+&lt;span class="nv"&gt;lives_and&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$json&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;decode_json&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$mech&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;content&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;cmp_deeply&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$json&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="s"&gt;message&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Hello world!&lt;/span&gt;&lt;span class="p"&gt;'}&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;message is Hello world!&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+
+&lt;span class="nv"&gt;done_testing&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+&lt;p&gt;All very fine and well, but what happens if that route starts returning a different message or worse, invalid output that causes &lt;code&gt;decode_json&lt;/code&gt; to fail? Eventually, you’ll rewrite the test in the script to output the offending content when something goes wrong, but right now you want to suss out the root cause.&lt;/p&gt;
+
+&lt;p&gt;Debuggers have the concept of &lt;em&gt;breakpoints&lt;/em&gt;, which are flags that tell the debugger to stop at a certain line of code and wait for instructions. We can set them while running the debugger with the &lt;a href="https://perldoc.pl/perldebug#b-%5Bline%5D-%5Bcondition%5D"&gt;&lt;code&gt;b&lt;/code&gt;&lt;/a&gt; command or continue to a one-time breakpoint with the &lt;a href="https://perldoc.pl/perldebug#c-%5Bline%7Csub%5D"&gt;&lt;code&gt;c&lt;/code&gt;&lt;/a&gt; command, or we can insert them into the code ourselves before running it through the debugger in the first place.&lt;/p&gt;
+
+&lt;p&gt;Add this line right after the &lt;code&gt;lives_and {&lt;/code&gt; line:&lt;br&gt;
+&lt;/p&gt;
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;$&lt;/span&gt;&lt;span class="nn"&gt;DB::&lt;/span&gt;&lt;span class="nv"&gt;single&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+&lt;p&gt;This simulates having typed the &lt;a href="https://perldoc.pl/perldebug#s-%5Bexpr%5D"&gt;&lt;code&gt;s&lt;/code&gt;&lt;/a&gt; command in the debugger at that line, stopping execution at that point. Run our test with &lt;a href="https://perldoc.pl/perlrun#-d"&gt;perl’s &lt;code&gt;-d&lt;/code&gt; option&lt;/a&gt;, and then type &lt;a href="https://perldoc.pl/perldebug#c-%5Bline%7Csub%5D"&gt;&lt;code&gt;c&lt;/code&gt;&lt;/a&gt; to continue to that breakpoint:&lt;br&gt;
+&lt;/p&gt;
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ perl -d -Ilib t/test_psgi.t
+
+Loading DB routines from perl5db.pl version 1.60
+Editor support available.
+
+Enter h or 'h h' for help, or 'man perldebug' for more help.
+
+[Local::MyApp:7170] core @2021-07-06 07:33:22&amp;gt; Built config from files: /Users/mgardner/Projects/blog/myapp/config.yml /Users/mgardner/Projects/blog/myapp/environments/development.yml in (eval 310)[/Users/mgardner/.plenv/versions/5.34.0/lib/perl5/site_perl/5.34.0/Sub/Quote.pm:3] l. 910
+Test2::API::CODE(0x7ffabea39ee8)(/Users/mgardner/.plenv/versions/5.34.0/lib/perl5/site_perl/5.34.0/Test2/API.pm:71):
+71: INIT { eval 'END { test2_set_is_end() }; 1' or die $@ }
+
+  DB&amp;lt;1&amp;gt; c
+
+[...]
+ok 1 - GET /say-hello
+main::CODE(0x7f8069caf2c8)(t/test_psgi.t:14):
+15: my $json = decode_json($mech-&amp;gt;content);
+
+  DB&amp;lt;1&amp;gt; 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+&lt;p&gt;From here we can examine variables, set other breakpoints, or even execute arbitrary lines of code. Let’s see what became of that &lt;a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/GET"&gt;HTTP GET&lt;/a&gt; request:&lt;br&gt;
+&lt;/p&gt;
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;  DB&amp;lt;1&amp;gt; x $mech-&amp;gt;content
+
+0 '{"error":"Undefined subroutine &amp;amp;Local::MyApp::build_frog called at lib/Local/MyApp.pm line 11.\\n"}'
+
+  DB&amp;lt;2&amp;gt; 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+&lt;p&gt;Aha, something has returned some different JSON indicating an error. Let’s look at the lines around (10–20) the offending line (11):&lt;br&gt;
+&lt;/p&gt;
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;  DB&amp;lt;2&amp;gt; f lib/Local/MyApp.pm
+
+  DB&amp;lt;3&amp;gt; l 10-20
+
+10: my $method = 'build_frog';
+11: $method-&amp;gt;();
+12 }
+13: catch ($e) {
+14: send_as JSON =&amp;gt; {error =&amp;gt; $e};
+15 }
+16: send_as JSON =&amp;gt; {message =&amp;gt; 'Hello world!'};
+17: };
+18
+19 sub build_frob {
+20: return;
+
+  DB&amp;lt;4&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+&lt;p&gt;Yep, a typo on line 11, and one that wasn’t caught at compile time since it’s generated at runtime.&lt;/p&gt;
+
+&lt;p&gt;Just to be sure (and to demonstrate some other cool debugger features), let’s set another breakpoint while in the debugger and then exercise that route again. Then we’ll check that &lt;code&gt;$method&lt;/code&gt; variable against the list of available methods in the &lt;code&gt;Local::MyApp&lt;/code&gt; package.&lt;br&gt;
+&lt;/p&gt;
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;  DB&amp;lt;4&amp;gt; b 11
+
+  DB&amp;lt;5&amp;gt; $mech-&amp;gt;get('/say-hello')
+
+[...]
+Local::MyApp::CODE(0x7f8066f2db60)(lib/Local/MyApp.pm:11):
+11: $method-&amp;gt;();
+
+  DB&amp;lt;&amp;lt;6&amp;gt;&amp;gt; x $method
+
+0 'build_frog'
+
+  DB&amp;lt;&amp;lt;7&amp;gt;&amp;gt; m Local::MyApp
+any
+app
+body_parameters
+build_frob
+captures
+config
+content
+[...]
+  DB&amp;lt;&amp;lt;8&amp;gt;&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+&lt;p&gt;No doubt about it, that variable is being set incorrectly.&lt;/p&gt;
+
+&lt;p&gt;Quit out of the debugger with the &lt;a href="https://perldoc.pl/perldebug#q-or-%5ED"&gt;&lt;code&gt;q&lt;/code&gt;&lt;/a&gt; command, make the fix (we probably want errors to give something other than an &lt;a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/200"&gt;HTTP 200 OK&lt;/a&gt; while we’re at it), and re-run the test:&lt;br&gt;
+&lt;/p&gt;
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ perl -Ilib t/test_psgi.t
+
+[Local::MyApp:8277] core @2021-07-06 07:48:36&amp;gt; Built config from files: /Users/mgardner/Projects/blog/myapp/config.yml /Users/mgardner/Projects/blog/myapp/environments/development.yml in (eval 309) l. 910
+Name "DB::single" used only once: possible typo at t/test_psgi.t line 13.
+[Local::MyApp:8277] core @2021-07-06 07:48:36&amp;gt; looking for get /say-hello in /Users/mgardner/.plenv/versions/5.34.0/lib/perl5/site_perl/5.34.0/Dancer2/Core/App.pm l. 35
+[Local::MyApp:8277] core @2021-07-06 07:48:36&amp;gt; Entering hook core.app.before_request in (eval 274) l. 1
+[Local::MyApp:8277] core @2021-07-06 07:48:36&amp;gt; Entering hook core.app.before_file_render in (eval 274) l. 1
+[Local::MyApp:8277] core @2021-07-06 07:48:36&amp;gt; Entering hook core.app.after_file_render in (eval 274) l. 1
+[Local::MyApp:8277] core @2021-07-06 07:48:36&amp;gt; Entering hook core.app.after_request in (eval 274) l. 1
+ok 1 - GET /say-hello
+ok 2 - message is Hello world!
+1..2
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+&lt;p&gt;Note that &lt;a href="https://perldoc.pl/perldiag#Name-%22%25s::%25s%22-used-only-once:-possible-typo"&gt;warning&lt;/a&gt; about leaving &lt;code&gt;$DB::single&lt;/code&gt; in there. While harmless, it’s a good reminder to remove such lines from your code so that they don’t surprise you or your teammates during future debugging sessions.&lt;/p&gt;
+
+&lt;p&gt;And that’s it. Note that because we’re using PSGI, we were able to set breakpoints in our web app code itself and the debugger stopped there and enabled us to have a look around. And as you’ve seen, once you’re at a breakpoint you can &lt;a href="https://perldoc.pl/perldebug#f-filename"&gt;switch to different files&lt;/a&gt;, &lt;a href="https://perldoc.pl/perldebug#b"&gt;add/remove more breakpoints&lt;/a&gt;, &lt;a href="https://perldoc.pl/perldebug#command6"&gt;run arbitrary code&lt;/a&gt;, and more. The &lt;a href="https://perldoc.pl/perldebug"&gt;perldebug&lt;/a&gt; documentation page has all the details.&lt;/p&gt;
+
+&lt;p&gt;Happy debugging! For your reference, here’s the full app module and test script used in this article:&lt;/p&gt;
+
+
+&lt;div class="ltag_gist-liquid-tag"&gt;
+  
+&lt;/div&gt;
+
+
+
+</content>
+    <author>
+      <name>Mark Gardner</name>
+    </author>
+    <id>https://dev.to/mjgardner/perl-debugger-superpowers-part-2-307j</id>
+    <published>2021-07-06T14:00:00Z</published>
+    <updated>2021-07-06T14:00:00Z</updated>
+    <category term="programming"/>
+    <category term="debugging"/>
+    <category term="json"/>
+    <category term="perl"/>
+  </entry>
   <entry>
     <title>TWC 119: Les Nybb and the Arrhythmic Trio</title>
     <link rel="alternate" href="http://blogs.perl.org/users/bruce_gray/2021/07/twc-119-les-nybb-and-the-arrhythmic-trio.html"/>
@@ -2443,120 +2634,6 @@ obvious patches. Those curious about my notion of obvious should consult
     <category term="oop"/>
     <category term="perl"/>
     <category term="refactoring"/>
-  </entry>
-  <entry>
-    <title>Weekly Challenge 119</title>
-    <link rel="alternate" href="https://dev.to/simongreennet/weekly-challenge-119-79j" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-119">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-119/sgreen">My solutions</a></p>
-
-<p>Two quick fire tasks this week.</p>
-
-<h2>
-  <a href="#task-1-swap-nibbles">
-  </a>
-  TASK #1 › Swap Nibbles
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>You are given a positive integer <code>$N</code>.</p>
-
-<p>Write a script to swap the two <a href="https://en.wikipedia.org/wiki/Nibble">nibble</a> of the binary representation of the given number and print the decimal number of the new binary representation. A nibble is a four-bit aggregation, or half an octet.</p>
-
-<p>To keep the task simple, we only allow integer less than or equal to 255.</p>
-
-<h3>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h3>
-
-<p>Rather than turning the number into a binary representation, perform some swapping and then turning it back into a decimal number, I took a more mathematical approach with binary arithmetic.</p>
-
-<p>We take the first nibble and downshift it four place with <code>$number &gt;&gt; 4</code>. We use <a href="https://perldoc.perl.org/perlop#Bitwise-And">bitwise arithmetic</a> to get the second nibble, and multiple that by 16 to make it the first.</p>
-
-<h3>
-  <a href="#examples">
-  </a>
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-1.pl 101
-86
-
-$ ./ch-1.pl 18
-33
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  <a href="#task-2-sequence-without-1on1">
-  </a>
-  TASK #2 › Sequence without 1-on-1
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>Write a script to generate sequence starting at 1. Consider the increasing sequence of integers which contain only 1’s, 2’s and 3’s, and do not have any doublets of 1’s like below. Please accept a positive integer <code>$N</code> and print the $Nth term in the generated sequence.</p>
-
-<p>1, 2, 3, 12, 13, 21, 22, 23, 31, 32, 33, 121, 122, 123, 131, …</p>
-
-<h2>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h2>
-
-<p>For this task, I assign the input number as <code>$counter</code>. I then have a while loop that runs while $counter != 0 and increases the number. I subtract 1 from the $counter if the number only contains 1, 2 and 3s <code>$number =~ /^[123]*$/</code> and the number doesn't have double 1s <code>index( $number, '11' ) == -1</code>.</p>
-
-<h2>
-  <a href="#examples">
-  </a>
-  Examples
-</h2>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-2.pl 5
-13
-
-$ ./ch-2.pl 10
-32
-
-$ ./ch-2.pl 60
-2223
-</code></pre>
-
-</div>
-
-
-
-</div>
-    </content>
-    <author>
-      <name>Simon Green</name>
-    </author>
-    <id>https://dev.to/simongreennet/weekly-challenge-119-79j</id>
-    <published>2021-06-29T07:43:54Z</published>
-    <updated>2021-06-29T07:43:54Z</updated>
-    <category term="perl"/>
-    <category term="theweeklychallenge"/>
   </entry>
   <entry>
     <title>#518 - Becoming book author?</title>

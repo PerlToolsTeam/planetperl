@@ -57,6 +57,194 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-debugger-superpowers-part-2-307j">Perl debugger superpowers, part 2</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>In March I wrote <a href="https://phoenixtrap.com/2021/03/09/perl-debugger-superpower/"><em>The Perl debugger can be your superpower</em></a>, introducing the <a href="https://perldoc.pl/perldebug">step debugger</a> as a better way to debug your Perl code rather than littering your source with temporary <code>print</code> statements or logging. I use the debugger all the time, and I’ve realized that some more techniques are worth covering.</p>
+
+<p>Although I mentioned a <a href="https://phoenixtrap.com/2021/03/09/perl-debugger-superpower/#caveat">caveat</a> when debugging web applications, our apps at work all adhere to the Perl Web Server Gateway Interface (<a href="https://metacpan.org/pod/PSGI">PSGI</a>) specification and thus we can use tools like <a href="https://metacpan.org/pod/Test::WWW::Mechanize::PSGI">Test::WWW::Mechanize::PSGI</a> or <a href="https://metacpan.org/pod/Plack::Test">Plack::Test</a> to run tests and debugging sessions in the same Perl process. (Mojolicious users can use something like <a href="https://metacpan.org/pod/Test::Mojo">Test::Mojo</a> for the same effect.)</p>
+
+<p>To demonstrate, let’s get started with something like this which tests that a given route (<code>/say-hello</code>) returns a certain <a href="https://en.wikipedia.org/wiki/JSON">JSON</a> structure (<code>{"message": "Hello world!"}</code>):<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
+
+<span class="k">use</span> <span class="nn">Test::</span><span class="nv">Most</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Test::WWW::Mechanize::</span><span class="nv">PSGI</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">JSON::</span><span class="nv">MaybeXS</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Local::</span><span class="nv">MyApp</span><span class="p">;</span> <span class="c1"># name of app's main module</span>
+
+<span class="k">my</span> <span class="nv">$mech</span> <span class="o">=</span> <span class="nn">Test::WWW::Mechanize::</span><span class="nv">PSGI</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+    <span class="c1"># a Dancer2 app, so to_app returns a PSGI coderef</span>
+    <span class="s">app</span> <span class="o">=&gt;</span> <span class="nn">Local::</span><span class="nv">MyApp</span><span class="o">-&gt;</span><span class="nv">to_app</span><span class="p">(),</span>
+<span class="p">);</span>
+<span class="nv">$mech</span><span class="o">-&gt;</span><span class="nv">get_ok</span><span class="p">('</span><span class="s1">/say-hello</span><span class="p">');</span>
+<span class="nv">lives_and</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$json</span> <span class="o">=</span> <span class="nv">decode_json</span><span class="p">(</span><span class="nv">$mech</span><span class="o">-&gt;</span><span class="nv">content</span><span class="p">);</span>
+    <span class="nv">cmp_deeply</span><span class="p">(</span> <span class="nv">$json</span><span class="p">,</span> <span class="p">{</span><span class="s">message</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Hello world!</span><span class="p">'}</span> <span class="p">);</span>
+<span class="p">}</span> <span class="p">'</span><span class="s1">message is Hello world!</span><span class="p">';</span>
+
+<span class="nv">done_testing</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+<p>All very fine and well, but what happens if that route starts returning a different message or worse, invalid output that causes <code>decode_json</code> to fail? Eventually, you’ll rewrite the test in the script to output the offending content when something goes wrong, but right now you want to suss out the root cause.</p>
+
+<p>Debuggers have the concept of <em>breakpoints</em>, which are flags that tell the debugger to stop at a certain line of code and wait for instructions. We can set them while running the debugger with the <a href="https://perldoc.pl/perldebug#b-%5Bline%5D-%5Bcondition%5D"><code>b</code></a> command or continue to a one-time breakpoint with the <a href="https://perldoc.pl/perldebug#c-%5Bline%7Csub%5D"><code>c</code></a> command, or we can insert them into the code ourselves before running it through the debugger in the first place.</p>
+
+<p>Add this line right after the <code>lives_and {</code> line:<br>
+</p>
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">$</span><span class="nn">DB::</span><span class="nv">single</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+<p>This simulates having typed the <a href="https://perldoc.pl/perldebug#s-%5Bexpr%5D"><code>s</code></a> command in the debugger at that line, stopping execution at that point. Run our test with <a href="https://perldoc.pl/perlrun#-d">perl’s <code>-d</code> option</a>, and then type <a href="https://perldoc.pl/perldebug#c-%5Bline%7Csub%5D"><code>c</code></a> to continue to that breakpoint:<br>
+</p>
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ perl -d -Ilib t/test_psgi.t
+
+Loading DB routines from perl5db.pl version 1.60
+Editor support available.
+
+Enter h or 'h h' for help, or 'man perldebug' for more help.
+
+[Local::MyApp:7170] core @2021-07-06 07:33:22&gt; Built config from files: /Users/mgardner/Projects/blog/myapp/config.yml /Users/mgardner/Projects/blog/myapp/environments/development.yml in (eval 310)[/Users/mgardner/.plenv/versions/5.34.0/lib/perl5/site_perl/5.34.0/Sub/Quote.pm:3] l. 910
+Test2::API::CODE(0x7ffabea39ee8)(/Users/mgardner/.plenv/versions/5.34.0/lib/perl5/site_perl/5.34.0/Test2/API.pm:71):
+71: INIT { eval 'END { test2_set_is_end() }; 1' or die $@ }
+
+  DB&lt;1&gt; c
+
+[...]
+ok 1 - GET /say-hello
+main::CODE(0x7f8069caf2c8)(t/test_psgi.t:14):
+15: my $json = decode_json($mech-&gt;content);
+
+  DB&lt;1&gt; 
+</code></pre>
+
+</div>
+
+
+<p>From here we can examine variables, set other breakpoints, or even execute arbitrary lines of code. Let’s see what became of that <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/GET">HTTP GET</a> request:<br>
+</p>
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>  DB&lt;1&gt; x $mech-&gt;content
+
+0 '{"error":"Undefined subroutine &amp;Local::MyApp::build_frog called at lib/Local/MyApp.pm line 11.\\n"}'
+
+  DB&lt;2&gt; 
+</code></pre>
+
+</div>
+
+
+<p>Aha, something has returned some different JSON indicating an error. Let’s look at the lines around (10–20) the offending line (11):<br>
+</p>
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>  DB&lt;2&gt; f lib/Local/MyApp.pm
+
+  DB&lt;3&gt; l 10-20
+
+10: my $method = 'build_frog';
+11: $method-&gt;();
+12 }
+13: catch ($e) {
+14: send_as JSON =&gt; {error =&gt; $e};
+15 }
+16: send_as JSON =&gt; {message =&gt; 'Hello world!'};
+17: };
+18
+19 sub build_frob {
+20: return;
+
+  DB&lt;4&gt;
+</code></pre>
+
+</div>
+
+
+<p>Yep, a typo on line 11, and one that wasn’t caught at compile time since it’s generated at runtime.</p>
+
+<p>Just to be sure (and to demonstrate some other cool debugger features), let’s set another breakpoint while in the debugger and then exercise that route again. Then we’ll check that <code>$method</code> variable against the list of available methods in the <code>Local::MyApp</code> package.<br>
+</p>
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>  DB&lt;4&gt; b 11
+
+  DB&lt;5&gt; $mech-&gt;get('/say-hello')
+
+[...]
+Local::MyApp::CODE(0x7f8066f2db60)(lib/Local/MyApp.pm:11):
+11: $method-&gt;();
+
+  DB&lt;&lt;6&gt;&gt; x $method
+
+0 'build_frog'
+
+  DB&lt;&lt;7&gt;&gt; m Local::MyApp
+any
+app
+body_parameters
+build_frob
+captures
+config
+content
+[...]
+  DB&lt;&lt;8&gt;&gt;
+</code></pre>
+
+</div>
+
+
+<p>No doubt about it, that variable is being set incorrectly.</p>
+
+<p>Quit out of the debugger with the <a href="https://perldoc.pl/perldebug#q-or-%5ED"><code>q</code></a> command, make the fix (we probably want errors to give something other than an <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/200">HTTP 200 OK</a> while we’re at it), and re-run the test:<br>
+</p>
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ perl -Ilib t/test_psgi.t
+
+[Local::MyApp:8277] core @2021-07-06 07:48:36&gt; Built config from files: /Users/mgardner/Projects/blog/myapp/config.yml /Users/mgardner/Projects/blog/myapp/environments/development.yml in (eval 309) l. 910
+Name "DB::single" used only once: possible typo at t/test_psgi.t line 13.
+[Local::MyApp:8277] core @2021-07-06 07:48:36&gt; looking for get /say-hello in /Users/mgardner/.plenv/versions/5.34.0/lib/perl5/site_perl/5.34.0/Dancer2/Core/App.pm l. 35
+[Local::MyApp:8277] core @2021-07-06 07:48:36&gt; Entering hook core.app.before_request in (eval 274) l. 1
+[Local::MyApp:8277] core @2021-07-06 07:48:36&gt; Entering hook core.app.before_file_render in (eval 274) l. 1
+[Local::MyApp:8277] core @2021-07-06 07:48:36&gt; Entering hook core.app.after_file_render in (eval 274) l. 1
+[Local::MyApp:8277] core @2021-07-06 07:48:36&gt; Entering hook core.app.after_request in (eval 274) l. 1
+ok 1 - GET /say-hello
+ok 2 - message is Hello world!
+1..2
+</code></pre>
+
+</div>
+
+
+<p>Note that <a href="https://perldoc.pl/perldiag#Name-%22%25s::%25s%22-used-only-once:-possible-typo">warning</a> about leaving <code>$DB::single</code> in there. While harmless, it’s a good reminder to remove such lines from your code so that they don’t surprise you or your teammates during future debugging sessions.</p>
+
+<p>And that’s it. Note that because we’re using PSGI, we were able to set breakpoints in our web app code itself and the debugger stopped there and enabled us to have a look around. And as you’ve seen, once you’re at a breakpoint you can <a href="https://perldoc.pl/perldebug#f-filename">switch to different files</a>, <a href="https://perldoc.pl/perldebug#b">add/remove more breakpoints</a>, <a href="https://perldoc.pl/perldebug#command6">run arbitrary code</a>, and more. The <a href="https://perldoc.pl/perldebug">perldebug</a> documentation page has all the details.</p>
+
+<p>Happy debugging! For your reference, here’s the full app module and test script used in this article:</p>
+
+
+<div class="ltag_gist-liquid-tag">
+  
+</div>
+
+
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Mark Gardner
+     on Tuesday 06 July 2021 14:00</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/bruce_gray/2021/07/twc-119-les-nybb-and-the-arrhythmic-trio.html">TWC 119: Les Nybb and the Arrhythmic Trio</a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -339,7 +527,7 @@ In reality, it was a treacherous, tortuous trek to tease that algorithm from the
      on Monday 05 July 2021 07:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-120-3o3i">Weekly Challenge 120</a></h2>
             </div> <!-- card-header -->
@@ -457,7 +645,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 13:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/outreachy2021-intro">Outreachy Internship - Rosheen working on Open Food Facts</a></h2>
             </div> <!-- card-header -->
@@ -485,7 +673,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 12:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perlweekly.com/archive/519.html">#519 - Crystal conference and course</a></h2>
             </div> <!-- card-header -->
@@ -501,7 +689,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/shared_vision_perl">Finding a shared vision of Perl</a></h2>
             </div> <!-- card-header -->
@@ -585,7 +773,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 07:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/07/essence-of-perl-text-processing---perl-book.html">Essence of Perl Text Processing - Perl Book</a></h2>
             </div> <!-- card-header -->
@@ -616,7 +804,7 @@ $ ./ch-2.pl 04:00
      on Friday 02 July 2021 09:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jared_martin/2021/07/twc-119-task-1-swap-nibbles-task-2-sequence-without-1-on-1.html">TWC 119: Task #1, Swap Nibbles &amp; Task #2, Sequence without 1-on-1</a></h2>
             </div> <!-- card-header -->
@@ -678,7 +866,7 @@ ok 4 - First 15 in problem description is correct.
      on Monday 05 July 2021 02:07</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/grinnz/the-perl-shebang-1ojg">The Perl Shebang</a></h2>
             </div> <!-- card-header -->
@@ -761,7 +949,7 @@ ok 4 - First 15 in problem description is correct.
      on Sunday 04 July 2021 22:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/07/monthly-report---june-2.html">Monthly Report - June</a></h2>
             </div> <!-- card-header -->
@@ -914,7 +1102,7 @@ ok 4 - First 15 in problem description is correct.
      on Sunday 04 July 2021 18:06</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/hakonhagland/handling-of-symlinks-on-windows-perl-msys2-cygwin-52h3">Handling of symlinks on Windows (Perl, MSYS2, Cygwin)</a></h2>
             </div> <!-- card-header -->
@@ -1169,7 +1357,7 @@ b) If &lt;target&gt; does not exist, <code>ln -s</code> fails.</p></li>
      on Sunday 04 July 2021 16:14</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/07/04#pwc119">Packing and Unpacking from vacation: The Weekly Challenge 119</a></h2>
             </div> <!-- card-header -->
@@ -1249,7 +1437,7 @@ is then reversed on the swapped bits to get the result we want.</p>
      on Sunday 04 July 2021 12:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/raku-ci-bot-grant-2021-06">Raku CI Bot Grant Report June 2021</a></h2>
             </div> <!-- card-header -->
@@ -1290,7 +1478,7 @@ real-time.</li>
      on Sunday 04 July 2021 09:04</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/07/announcing-date-manipx-almanac.html">Announcing Date-ManipX-Almanac</a></h2>
             </div> <!-- card-header -->
@@ -1373,7 +1561,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Sunday 04 July 2021 07:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cccxlviii-10-great-cpan-modules.html">(cccxlviii) 10 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -1385,7 +1573,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Saturday 03 July 2021 17:12</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdlxxiv-metacpan-weekly-report-pls.html">(cdlxxiv) metacpan weekly report - PLS</a></h2>
             </div> <!-- card-header -->
@@ -1397,7 +1585,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Saturday 03 July 2021 17:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdxcvii-stackoverflow-perl-report.html">(cdxcvii) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -1409,7 +1597,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Saturday 03 July 2021 16:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/07/01/list-of-new-cpan-distributions-jun-2021/">List of new CPAN distributions – Jun 2021</a></h2>
             </div> <!-- card-header -->
@@ -2374,7 +2562,7 @@ obvious patches. Those curious about my notion of obvious should consult
      on Thursday 01 July 2021 01:24</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/gradual-method-renaming-in-perl-fil">Gradual method renaming in Perl</a></h2>
             </div> <!-- card-header -->
@@ -2435,117 +2623,6 @@ obvious patches. Those curious about my notion of obvious should consult
 
               <p class="text-right"><small>Published by Mark Gardner
      on Tuesday 29 June 2021 14:00</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_19">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-119-79j">Weekly Challenge 119</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-119">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-119/sgreen">My solutions</a></p>
-
-<p>Two quick fire tasks this week.</p>
-
-<h2>
-  <a href="#task-1-swap-nibbles">
-  </a>
-  TASK #1 › Swap Nibbles
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>You are given a positive integer <code>$N</code>.</p>
-
-<p>Write a script to swap the two <a href="https://en.wikipedia.org/wiki/Nibble">nibble</a> of the binary representation of the given number and print the decimal number of the new binary representation. A nibble is a four-bit aggregation, or half an octet.</p>
-
-<p>To keep the task simple, we only allow integer less than or equal to 255.</p>
-
-<h3>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h3>
-
-<p>Rather than turning the number into a binary representation, perform some swapping and then turning it back into a decimal number, I took a more mathematical approach with binary arithmetic.</p>
-
-<p>We take the first nibble and downshift it four place with <code>$number &gt;&gt; 4</code>. We use <a href="https://perldoc.perl.org/perlop#Bitwise-And">bitwise arithmetic</a> to get the second nibble, and multiple that by 16 to make it the first.</p>
-
-<h3>
-  <a href="#examples">
-  </a>
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-1.pl 101
-86
-
-$ ./ch-1.pl 18
-33
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  <a href="#task-2-sequence-without-1on1">
-  </a>
-  TASK #2 › Sequence without 1-on-1
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>Write a script to generate sequence starting at 1. Consider the increasing sequence of integers which contain only 1’s, 2’s and 3’s, and do not have any doublets of 1’s like below. Please accept a positive integer <code>$N</code> and print the $Nth term in the generated sequence.</p>
-
-<p>1, 2, 3, 12, 13, 21, 22, 23, 31, 32, 33, 121, 122, 123, 131, …</p>
-
-<h2>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h2>
-
-<p>For this task, I assign the input number as <code>$counter</code>. I then have a while loop that runs while $counter != 0 and increases the number. I subtract 1 from the $counter if the number only contains 1, 2 and 3s <code>$number =~ /^[123]*$/</code> and the number doesn't have double 1s <code>index( $number, '11' ) == -1</code>.</p>
-
-<h2>
-  <a href="#examples">
-  </a>
-  Examples
-</h2>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-2.pl 5
-13
-
-$ ./ch-2.pl 10
-32
-
-$ ./ch-2.pl 60
-2223
-</code></pre>
-
-</div>
-
-
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Simon Green
-     on Tuesday 29 June 2021 07:43</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_20">
@@ -3363,7 +3440,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 06 July 2021 13:44 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 06 July 2021 14:44 UTC</address>
             </div>
           </div>
         </div><!-- container -->
