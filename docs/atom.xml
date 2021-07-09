@@ -7,9 +7,201 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-07-09T21:44:58Z</updated>
+  <updated>2021-07-09T22:45:08Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 120: Swap Odd/Even Bits and Clock Angle</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2021/07/perl-weekly-challenge-120-swap-oddeven-bits-and-clock-angle.html"/>
+    <id>tag:blogs.perl.org,2021:/users/laurent_r//3226.10291</id>
+    <published>2021-07-10T03:10:58Z</published>
+    <updated>2021-07-10T03:12:13Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 120 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-120/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of days, on July 11, 2021). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Swap Odd/Even Bits</h2>
+
+<p><em>You are given a positive integer <code>$N</code> less than or equal to 255.</em></p>
+
+<p><em>Write a script to swap the odd positioned bit with even positioned bit and print the decimal equivalent of the new binary representation.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $N = 101
+Output: 154
+
+Binary representation of the given number is 01 10 01 01.
+The new binary representation after the odd/even swap is 10 01 10 10.
+The decimal equivalent of 10011010 is 154.
+
+Input: $N = 18
+Output: 33
+
+Binary representation of the given number is 00 01 00 10.
+The new binary representation after the odd/even swap is 00 10 00 01.
+The decimal equivalent of 100001 is 33.
+</code></pre>
+
+<h3>Swap Odd/Even Bits in Raku</h3>
+
+<p>We use the <a href="https://docs.raku.org/routine/fmt">fmt</a> method to convert the input numeral into a binary string. We could also use the <code>base</code> method, but the <code>fmt</code> method makes it possible to also specify an output format on 8 digits in one step (with leading 0&#8217;s when needed). Then, we split the binary string into groups of two digits and swap them. Finally, we use the <a href="https://docs.raku.org/routine/parse-base">parse-base</a> to convert back the result into its numeric equivalent.</p>
+
+<pre><code>use v6;
+
+sub swap-bits (UInt $n where * &lt;=255) {
+    my $bin = $n.fmt("%08b");
+    $bin ~~ s:g/(\d)(\d)/$1$0/;
+    return $bin.parse-base: 2; 
+}
+say "$_ : ", swap-bits $_ for 101, 154, 33, 18;
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./swap_bits.raku
+101 : 154
+154 : 101
+33 : 18
+18 : 33
+</code></pre>
+
+<h3>Swap Odd/Even Bits in Perl</h3>
+
+<p>The Perl program is essentially a port to Perl of the Raku program above. Since Perl doesn&#8217;t have a binary string to numeral conversion, we re-use the <code>bin2dec</code> subroutine implemented last week.</p>
+
+<pre><code>#!/usr/bin/perl
+use strict;
+use warnings;
+use feature qw/say/;
+
+sub bin2dec {
+    my $bin = shift;
+    my $sum = 0;
+    for my $i (split //, $bin) {
+        $sum = $sum * 2 + $i;
+    }
+    return $sum;
+}
+
+for my $test (101, 154, 33, 18) {   
+    my $b2 = sprintf "%08b", $test;
+    $b2 =~ s/(\d)(\d)/$2$1/g;
+    say "$test: ", bin2dec $b2;;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./swap_bits.pl
+101: 154
+154: 101
+33: 18
+18: 33
+</code></pre>
+
+<h2>Task 2: Clock Angle</h2>
+
+<p><em>You are given time <code>$T</code> in the format hh:mm.</em></p>
+
+<p><em>Write a script to find the smaller angle formed by the hands of an analog clock at a given time.</em></p>
+
+<p><em>HINT: A analog clock is divided up into 12 sectors. One sector represents 30 degree (360/12 = 30).</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $T = '03:10'
+Output: 35 degree
+
+The distance between the 2 and the 3 on the clock is 30 degree.
+For the 10 minutes i.e. 1/6 of an hour that have passed.
+The hour hand has also moved 1/6 of the distance between the 3 and the 4, which adds 5 degree (1/6 of 30).
+The total measure of the angle is 35 degree.
+
+Input: $T = '04:00'
+Output: 120 degree
+</code></pre>
+
+<h3>Clock Angle in Raku</h3>
+
+<p>The general problem is not very difficult, but, as with anything having to do with time, there is a number of edge cases making the solution more complicated than we might initially expect.</p>
+
+<p>Here, we compute the angle of each hand with the origin (00h00) measured clockwise. Then we compute the absolute value of the difference. At he end, if we find an angle larger than 180, we replace it by its complement to 360.</p>
+
+<pre><code>use v6;
+
+sub find-angle (Str $t) {
+    my ($h, $m) = split /\:/, $t;
+    # We compute angles in degrees from 0h00 and clockwise
+    my $m-angle = $m * 6;  # or: $m * 360/60
+    my $h-angle = ($h * 360/12 + $m-angle / 12) % 360;
+    my $angle = abs ($m-angle - $h-angle);
+    return $angle &lt;= 180 ?? $angle !!  360 - $angle;
+}
+for &lt;03:10 04:00 07:00 15:10 20:44&gt; -&gt; $test {
+    say "$test: ", find-angle $test;
+}
+</code></pre>
+
+<p>This is the output displayed for the built-in test cases:</p>
+
+<pre><code>$ raku ./find-angle.raku
+03:10: 35
+04:00: 120
+07:00: 150
+15:10: 35
+20:44: 2
+</code></pre>
+
+<h3>Clock Angle in Perl</h3>
+
+<p>This is essentially a port to Perl of the Raku program above (although I must admit that there is one edge case that I originally missed in my Raku implementation and that I corrected after having found out about it in the Perl program).</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub find_angle {
+    my $time = shift;
+    my ($h, $m) = split /:/, $time;
+    # angles counted in deg clockwise from the 0/12 position
+    my $m_angle = $m * 6; # or: $m * 360/60
+    # for the short hand:
+    #     1 hr = 360 / 12 = 30 degrees
+    #     1 min = #m_angle / (360 / 30) = #m_angle /12
+    my $h_angle = ($h * 30 + $m_angle / 12) % 360; 
+    my $hands_angle = abs($h_angle - $m_angle);
+    return  $hands_angle &lt;= 180 ? $hands_angle : 360 - $hands_angle;
+}
+
+for my $t (qw / 03:10 04:00 07:00 15:10 18:00 /) {
+    say "$t: ", find_angle $t;
+}
+</code></pre>
+
+<p>This is the output displayed for the built-in test cases:</p>
+
+<pre><code>$ perl ./find-angle.pl
+03:10: 35
+04:00: 120
+07:00: 150
+15:10: 35
+18:00: 180
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on July 18, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>How I Uploaded a CPAN Module</title>
     <link rel="alternate" href="http://blogs.perl.org/users/c_y_fung/2021/07/how-i-uploaded-a-cpan-module.html"/>
@@ -1136,160 +1328,6 @@ ok 4 - First 15 in problem description is correct.
     <updated>2021-07-04T22:36:55Z</updated>
     <category term="perl"/>
   </entry>
-  <entry>
-    <title>Monthly Report - June</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/mohammad_s_anwar/2021/07/monthly-report---june-2.html"/>
-    <id>tag:blogs.perl.org,2021:/users/mohammad_s_anwar//990.10286</id>
-    <published>2021-07-04T18:06:22Z</published>
-    <updated>2021-07-04T19:06:53Z</updated>
-    <author>
-        <name>Mohammad S Anwar</name>
-        <uri>http://www.manwar.org/</uri>
-    </author>
-    <category term="perlmonthlyreport" label="perl monthly report" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/mohammad_s_anwar/">
-        <![CDATA[<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/header-2021-06.jpg"/></p>
-
-<p><strong>Never been so busy ...</strong></p>
-
-<p>As you all know, I have recently started taking part in the weekly challenge again. I have always complained about the lack of time doing things I always wanted to do. But then it doesn't stop me taking up new projects. I have to learn how to prioritize projects. May be one day, I will get there. Right now I am actively working on 2 new projects simultaneously. First is preparing the talk for the upcoming <strong>Raku Online Conference</strong>. It is going to be my personal journey to <strong>Raku</strong>. And the second is very close to my heart, working on my first book about <strong>Perl</strong> in association with <strong>Dave Cross</strong>.</p>
-
-<p>I am not sure if anyone noticed it but the domain name for the weekly challenge has changed, thanks to <strong>Gabor Szabo</strong>. Although the title was changed long time ago from "<strong>Perl Weekly Challenge</strong>" to "<strong>The Weekly Challenge - Perl & Raku</strong>" but we were still using the original domain, <strong>perlweeklychallenge.org</strong>. I did register the new domain, <strong>theweeklychallenge.org</strong> when the change happened long time ago. I was reluctant to switch the domain as I lack the knowledge and expertise to do it on my own. I asked for help, <strong>Dave</strong> and <strong>Gabor</strong>, kind offered the helping hand. I have started the move but there is still plenty to be moved i.e. to start using "<strong>The Weekly Challenge</strong>". Please don't assume that I am loosing focus on <strong>Perl</strong>. It will remain the prime language along with <strong>Raku</strong>.</p>
-
-<p>With regard to my new job at <strong>Oleeo</strong>, I have finally got to do some <strong>Perl</strong> coding at last. I must say it made me so happy. Prior to this I got my hand dirty with <strong>Ansible</strong> for the first time. It was good learning experience. I really enjoyed it, thanks to all the support I got from fellow colleagues. Although my first <strong>Perl</strong> task is not too complex but it got me to look at the database closely. Thanks to the weekly challenge, I never loose the touch with <strong>Perl</strong> and all its glory. Also I am never short of ideas when dealing with any task, thanks to <strong>Team PWC</strong> for all the smartest solutions. Having done the weekly challenge, my confidence level is always high when it comes to <strong>Perl</strong>. I remember an incident, about <strong>15 odd years</strong> ago, team lead would always try to put me down complaining about my <strong>Perl</strong> knowledge. It did affect my confidence to some extent but luckily I left the company soon after. Ever since, I have been lucky to have very supportive and encouraging colleagues. <strong>Oleeo</strong> too has bunch of familiar faces that can easily fit into my category of best friends.</p>
-
-<p>Lets talk about my <strong>YouTube</strong> videos for the weekly challenge, I have been doing the live video session on/off. In one of the recent video, <strong>Dave</strong> commented and suggested an improvement to my solution. This is the ultimate reward for me. I have had many encouraging messages about my videos. It works like a catalyst for me. Last month, I managed to do two videos as listed below. Please let me know what you think about it.</p>
-
-<p>I would also like to talk about my association with "<strong>Pull Request Club</strong>", run by friend <strong>Kivanc</strong>. The original distribution assigned to me for the month June was something that I couldn't find anything simple and easy to contribute, So I kept it on hold and the last day of the month passed without any contribution. So I hurried up and contacted <strong>Kivanc</strong> for an alternate and he kindly assigned me new distribution. Luckily the new distribution belonged to <strong>Olaf Alders</strong>. I proposed tiny typo in pod as my contribution. It was promptly reviewed and merged by <strong>Olaf</strong>. Thank you <strong>Kivanc</strong> and <strong>Olaf</strong> for saving me from embarrassment.</p>
-
-<p>Just for fun,<strong> CodersRank</strong> thinks I am <strong>ranked #3</strong> Perl developer in UK behind <strong>Dave</strong> and <strong>Toby</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/CodersRank.png"/></p>
-
-<p>Last but not the least, I recently got the personal invitation to join <strong>Sawyer</strong> and <strong>Curtis</strong> LinkedIn network. To me, it is the highlight of the month. I can now proudly say, I belong to the group of <strong>Sawyer</strong> and <strong>Curtis</strong>. They have been my role model ever since I have known them. Just talking about it, make me so happy.</p>
-
-<p>Let's take a quick look through last month main activities.</p>
-
-<ul>
-<li><a href="#a">Pull Request</a></li>
-<li><a href="#b">Git Commits</a></li>
-<li><a href="#c">The Weekly Challenge</a></li>
-<li><a href="#d">YouTube Channel</a></li>
-<li><a href="#e">Meet The Champion</a></li>
-<li><a href="#f">Pull Request Club</a></li>
-<li><a href="#g">Perl Blog</a></li>
-<li><a href="#h">Perl Weekly Newsletter</a></li>
-<li><a href="#i">Patreon</a></li>
-</ul>
-
-<hr id="a"/>
-<h2>Pull Request</h2>
-
-<p><strong>5 Pull Requests</strong> submitted in the month of <strong>June 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-pr-2021-06.png"/></p>
-
-<p><strong>2359 Pull Requests</strong> altogether.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-pr-summary-2021-06.png"/></p>
-
-<hr id="b"/>
-<h2>Git Commits</h2>
-
-<p><strong>754 commits</strong> recorded in the month of <strong>June 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-commits-2021-06.png"/></p>
-
-<p>Overall <strong>4557 commits</strong> recorded in the <strong>year 2021</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/github-commits-summary-2021-06.png"/></p>
-
-<hr id="c"/>
-<h2>The Weekly Challenge</h2>
-
-<p>Following weekly challenges proposed in the month of <strong>June 2021</strong>:</p>
-
-<ul>
-<li><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-116">Challenge #116</a></li>
-<li><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-117">Challenge #117</a></li>
-<li><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-118">Challenge #118</a></li>
-<li><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-119">Challenge #119</a></li>
-</ul>
-
-<p>And <strong>RECAPS</strong> are listed as below:</p>
-
-<ul>
-<li><a href="https://theweeklychallenge.org/blog/recap-challenge-115">RECAP Challenge #115</a></li>
-<li><a href="https://theweeklychallenge.org/blog/recap-challenge-116">RECAP Challenge #116</a></li>
-<li><a href="https://theweeklychallenge.org/blog/recap-challenge-117">RECAP Challenge #117</a></li>
-<li><a href="https://theweeklychallenge.org/blog/recap-challenge-118">RECAP Challenge #118</a></li>
-</ul>
-
-<hr id="d"/>
-<h2>YouTube Channel</h2>
-
-<p>Last month, I created <strong>2 videos</strong> working on various tasks of the weekly challenges.</p>
-
-<h4>The Weekly Challenge - 117 (Task #1: Missing Row)</h4>
-<iframe width="560" height="315" src="https://www.youtube.com/embed/tqxbbEzCZTw" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-
-<p><br></p>
-
-<h4>The Weekly Challenge - 118 (Task #1: Binary Palindrome)</h4>
-<iframe width="560" height="315" src="https://www.youtube.com/embed/LjcWSMEaopc" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-
-<p><br></p>
-
-<p>There are plenty of videos available on my <a href="https://www.youtube.com/c/mohammadsajidanwar">YouTube Channel</a>. If you like the video then please do subscribe to my channel so that you don't miss the weekly fun live coding videos.</p>
-
-<hr id="e"/>
-<h2>Meet The Champion</h2>
-
-<p>Last month, we declared <a href="https://theweeklychallenge.org/blog/meet-the-champion-2021-05">Pete Houston</a> as the Champion of <strong>The Weekly Challenge</strong>. </p>
-
-<p>If you are interested in past champions interview then you can find it all <a href="https://theweeklychallenge.org/champions">here</a>.</p>
-
-<hr id="f"/>
-<h2>Pull Request Club</h2>
-
-<p>Last month, I received <a href="https://metacpan.org/pod/HTTP::Cookies">HTTP::Cookies</a> by <strong>Olaf Alders</strong>. I submitted <a href="https://github.com/libwww-perl/HTTP-Cookies/pull/67">one</a> Pull Request and it has already been accepted and merged by <strong>Olaf Alders</strong>.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/pr-club-2021-06.png"/></p>
-
-<p>Overall participation to <strong>Pull Request Club</strong></p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/pr-club-summary-2021-06.png"/></p>
-
-<hr id="g"/>
-<h2>Perl Blog</h2>
-
-<p>Last month, I blogged about the following topics. </p>
-
-<ul>
-<li><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/06/monthly-report---may-2.html">Monthly Report - May</a></li>
-<li><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/06/let.html">Let's be friend ...</a></li>
-</ul>
-
-<hr id="h"/>
-<h2>Perl Weekly Newsletter</h2>
-
-<p>Last month, I edited two editions of the <strong>Perl Weekly Newsletter</strong> i.e. <a href="http://perlweekly.com/archive/516.html">Issue #516</a> and <a href="http://perlweekly.com/archive/518.html">Issue #518</a>.</p>
-
-<hr id="i"/>
-<h2>Patreon</h2>
-
-<p>At the end of last month, <strong>June 2021</strong>, the following people / organisation supported me in the past or continued supporting me even today. I am humbled by their generosity.</p>
-
-<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/patreon-2021-06.png"/></p>
-
-<p><strong>Do you want to sponsor my work?</strong> </p>
-
-<p>Please follow the <a href="https://www.patreon.com/manwar">Patreon</a> page. </p>
-
-<p><strong>Thank You</strong>.</p>]]>
-        
-    </content>
-</entry>
   <entry>
     <title>Handling of symlinks on Windows (Perl, MSYS2, Cygwin)</title>
     <link rel="alternate" href="https://dev.to/hakonhagland/handling-of-symlinks-on-windows-perl-msys2-cygwin-52h3" type="text/html"/>
