@@ -57,6 +57,180 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/mjgardner/taming-the-moose-picking-the-best-way-to-subclass-perl-methods-p78">Taming the Moose: Picking the best way to subclass Perl methods</a></h2>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>The <code>override</code> keyword in Perl’s <a href="https://metacpan.org/pod/Moose">Moose</a> object system is a nice bit of code-as-documentation since it explicitly states that a given method overrides from its superclass. It also has a <code>super</code> keyword that can be used inside an <code>override</code>, calling “the next most appropriate superclass method with the same arguments as the original method.”</p>
+
+<p>The Moose documentation then goes on to say, “The same thing <em>can</em> be accomplished with a normal method call and the <a href="https://perldoc.pl/perlobj#Inheritance"><code>SUPER::</code></a> pseudo-package; it is really your choice.” So when should you use one and not the other? I decided to find out.</p>
+
+<p>First I defined a simple Moose superclass with a single method:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Local::</span><span class="nv">MyClass</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">my_method</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nv">blessed</span> <span class="vg">$_</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+<span class="p">}</span>
+
+<span class="nv">__PACKAGE__</span> <span class="o">-&gt;</span><span class="nv">meta</span><span class="o">-&gt;</span><span class="nv">make_immutable</span><span class="p">();</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>And then a pair of subclasses, one using Moose’s <code>override</code> keyword and one with a plain <code>sub</code>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Local::MyClass::</span><span class="nv">MyChildOverride</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
+<span class="nv">extends</span> <span class="p">'</span><span class="s1">Local::MyClass</span><span class="p">';</span>
+
+<span class="nv">override</span> <span class="s">my_method</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="k">return</span> <span class="p">'</span><span class="s1">child </span><span class="p">'</span> <span class="o">.</span> <span class="nv">super</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="nv">__PACKAGE__</span> <span class="o">-&gt;</span><span class="nv">meta</span><span class="o">-&gt;</span><span class="nv">make_immutable</span><span class="p">();</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Local::MyClass::</span><span class="nv">MyChildPlain</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
+<span class="nv">extends</span> <span class="p">'</span><span class="s1">Local::MyClass</span><span class="p">';</span>
+
+<span class="k">sub </span><span class="nf">my_method</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="k">return</span> <span class="p">'</span><span class="s1">child </span><span class="p">'</span> <span class="o">.</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nn">SUPER::</span><span class="nv">my_method</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="nv">__PACKAGE__</span> <span class="o">-&gt;</span><span class="nv">meta</span><span class="o">-&gt;</span><span class="nv">make_immutable</span><span class="p">();</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>So far so good, and both can be called successfully:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ perl -Ilib -MLocal::MyClass::MyChildPlain \
+  -MLocal::MyClass::MyChildOverride \
+  -E '$PREFIX = "Local::MyClass::MyChild";
+  for ( qw(Plain Override) ) {
+    $object = "$PREFIX$_"-&gt;new();
+    say $object-&gt;my_method()
+  }'
+child Local::MyClass::MyChildPlain
+child Local::MyClass::MyChildOverride
+</code></pre>
+
+</div>
+
+
+
+<p>Let’s toss in a new wrinkle, though. What if we forgot to define the method in the superclass?<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Local::</span><span class="nv">MyClassNoMethod</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
+
+<span class="nv">__PACKAGE__</span> <span class="o">-&gt;</span><span class="nv">meta</span><span class="o">-&gt;</span><span class="nv">make_immutable</span><span class="p">();</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Both ways of calling the superclass’s method will bug out, of course, but unlike a plain override Moose will actually prevent you from <code>use</code>ing the offending subclass during the <code>BEGIN</code> phase:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ perl -Ilib -MLocal::MyClassNoMethod::MyChildOverride \
+  -E ''
+You cannot override 'my_method' because it has no super method at /Users/mgardner/.plenv/versions/5.34.0/lib/perl5/site_perl/5.34.0/darwin-2level/Moose/Exporter.pm line 419
+    Moose::override('my_method', 'CODE(0x7fe5cb811a88)') called at lib/Local/MyClassNoMethod/MyChildOverride.pm line 9
+    require Local/MyClassNoMethod/MyChildOverride.pm at -e line 0
+    main::BEGIN at lib/Local/MyClassNoMethod/MyChildOverride.pm line 0
+    eval {...} at lib/Local/MyClassNoMethod/MyChildOverride.pm line 0
+Compilation failed in require.
+BEGIN failed--compilation aborted.
+</code></pre>
+
+</div>
+
+
+
+<p>With plain method overriding, you only get an error if you try to call the superclass’s method. If your overridden method doesn’t do that, it’s perfectly safe to define and call. It’s only if you use that <code>SUPER::</code> pseudo-package that things blow up at runtime:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ perl -Ilib -MLocal::MyClassNoMethod::MyChildPlain \
+  -E '$obj = Local::MyClassNoMethod::MyChildPlain-&gt;new();
+  $obj-&gt;my_method()'
+Can't locate object method "my_method" via package "Local::MyClassNoMethod::MyChildPlain" at lib/Local/MyClassNoMethod/MyChildPlain.pm line 8.
+</code></pre>
+
+</div>
+
+
+
+<p>Note that <strong>none of this is caught at compile time</strong>. <code>perl -c</code> will happily compile all these classes and subclasses without a peep:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ find . -name '*.pm' -exec perl -c {} \;
+./lib/Local/MyClass/MyChildPlain.pm syntax OK
+./lib/Local/MyClass/MyChildOverride.pm syntax OK
+./lib/Local/MyClassNoMethod/MyChildPlain.pm syntax OK
+./lib/Local/MyClassNoMethod/MyChildOverride.pm syntax OK
+./lib/Local/MyClass.pm syntax OK
+./lib/Local/MyClassNoMethod.pm syntax OK
+</code></pre>
+
+</div>
+
+
+
+<p>So what can we conclude? Moose’s <code>override</code> is a good way of describing your intent with a subclass, and it will catch you out if you try to use it without a corresponding method in a superclass. <strong>It is a non-standard keyword though</strong> , so syntax-highlighting editors and code analysis tools won’t recognize it unless taught. Further, if your subclass method doesn’t call the same method in a superclass you could eventually get away with removing the latter if you use a plain <code>sub</code>.</p>
+
+<p>I’ve created a <a href="https://github.com/mjgardner/moose_override">small GitHub project</a> with the sample code from this article, including test scripts.</p>
+
+<p>What do you think? Is <code>override</code> suitable for your Moose projects, or are you satisfied with plain <code>sub</code>? Let me know in the comments.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Mark Gardner
+     on Tuesday 13 July 2021 14:00</small></p>
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/dave-report-2021-may-jun">Maintaining Perl 5 (Dave Mitchell): May /June 2021 Report </a></h2>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
@@ -96,7 +270,7 @@ for a new grant).
      on Tuesday 13 July 2021 03:23</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-55-of-perl-workflow-a-minor-feature-release-o1">Release 1.55 of perl-workflow, a minor feature release</a></h2>
             </div> <!-- card-header -->
@@ -160,7 +334,7 @@ for a new grant).
      on Monday 12 July 2021 19:29</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/520.html">#520 - CPAN Bus Factor</a></h2>
             </div> <!-- card-header -->
@@ -179,7 +353,7 @@ for a new grant).
      on Monday 12 July 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jared_martin/2021/07/twc-120-task-1-swap-oddeven-bits-task-2-clock-angle.html">TWC 120: Task #1, Swap Odd/Even bits &amp; Task #2, Clock Angle</a></h2>
             </div> <!-- card-header -->
@@ -227,7 +401,7 @@ ok 5 - One minute after six o'clock, 174.5 degrees.
      on Monday 12 July 2021 02:58</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/07/11#pwc120">Swapping Bits / Time Angle</a></h2>
             </div> <!-- card-header -->
@@ -328,7 +502,7 @@ then the angle is computed directly from those values.</p>
      on Sunday 11 July 2021 17:41</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cccxlix-15-great-cpan-modules-released.html">(cccxlix) 15 great CPAN modules released last week</a></h2>
             </div> <!-- card-header -->
@@ -340,7 +514,7 @@ then the angle is computed directly from those values.</p>
      on Saturday 10 July 2021 22:57</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdlxxv-metacpan-weekly-report-pls.html">(cdlxxv) metacpan weekly report - PLS</a></h2>
             </div> <!-- card-header -->
@@ -352,7 +526,7 @@ then the angle is computed directly from those values.</p>
      on Saturday 10 July 2021 22:52</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdxcviii-stackoverflow-perl-report.html">(cdxcviii) stackoverflow perl report</a></h2>
             </div> <!-- card-header -->
@@ -364,7 +538,7 @@ then the angle is computed directly from those values.</p>
      on Saturday 10 July 2021 22:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/07/perl-weekly-challenge-120-swap-oddeven-bits-and-clock-angle.html">Perl Weekly Challenge 120: Swap Odd/Even Bits and Clock Angle</a></h2>
             </div> <!-- card-header -->
@@ -556,7 +730,7 @@ for my $t (qw / 03:10 04:00 07:00 15:10 18:00 /) {
      on Saturday 10 July 2021 03:10</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2021/07/how-i-uploaded-a-cpan-module.html">How I Uploaded a CPAN Module</a></h2>
             </div> <!-- card-header -->
@@ -747,7 +921,7 @@ Status: Successfully indexed<br />
      on Friday 09 July 2021 11:59</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/dzone-contributor-of-the-month-award-1ce8">DZone Contributor of the Month award</a></h2>
             </div> <!-- card-header -->
@@ -767,7 +941,7 @@ Status: Successfully indexed<br />
      on Tuesday 06 July 2021 18:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-debugger-superpowers-part-2-307j">Perl debugger superpowers, part 2</a></h2>
             </div> <!-- card-header -->
@@ -955,7 +1129,7 @@ ok 2 - message is Hello world!
      on Tuesday 06 July 2021 14:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/bruce_gray/2021/07/twc-119-les-nybb-and-the-arrhythmic-trio.html">TWC 119: Les Nybb and the Arrhythmic Trio</a></h2>
             </div> <!-- card-header -->
@@ -1239,7 +1413,7 @@ In reality, it was a treacherous, tortuous trek to tease that algorithm from the
      on Monday 05 July 2021 07:50</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-120-3o3i">Weekly Challenge 120</a></h2>
             </div> <!-- card-header -->
@@ -1357,7 +1531,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 13:30</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/outreachy2021-intro">Outreachy Internship - Rosheen working on Open Food Facts</a></h2>
             </div> <!-- card-header -->
@@ -1385,7 +1559,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 12:47</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/519.html">#519 - Crystal conference and course</a></h2>
             </div> <!-- card-header -->
@@ -1401,7 +1575,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 10:00</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/shared_vision_perl">Finding a shared vision of Perl</a></h2>
             </div> <!-- card-header -->
@@ -1485,7 +1659,7 @@ $ ./ch-2.pl 04:00
      on Monday 05 July 2021 07:31</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/07/essence-of-perl-text-processing---perl-book.html">Essence of Perl Text Processing - Perl Book</a></h2>
             </div> <!-- card-header -->
@@ -1514,89 +1688,6 @@ $ ./ch-2.pl 04:00
 
               <p class="text-right"><small>Published by Yuki Kimoto
      on Friday 02 July 2021 09:30</small></p>
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_19">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/grinnz/the-perl-shebang-1ojg">The Perl Shebang</a></h2>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Often overlooked, the <a href="https://en.wikipedia.org/wiki/Shebang_(Unix)">shebang</a> of a Perl program is a comment on the first line which tells the (Unix-like) OS how to run the script when invoked directly on the commandline. (It's ignored on Windows, which only looks at the file extension.)<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/perl</span>
-<span class="k">use</span> <span class="nv">v5</span><span class="mf">.16.0</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-<span class="nv">say</span> <span class="p">"</span><span class="s2">Hello world</span><span class="p">";</span>
-</code></pre>
-
-</div>
-
-
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nb">chmod </span>a+x myscript.pl
-./myscript.pl
-</code></pre>
-
-</div>
-
-
-
-<p>But there isn't one right answer for what the shebang should be. <code>/usr/bin/perl</code> may be commonly available, but not always, and may not be the <code>perl</code> the user prefers.</p>
-
-<p>For Perl scripts that are distributed to users to run how they wish, use <code>env</code> to run the <code>perl</code> that comes first in PATH:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Perl scripts distributed on CPAN, however, get installed to a specific <code>perl</code> with their dependencies, so their shebang must also point to that <code>perl</code>. This is handled by a shebang rewrite step in the installation process, but it doesn't work for an <code>env</code> shebang for <a href="https://github.com/Perl-Toolchain-Gang/ExtUtils-MakeMaker/issues/58">historical reasons</a>.</p>
-
-<p>For Perl scripts distributed via CPAN installation, you can use any single-word shebang that ends in <code>perl</code>, even just <code>perl</code>:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!perl</span>
-</code></pre>
-
-</div>
-
-
-
-<p>While developing and testing, the shebang will not have been rewritten yet, so you can invoke it as <code>perl script/myscript.pl</code> to run it with your preferred <code>perl</code> and ignore the shebang. If the script depends on modules in <code>lib/</code> in the same distribution, it is common to run it during development as <code>perl -Ilib script/myscript.pl</code>.</p>
-
-<p>Finally, when you deploy and install a script manually, it should be run with a specific <code>perl</code> so that it doesn't suddenly start running with a different <code>perl</code> from the one it was deployed for, which may not have the script's dependencies installed or may behave subtly differently.</p>
-
-<p>For Perl scripts deployed to a specific location, use the full path to the <code>perl</code> that should run it on that machine:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/perl</span>
-<span class="c1">#!/opt/perl/bin/perl</span>
-<span class="c1">#!/home/user/perl5/perlbrew/perls/perl-5.34.0/bin/perl</span>
-<span class="c1">#!/home/user/.plenv/versions/5.34.0/bin/perl</span>
-</code></pre>
-
-</div>
-
-
-
-<p>You may also find Perl scripts with flags specified in the shebang with hyphens. This doesn't work with <code>env</code> shebangs in many cases, but the two common flags used this way are <code>-w</code> for warnings and <code>-T</code> for taint mode. <code>-w</code> is unnecessary and <a href="https://perldoc.perl.org/warnings#What's-wrong-with-w-and-%24%5EW">discouraged</a>; just <code>use warnings;</code> instead.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Dan Book
-     on Sunday 04 July 2021 22:36</small></p>
             </div><!-- card-footer -->
           </div><!-- card -->
           <div class="card" id="card_20">
@@ -3451,7 +3542,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 13 July 2021 13:46 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 13 July 2021 14:43 UTC</address>
             </div>
           </div>
         </div><!-- container -->
