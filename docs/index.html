@@ -57,6 +57,244 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/07/perl-weekly-challenge-122-average-of-stream-and-basketball-points.html">Perl Weekly Challenge 122: Average of Stream and Basketball Points</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+ on Wednesday 21 July 2021 02:19</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 122 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-122/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days, on July 25, 2021 at 24:00. This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Average of Stream</h2>
+
+<p><em>You are given a stream of numbers, <code>@N</code>.</em></p>
+
+<p><em>Write a script to print the average of the stream at every point.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: @N = (10, 20, 30, 40, 50, 60, 70, 80, 90, ...)
+Output:      10, 15, 20, 25, 30, 35, 40, 45, 50, ...
+
+Average of first number is 10.
+Average of first 2 numbers (10+20)/2 = 15
+Average of first 3 numbers (10+20+30)/3 = 20
+Average of first 4 numbers (10+20+30+40)/4 = 25 and so on.
+</code></pre>
+
+<p>This is often called a <a href="https://en.wikipedia.org/wiki/Moving_average">moving average</a> or a running average, or, more precisely in this case, a cumulative moving average, since we want to compute the mean of all data received so far.</p>
+
+<p>It is of course possible to keep track of all data seen so far and, each time, to recompute the average from the whole dataset using standard formulas. However, if we have the current average and the number of values from which it was computed, it is quite easy to compute the new average with a new value. Suppose that the average of the first five values of a series is 8. This means that the sum <em>s</em> of the first five values was <em>s = 5 x 8</em> = 40. As a new value, say 2, is taken into account, then the new sum is 42, and the new average is <em>42 / 6 = 7</em>. So the rule it to multiply the current average by the current number of values, to add the new value and to divide this new sum by the new number of values, i.e. the current number of values plus 1.</p>
+
+<h3>Average of Stream in Raku</h3>
+
+<p>Implementing the rule described above is fairly straight forward. For our test, we use an infinite (lazy) arithmetic sequence with a common difference of 10 between two consecutive terms.</p>
+
+<pre><code>use v6;
+
+my @n = 10, 20 ... Inf;
+my @cum_moving_avg = @n[0];
+for 1..^10 -&gt; $i {
+    @cum_moving_avg[$i] = (@cum_moving_avg[$i-1] * $i + @n[$i]) / ($i + 1);
+}
+say ~@cum_moving_avg;
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>raku ./mvg_avg.raku
+10 15 20 25 30 35 40 45 50 55
+</code></pre>
+
+<p>Note that, with an arithmetic sequence as input, the output sequence of moving average values is also an arithmetic sequence.</p>
+
+<h3>Average of Stream in Perl</h3>
+
+<p>This is an implementation of the same rule in Perl. We cannot use an infinite sequence in Perl, so we simply use an arithmetic sequence of 10 terms.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @n = (10, 20, 30, 40, 50, 60, 70, 80, 90, 100);
+my @mvg_avg = ($n[0]);
+for my $i (1..9) {
+    $mvg_avg[$i] = ($mvg_avg[$i-1] * $i + $n[$i]) / ($i + 1);
+}
+say "@mvg_avg";
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./mvg_mean.pl
+10 15 20 25 30 35 40 45 50 55
+</code></pre>
+
+<h2>Task 2: Basketball Points</h2>
+
+<p><em>You are given a score <code>$S</code>.</em></p>
+
+<p><em>You can win basketball points e.g. 1 point, 2 points and 3 points.</em></p>
+
+<p><em>Write a script to find out the different ways you can score <code>$S</code>.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: $S = 4
+Output: 1 1 1 1
+        1 1 2
+        1 2 1
+        1 3
+        2 1 1
+        2 2
+        3 1
+
+Input: $S = 5
+Output: 1 1 1 1 1
+        1 1 1 2
+        1 1 2 1
+        1 1 3
+        1 2 1 1
+        1 2 2
+        1 3 1
+        2 1 1 1
+        2 1 2
+        2 2 1
+        2 3
+        3 1 1
+        3 2
+</code></pre>
+
+<h3>Basketball Points in Raku</h3>
+
+<p>I initially tried to use the <code>|</code> and <code>X</code> operators and the <code>combinations</code>, <code>unique</code> and some other method invocations to try to generate the values with a single expression, but turned out to be more difficult than I expected. So, I gave up and decided to use a good old recursive subroutine (<code>find-dist</code>) to generate all possible solutions leading to the target value:</p>
+
+<pre><code>use v6;
+
+my $target = @*ARGS[0] // 5;
+my @vals = 1, 2, 3;
+
+sub find-dist ($sum, @seq) {
+    for @vals -&gt; $i {
+        my $new-sum = $sum + $i;
+        # if $new-sum &gt; $target, then we don't 
+        # need to test other values of @vals and
+        # can use return directly instead of next 
+        # since these values are in ascending order
+        return if $new-sum &gt; $target;
+        my @new-seq = |@seq, $i;
+        if $new-sum == $target {
+            say ~@new-seq;
+            return;
+        } else {
+            find-dist($new-sum, @new-seq);
+        }
+    }
+}
+find-dist 0, ();
+</code></pre>
+
+<p>This displays the following output:</p>
+
+<pre><code>$ raku ./score-dist.raku
+1 1 1 1 1
+1 1 1 2
+1 1 2 1
+1 1 3
+1 2 1 1
+1 2 2
+1 3 1
+2 1 1 1
+2 1 2
+2 2 1
+2 3
+3 1 1
+3 2
+
+$ raku ./score-dist.raku 4
+1 1 1 1
+1 1 2
+1 2 1
+1 3
+2 1 1
+2 2
+3 1
+</code></pre>
+
+<h3>Basketball Points in Perl</h3>
+
+<p>This a port to Perl of the Raku solution using a recursive subroutine:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my $target = shift // 5;
+my @vals = (1, 2, 3);
+
+sub find_dist  {
+    my ($sum, @seq) = @_;
+    for my $i (@vals) {
+        my $new_sum = $sum + $i;
+        # if $new_sum &gt; $target, then we don't 
+        # need to test other values of @vals and
+        # can use return instead of next 
+        # since these values are in ascending order
+        return if $new_sum &gt; $target;
+        my @new_seq = (@seq, $i);
+        if ($new_sum == $target) {
+            say ""@new_seq";
+            return;
+        } else {
+            find_dist($new_sum, @new_seq);
+        }
+    }
+}
+find_dist 0, ();
+</code></pre>
+
+<p>This program generates the following output:</p>
+
+<pre><code>$ perl score-dist.pl
+1 1 1 1 1
+1 1 1 2
+1 1 2 1
+1 1 3
+1 2 1 1
+1 2 2
+1 3 1
+2 1 1 1
+2 1 2
+2 2 1
+2 3
+3 1 1
+3 2
+
+$ perl score-dist.pl 4
+1 1 1 1
+1 1 2
+1 2 1
+1 3
+2 1 1
+2 2
+3 1
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check <a href="https://perlweeklychallenge.org/">https://perlweeklychallenge.org/</a> and make sure you answer the challenge before 23:59 BST (British summer time) on August 1, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/the-four-noisy-horsemen-of-perl-hate-o6p">The four noisy horsemen of Perl hate</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -243,7 +481,7 @@ Whateverville
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/521.html">#521 - Floods in Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -261,7 +499,7 @@ Whateverville
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/regexp-grammars-parse-text-with-markup">Regexp::Grammars parse text with markup or markdown</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -276,7 +514,7 @@ Parsing text with markup (or markdown) is not easy. It took me several days to w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/07/18#pwc121">A Genetic Algorithm solution to the Travelling Salesman Problem</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -452,7 +690,7 @@ This is just in keeping with the city labels starting with 0.)</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/aristotle/2021/07/cpantesters-decline.html">On the eve of CPAN Testers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -501,7 +739,7 @@ This is just in keeping with the city labels starting with 0.)</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/07/perl-weekly-challenge-121-invert-bit.html">Perl Weekly Challenge 121: Invert Bit</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -615,7 +853,7 @@ for my $pair ( [12, 3], [18, 4], [249, 1] ) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cccl-9-great-cpan-modules-released-last.html">(cccl) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -627,7 +865,7 @@ for my $pair ( [12, 3], [18, 4], [249, 1] ) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdlxxvi-metacpan-weekly-report-objectpad.html">(cdlxxvi) metacpan weekly report - Object::Pad</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -639,7 +877,7 @@ for my $pair ( [12, 3], [18, 4], [249, 1] ) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdxcix-stackoverflow-perl-report.html">(cdxcix) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -651,7 +889,7 @@ for my $pair ( [12, 3], [18, 4], [249, 1] ) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/annbarcombstudylaunch">Ann Barcomb study: Survey launch</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -677,7 +915,7 @@ for my $pair ( [12, 3], [18, 4], [249, 1] ) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2021-07-14-perlbrew">perlbrew</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -690,7 +928,7 @@ Das System-Perl zu verwenden hat viele Nachteile. Diese können behoben werden, 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_maintaining_perl_5_dave_mitchell">Grant Proposal: Maintaining Perl 5 Core (Dave Mitchell)</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -732,7 +970,7 @@ Das System-Perl zu verwenden hat viele Nachteile. Diese können behoben werden, 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_july_2021_round">Call for Grants: July 2021 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -770,7 +1008,7 @@ Das System-Perl zu verwenden hat viele Nachteile. Diese können behoben werden, 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/taming-the-moose-picking-the-best-way-to-subclass-perl-methods-p78">Taming the Moose: Picking the best way to subclass Perl methods</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -944,7 +1182,7 @@ Can't locate object method "my_method" via package "Local::MyClassNoMethod::MyCh
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/dave-report-2021-may-jun">Maintaining Perl 5 (Dave Mitchell): May /June 2021 Report </a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -985,7 +1223,7 @@ for a new grant).
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1-55-of-perl-workflow-a-minor-feature-release-o1">Release 1.55 of perl-workflow, a minor feature release</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1049,7 +1287,7 @@ for a new grant).
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/520.html">#520 - CPAN Bus Factor</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1068,7 +1306,7 @@ for a new grant).
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jared_martin/2021/07/twc-120-task-1-swap-oddeven-bits-task-2-clock-angle.html">TWC 120: Task #1, Swap Odd/Even bits &amp; Task #2, Clock Angle</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1116,7 +1354,7 @@ ok 5 - One minute after six o'clock, 174.5 degrees.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/07/11#pwc120">Swapping Bits / Time Angle</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1217,7 +1455,7 @@ then the angle is computed directly from those values.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cccxlix-15-great-cpan-modules-released.html">(cccxlix) 15 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1229,7 +1467,7 @@ then the angle is computed directly from those values.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/07/cdlxxv-metacpan-weekly-report-pls.html">(cdlxxv) metacpan weekly report - PLS</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1241,7 +1479,7 @@ then the angle is computed directly from those values.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/07/perl-weekly-challenge-120-swap-oddeven-bits-and-clock-angle.html">Perl Weekly Challenge 120: Swap Odd/Even Bits and Clock Angle</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1429,197 +1667,6 @@ for my $t (qw / 03:10 04:00 07:00 15:10 18:00 /) {
 
         
 
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_23">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/c_y_fung/2021/07/how-i-uploaded-a-cpan-module.html">How I Uploaded a CPAN Module</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by C.-Y. Fung
- on Friday 09 July 2021 11:59</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>So, accumulating effort from Wednesday, today(Friday) I become a <b><a href="https://www.metacpan.org/">CPAN</a></b> contributor!</p>
-
-<p>I got a <b><a href="https://pause.perl.org/">PAUSE</a></b> ID 2 weeks ago. If you are also interested in the Perl ecosystem, you may consider to apply for a PAUSE ID as well.</p>
-
-<p>In this blogpost, I mainly follow the instructions here: </p>
-<ul><li><font color="#003366"><a href="https://www.perlmonks.com/?node_id=158999">How to make a CPAN Module Distribution</a>, by tachyon, <a href="https://www.perlmonks.com/">PerlMonks</a>, Apr 14, 2002.</font></li></ul>
-
-<p>Some contents of the PerlMonks article are largely repeated here.</p>
-
-<p>This piece of PerlMonks article is already 19-year-old, but it is 
-still valid. One of the good things of the article is that you need not 
-install new modules or programs if you are on a *nix system.</p>
-
-<h4> Prerequisites </h4>
-
-<p>One should have some knowledge on modules, packages and, not really necessary, object-oriented Perl ("Perl OO" in short). </p>
-
-<p>Note that the Perl OO I have used in my first product is the "bless" 
-Perl OO system, neither Moo nor Moose. Honestly I guess it is better for
- future maintenance if you choose to use Moo or other modern Perl OO 
-system.</p>
-
-<p>One should know how to write POD.</p>
-
-<p>One should know how to use some of the <tt>Test::XXXX</tt> suite.</p>
-
-<h5> If you have never heard of any one of key terms above... </h5><div><li><a href="https://metacpan.org/pod/Moo">https://metacpan.org/pod/Moo</a></li><li><a href="https://metacpan.org/pod/Moose">https://metacpan.org/pod/Moose</a></li><li><a href="https://perldoc.perl.org/perlpod">https://perldoc.perl.org/perlpod</a></li><li><a href="https://www.perlmonks.com/?node_id=11106010">Basic Testing Tutorial</a> by hippo, <a href="https://www.perlmonks.com/">PerlMonks</a>, Sep 11, 2019</li></div><div><br /></div>
-
-
-
-
-
-
-
-
-
-
-<h4> Getting Started </h4>
-
-<p>I had focused on typing/coding up three files:</p>
-
-<ol><li><tt>a_perl_script_with_the_to-be_released_package.pl</tt></li><li><tt>a_perl_script_for_testing.pl</tt></li><li><tt>contents_I_would_like_to_see_on_the_description_page_of_the_module_on_metacpan.txt</tt></li></ol>
-
-<p>For assistancy, I wrote a Perl script which did more time-consuming requests or for seeing the output of methods as well. <tt><a href="https://metacpan.org/pod/Data::Dumper">Data::Dumper</a></tt> was a great help.</p>
-
-<p>After finishing up (1) and (2), I re-organized the codes in (1) and (2) into</p>
-
-<ol><li><tt>Cryptarithm.pm</tt></li><li><tt>test.pl</tt></li></ol>
-
-And I converted the format of (3) into POD format, and checked the content. A helper was <tt><a href="https://metacpan.org/pod/Pod::Html">Pod::Html</a></tt>.
-
-<div style="color:white; background-color:black; padding-left: 5px;"><pre>  use Pod::Html qw/pod2html/;
-
-  pod2html("",
-         "--infile=./page.pod",
-         "--outfile=./podpage.html");
-</pre></div>
-<h4> Preparing to be seen by the World </h4>
-
-<p>Almostly exactly follow the instructions on <a href="https://www.perlmonks.com/?node_id=158999">the PerlMonks article by tachyon</a>:</p>
-
-<p>I moved to a directory "<tt>~/build</tt>". Then</p>
-
-<div style="color:white; background-color:black; padding-left: 5px;"><pre>$ h2xs -AX Math::Cryptarithm</pre></div>
-
-<p>After some trivial editing, renaming and directory operations, the structure of the "<tt>~/build</tt>" directory became</p>
-
-<div style="color:white; background-color:black; padding-left: 5px;"><pre>$ tree
-.
-└── Math-Cryptarithm
-    ├── Changes
-    ├── lib
-    │&nbsp;&nbsp; └── Math
-    │&nbsp;&nbsp;     └── Cryptarithm.pm
-    ├── Makefile.PL
-    ├── MANIFEST
-    ├── README
-    └── t
-        └── test.t</pre></div>
-
-
-<p>I had mainly edited <tt>Cryptarithm.pm</tt>, put the content of (1) onto it (update the version number!), and then put the POD-formatted content of (3) after <tt>__END__</tt> in <tt>Cryptarithm.pm</tt> .</p>
-
-<h4> Packaging </h4>
-<p>Almostly exactly follow the instructions on <a href="https://www.perlmonks.com/?node_id=158999">the PerlMonks article by tachyon</a>:</p>
-
-<div style="color:white; background-color:black; padding-left: 5px;"><pre>$ tar -czf Math-Cryptarithm-0.02.tar.gz Math-Cryptarithm-0.02</pre>
-</div>
-
-Then I copied the <tt>Math-Cryptarithm-0.02.tar.gz</tt> to "<tt>~/test</tt>" directory via Linux Desktop Environment. Back to the shell:
-
-<div style="color:white; background-color:black; padding-left: 5px;"><pre>$ cd ~/test
-$ tar -xzvf Math-Cryptarithm-0.02.tar.gz
-$ cd Math-Cryptarithm-0.02
-$ perl Makefile.PL
-Checking if your kit is complete...
-Looks good
-Generating a Unix-style Makefile
-Writing Makefile for Math::Cryptarithm
-Writing MYMETA.yml and MYMETA.json
-$ make
-cp lib/Math/Cryptarithm.pm blib/lib/Math/Cryptarithm.pm
-Manifying 1 pod document
-$ make test
-PERL_DL_NONLAZY=1 "/home/linuxbrew/.linuxbrew/Cellar/perl/5.34.0/bin/perl" "-MExtUtils::Command::MM" "-MTest::Harness" "-e" "undef *Test::Harness::Switches; test_harness(0, 'blib/lib', 'blib/arch')" t/*.t
-t/test.t .. ok     
-All tests successful.
-Files=1, Tests=10, 34 wallclock secs ( 0.00 usr  0.02 sys + 34.47 cusr  0.00 csys = 34.49 CPU)
-Result: PASS
-$ sudo make install
-[sudo] password for <i>user_name</i>:
-Manifying 1 pod document
-Installing /home/<i>user_name</i>/perl5/lib/perl5/Math/Cryptarithm.pm
-Installing /home/<i>user_name</i>/perl5/man/man3/Math::Cryptarithm.3
-Appending installation info to /home/<i>user_name</i>/perl5/lib/perl5/x86_64-linux-thread-multi/perllocal.pod
-</pre></div>
-
-<p>It seemed all ok.</p>
-
-<h4>Interaction with PAUSE </h4>
-<p>I uploaded the <tt>.tar.gz</tt> file via <a href="https://pause.perl.org/">https://pause.perl.org/</a> . Soon I got an email</p>
-
-<blockquote>"The uploaded file<br />
-<br />
-    Math-Cryptarithm-0.02.tar.gz<br />
-<br />
-has entered CPAN as<br />
-<br />
-  file: $CPAN/authors/id/C/CY/<i>myPAUSEID</i>/Math-Cryptarithm-0.02.tar.gz<br />
-  size: XX bytes<br />
-   md5: XX<br />
-  sha1: XX<br />
-<br />
-CPAN Testers will start reporting results in an hour or so:<br />
-<br />
-  http://matrix.cpantesters.org/?dist=Math-Cryptarithm<br />
-<br />
-Request entered by: <i>myPAUSEID</i> (<i>my name</i>)<br />
-Request entered on: Fri, 09 Jul 2021 08:09:53 GMT<br />
-Request completed:  Fri, 09 Jul 2021 08:10:59 GMT<br />
-<br />
-Thanks,<br />
--- <br />
-paused, v1049"</blockquote>
-
-<p>Passing <a href="http://www.cpantesters.org/">the CPAN Testers</a> is NOT necessary for the module to appear on CPAN. </p>
-
-<p>Within three minutes after receiving the above email from PAUSE, I 
-got another email from them, with the title "PAUSE indexer report <i>myPAUSEID</i>/Math-Cryptarithm-0.02.tar.gz":</p>
-
-<blockquote>"The following report has been written by the PAUSE namespace indexer.<br />
-...<br />
-<br />
-  User: ...<br />
-  Distribution file: Math-Cryptarithm-0.02.tar.gz<br />
-  Number of files: 6<br />
-  *.pm files: 1<br />
-  README: Math-Cryptarithm-0.02/README<br />
-  META-File: No META.yml or META.json found<br />
-  META-Parser: Parse::CPAN::Meta 1.4414<br />
-  META-driven index: no<br />
-  Timestamp of file: Fri Jul  9 08:10:58 2021 UTC<br />
-  Time of this run: Fri Jul  9 08:12:30 2021 UTC<br />
-<br />
-Status of this distro: OK<br />
-=========================<br />
-<br />
-<br />
-The following packages (grouped by status) have been found in the distro:<br />
-<br />
-Status: Successfully indexed<br />
-============================<br />
-...<br />
-"
-</blockquote>
-
-<p>And I could see my module in <a href="https://metacpan.org/recent">https://metacpan.org/recent</a> . □</p>
-        
            </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
@@ -3256,7 +3303,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 20 July 2021 20:42 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 21 July 2021 00:57 UTC</address>
             </div>
           </div>
         </div><!-- container -->
