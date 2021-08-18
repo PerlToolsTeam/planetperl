@@ -57,6 +57,154 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/damian_conway/2021/08/a-dream-realized.html">A dream realized</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Damian Conway
+ on Wednesday 18 August 2021 01:56</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Have you heard that they are finally putting together a proposal to add a clean modern OO system into the core of Perl? </p>
+
+<p>If you haven’t, I strongly encourage you to look over <a href="https://github.com/Ovid/Cor">the RFC for Corrina</a>, or at least watch Ovid’s <a href="https://www.youtube.com/watch?v=kSZO-aJg4dM">excellent presentation</a> on the project.</p>
+
+<p>It’s reassuring that <a href="https://github.com/Ovid/Cor/blob/master/rfc/overview.md#contributors">the list of contributors</a> to the proposed design includes some of the most highly respected names in the Perl community, many of whom have previously taken one (or more!) tilts at this particular object-oriented windmill.</p>
+
+<p>Indeed, over the past two decades I too have repeatedly attempted to design and prototype richer and more robust OO systems for Perl, starting way back in the previous millennium with a brief stint as the maintainer of <a href="https://metacpan.org/pod/Class::Struct">Class::Struct</a>, and continuing on though the release of modules such as <a href="https://metacpan.org/pod/Class::Std">Class::Std</a>, <a href="https://metacpan.org/pod/Class::Delegation">Class::Delegation</a>, and most recently: <a href="https://metacpan.org/pod/Dios">Dios</a>.</p>
+
+<p>The Dios module represented almost everything I thought a comprehensive Perl OO system should contain. Not surprisingly, that actually meant it simply stole almost everything that <a href="https://docs.raku.org/language/classtut">Raku’s comprehensive OO system</a> contains <em>(mostly because I had spent quite a lot of time over the past two decades helping design that OO mechanism as well)</em>.</p>
+
+<p>The only three problems with Dios are:</p>
+
+<ul>
+<li>It’s not built-in to Perl itself, so its performance is suboptional;</li>
+<li>It’s not built-in to Perl itself, so it requires <a href="https://youtu.be/ob6YHpcXmTg?t=493">a huge amount of extremely complex multi-layer code</a> to make it feel as if is;</li>
+<li>It’s not built-in to Perl itself, so it's merely one possible choice amongst the vast and incoherent array of entirely reasonable alternatives already on CPAN.</li>
+</ul>
+
+<p>That’s why, when people ask me whether I support the Corinna proposal, my response is: <strong><em>OH, HELL YES!</em></strong> I’ve literally been waiting two decades to see Perl gain a proper, built-in, declarative, encapsulated, and performant OO system. And this, I firmly believe, is it.</p>
+
+<p>At this point I could launch into one of my usual extended exegeses on why this particular design is so exceptionally good, but I think two quick and specific examples are actually sufficient to explain my excitement about this proposal.</p>
+
+<p>The first example is purely syntactic. If you were kind enough to watch the <a href="https://youtu.be/ob6YHpcXmTg?t=493">Three Little Words video</a> in which I introduced Dios, you’ll have seen how that module vastly improves the syntax for declaring a Perl class. Instead of something like:</p>
+
+<pre><code>  package Account {
+      use experimental 'signatures';
+      use Carp 'croak';
+
+      state $next_ID = 'AAA0001';
+
+      sub new($class, %arg) {
+          bless {
+              name    =&gt; $arg{name}    // croak('Missing name arg'),
+              balance =&gt; $arg{balance} // 0,
+              ID      =&gt; $arg{ID}      // $next_ID++,
+          }, $class;
+      }
+
+      sub name ($self, $newname) {
+          $self-&gt;{name} = $newname if defined $newname;
+          return $self-&gt;{name};
+      }
+
+      sub balance ($self, $newbalance) {
+          $self-&gt;{balance} = $newbalance if defined $newbalance;
+          return $self-&gt;{name};
+      }
+
+      sub ID ($self, $newID) {
+          croak 'Cannot modify ID attribute' if defined $newID;
+          return $self-&gt;{ID};
+      }
+
+      sub deposit ($self, $amount) {
+          $self-&gt;balance( $self-&gt;balance + $amount );
+      }
+
+      sub report ($self, $fh = *STDOUT) {
+          $fh-&gt;say( $self-&gt;ID.': '.$self-&gt;balance );
+      }
+  }
+</code></pre>
+
+<p>...Dios allows you to achieve exactly the same functionality with just:</p>
+
+<pre><code>  use Dios;
+
+  class Account {
+      state $next_ID = 'AAA0001';
+
+      has $.name     is rw  is required;
+      has $.balance  = 0;
+      has $.ID       = $next_ID++;
+
+      method deposit ($amount) {
+          $balance += $amount;
+      }
+
+      method report ($fh = *STDOUT) {
+          $fh-&gt;say( "$ID: $balance" );
+      }
+  }
+</code></pre>
+
+<p>Not only is that three times less code, it’s three times simpler code, which means it’s also likely to be code that’s three times less buggy.</p>
+
+<p>But what really excites me about Corinna is that, under that proposal, the same code would look like this:</p>
+
+<pre><code>  use experimental 'class';
+
+  class Account {
+
+      state $next_ID = 'AAA0001';
+
+      has $name     :param :reader :writer;
+      has $balance  :param :reader  = 0;
+      has $ID              :reader  = $next_ID++;
+
+      method deposit ($amount) {
+          $balance += $amount;
+      }
+
+      method report ($fh = *STDOUT) {
+          $fh-&gt;say( "$ID: $balance" );
+      }
+  }
+</code></pre>
+
+<p>In other words: just as concise, just as readable, just as declarative. But without the huge behind-the-scenes overheads that Dios currently imposes.</p>
+
+<p>The second example that illustrates why I’m so enthusiastic about the Corinna proposal is simply a subset of the first example. If we zoom in on that <code>deposit()</code> method:</p>
+
+<pre><code>  # under Corinna
+  method deposit ($amount) {
+      $balance += $amount;
+  }
+</code></pre>
+
+<p>...we can see an important improvement over the current standard Perl version <em>(or indeed over what would be required under Moose or Moo or Object::InsideOut or most other existing OO frameworks)</em>:</p>
+
+<pre><code>  # under current Perl
+  sub deposit ($self, $amount) {
+      $self-&gt;balance( $self-&gt;balance + $amount );
+  }
+</code></pre>
+
+<p>Under Corinna, the slots of an object are accessed directly via simple scalar variables (<em>e.g.</em> <code>$balance</code>) , not indirectly via accessor methods (<em>e.g.</em> <code>$self->balance</code>).
+This means that each individual slot access is going to be vastly faster under Corinna, and so almost every method call will likewise be significantly less expensive. For instance, each call to <code>deposit()</code> is likely to be at least three times quicker, because we’re dispensing with the two addition embedded method calls to <code>$self->balance()</code>.</p>
+
+<p>There are so many other reasons to be enthusiastic about this proposed addition to standard Perl, not the least of which is that it <strong><em>will</em></strong> become standard and universally available, which may finally cut through the endless debate over whether your next project should use Moose or Moos or Moo or Mu or Spiffy or Object::InsideOut or Class::InsideOut or Class::Simple or Class::Easy or Class::Tiny or Class::Std or Dios or...</p>
+
+<p>So, yes, I’m very excited about the <a href="https://github.com/Ovid/Cor">RFC for Corinna</a>, and I strongly encourage you to take a look for yourself at the powerful new OO features that will soon be proposed for Perl.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-raku-best-frenemies-2hal">Perl &amp; Raku: Best frenemies</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -156,7 +304,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-126-19fg">Weekly Challenge 126</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -267,7 +415,7 @@ x 1 1 3 x 2 0 0 1 x
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/daniel_sockwell_board_candidate">Daniel Sockwell candidacy for Board positon</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -329,7 +477,7 @@ x 1 1 3 x 2 0 0 1 x
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/525.html">#525 - Vacation time?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -345,7 +493,7 @@ x 1 1 3 x 2 0 0 1 x
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/08/perl-weekly-challenge-125-pythagorean-triples.html">Perl Weekly Challenge 125: Pythagorean Triples</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -551,7 +699,7 @@ for my $test (1..30) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/returning-a-list-from-a-subroutine">Returning multiple values or a list from a subroutine in Perl</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -566,7 +714,7 @@ It is really easy to return multiple values from a subroutine in Perl. One just 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/08/cccliv-11-great-cpan-modules-released.html">(cccliv) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -578,7 +726,7 @@ It is really easy to return multiple values from a subroutine in Perl. One just 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/08/cdlxxx-metacpan-weekly-report.html">(cdlxxx) metacpan weekly report - IO::Async </a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -590,7 +738,7 @@ It is really easy to return multiple values from a subroutine in Perl. One just 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/privacy-and-speed-with-perl-s-object-pad-433c">Privacy and speed with Perl’s Object::Pad</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -622,7 +770,7 @@ It is really easy to return multiple values from a subroutine in Perl. One just 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/itcharlie/2021/08/ev-charge-calculator-from-script-to-dancer-web.html">EV charge calculator from script to Dancer web</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -652,7 +800,7 @@ I then copy over the files inside this directory to my project repository as sho
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/524.html">#524 - Object::Pad</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -670,7 +818,7 @@ I then copy over the files inside this directory to my project repository as sho
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jared_martin/2021/08/twc-124-literalism-and-existence-proofs-in-the-service-of-stress-reduction.html">TWC 124: Literalism and existence proofs in the service of stress reduction</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -721,7 +869,7 @@ I then copy over the files inside this directory to my project repository as sho
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/binary-search-in-perl-array">Binary search in Perl array</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -738,7 +886,7 @@ Given a sorted(!) array of strings and a single string, what is the fastest way 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/08/perl-weekly-challenge-124-happy-women-day-and-tug-of-war.html">Perl Weekly Challenge 124: Happy Women Day and Tug of War</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1804,7 +1952,7 @@ for my $test ( [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/08/cccliii-12-great-cpan-modules-released.html">(cccliii) 12 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1816,7 +1964,7 @@ for my $test ( [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/08/cdlxxix-metacpan-weekly-report-objectpad.html">(cdlxxix) metacpan weekly report - Object::Pad</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1828,7 +1976,7 @@ for my $test ( [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/08/di-stackoverflow-perl-report.html">(di) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1840,7 +1988,7 @@ for my $test ( [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_july_2021_votes">Grants: July 2021 Votes</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1870,7 +2018,7 @@ for my $test ( [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/cat_review">Board review: Community Affairs Team</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1928,36 +2076,6 @@ for my $test ( [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
 
     
          </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_20">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/ron_savage/2021/08/railroad-diagrams-for-sql-2003-and-sql-2016.html">Railroad diagrams for SQL 2003 and SQL 2016</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Ron Savage
- on Thursday 05 August 2021 13:53</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>On github at <a href="https://github.com/ronsavage/SQL">https://github.com/ronsavage/SQL</a> you will find a repo of SQL stuff created by Jonathan Leffler.</p>
-
-<p>I recently added some files for SQL 2003 and SQL 2016, created by Domingo Alvarez Duarte.</p>
-
-<p>Specifically, look for:<br />
-o sql-2003-2.ebnf<br />
-o sql-2003-2.ebnf.readme<br />
-o sql-2003-2-railroad-diagrams.xhtml<br />
-o sql-2016.ebnf<br />
-o sql-2016.ebnf.readme<br />
-o sql-2016-railroad-diagrams.xhtml</p>
-
-<p>I'd suggest downloading the *.xhtml files and viewing them locally, rather than hammering the on-line convertor mentioned in the readme files, which accepts *.ebnf files and displays these railroad diagrams.</p>
-
-<p>And that begs the question: Is there any Perl code which converts a grammar into a railroad diagram?<br />
-</p>
-        
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3760,7 +3878,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 18 August 2021 04:47 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 18 August 2021 08:44 UTC</address>
             </div>
           </div>
         </div><!-- container -->
