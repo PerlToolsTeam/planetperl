@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-08-19T00:57:11Z</updated>
+  <updated>2021-08-19T04:46:50Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -15,13 +15,13 @@
     <link rel="alternate" href="http://blogs.perl.org/users/damian_conway/2021/08/a-dream-realized.html"/>
     <id>tag:blogs.perl.org,2021:/users/damian_conway//875.10373</id>
     <published>2021-08-18T01:56:42Z</published>
-    <updated>2021-08-19T00:50:27Z</updated>
+    <updated>2021-08-19T02:53:49Z</updated>
     <author>
         <name>Damian Conway</name>
         <uri>http://damian.conway.org</uri>
     </author>
     <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/damian_conway/">
-        <![CDATA[<p>Have you heard that they are finally putting together a proposal to add a clean modern OO system into the core of Perl? </p>
+        <![CDATA[<p>Have you heard that they are finally putting together a proposal to add a clean modern OO system into the core of Perl?</p>
 
 <p>If you haven’t, I strongly encourage you to look over <a href="https://github.com/Ovid/Cor">the RFC for Corinna</a>, or at least watch Ovid’s <a href="https://www.youtube.com/watch?v=kSZO-aJg4dM">excellent presentation</a> on the project.</p>
 
@@ -52,34 +52,37 @@
       state $next_ID = 'AAA0001';
 
       sub new($class, %arg) {
+          croak('Cannot specify ID as an constructor argument')
+              if exists $arg{ID};
           bless {
               name    =&gt; $arg{name}    // croak('Missing name arg'),
               balance =&gt; $arg{balance} // 0,
-              ID      =&gt; $arg{ID}      // $next_ID++,
+              ID      =&gt; $next_ID++,
           }, $class;
       }
 
-      sub name ($self, $newname) {
-          $self-&gt;{name} = $newname if defined $newname;
+      sub name ($self) {
           return $self-&gt;{name};
       }
 
-      sub balance ($self, $newbalance) {
-          $self-&gt;{balance} = $newbalance if defined $newbalance;
+      sub set_name ($self, $newname) {
+          $self-&gt;{name} = $newname;
+      }
+
+      sub balance ($self) {
           return $self-&gt;{name};
       }
 
-      sub ID ($self, $newID) {
-          croak 'Cannot modify ID attribute' if defined $newID;
+      sub ID ($self) {
           return $self-&gt;{ID};
       }
 
       sub deposit ($self, $amount) {
-          $self-&gt;balance( $self-&gt;balance + $amount );
+          $self-&gt;{balance} += $amount;
       }
 
       sub report ($self, $fh = *STDOUT) {
-          $fh-&gt;say( $self-&gt;ID.': '.$self-&gt;balance );
+          $fh-&gt;say( $self-&gt;ID . ': ' . $self-&gt;balance );
       }
   }
 </code></pre>
@@ -131,7 +134,7 @@
 
 <p>In other words: just as concise, just as readable, just as declarative. But without the huge behind-the-scenes overheads that Dios currently imposes.</p>
 
-<p>The second example that illustrates why I’m so enthusiastic about the Cor proposal is simply a subset of the first example. If we zoom in on that <code>deposit()</code> method:</p>
+<p>The second example that illustrates why I’m so enthusiastic about the Corinna proposal is simply a subset of the first example. If we zoom in on that <code>deposit()</code> method:</p>
 
 <pre><code>  # under Corinna
   method deposit ($amount) {
@@ -139,16 +142,49 @@
   }
 </code></pre>
 
-<p>...we can see an important improvement over the current standard Perl version <em>(or indeed over what would be required under Moose or Moo or Object::InsideOut or most other existing OO frameworks)</em>:</p>
+<p>...we can see an important improvement over the current standard Perl version:</p>
 
-<pre><code>  # under current Perl
+<pre><code>  # under standard Perl
+  sub deposit ($self, $amount) {
+      $self-&gt;{balance} += $amount;
+  }
+</code></pre>
+
+<p>...and an even greater improvement over what would be required under
+Moose or Moo or Object::InsideOut or most other existing OO frameworks:</p>
+
+<pre><code>  # under most OO frameworks
   sub deposit ($self, $amount) {
       $self-&gt;balance( $self-&gt;balance + $amount );
   }
 </code></pre>
 
-<p>Under Corinna, the slots of an object are accessed directly via simple scalar variables (<em>e.g.</em> <code>$balance</code>) , not indirectly via accessor methods (<em>e.g.</em> <code>$self->balance</code>).
-This means that each individual slot access is going to be vastly faster under Corinna, and so almost every method call will likewise be significantly less expensive. For instance, each call to <code>deposit()</code> is likely to be at least three times quicker, because we’re dispensing with the two addition embedded method calls to <code>$self->balance()</code>.</p>
+<p>Under Corinna, the slots of an object are accessed via simple scalar variables (<em>e.g.</em> <code>$balance</code>) , not via a (slower) hash look-up (<em>e.g.</em> <code>$self->{balance}</code> or via (much slower) accessor methods (<em>e.g.</em> <code>$self->balance</code>).</p>
+
+<p>This means that each individual slot access is going to be faster under Corinna, and so almost every method call will likewise be less expensive. For instance, each call to <code>deposit()</code> is likely to be at least three times quicker than under any of the many OO frameworks, because we’re dispensing with the two additional embedded method calls to <code>$self->balance()</code>.</p>
+
+<p>More subtly, if we happened to misspell our slot variable:</p>
+
+<pre><code>  # under standard Perl
+  sub deposit ($self, $amount) {
+      $self-&gt;{balence} += $amount;
+      # Silent bug (autovivifies useless 'balence' key)
+  }
+
+  # under most OO frameworks
+  sub deposit ($self, $amount) {
+      $self-&gt;balance( $self-&gt;balence + $amount );
+      # Runtime exception ("No such method 'balence'...")
+  }
+
+  # under Corinna
+  method deposit ($amount) {
+      $balence += $amount;
+      # Compile-time exception: ("No such variable: $balence...")
+  }
+</code></pre>
+
+<p>I don't know about you, but I'd <em>much</em> rather discover this problem the first time I compile the code, rather than at the first time it happens to actually be executed or, even worse, after a long and fruitless day of trying to debug the mysterious absence of recent deposit amounts.</p>
 
 <p>There are so many other reasons to be enthusiastic about this proposed addition to standard Perl, not the least of which is that it <strong><em>will</em></strong> become standard and universally available, which may finally cut through the endless debate over whether your next project should use Moose or Moos or Moo or Mu or Spiffy or Object::InsideOut or Class::InsideOut or Class::Simple or Class::Easy or Class::Tiny or Class::Std or Dios or...</p>
 
@@ -2693,177 +2729,4 @@ Parsing text with markup (or markdown) is not easy. It took me several days to w
       <name>Gabor Szabo</name>
     </author>
 </entry>
-  <entry>
-    <title>A Genetic Algorithm solution to the Travelling Salesman Problem</title>
-    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/07/18#pwc121" type="text/html"/>
-    <content type="html">
-&lt;p&gt;&lt;em&gt;The examples used here are from The Weekly Challenge problem statement and demonstrate 
-the working solution.&lt;/em&gt;&lt;/p&gt;
-
-&lt;h2&gt;Part 1&lt;/h2&gt;
-
-&lt;p&gt;&lt;em&gt;You are given integers 0 &amp;lt;= $m &amp;lt;= 255 and 1 &amp;lt;= $n &amp;lt;= 8. Write a script to invert $n bit 
-from the end of the binary representation of $m and print the decimal representation of 
-the new binary number.&lt;/em&gt;&lt;/p&gt;
-
-&lt;h3&gt;Solution&lt;/h3&gt;
-
-&lt;pre&gt;&lt;code class="perl"&gt;
-use strict;
-use warnings;
-sub flip_bit_n{
-    my($x, $n) = @_;
-    my $bits = substr(unpack("B32", pack("N", $x)), 24, 8);
-    my @bits = split(//, $bits);
-    $bits[@bits - $n] ^= 1;
-    my $flipped_decimal = unpack("N", pack("B32", substr("0" x 32 . join("", @bits), -32)));
-    return $flipped_decimal;
-}
-
-MAIN:{
-    my($M, $N);
-    $M = 12;
-    $N = 3;
-    print flip_bit_n($M, $N) . "\n";
-    $M = 18;
-    $N = 4;
-    print flip_bit_n($M, $N) . "\n";
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h3&gt;Sample Run&lt;/h3&gt;
-
-&lt;pre&gt;&lt;code class="shell"&gt;
-$ perl perl/ch-1.pl
-8 
-26
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h3&gt;Notes&lt;/h3&gt;
-
-&lt;p&gt;This code re-uses much of the code from &lt;a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/07/11#pwc120"&gt;last week's challenge solution&lt;/a&gt;.
-The only difference is that this week we flip the specified nth bit using the XOR 
-operator. I think that this may be the first time I have ever used a &lt;code&gt;^=&lt;/code&gt; operation!&lt;/p&gt;
-
-&lt;h2&gt;Part 2&lt;/h2&gt;
-
-&lt;p&gt;&lt;em&gt;You are given a NxN matrix containing the distances between N cities. Write a script to 
-find a round trip of minimum length visiting all N cities exactly once and returning to 
-the start.&lt;/em&gt;&lt;/p&gt;
-
-&lt;h3&gt;Solution&lt;/h3&gt;
-
-&lt;pre&gt;&lt;code class="perl"&gt;
-use strict;
-use warnings;
-use boolean;
-use AI::Genetic;
-
-use constant N =&gt; 7;
-
-my @matrix= ([0, 5, 2, 7],
-             [5, 0, 5, 3],
-             [3, 1, 0, 6],
-             [4, 5, 4, 0]);
-
-sub fitness{
-    my($genes) = @_;
-    my $cost = 0;
-    return -1 if $genes-&gt;[0] != $genes-&gt;[@{$genes} - 1];
-    my @path = sort {$a &lt;=&gt; $b} @{$genes}[0 .. @{$genes} - 2];
-    for my $i (0 .. (@path - 2)){
-        return -1 if $path[$i] == $path[$i + 1];
-    }
-    for my $i (0 .. @{$genes} - 2){
-        $cost += $matrix[$genes-&gt;[$i]][$genes-&gt;[$i + 1]];
-    }
-    return 1/$cost;
-}
-
-sub terminate{
-    return true;
-}
-
-MAIN:{
-    srand(121);
-    my $aig = new AI::Genetic(
-        -fitness    =&gt; \&amp;fitness,
-        -type       =&gt; "rangevector",
-        -population =&gt; 500,
-        -crossover  =&gt; 0.9,
-        -mutation   =&gt; 0.1,
-    );
-    my $genes = [];
-    for (0 .. N + 1){
-        push @{$genes}, [0, N];
-    }
-    @matrix = ();
-    for (0 .. N){
-        my $row = [];
-        for my $i (0 .. N){
-            push @{$row}, int(rand(N * 2 + 1));
-        }
-        push @matrix, $row;
-    }
-    $aig-&gt;init(
-        $genes
-    );
-    $aig-&gt;evolve("tournamentUniform", 100000);
-    my $path = $aig-&gt;getFittest()-&gt;genes();
-    print join(",", @{$path}) . "\n";
-    my $cost;
-    for my $i (0 .. @{$path} - 2){
-        $cost += $matrix[$path-&gt;[$i]][$path-&gt;[$i + 1]];
-    }
-    print "cost: $cost\n";
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h3&gt;Sample Run&lt;/h3&gt;
-
-&lt;pre&gt;&lt;code class="shell"&gt;
-$ perl perl/ch-2.pl
-3,0,1,2,3
-cost: 10
-$ perl perl/ch-2.pl
-3,1,7,5,4,6,0,2,3
-cost: 24
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h3&gt;Notes&lt;/h3&gt;
-
-&lt;p&gt;I have used Genetic Algorithm (GA) approaches to a bunch of these challenge problems in the 
-past. I will admit that in some cases the GA approach is more for fun than as a good
-example of the sorts of problems GA is good for. This time, however, we have a somewhat
-classic use case!&lt;/p&gt;
-
-&lt;p&gt;The Travelling Salesman Problem is well known to be NP-Hard and Genetic Algorithms are a
-well studied approach to tackling these beasts.&lt;/p&gt;
-
-&lt;p&gt;I first tested this solution with the example in the original problem statement, hardcoded
-here in &lt;code&gt;@matrix&lt;/code&gt; and obtained a result which matched the known correct one. Then, testing
-with increasingly larger values of &lt;code&gt;N&lt;/code&gt; to generate random matrices I continued to get 
-seemingly correct results. I did not verify these by hand. Instead I set a random seed
-with &lt;code&gt;srand&lt;/code&gt; and verified that I got the same cost results over several runs. As needed
-I would adjust the number of generations in the &lt;code&gt;evolve()&lt;/code&gt; method call upwards until again
-getting results which converged on the same cost value.&lt;/p&gt;
-
-&lt;p&gt;For a 20 x 20 matrix I seem to be getting correct results, but runtimes are quite lengthy 
-and I ran out of time to test this further. However, I am very confident that a correct 
-path is obtainable this way although perhaps some additional slight adjustment of 
-parameters is necessary.&lt;/p&gt;
-
-&lt;p&gt;(Hopefully nobody is too terribly confused by this, but please do notice that the size
-of the matrix is actually N + 1. That is, in order to obtain a matrix like the one given
-in the problem statement you specify an N of 3, although obviously this is a 4 x 4 matrix.
-This is just in keeping with the city labels starting with 0.)&lt;/p&gt;
-
-&lt;h2&gt;References&lt;/h2&gt;
-
-&lt;p&gt;&lt;a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-121/"&gt;Challenge 121&lt;/a&gt;&lt;/p&gt;</content>
-    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc121</id>
-    <published>2021-07-18T23:36:00-04:00</published>
-    <updated>2021-07-18T23:36:00-04:00</updated>
-    <category term="/perl"/>
-  </entry>
 </feed>
