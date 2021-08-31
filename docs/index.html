@@ -57,6 +57,160 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/mjgardner/taming-the-moose-method-modifiers-instead-of-overrides-in-object-oriented-perl-4ag2">Taming the Moose: Method modifiers instead of overrides in object-oriented Perl</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Mark Gardner
+ on Tuesday 31 August 2021 14:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Last month <a href="https://phoenixtrap.com/2021/07/13/taming-the-moose-picking-the-best-way-to-subclass-perl-methods/">I wrote about using Moose’s <code>override</code> function</a> to, well, override a superclass’s method. <a href="https://chris.prather.org/">Chris Prather</a> on the <a href="https://kiwiirc.com/nextclient/#irc://irc.perl.org/moose">#moose IRC channel</a> suggested soon after that the <a href="https://metacpan.org/dist/Moose/view/lib/Moose/Manual/MethodModifiers.pod#Around-modifiers"><code>around</code> method modifier</a> (or its little sisters <a href="https://metacpan.org/dist/Moose/view/lib/Moose/Manual/MethodModifiers.pod#Before-and-after-Modifiers"><code>before</code> and <code>after</code></a>) might be a better choice if you’re also calling the original method inside. He noted that “at a minimum <code>override</code> only works if you’re subclassing, <code>around</code> will apply to composed methods too.”</p>
+
+<p>His point was that when you decide to compose <a href="https://metacpan.org/pod/Moose::Manual::Roles">roles</a> (also know as <a href="https://en.wikipedia.org/wiki/Trait_(computer_programming)">traits</a>) instead of or in addition to more traditional inheritance, <code>override</code> simply doesn’t work: only a method modifier will do. (And as <a href="https://haarg.org/">Graham Knop</a> and <a href="https://github.com/karenetheridge">Karen Etheridge</a> later remarked on IRC, <code>override</code> isn’t even an option if you’re using <a href="https://metacpan.org/pod/Moo">Moo</a> as an alternative to Moose.)</p>
+
+<p>Modifying a role’s method with <code>around</code> might look like this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
+
+<span class="k">use</span> <span class="nv">v5</span><span class="mf">.12</span><span class="p">;</span> <span class="c1"># for strict and say</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+
+<span class="nb">package</span> <span class="nn">Local::Role::</span><span class="nv">Hungry</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Moose::</span><span class="nv">Role</span><span class="p">;</span>
+<span class="nv">requires</span> <span class="p">'</span><span class="s1">name</span><span class="p">';</span>
+
+<span class="k">sub </span><span class="nf">wants_food</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="nv">say</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">,</span> <span class="p">'</span><span class="s1"> is hungry!</span><span class="p">';</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="nb">package</span> <span class="nn">Local::</span><span class="nv">GuineaPig</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
+<span class="nv">has</span> <span class="s">name</span> <span class="o">=&gt;</span> <span class="p">(</span><span class="s">is</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">');</span>
+<span class="nv">with</span> <span class="p">'</span><span class="s1">Local::Role::Hungry</span><span class="p">';</span>
+
+<span class="nv">around</span> <span class="s">wants_food</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$orig</span><span class="p">,</span> <span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nb">splice</span> <span class="err">@</span><span class="nv">_</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">;</span>
+    <span class="nv">say</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">,</span> <span class="p">'</span><span class="s1"> runs to the front of the cage!</span><span class="p">';</span>
+    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">$orig</span><span class="p">(</span><span class="err">@</span><span class="nv">_</span><span class="p">);</span>
+    <span class="nv">say</span> <span class="p">'</span><span class="s1">Wheek!</span><span class="p">';</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="nb">package</span> <span class="nn">Local::</span><span class="nv">Dog</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
+<span class="nv">has</span> <span class="s">name</span> <span class="o">=&gt;</span> <span class="p">(</span><span class="s">is</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">');</span>
+<span class="nv">with</span> <span class="p">'</span><span class="s1">Local::Role::Hungry</span><span class="p">';</span>
+
+<span class="nv">around</span> <span class="s">wants_food</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$orig</span><span class="p">,</span> <span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nb">splice</span> <span class="err">@</span><span class="nv">_</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">;</span>
+    <span class="nv">say</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">,</span> <span class="p">'</span><span class="s1"> runs to the kitchen!</span><span class="p">';</span>
+    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">$orig</span><span class="p">(</span><span class="err">@</span><span class="nv">_</span><span class="p">);</span>
+    <span class="nv">say</span> <span class="p">'</span><span class="s1">Woof!</span><span class="p">';</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="nv">before</span> <span class="s">wants_food</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="nv">say</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">,</span> <span class="p">'</span><span class="s1"> is jumping!</span><span class="p">';</span>
+<span class="p">};</span>
+
+<span class="nb">package</span> <span class="nv">main</span><span class="p">;</span>
+<span class="k">my</span> <span class="nv">$dog</span> <span class="o">=</span> <span class="nn">Local::</span><span class="nv">Dog</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">name</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">Seamus</span><span class="p">');</span>
+<span class="k">my</span> <span class="nv">@pigs</span> <span class="o">=</span> <span class="nb">map</span> <span class="p">{</span> <span class="nn">Local::</span><span class="nv">GuineaPig</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">name</span> <span class="o">=&gt;</span> <span class="vg">$_</span><span class="p">)</span> <span class="p">}</span>
+  <span class="sx">qw&lt;Cocoa Ginger Pepper&gt;</span><span class="p">;</span>
+
+<span class="k">for</span> <span class="k">my</span> <span class="nv">$animal</span> <span class="p">(</span><span class="nv">$dog</span><span class="p">,</span> <span class="nv">@pigs</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">$animal</span><span class="o">-&gt;</span><span class="nv">wants_food</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Running the above yields:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>Seamus runs to the kitchen!
+Seamus is hungry!
+Woof!
+Cocoa runs to the front of the cage!
+Cocoa is hungry!
+Wheek!
+Ginger runs to the front of the cage!
+Ginger is hungry!
+Wheek!
+Pepper runs to the front of the cage!
+Pepper is hungry!
+Wheek!
+</code></pre>
+
+</div>
+
+
+
+<p>It’s a little more involved than overriding a <a href="https://perldoc.perl.org/functions/sub"><code>sub</code></a>, since method modifiers are passed both the consumed role’s original method (<code>$orig</code> above) and the instance (<code>$self</code> above) as parameters. It has the same effect, though, and you can call the original method by saying <code>$self-&gt;$orig(parameters)</code>. That’s why I used the <a href="https://perldoc.perl.org/functions/splice"><code>splice</code> function</a> so I could pass any remaining parameters as the original <a href="https://perldoc.perl.org/variables/@_"><code>@_</code> array</a>.</p>
+
+<p>If all you want to do is have something happen either before or after the original method, just use <code>before</code> or <code>after</code>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">before</span> <span class="s">wants_food</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
+    <span class="nv">say</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">name</span><span class="p">,</span> <span class="p">'</span><span class="s1"> is jumping!</span><span class="p">';</span>
+<span class="p">};</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Note that there’s no return value in a <code>before</code> or <code>after</code> modifier, as those are handled by the original method.</p>
+
+<p>Modifiers aren’t limited to consuming classes; they can be in roles and modify their consumers’ methods. They also have a couple of other tricks:</p>
+
+<ul>
+<li>You can pass an <a href="https://perldoc.perl.org/perlref#Square-Brackets">array reference</a> to modify multiple methods at once.</li>
+<li>You can use the contents of a variable to specify the modified method name, and use that same variable in the modifier itself.</li>
+<li>You can use a <a href="https://perldoc.perl.org/perlre">regular expression</a> to select methods. (Beware if you’re using Moo that its <a href="https://metacpan.org/pod/Class::Method::Modifiers">Class::Method::Modifiers</a> module doesn’t support this.)</li>
+</ul>
+
+<p>Putting these together gives you constructs like these:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">after</span> <span class="sx">qw&lt;foo bar baz&gt;</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="nv">say</span> <span class="p">'</span><span class="s1">Something got called</span><span class="p">';</span>
+<span class="p">};</span>
+
+<span class="k">for</span> <span class="k">my</span> <span class="nv">$method_name</span> <span class="p">(</span><span class="sx">qw&lt;foo bar baz&gt;</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">before</span> <span class="nv">$method_name</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+        <span class="nv">say</span> <span class="p">"</span><span class="s2">Calling </span><span class="si">$method_name</span><span class="s2">...</span><span class="p">";</span>
+    <span class="p">};</span>
+<span class="p">}</span>
+
+<span class="nv">before</span> <span class="sx">qr/^request_/</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">,</span> <span class="nv">@args</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">is_valid</span><span class="p">(</span><span class="nv">@args</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">die</span> <span class="p">'</span><span class="s1">Invalid arguments</span><span class="p">';</span>
+<span class="p">};</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Moose comes with great introductory manuals for <a href="https://metacpan.org/dist/Moose/view/lib/Moose/Manual/MethodModifiers.pod">method modifiers</a>and <a href="https://metacpan.org/dist/Moose/view/lib/Moose/Manual/Roles.pod">roles</a>, so be sure to check those out. There’s a lot more to them and a blog can only cover so much.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/08/objectpad-yuki-kimotos-2021-08-25---default-internal-data-structure-of-the-object.html">Object::Pad Yuki Kimoto's 2021-08-25 - Default internal data structure of the object</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -105,7 +259,7 @@ class Point {<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-jose-joaquin-atria-2m5h">The ephemeral miniconf - José Joaquín Atria</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -150,7 +304,7 @@ class Point {<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-clement-oudot-2a1a">The ephemeral miniconf - Clement Oudot</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -186,7 +340,7 @@ class Point {<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/08/perl-weekly-challenge-127-disjoint-sets-and-conflict-intervals.html">Perl Weekly Challenge 127: Disjoint Sets and Conflict Intervals</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -358,7 +512,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-128-1ng1">Weekly Challenge 128</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -496,7 +650,7 @@ $ ./ch-2.pl "(10:20, 11:00, 11:10, 12:20, 16:20, 19:00)" "(10:30, 13:20, 12:40, 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/527.html">#527 - New school-year?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -514,7 +668,7 @@ $ ./ch-2.pl "(10:20, 11:00, 11:10, 12:20, 16:20, 19:00)" "(10:30, 13:20, 12:40, 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-speaker-annoucement-314d">The ephemeral miniconf - Stephane Gigandet</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -547,55 +701,6 @@ $ ./ch-2.pl "(10:20, 11:00, 11:10, 12:20, 16:20, 19:00)" "(10:30, 13:20, 12:40, 
 <p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--wTTAbExH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/94hc70rqt17j2c6c5rc4.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--wTTAbExH--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/94hc70rqt17j2c6c5rc4.png" alt="OpenFoodFacts"></a></p>
 
 <p>As you guessed, Stephane Gigandet will talk about <a href="https://world.openfoodfacts.org/">Open Food Facts</a></p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_8">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-speaker-annoucement-4n8f">The ephemeral miniconf - Juan Julián Merelo</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
- on Monday 30 August 2021 07:09</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><h1>
-  <a href="#speaker-announcement-juan-juli%C3%A1n-merelo">
-  </a>
-  Speaker announcement: Juan Julián Merelo
-</h1>
-
-<p><a href="https://thibaultduponchelle.github.io/the-ephemeral-miniconf/"><strong>The ephemeral miniconf</strong></a> is a Perl and Raku miniconf or maybe it's a Raku and Perl miniconf 😀</p>
-
-<p>It's with great pleasure that I present today one of the first speaker that joined the miniconf ☺️</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--ZnJRT3ax--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/0r1ybf7ww0yhgcsq07t6.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--ZnJRT3ax--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/0r1ybf7ww0yhgcsq07t6.png" alt="Speaker annoucement - Juan Julián Merelo"></a></p>
-
-<p><a href="https://github.com/JJ"><strong>Juan Julián Merelo</strong></a> is a very experienced Perl and Raku developer, a professor, a researcher and most of all a major <em>community pilar</em>.</p>
-
-<p>I wanted to insist on this point since Juan Julián Merelo gave several talks and even recently managed the organization of the Raku (and Perl) room at FOSDEM 2021. </p>
-
-<h2>
-  <a href="#bio">
-  </a>
-  Bio
-</h2>
-
-<p>Juan Julián Merelo from his own bio: <br>
-"JJ Merelo is a Perl user since 1993. He has used it continously at his day job as professor at the University of Granada, contributed to CPAN since 2001 and participated in two YAPC conferences talking about evolutionary algorithms in Perl and organised YAPC 2015. He's known to engage people who say that other languages are better than Perl, specially those who, besides, think that vim is better than emacs. Recently published a book about Perl 6."</p>
-
-<p>emacs is better than vim 😯 </p>
-
-<h2>
-  <a href="#talk">
-  </a>
-  Talk
-</h2>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--6vtkoOdJ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4ospmwjic1q4chlznxv2.jpg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--6vtkoOdJ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4ospmwjic1q4chlznxv2.jpg" alt="Top Secret"></a></p>
-
-<p>From my secret infos, Juan Julián Merelo should talk about Raku (he recently published a couple of books on Raku! ❤️)</p>
 
        </div><!-- card-text -->     </div>
             <div class="card-footer">
@@ -2375,7 +2480,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 31 August 2021 12:51 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 31 August 2021 16:51 UTC</address>
             </div>
           </div>
         </div><!-- container -->
