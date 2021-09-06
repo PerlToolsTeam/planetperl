@@ -90,6 +90,91 @@
           </div><!-- card -->
           <div class="card" id="card_2">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/preaction/yancy-the-next-model-ndi">Yancy: The Next Model</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Doug Bell
+ on Monday 06 September 2021 18:15</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p><a href="http://preaction.me/yancy">Yancy</a> is a <a href="https://en.wikipedia.org/wiki/Content_management_system">content management system</a> and application framework for the <a href="https://mojolicious.org">Mojolicious</a> web framework. For the last year, I've been using it to develop <a href="https://metacpan.org/pod/Zapp">Zapp, my workflow automation webapp</a>. Over that time, it became harder and harder to organize all the code needed to manipulate Zapp's data. To solve this problem, I wrote <a href="http://preaction.me/yancy/perldoc/Yancy/Guides/Model">Yancy::Model</a>.</p>
+
+<p>Mojolicious is a <a href="https://docs.mojolicious.org/Mojolicious/Guides/Growing#Model-View-Controller">Model-View-Controller (MVC) web framework</a>. The model layer is where the data manipulation happens: Reading and writing records in the database. It is also where business logic happens: Sending e-mail for transactions, or periodic data cleanup. The goal of a model layer is to provide an API on to the application's data so that it can be used not only by the web application, but by other tools as well.</p>
+
+<p>Because <a href="https://docs.mojolicious.org/Mojolicious/Guides/Growing#Model">Mojolicious does not provide its own model layer</a>, most people usually turn to the <a href="https://metacpan.org/pod/DBIx::Class">DBIx::Class ORM</a>. But, this has always felt too complex and heavy for my needs: By the time I <em>know</em> my project needs something like DBIx::Class, it's usually too late to migrate easily. I wanted something lighter and more agile that could grow from a rapidly-developed proof-of-concept app to the final, maintainable production version.</p>
+
+<p>Yancy provides a generic API on to multiple database systems, which it calls <a href="http://preaction.me/yancy/perldoc/Yancy/Backend">Backends</a>. Backends handle basic database operations with a common API. Using this common API, I built a lightweight class system for accessing data:</p>
+
+<ul>
+<li>
+<a href="http://preaction.me/yancy/perldoc/Yancy/Model">Yancy::Model</a> wraps the backend object and manages the classes.</li>
+<li>
+<a href="http://preaction.me/yancy/perldoc/Yancy/Model/Schema">Yancy::Model::Schema</a> provides methods to create and search a database table.</li>
+<li>
+<a href="http://preaction.me/yancy/perldoc/Yancy/Model/Item">Yancy::Model::Item</a> represents a single row in a table and provides methods to update and delete it.</li>
+</ul>
+
+<p>Using these basic classes provides a more fluent interface to the database than using the backend API directly. But, the power of a model layer is in writing custom code to make managing the data easy and safe. For this, Yancy::Model allows you to add your own classes for schemas (tables) and items (rows).</p>
+
+<p>Writing custom model classes makes organizing your data management code easy. For example, Zapp has a table for workflows (called "plans") with a related table containing tasks ("plan_tasks") and another related table containing workflow input ("plan_inputs"). Whenever a user looks at a plan, they need to also see the plan's tasks and inputs. So, I can create a schema class that fetches this information automatically.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Zapp::Schema::</span><span class="nv">Plans</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Mojo::</span><span class="nv">Base</span> <span class="p">'</span><span class="s1">Yancy::Model::Schema</span><span class="p">',</span> <span class="o">-</span><span class="nv">signatures</span><span class="p">;</span>
+<span class="k">sub </span><span class="nf">get</span><span class="p">( $self, $id, %opt ) {</span>
+    <span class="c1"># I could use two JOINs here instead, but joining </span>
+    <span class="c1"># two 1:* relationships could result in a lot</span>
+    <span class="c1"># of data to fetch and discard...</span>
+    <span class="k">my</span> <span class="nv">$plan</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nn">SUPER::</span><span class="nv">get</span><span class="p">(</span> <span class="nv">$id</span><span class="p">,</span> <span class="nv">%opt</span> <span class="p">);</span>
+    <span class="k">my</span> <span class="nv">$inputs_schema</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">model</span><span class="o">-&gt;</span><span class="nv">schema</span><span class="p">(</span> <span class="p">"</span><span class="s2">plan_inputs</span><span class="p">"</span> <span class="p">);</span>
+    <span class="nv">$plan</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">inputs</span><span class="p">}</span> <span class="o">=</span> <span class="nv">$inputs_schema</span><span class="o">-&gt;</span><span class="nv">list</span><span class="p">({</span> <span class="s">plan_id</span> <span class="o">=&gt;</span> <span class="nv">$id</span> <span class="p">},</span> <span class="p">{</span> <span class="s">order_by</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">rank</span><span class="p">'</span> <span class="p">})</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">items</span><span class="p">};</span>
+    <span class="k">my</span> <span class="nv">$tasks_schema</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">model</span><span class="o">-&gt;</span><span class="nv">schema</span><span class="p">(</span> <span class="p">"</span><span class="s2">plan_tasks</span><span class="p">"</span> <span class="p">);</span>
+    <span class="nv">$plan</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">tasks</span><span class="p">}</span> <span class="o">=</span> <span class="nv">$tasks_schema</span><span class="o">-&gt;</span><span class="nv">list</span><span class="p">({</span> <span class="s">plan_id</span> <span class="o">=&gt;</span> <span class="nv">$id</span> <span class="p">},</span> <span class="p">{</span> <span class="s">order_by</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">task_id</span><span class="p">'</span> <span class="p">})</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">items</span><span class="p">};</span>
+    <span class="k">return</span> <span class="nv">$plan</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Zapp also has a table for recording every time a plan is run, called "runs". This table also records the tasks and inputs the plan had when it was run in "run_tasks" and "run_inputs" respectively (along with some additional fields to record the status of the tasks and the user's actual input). In a way, a run <em>is</em> a plan. As above, when a user looks at a run, they need to also see the run's tasks and inputs. Since Yancy::Model uses plain Perl objects, I can refactor the plans class to also handle runs.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">Zapp::Schema::</span><span class="nv">Plans</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Mojo::</span><span class="nv">Base</span> <span class="p">'</span><span class="s1">Yancy::Model::Schema</span><span class="p">',</span> <span class="o">-</span><span class="nv">signatures</span><span class="p">;</span>
+<span class="nv">has</span> <span class="s">tasks_table</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">plan_tasks</span><span class="p">';</span>
+<span class="nv">has</span> <span class="s">inputs_table</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">plan_inputs</span><span class="p">';</span>
+<span class="k">sub </span><span class="nf">get</span><span class="p">( $self, $id, %opt ) {</span>
+    <span class="k">my</span> <span class="nv">$plan</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nn">SUPER::</span><span class="nv">get</span><span class="p">(</span> <span class="nv">$id</span><span class="p">,</span> <span class="nv">%opt</span> <span class="p">);</span>
+    <span class="k">my</span> <span class="nv">$inputs_schema</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">model</span><span class="o">-&gt;</span><span class="nv">schema</span><span class="p">(</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">inputs_schema</span> <span class="p">);</span>
+    <span class="nv">$plan</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">inputs</span><span class="p">}</span> <span class="o">=</span> <span class="nv">$inputs_schema</span><span class="o">-&gt;</span><span class="nv">list</span><span class="p">({</span> <span class="s">plan_id</span> <span class="o">=&gt;</span> <span class="nv">$id</span> <span class="p">},</span> <span class="p">{</span> <span class="s">order_by</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">rank</span><span class="p">'</span> <span class="p">})</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">items</span><span class="p">};</span>
+    <span class="k">my</span> <span class="nv">$tasks_schema</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">model</span><span class="o">-&gt;</span><span class="nv">schema</span><span class="p">(</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">tasks_schema</span> <span class="p">);</span>
+    <span class="nv">$plan</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">tasks</span><span class="p">}</span> <span class="o">=</span> <span class="nv">$tasks_schema</span><span class="o">-&gt;</span><span class="nv">list</span><span class="p">({</span> <span class="s">plan_id</span> <span class="o">=&gt;</span> <span class="nv">$id</span> <span class="p">},</span> <span class="p">{</span> <span class="s">order_by</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">task_id</span><span class="p">'</span> <span class="p">})</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">items</span><span class="p">};</span>
+    <span class="k">return</span> <span class="nv">$plan</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="nb">package</span> <span class="nn">Zapp::Schema::</span><span class="nv">Runs</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Mojo::</span><span class="nv">Base</span> <span class="p">'</span><span class="s1">Zapp::Schema::Plans</span><span class="p">',</span> <span class="o">-</span><span class="nv">signatures</span><span class="p">;</span>
+<span class="nv">has</span> <span class="s">tasks_table</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">run_tasks</span><span class="p">';</span>
+<span class="nv">has</span> <span class="s">inputs_table</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">run_inputs</span><span class="p">';</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Now plans and runs both fetch their related data automatically. I can add similar functionality to <code>create</code>, <code>set</code>, <code>list</code>, and <code>delete</code> to make dealing with the related data seamless. Further, I can create completely custom methods like <code>enqueue</code> which will add the plan (or the run) to the <a href="https://docs.mojolicious.org/Minion">Minion job queue</a> to be executed.</p>
+
+<p>With <a href="http://preaction.me/yancy/perldoc/Yancy/Guides/Model/">Yancy::Model</a> I can quickly build an API for my application's data. As my application develops, I can keep my data logic separate from my web frontend logic. Since they're separate, I can use my data logic in other applications and tools. This is the biggest benefit of using an MVC pattern with a framework like <a href="http://mojolicious.org">Mojolicious</a>.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/528.html">#528 - Legacy Code</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
 
@@ -107,7 +192,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/09/05#pwc128">A Platform for Every Departing Sub-Matrix</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -298,7 +383,7 @@ the next departure, increase the number of platforms. </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/08/perl-weekly-challenge-127-disjoint-sets-and-conflict-intervals.html">Perl Weekly Challenge 127: Disjoint Sets and Conflict Intervals</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -471,7 +556,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/09/ccclvii-12-great-cpan-modules-released.html">(ccclvii) 12 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -483,7 +568,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/09/cdlxxxiii-metacpan-weekly-report.html">(cdlxxxiii) metacpan weekly report </a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -495,7 +580,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/09/div-stackoverflow-perl-report.html">(div) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -507,7 +592,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/gugod/a-simple-thought-about-key-value-pairs-1bap">A simple thought about key-value pairs</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -690,7 +775,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-tentative-planning-aom">The ephemeral miniconf - Tentative planning</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -742,7 +827,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/raku-foundation-and-tm-update">Raku Foundation DBA and Trademark Update</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -774,7 +859,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-adam-russell-3599">The ephemeral miniconf - Adam Russell </a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -810,7 +895,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2021/09/01/list-of-new-cpan-distributions-aug-2021/">List of new CPAN distributions – Aug 2021</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1457,7 +1542,7 @@ say join ", ", @$_ for @conflicts;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_5_tony_cook_july_2021">Maintaining Perl 5 (Tony Cook): July 2021</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1566,7 +1651,7 @@ optimizing to use bundles where possible</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_5_dave_mitchell_july_2021">Maintaining Perl 5 Core (Dave Mitchell): July 2021 Report</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1599,7 +1684,7 @@ for a new grant).
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/taming-the-moose-method-modifiers-instead-of-overrides-in-object-oriented-perl-4ag2">Taming the Moose: Method modifiers instead of overrides in object-oriented Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1753,7 +1838,7 @@ Wheek!
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/08/objectpad-yuki-kimotos-2021-08-25---default-internal-data-structure-of-the-object.html">Object::Pad Yuki Kimoto's 2021-08-25 - Default internal data structure of the object</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1800,51 +1885,6 @@ class Point {<br />
 
         
            </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_17">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-jose-joaquin-atria-2m5h">The ephemeral miniconf - José Joaquín Atria</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
- on Tuesday 31 August 2021 05:20</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><h1>
-  <a href="#speaker-announcement-jos%C3%A9-joaqu%C3%ADn-atria">
-  </a>
-  Speaker announcement: José Joaquín Atria
-</h1>
-
-<p><a href="https://www.pinguinorodriguez.cl/">José Joaquín Atria</a> is a researcher and programmer based in London.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--taFuRc6t--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vxs5zleif1cmqrg7fv9c.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--taFuRc6t--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vxs5zleif1cmqrg7fv9c.png" alt="Atria"></a></p>
-
-<p>He was one of the early speakers to join <a href="https://thibaultduponchelle.github.io/the-ephemeral-miniconf/">the ephemeral miniconf</a> \o/</p>
-
-<h2>
-  <a href="#bio">
-  </a>
-  Bio
-</h2>
-
-<p>José Joaquín Atria own bio says: <br>
-"A Speech Scientist in a previous life, I now work full time as a programmer, and appreciate the stable hours and not having to fund my own work. If you need a climbing buddy, hit me up!"</p>
-
-<p>Or even "I write code for fun, and some times get paid to do it" ❤️</p>
-
-<h2>
-  <a href="#talk">
-  </a>
-  Talk
-</h2>
-
-<p>I'm afraid to declare that I have yet no idea what José Joaquín will talk about 😀</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--kj4nArBd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/t3unrhdk5rkjpkgbqf4n.jpg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--kj4nArBd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/t3unrhdk5rkjpkgbqf4n.jpg" alt="Top Secret"></a></p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2505,7 +2545,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 06 September 2021 16:51 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 06 September 2021 20:42 UTC</address>
             </div>
           </div>
         </div><!-- container -->

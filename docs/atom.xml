@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-09-06T16:51:22Z</updated>
+  <updated>2021-09-06T20:42:03Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -43,6 +43,93 @@
         
     </content>
 </entry>
+  <entry>
+    <title>Yancy: The Next Model</title>
+    <link rel="alternate" href="https://dev.to/preaction/yancy-the-next-model-ndi" type="text/html"/>
+    <content type="html">&lt;p&gt;&lt;a href="http://preaction.me/yancy"&gt;Yancy&lt;/a&gt; is a &lt;a href="https://en.wikipedia.org/wiki/Content_management_system"&gt;content management system&lt;/a&gt; and application framework for the &lt;a href="https://mojolicious.org"&gt;Mojolicious&lt;/a&gt; web framework. For the last year, I've been using it to develop &lt;a href="https://metacpan.org/pod/Zapp"&gt;Zapp, my workflow automation webapp&lt;/a&gt;. Over that time, it became harder and harder to organize all the code needed to manipulate Zapp's data. To solve this problem, I wrote &lt;a href="http://preaction.me/yancy/perldoc/Yancy/Guides/Model"&gt;Yancy::Model&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Mojolicious is a &lt;a href="https://docs.mojolicious.org/Mojolicious/Guides/Growing#Model-View-Controller"&gt;Model-View-Controller (MVC) web framework&lt;/a&gt;. The model layer is where the data manipulation happens: Reading and writing records in the database. It is also where business logic happens: Sending e-mail for transactions, or periodic data cleanup. The goal of a model layer is to provide an API on to the application's data so that it can be used not only by the web application, but by other tools as well.&lt;/p&gt;
+
+&lt;p&gt;Because &lt;a href="https://docs.mojolicious.org/Mojolicious/Guides/Growing#Model"&gt;Mojolicious does not provide its own model layer&lt;/a&gt;, most people usually turn to the &lt;a href="https://metacpan.org/pod/DBIx::Class"&gt;DBIx::Class ORM&lt;/a&gt;. But, this has always felt too complex and heavy for my needs: By the time I &lt;em&gt;know&lt;/em&gt; my project needs something like DBIx::Class, it's usually too late to migrate easily. I wanted something lighter and more agile that could grow from a rapidly-developed proof-of-concept app to the final, maintainable production version.&lt;/p&gt;
+
+&lt;p&gt;Yancy provides a generic API on to multiple database systems, which it calls &lt;a href="http://preaction.me/yancy/perldoc/Yancy/Backend"&gt;Backends&lt;/a&gt;. Backends handle basic database operations with a common API. Using this common API, I built a lightweight class system for accessing data:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;
+&lt;a href="http://preaction.me/yancy/perldoc/Yancy/Model"&gt;Yancy::Model&lt;/a&gt; wraps the backend object and manages the classes.&lt;/li&gt;
+&lt;li&gt;
+&lt;a href="http://preaction.me/yancy/perldoc/Yancy/Model/Schema"&gt;Yancy::Model::Schema&lt;/a&gt; provides methods to create and search a database table.&lt;/li&gt;
+&lt;li&gt;
+&lt;a href="http://preaction.me/yancy/perldoc/Yancy/Model/Item"&gt;Yancy::Model::Item&lt;/a&gt; represents a single row in a table and provides methods to update and delete it.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Using these basic classes provides a more fluent interface to the database than using the backend API directly. But, the power of a model layer is in writing custom code to make managing the data easy and safe. For this, Yancy::Model allows you to add your own classes for schemas (tables) and items (rows).&lt;/p&gt;
+
+&lt;p&gt;Writing custom model classes makes organizing your data management code easy. For example, Zapp has a table for workflows (called "plans") with a related table containing tasks ("plan_tasks") and another related table containing workflow input ("plan_inputs"). Whenever a user looks at a plan, they need to also see the plan's tasks and inputs. So, I can create a schema class that fetches this information automatically.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nn"&gt;Zapp::Schema::&lt;/span&gt;&lt;span class="nv"&gt;Plans&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Mojo::&lt;/span&gt;&lt;span class="nv"&gt;Base&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Yancy::Model::Schema&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;signatures&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;get&lt;/span&gt;&lt;span class="p"&gt;( $self, $id, %opt ) {&lt;/span&gt;
+    &lt;span class="c1"&gt;# I could use two JOINs here instead, but joining &lt;/span&gt;
+    &lt;span class="c1"&gt;# two 1:* relationships could result in a lot&lt;/span&gt;
+    &lt;span class="c1"&gt;# of data to fetch and discard...&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$plan&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nn"&gt;SUPER::&lt;/span&gt;&lt;span class="nv"&gt;get&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;%opt&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$inputs_schema&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;model&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;schema&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;plan_inputs&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$plan&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;inputs&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$inputs_schema&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;list&lt;/span&gt;&lt;span class="p"&gt;({&lt;/span&gt; &lt;span class="s"&gt;plan_id&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$id&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;order_by&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;rank&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;})&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;items&lt;/span&gt;&lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$tasks_schema&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;model&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;schema&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;plan_tasks&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$plan&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;tasks&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$tasks_schema&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;list&lt;/span&gt;&lt;span class="p"&gt;({&lt;/span&gt; &lt;span class="s"&gt;plan_id&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$id&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;order_by&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;task_id&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;})&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;items&lt;/span&gt;&lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$plan&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Zapp also has a table for recording every time a plan is run, called "runs". This table also records the tasks and inputs the plan had when it was run in "run_tasks" and "run_inputs" respectively (along with some additional fields to record the status of the tasks and the user's actual input). In a way, a run &lt;em&gt;is&lt;/em&gt; a plan. As above, when a user looks at a run, they need to also see the run's tasks and inputs. Since Yancy::Model uses plain Perl objects, I can refactor the plans class to also handle runs.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nn"&gt;Zapp::Schema::&lt;/span&gt;&lt;span class="nv"&gt;Plans&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Mojo::&lt;/span&gt;&lt;span class="nv"&gt;Base&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Yancy::Model::Schema&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;signatures&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;tasks_table&lt;/span&gt;  &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;plan_tasks&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;inputs_table&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;plan_inputs&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;get&lt;/span&gt;&lt;span class="p"&gt;( $self, $id, %opt ) {&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$plan&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nn"&gt;SUPER::&lt;/span&gt;&lt;span class="nv"&gt;get&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$id&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;%opt&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$inputs_schema&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;model&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;schema&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;inputs_schema&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$plan&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;inputs&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$inputs_schema&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;list&lt;/span&gt;&lt;span class="p"&gt;({&lt;/span&gt; &lt;span class="s"&gt;plan_id&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$id&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;order_by&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;rank&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;})&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;items&lt;/span&gt;&lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$tasks_schema&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;model&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;schema&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;tasks_schema&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nv"&gt;$plan&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;tasks&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$tasks_schema&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;list&lt;/span&gt;&lt;span class="p"&gt;({&lt;/span&gt; &lt;span class="s"&gt;plan_id&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$id&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;order_by&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;task_id&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;})&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;items&lt;/span&gt;&lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$plan&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nn"&gt;Zapp::Schema::&lt;/span&gt;&lt;span class="nv"&gt;Runs&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Mojo::&lt;/span&gt;&lt;span class="nv"&gt;Base&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Zapp::Schema::Plans&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;signatures&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;tasks_table&lt;/span&gt;  &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;run_tasks&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;inputs_table&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;run_inputs&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Now plans and runs both fetch their related data automatically. I can add similar functionality to &lt;code&gt;create&lt;/code&gt;, &lt;code&gt;set&lt;/code&gt;, &lt;code&gt;list&lt;/code&gt;, and &lt;code&gt;delete&lt;/code&gt; to make dealing with the related data seamless. Further, I can create completely custom methods like &lt;code&gt;enqueue&lt;/code&gt; which will add the plan (or the run) to the &lt;a href="https://docs.mojolicious.org/Minion"&gt;Minion job queue&lt;/a&gt; to be executed.&lt;/p&gt;
+
+&lt;p&gt;With &lt;a href="http://preaction.me/yancy/perldoc/Yancy/Guides/Model/"&gt;Yancy::Model&lt;/a&gt; I can quickly build an API for my application's data. As my application develops, I can keep my data logic separate from my web frontend logic. Since they're separate, I can use my data logic in other applications and tools. This is the biggest benefit of using an MVC pattern with a framework like &lt;a href="http://mojolicious.org"&gt;Mojolicious&lt;/a&gt;.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Doug Bell</name>
+    </author>
+    <id>https://dev.to/preaction/yancy-the-next-model-ndi</id>
+    <published>2021-09-06T18:15:36Z</published>
+    <updated>2021-09-06T18:15:36Z</updated>
+    <category term="perl"/>
+    <category term="mojolicious"/>
+    <category term="webdev"/>
+  </entry>
   <entry>
     <title>#528 - Legacy Code</title>
     <link rel="alternate" href="https://perlweekly.com/archive/528.html" type="text/html"/>
@@ -1802,52 +1889,6 @@ class Point {<br />
         
     </content>
 </entry>
-  <entry>
-    <title>The ephemeral miniconf - José Joaquín Atria</title>
-    <link rel="alternate" href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-jose-joaquin-atria-2m5h" type="text/html"/>
-    <content type="html">&lt;h1&gt;
-  &lt;a href="#speaker-announcement-jos%C3%A9-joaqu%C3%ADn-atria"&gt;
-  &lt;/a&gt;
-  Speaker announcement: José Joaquín Atria
-&lt;/h1&gt;
-
-&lt;p&gt;&lt;a href="https://www.pinguinorodriguez.cl/"&gt;José Joaquín Atria&lt;/a&gt; is a researcher and programmer based in London.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--taFuRc6t--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vxs5zleif1cmqrg7fv9c.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--taFuRc6t--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/vxs5zleif1cmqrg7fv9c.png" alt="Atria"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;He was one of the early speakers to join &lt;a href="https://thibaultduponchelle.github.io/the-ephemeral-miniconf/"&gt;the ephemeral miniconf&lt;/a&gt; \o/&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#bio"&gt;
-  &lt;/a&gt;
-  Bio
-&lt;/h2&gt;
-
-&lt;p&gt;José Joaquín Atria own bio says: &lt;br&gt;
-"A Speech Scientist in a previous life, I now work full time as a programmer, and appreciate the stable hours and not having to fund my own work. If you need a climbing buddy, hit me up!"&lt;/p&gt;
-
-&lt;p&gt;Or even "I write code for fun, and some times get paid to do it" ❤️&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#talk"&gt;
-  &lt;/a&gt;
-  Talk
-&lt;/h2&gt;
-
-&lt;p&gt;I'm afraid to declare that I have yet no idea what José Joaquín will talk about 😀&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--kj4nArBd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/t3unrhdk5rkjpkgbqf4n.jpg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--kj4nArBd--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/t3unrhdk5rkjpkgbqf4n.jpg" alt="Top Secret"&gt;&lt;/a&gt;&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Tib</name>
-    </author>
-    <id>https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-jose-joaquin-atria-2m5h</id>
-    <published>2021-08-31T05:20:45Z</published>
-    <updated>2021-08-31T05:20:45Z</updated>
-    <category term="perl"/>
-    <category term="raku"/>
-  </entry>
   <entry>
     <title>#527 - New school-year?</title>
     <link rel="alternate" href="https://perlweekly.com/archive/527.html" type="text/html"/>
