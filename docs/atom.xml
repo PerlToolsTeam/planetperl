@@ -7,9 +7,116 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-09-21T20:42:32Z</updated>
+  <updated>2021-09-22T00:58:03Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>CPAN installation as a test, with GitHub workflow</title>
+    <link rel="alternate" href="https://dev.to/gugod/cpan-installation-as-a-test-with-github-workflow-3gm6" type="text/html"/>
+    <content type="html">&lt;p&gt;If I made a distribution Foo and uploaded it to CPAN, I'd expect that it is install-able via various CPAN clients such as &lt;code&gt;cpan&lt;/code&gt;, &lt;code&gt;cpanm&lt;/code&gt;, &lt;code&gt;cpm&lt;/code&gt;, that is, from a fresh perl installation, these commands should be successful:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;cpan Foo
+cpanm Foo
+cpm install -g Foo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;What's a bit non-obvious is that this requires a chain of conventions to be satisfied in order to happen smoothly... distribution Foo needs to properly ship with build procedure / installer and &lt;code&gt;MEAT.json&lt;/code&gt;, in which all dependencies are correctly declared.&lt;/p&gt;
+
+&lt;p&gt;But that is not enough, even if I correctly authored all the meta-data in distribution Foo, if there is even a single miss in any other dependencies in Foo's dependency tree, the installation would fail.&lt;/p&gt;
+
+&lt;p&gt;For that reason, I thought it might be worth it to test the installation process during development, at least make a CI workflow that tries to install everything. The successful of such test would just be whether the installation is successfully finished or not. Conventionally the exit status (&lt;code&gt;$?&lt;/code&gt;) reflects that.&lt;/p&gt;
+
+&lt;p&gt;Here's something I came up with. It is a GitHub workflow that first build a distribution, a &lt;code&gt;.tar.gz&lt;/code&gt; file, then try to install that file with &lt;code&gt;cpanm&lt;/code&gt;:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;name: Installation Test
+
+on:
+  push:
+    branches:
+      - fun
+
+jobs:
+  build:
+    runs-on: 'ubuntu-latest'
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Perl environment
+        uses: shogo82148/actions-setup-perl@v1
+      - name: Install Authoring Dependencies
+        run: cpanm -n App::ModuleBuildTiny &amp;amp;&amp;amp; cpanm -q -n --no-man-pages --installdeps .
+      - name: Generate dist
+        run: mbtiny dist
+      - name: Display what is generated
+        run: |-
+          echo *.tar.gz
+          tar tvzf *.tar.gz
+      - uses: actions/upload-artifact@v2
+        with:
+          name: dist-for-installation-test
+          path: '*.tar.gz'
+          retention-days: 1
+  install:
+    runs-on: 'ubuntu-latest'
+    needs: build
+    container:
+      image: perl:5.34
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-for-installation-test
+      - name: Display the downloaded files
+        run: ls -R
+      - name: Install in a perl:5.34 container (--notest)
+        run: cpanm --notest *.tar.gz
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;There are a lot of instructions but what matters is the final one &lt;code&gt;cpanm --notest *.tar.gz&lt;/code&gt;. This would install whatever was built and all its dependencies, without running module tests`, and if even that failed, that means some meta data is missing and the distribution would not be install-able even if it is uploaded to CPAN.&lt;/p&gt;
+
+&lt;p&gt;Of course that just &lt;code&gt;cpanm&lt;/code&gt;, I could also add &lt;code&gt;cpan&lt;/code&gt; and &lt;code&gt;cpm&lt;/code&gt; there to verify whether there is a difference between all these CPAN clients. Also, I could setup a matrix run so it runs on all perl versions.&lt;/p&gt;
+
+&lt;p&gt;This workflow is currently used in &lt;a href="https://github.com/gugod/Perl-Critic-TooMuchCode"&gt;Perl-Critic-TooMuchCode&lt;/a&gt;, with a few runs already finished &lt;a href="https://github.com/gugod/Perl-Critic-TooMuchCode/actions/workflows/installation-test.yml"&gt;here&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The workflow contains two jobs, &lt;code&gt;build&lt;/code&gt; and &lt;code&gt;install&lt;/code&gt;. &lt;code&gt;install&lt;/code&gt; needs &lt;code&gt;build&lt;/code&gt; so it is always executed after successful &lt;code&gt;build&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;The &lt;code&gt;build&lt;/code&gt; job runs on the default &lt;code&gt;ubuntu-latest&lt;/code&gt; machine, but the &lt;code&gt;install&lt;/code&gt; job runs in a container instance with presumably a different version of perl, and also without a clone of current repo. With this setup I can simulate the installation process on a fresh machine.&lt;/p&gt;
+
+&lt;p&gt;To share the distribution &lt;code&gt;.tar.gz&lt;/code&gt; file across different jobs, the only way I can fin is by uploading the file to the "artifact" storage -- basically an external storage. This probably cost me something if a lot of files are accumulated. I changed the &lt;code&gt;retention&lt;/code&gt; period to 1 day because I don't plan to download this anyway.&lt;/p&gt;
+
+&lt;p&gt;On the other hand, it could be part of doing the actual CPAN release. Maybe with some modification the workflow would build a new version with new version number, and I would just have to download the artifact then re-upload to CPAN. This would save the setup of preparing authoring tools. It could be a useful scenario for teaching new developers to upload something to CPAN.&lt;/p&gt;
+
+&lt;p&gt;The installation process also download a lot of stuffs from cpan.org and cost some bandwidth on the way. It's best not to do so on every commits or on a branch with frequent pushes. Definitely suitable pre-release though.&lt;/p&gt;
+
+&lt;p&gt;Most likely, this idea of "Installation as a test" isn't new, and it is a bit convenient to have it checked in CI.&lt;/p&gt;
+
+
+
+
+&lt;p&gt;Originally posted on &lt;a href="https://gugod.org/2021/09/en-cpan-installation-as-a-test-with-github-workflow/"&gt;gugod's blog -- CPAN installation as a test, with GitHub workflow&lt;/a&gt;&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Kang-min Liu</name>
+    </author>
+    <id>https://dev.to/gugod/cpan-installation-as-a-test-with-github-workflow-3gm6</id>
+    <published>2021-09-22T00:48:05Z</published>
+    <updated>2021-09-22T00:48:05Z</updated>
+    <category term="perl"/>
+    <category term="cpan"/>
+    <category term="installation"/>
+    <category term="testing"/>
+  </entry>
   <entry>
     <title>Everyone’s a (Perl) critic, and you can be too!</title>
     <link rel="alternate" href="https://dev.to/mjgardner/everyone-s-a-perl-critic-and-you-can-be-too-11f4" type="text/html"/>
@@ -628,86 +735,6 @@ larger.&lt;/p&gt;
       <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
     </author>
     <thr:total>0</thr:total>
-  </entry>
-  <entry>
-    <title>Released types for subroutines</title>
-    <link rel="alternate" href="https://dev.to/kfly8/released-types-sub-which-are-types-for-subroutines-58d1" type="text/html"/>
-    <content type="html">&lt;p&gt;It is useful to have a subroutine type, so I made one.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Sub&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;types&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Standard&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;types&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$Sub&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;Sub&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;
-    &lt;span class="s"&gt;args&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;
-    &lt;span class="s"&gt;returns&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-&lt;span class="p"&gt;];&lt;/span&gt;
-
-&lt;span class="nb"&gt;warn&lt;/span&gt; &lt;span class="nv"&gt;$Sub&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;validate&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{})&lt;/span&gt;
-&lt;span class="c1"&gt;# =&amp;gt;&lt;/span&gt;
-&lt;span class="c1"&gt;# Reference sub { "DUMMY" } did not pass type constraint "Sub[sub(Int, Int) =&amp;gt; Int]"&lt;/span&gt;
-&lt;span class="c1"&gt;#    Reason : invalid parameters: invalid args length. got: 0, expected: 2&lt;/span&gt;
-&lt;span class="c1"&gt;#    Expected : sub(Int, Int) =&amp;gt; Int&lt;/span&gt;
-&lt;span class="c1"&gt;#    Got      : sub(*) =&amp;gt; *&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;If you can find the meta-information from the subroutine, the test will pass as follows.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Sub&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;types&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Standard&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;types&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$Sub&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;Sub&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;
-    &lt;span class="s"&gt;args&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;
-&lt;span class="p"&gt;];&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Function::&lt;/span&gt;&lt;span class="nv"&gt;Parameters&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; 
-&lt;span class="nv"&gt;fun&lt;/span&gt; &lt;span class="nv"&gt;add&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;Int&lt;/span&gt; &lt;span class="nv"&gt;$a&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;Int&lt;/span&gt; &lt;span class="nv"&gt;$b&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$a&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;$b&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="nv"&gt;ok&lt;/span&gt; &lt;span class="nv"&gt;$Sub&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;check&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;&amp;amp;add&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Sub::&lt;/span&gt;&lt;span class="nv"&gt;WrapInType&lt;/span&gt; &lt;span class="sx"&gt;qw(wrap_sub)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="nv"&gt;ok&lt;/span&gt; &lt;span class="nv"&gt;$Sub&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;check&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;wrap_sub&lt;/span&gt;&lt;span class="p"&gt;([&lt;/span&gt;&lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{}));&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Sub::WrapInType::&lt;/span&gt;&lt;span class="nv"&gt;Attribute&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;add2&lt;/span&gt; &lt;span class="p"&gt;:WrapSub([Int,Int] =&amp;gt; Int) {&lt;/span&gt;
-    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$a&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$b&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$a&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;$b&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="nv"&gt;ok&lt;/span&gt; &lt;span class="nv"&gt;$Sub&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;check&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;&amp;amp;add2&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;add3&lt;/span&gt; &lt;span class="p"&gt;{}&lt;/span&gt;
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$meta&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Sub::&lt;/span&gt;&lt;span class="nv"&gt;Meta&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
-    &lt;span class="s"&gt;args&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;
-    &lt;span class="s"&gt;returns&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Int&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-&lt;span class="p"&gt;);&lt;/span&gt;
-&lt;span class="nn"&gt;Sub::Meta::&lt;/span&gt;&lt;span class="nv"&gt;Library&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;register&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;&amp;amp;add3&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$meta&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-&lt;span class="nv"&gt;ok&lt;/span&gt; &lt;span class="nv"&gt;$Sub&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;check&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;&amp;amp;add3&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Internally, &lt;code&gt;Sub[...]&lt;/code&gt; coerces subroutines into Sub::Meta and compares Sub::Meta against each other.&lt;/p&gt;
-
-&lt;p&gt;Give it a try!&lt;br&gt;
-&lt;a href="https://metacpan.org/release/KFLY/Sub-Meta-0.14/view/lib/Types/Sub.pm"&gt;https://metacpan.org/release/KFLY/Sub-Meta-0.14/view/lib/Types/Sub.pm&lt;/a&gt;&lt;/p&gt;
-
-</content>
-    <author>
-      <name>kobaken</name>
-    </author>
-    <id>https://dev.to/kfly8/released-types-sub-which-are-types-for-subroutines-58d1</id>
-    <published>2021-09-18T14:14:25Z</published>
-    <updated>2021-09-18T14:14:25Z</updated>
-    <category term="perl"/>
-    <category term="perl5"/>
   </entry>
   <entry>
   <title>Next steps of research study launched - interviewees wanted</title>

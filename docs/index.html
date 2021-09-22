@@ -57,6 +57,110 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/gugod/cpan-installation-as-a-test-with-github-workflow-3gm6">CPAN installation as a test, with GitHub workflow</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Kang-min Liu
+ on Wednesday 22 September 2021 00:48</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>If I made a distribution Foo and uploaded it to CPAN, I'd expect that it is install-able via various CPAN clients such as <code>cpan</code>, <code>cpanm</code>, <code>cpm</code>, that is, from a fresh perl installation, these commands should be successful:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>cpan Foo
+cpanm Foo
+cpm install -g Foo
+</code></pre>
+
+</div>
+
+
+
+<p>What's a bit non-obvious is that this requires a chain of conventions to be satisfied in order to happen smoothly... distribution Foo needs to properly ship with build procedure / installer and <code>MEAT.json</code>, in which all dependencies are correctly declared.</p>
+
+<p>But that is not enough, even if I correctly authored all the meta-data in distribution Foo, if there is even a single miss in any other dependencies in Foo's dependency tree, the installation would fail.</p>
+
+<p>For that reason, I thought it might be worth it to test the installation process during development, at least make a CI workflow that tries to install everything. The successful of such test would just be whether the installation is successfully finished or not. Conventionally the exit status (<code>$?</code>) reflects that.</p>
+
+<p>Here's something I came up with. It is a GitHub workflow that first build a distribution, a <code>.tar.gz</code> file, then try to install that file with <code>cpanm</code>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: Installation Test
+
+on:
+  push:
+    branches:
+      - fun
+
+jobs:
+  build:
+    runs-on: 'ubuntu-latest'
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Perl environment
+        uses: shogo82148/actions-setup-perl@v1
+      - name: Install Authoring Dependencies
+        run: cpanm -n App::ModuleBuildTiny &amp;&amp; cpanm -q -n --no-man-pages --installdeps .
+      - name: Generate dist
+        run: mbtiny dist
+      - name: Display what is generated
+        run: |-
+          echo *.tar.gz
+          tar tvzf *.tar.gz
+      - uses: actions/upload-artifact@v2
+        with:
+          name: dist-for-installation-test
+          path: '*.tar.gz'
+          retention-days: 1
+  install:
+    runs-on: 'ubuntu-latest'
+    needs: build
+    container:
+      image: perl:5.34
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: dist-for-installation-test
+      - name: Display the downloaded files
+        run: ls -R
+      - name: Install in a perl:5.34 container (--notest)
+        run: cpanm --notest *.tar.gz
+</code></pre>
+
+</div>
+
+
+
+<p>There are a lot of instructions but what matters is the final one <code>cpanm --notest *.tar.gz</code>. This would install whatever was built and all its dependencies, without running module tests`, and if even that failed, that means some meta data is missing and the distribution would not be install-able even if it is uploaded to CPAN.</p>
+
+<p>Of course that just <code>cpanm</code>, I could also add <code>cpan</code> and <code>cpm</code> there to verify whether there is a difference between all these CPAN clients. Also, I could setup a matrix run so it runs on all perl versions.</p>
+
+<p>This workflow is currently used in <a href="https://github.com/gugod/Perl-Critic-TooMuchCode">Perl-Critic-TooMuchCode</a>, with a few runs already finished <a href="https://github.com/gugod/Perl-Critic-TooMuchCode/actions/workflows/installation-test.yml">here</a>.</p>
+
+<p>The workflow contains two jobs, <code>build</code> and <code>install</code>. <code>install</code> needs <code>build</code> so it is always executed after successful <code>build</code>.</p>
+
+<p>The <code>build</code> job runs on the default <code>ubuntu-latest</code> machine, but the <code>install</code> job runs in a container instance with presumably a different version of perl, and also without a clone of current repo. With this setup I can simulate the installation process on a fresh machine.</p>
+
+<p>To share the distribution <code>.tar.gz</code> file across different jobs, the only way I can fin is by uploading the file to the "artifact" storage -- basically an external storage. This probably cost me something if a lot of files are accumulated. I changed the <code>retention</code> period to 1 day because I don't plan to download this anyway.</p>
+
+<p>On the other hand, it could be part of doing the actual CPAN release. Maybe with some modification the workflow would build a new version with new version number, and I would just have to download the artifact then re-upload to CPAN. This would save the setup of preparing authoring tools. It could be a useful scenario for teaching new developers to upload something to CPAN.</p>
+
+<p>The installation process also download a lot of stuffs from cpan.org and cost some bandwidth on the way. It's best not to do so on every commits or on a branch with frequent pushes. Definitely suitable pre-release though.</p>
+
+<p>Most likely, this idea of "Installation as a test" isn't new, and it is a bit convenient to have it checked in CI.</p>
+
+
+
+
+<p>Originally posted on <a href="https://gugod.org/2021/09/en-cpan-installation-as-a-test-with-github-workflow/">gugod's blog -- CPAN installation as a test, with GitHub workflow</a></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/everyone-s-a-perl-critic-and-you-can-be-too-11f4">Everyone’s a (Perl) critic, and you can be too!</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -110,7 +214,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/09/spvm-09014-release---add-class-method-static-keyword-omit-spvm-namespace.html">SPVM 0.9014 Release - add class, method, static keyword, omit SPVM:: namespace</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -172,7 +276,7 @@ I imagine Moo, hash references, Mojo::Base, Object::Pad, Cor, etc. when choosing
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/gugod/cpan-release-of-toomuchcode-0-17-3e6m">CPAN Release of TooMuchCode 0.17</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -226,7 +330,7 @@ service 'memcached, ensure =&gt; 'started';
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-131-1fl1">Weekly Challenge 131</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -346,7 +450,7 @@ $ ./ch-2.pl '**//&lt;&gt;' '/* This is a comment (in some languages) */ &lt;coul
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/530.html">#530 - Outreachy 2021</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -363,7 +467,7 @@ $ ./ch-2.pl '**//&lt;&gt;' '/* This is a comment (in some languages) */ &lt;coul
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-planning-full-and-frozen-5eo9">The ephemeral miniconf - Planning full... and frozen!</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -408,7 +512,7 @@ $ ./ch-2.pl '**//&lt;&gt;' '/* This is a comment (in some languages) */ &lt;coul
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/09/19#pwc130">These Binary Trees are Odd</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -628,7 +732,7 @@ larger.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/09/ccclix-11-great-cpan-modules-released.html">(ccclix) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -640,7 +744,7 @@ larger.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/09/dv-stackoverflow-perl-report.html">(dv) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -649,85 +753,6 @@ larger.</p>
  on Saturday 18 September 2021 22:59</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>These are the ten most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br />Between brackets: [<b>question score</b> / answers count]<br />Build date: 2021-09-18 20:51:39 GMT</p><hr /><ol><li><a href="http://stackoverflow.com/questions/69194271" target="_blank">Perl optimization: inlining a function changed the results</a> - [<b>4</b>/1]</li><li><a href="http://stackoverflow.com/questions/69164299" target="_blank">Why my micro-API does not have response body?</a> - [<b>3</b>/2]</li><li><a href="http://stackoverflow.com/questions/69213132" target="_blank">How to search and replace a word on multiple occurrence</a> - [<b>2</b>/2]</li><li><a href="http://stackoverflow.com/questions/69149571" target="_blank">perl - Hash::Merge duplicates same list within hashes instead of putting them once</a> - [<b>2</b>/1]</li><li><a href="http://stackoverflow.com/questions/69209476" target="_blank">Perl - how to create dynamic multi level hash using array of elements as keys</a> - [<b>2</b>/1]</li><li><a href="http://stackoverflow.com/questions/69224128" target="_blank">Error while using SSH command in shell script</a> - [<b>2</b>/1]</li><li><a href="http://stackoverflow.com/questions/69197146" target="_blank">running gam command inside perl script</a> - [<b>1</b>/2]</li><li><a href="http://stackoverflow.com/questions/69226416" target="_blank">in Perl, how to assign the print function to a variable?</a> - [<b>1</b>/2]</li><li><a href="http://stackoverflow.com/questions/69226857" target="_blank">In Perl, how to create a "mixed-encoding" string (or a raw sequence of bytes) in a scalar?</a> - [<b>1</b>/2]</li><li><a href="http://stackoverflow.com/questions/69147588" target="_blank">perl to modify clipboard before pasting</a> - [<b>1</b>/1]</li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_10">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/kfly8/released-types-sub-which-are-types-for-subroutines-58d1">Released types for subroutines</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by kobaken
- on Saturday 18 September 2021 14:14</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>It is useful to have a subroutine type, so I made one.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Types::</span><span class="nv">Sub</span> <span class="o">-</span><span class="nv">types</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="o">-</span><span class="nv">types</span><span class="p">;</span>
-
-<span class="k">my</span> <span class="nv">$Sub</span> <span class="o">=</span> <span class="nv">Sub</span><span class="p">[</span>
-    <span class="s">args</span>    <span class="o">=&gt;</span> <span class="p">[</span><span class="nv">Int</span><span class="p">,</span> <span class="nv">Int</span><span class="p">],</span>
-    <span class="s">returns</span> <span class="o">=&gt;</span> <span class="nv">Int</span><span class="p">,</span>
-<span class="p">];</span>
-
-<span class="nb">warn</span> <span class="nv">$Sub</span><span class="o">-&gt;</span><span class="nv">validate</span><span class="p">(</span><span class="k">sub </span><span class="p">{})</span>
-<span class="c1"># =&gt;</span>
-<span class="c1"># Reference sub { "DUMMY" } did not pass type constraint "Sub[sub(Int, Int) =&gt; Int]"</span>
-<span class="c1">#    Reason : invalid parameters: invalid args length. got: 0, expected: 2</span>
-<span class="c1">#    Expected : sub(Int, Int) =&gt; Int</span>
-<span class="c1">#    Got      : sub(*) =&gt; *</span>
-</code></pre>
-
-</div>
-
-
-
-<p>If you can find the meta-information from the subroutine, the test will pass as follows.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Types::</span><span class="nv">Sub</span> <span class="o">-</span><span class="nv">types</span><span class="p">;</span>
-<span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="o">-</span><span class="nv">types</span><span class="p">;</span>
-
-<span class="k">my</span> <span class="nv">$Sub</span> <span class="o">=</span> <span class="nv">Sub</span><span class="p">[</span>
-    <span class="s">args</span> <span class="o">=&gt;</span> <span class="p">[</span><span class="nv">Int</span><span class="p">,</span> <span class="nv">Int</span><span class="p">],</span>
-<span class="p">];</span>
-
-<span class="k">use</span> <span class="nn">Function::</span><span class="nv">Parameters</span><span class="p">;</span> 
-<span class="nv">fun</span> <span class="nv">add</span><span class="p">(</span><span class="nv">Int</span> <span class="nv">$a</span><span class="p">,</span> <span class="nv">Int</span> <span class="nv">$b</span><span class="p">)</span> <span class="p">{</span> <span class="k">return</span> <span class="nv">$a</span> <span class="o">+</span> <span class="nv">$b</span> <span class="p">}</span>
-<span class="nv">ok</span> <span class="nv">$Sub</span><span class="o">-&gt;</span><span class="nv">check</span><span class="p">(</span><span class="o">\</span><span class="nv">&amp;add</span><span class="p">);</span>
-
-<span class="k">use</span> <span class="nn">Sub::</span><span class="nv">WrapInType</span> <span class="sx">qw(wrap_sub)</span><span class="p">;</span>
-<span class="nv">ok</span> <span class="nv">$Sub</span><span class="o">-&gt;</span><span class="nv">check</span><span class="p">(</span><span class="nv">wrap_sub</span><span class="p">([</span><span class="nv">Int</span><span class="p">,</span><span class="nv">Int</span><span class="p">]</span> <span class="o">=&gt;</span> <span class="nv">Int</span><span class="p">,</span> <span class="k">sub </span><span class="p">{}));</span>
-
-<span class="k">use</span> <span class="nn">Sub::WrapInType::</span><span class="nv">Attribute</span><span class="p">;</span>
-<span class="k">sub </span><span class="nf">add2</span> <span class="p">:WrapSub([Int,Int] =&gt; Int) {</span>
-    <span class="k">my</span> <span class="p">(</span><span class="nv">$a</span><span class="p">,</span> <span class="nv">$b</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
-    <span class="k">return</span> <span class="nv">$a</span> <span class="o">+</span> <span class="nv">$b</span>
-<span class="p">}</span>
-<span class="nv">ok</span> <span class="nv">$Sub</span><span class="o">-&gt;</span><span class="nv">check</span><span class="p">(</span><span class="o">\</span><span class="nv">&amp;add2</span><span class="p">);</span>
-
-<span class="k">sub </span><span class="nf">add3</span> <span class="p">{}</span>
-<span class="k">my</span> <span class="nv">$meta</span> <span class="o">=</span> <span class="nn">Sub::</span><span class="nv">Meta</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
-    <span class="s">args</span>    <span class="o">=&gt;</span> <span class="p">[</span><span class="nv">Int</span><span class="p">,</span> <span class="nv">Int</span><span class="p">],</span>
-    <span class="s">returns</span> <span class="o">=&gt;</span> <span class="nv">Int</span><span class="p">,</span>
-<span class="p">);</span>
-<span class="nn">Sub::Meta::</span><span class="nv">Library</span><span class="o">-&gt;</span><span class="nv">register</span><span class="p">(</span><span class="o">\</span><span class="nv">&amp;add3</span><span class="p">,</span> <span class="nv">$meta</span><span class="p">);</span>
-<span class="nv">ok</span> <span class="nv">$Sub</span><span class="o">-&gt;</span><span class="nv">check</span><span class="p">(</span><span class="o">\</span><span class="nv">&amp;add3</span><span class="p">);</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Internally, <code>Sub[...]</code> coerces subroutines into Sub::Meta and compares Sub::Meta against each other.</p>
-
-<p>Give it a try!<br>
-<a href="https://metacpan.org/release/KFLY/Sub-Meta-0.14/view/lib/Types/Sub.pm">https://metacpan.org/release/KFLY/Sub-Meta-0.14/view/lib/Types/Sub.pm</a></p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3096,7 +3121,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 21 September 2021 20:42 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 22 September 2021 00:58 UTC</address>
             </div>
           </div>
         </div><!-- container -->
