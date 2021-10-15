@@ -89,6 +89,399 @@
           </div><!-- card -->
           <div class="card" id="card_2">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/hakonhagland/using-google-drive-with-perl-5gli">Using Google Drive with Perl</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Håkon Hægland
+ on Thursday 14 October 2021 22:23</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>I often use <a href="https://en.wikipedia.org/wiki/Google_Drive">Google Drive</a> to transfer files between devices, for example from my Mac to my Linux laptop. It works great, but there can be some boring repetitive work involved depending on how often you do the same operation. For example, when I want to transfer a file from the Mac, I open up a web browser (usually Google Chrome) and point it to <code>drive.google.com</code>, the Google Drive web interface. From here, I try to locate the directory I want to upload the file to which might involve some scrolling in the directory listing. After that, I need to click on the directory name to view its content. Next, I right-click on an empty area in the directory list and select "Upload files" from a drop-down menu. Then a file selection dialog appears and I have to locate the directory and file I want to upload in the dialog, and after some more mouse movements and clicks I finally press the "Ok" button to select the file. Similarly, on the other device (like my Linux laptop) where I want to download the file, I need to locate the file in web UI and then right-click it and select "Download" from the drop-down menu to download the file. </p>
+
+<p>Luckily, Google has provided the Google Drive API that can be used by user scripts to communicate with the cloud server. So the first thing I wanted to check was if someone already had written Perl code that made use of this API. After a quick search on <a href="https://en.wikipedia.org/wiki/CPAN">MetaCPAN</a> I found a module  <a href="https://metacpan.org/pod/Net::Google::Drive::Simple">Net::Google::Drive::Simple</a> that looked promising. When reading through the module's documentation, I realized that the tricky part could be to get hold of an "access token". The script needs this token to be able to connect to the Google Drive API server. The module claimed that it could generate the access token from a secret credential token which I first had to obtain from Google Cloud. Then, when the module had generated this access token the rest should be fairly simple was my impression. Well.., let's see what happend 👾</p>
+
+<h2>
+  <a href="#creating-a-google-account">
+  </a>
+  Creating a Google account
+</h2>
+
+<p>In order to get the Google Drive credentials, the first thing you need to have is a Google account (obviously). This allows you to use Google developer products, including Google Cloud Console, Cloud SDK, Cloud Logging, and Cloud Monitoring. If you don't have a Google account, you can visit   <a href="https://cloud.google.com/apis/docs/getting-started">https://cloud.google.com/apis/docs/getting-started</a> to get started. Creating a Google account, with some amount of cloud storage is free, see <a href="https://cloud.google.com/free">https://cloud.google.com/free</a> for more information.</p>
+
+<h2>
+  <a href="#creating-a-google-project">
+  </a>
+  Creating a Google project
+</h2>
+
+<p>Next, to use the Cloud APIs you need to set up a Google project. A project is equivalent to a developer account. It serves as a resource container for your Google Cloud resources and provides an isolation boundary for your usage of Google Cloud services, so you can manage quota limits and billing independently at the project level. Usage telemetry and dashboards are grouped by projects as well. If you don't already have a project, you can create one using the Cloud Console, see <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">this</a> link for more information. Here is what I did to create a new project:</p>
+
+<ul>
+<li><p>In the <a href="https://console.cloud.google.com/apis/dashboard">Google Cloud console</a>, click the drop down menu in top left corner, and select "IAM &amp; Admin" -&gt; "Manage Resources",</p></li>
+<li><p>from the "Select organization" drop-down list at the top of the page, you can select the organization in which you want to create a project. If you are a free trial user, skip this step, as this list does not appear.</p></li>
+<li>
+<p>Then click "Create Project", and in the "New Project" window that appears, enter a project name.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--L5RqId_X--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/tlsm3j83guxata4j0tgi.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--L5RqId_X--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/tlsm3j83guxata4j0tgi.png" alt="Alt Text"></a>  </p>
+
+<p>A project name can contain only letters, numbers, single quotes, hyphens, spaces, or exclamation points, and must be between 4 and 30 characters. I chose "DesktopApp" for the project name, and will use this name in the further discussion.</p>
+</li>
+<li><p>Enter the parent organization or folder in the "Location" box. That resource will be the hierarchical parent of the new project. If you do not have a parent folder, just leave "No organization" (as I did) in the "Location" box.</p></li>
+<li><p>When you're finished entering new project details, click the "CREATE" button.</p></li>
+</ul>
+
+<h2>
+  <a href="#enabling-the-google-drive-api">
+  </a>
+  Enabling the Google Drive API
+</h2>
+
+<p>Next, in order to use Google Drive API from a script you need to enable it.</p>
+
+<ul>
+<li><p>In the <a href="https://console.cloud.google.com/apis/dashboard">Google Cloud console</a>, click the drop down menu in top left corner, and select "APIs &amp; Services" -&gt; "Library". Type "Google Drive" in the search bar. Select "Google Drive API" from the result list.</p></li>
+<li><p>Select the "DesktopApp" project, by clicking project button in the top menu bar. If it already shows "DesktopApp", you can skip this step.</p></li>
+<li><p>Click the "ENABLE" button.</p></li>
+</ul>
+
+<h2>
+  <a href="#configure-the-apps-scopes-and-the-consent-screen">
+  </a>
+  Configure the app's scopes and the consent screen
+</h2>
+
+<p>The script that we will write to access Google Drive is called an "app". The "user" of the script is in our case the same as the writer (ourselves) of the script, but it need not be. You could send the script to someone else or publish it on the internet. In order for the app to get access to the user's Google Drive, the user must approve that script can access his drive under a certain "scope". For example, the user may give the script read-only access. </p>
+
+<p>The first time the script is trying to access the drive, the user is presented with a "consent screen" where they can select which scopes the script can use to access their drive. After the user has given their consent, the Google Cloud server returns an access token to the script which it can use to access the drive without asking the user for permission the next time. The access token will expire after a certain time, and then the script needs to refresh the token. The user can also revoke the access right of the script at a later time if they so wishes, then the script's access token becomes invalid and it cannot be refreshed. The script must then repeat the process with presenting the user with the consent screen in order to get further access. Read more about the OAuth2 protocol for authentication <a href="https://developers.google.com/identity/protocols/oauth2">here</a>.</p>
+
+<p>Now, in order to setup what scopes should be presented to the user in the consent screen (see <a href="https://developers.google.com/workspace/guides/create-credentials">workspace/guides/create-credentials</a>) do the following:</p>
+
+<ul>
+<li><p>In the <a href="https://console.cloud.google.com/apis/dashboard">Google Cloud console</a>, click the drop down menu in top left corner, and select "APIs &amp; Services" -&gt; "Credentials". The credential page for your project appears.</p></li>
+<li><p>Select the "DesktopApp" project, by clicking project button in the top menu bar. If it already shows "DesktopApp", you can skip this step.</p></li>
+<li><p>Click the "CONFIGURE CONSENT SCREEN" button on the right side. (If you have already configured the consent screen and want to modify it, you should instead click on "OAuth consent screen" in the left side bar)</p></li>
+</ul>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--NkHCjRV2--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/j19n9m1x6124aeamcq1r.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--NkHCjRV2--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/j19n9m1x6124aeamcq1r.png" alt="Alt Text"></a></p>
+
+<ul>
+<li><p>Select the user type for the app. Click "External".<br>
+(If you are a google workspace user and wants the app to be internal to your organization, you could select "Internal" instead.)</p></li>
+<li><p>Click the "CREATE" button</p></li>
+<li><p>In the App information screen, type in a name for the app. This name will appear in the consent screen that is presented to the user during the authorization procedure.</p></li>
+</ul>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--yqvNErjW--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/wpb1cge1fff0tuzltist.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--yqvNErjW--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/wpb1cge1fff0tuzltist.png" alt="Alt Text"></a></p>
+
+<ul>
+<li><p>Enter your email in the "User support email" field.</p></li>
+<li><p>Skip the "App logo" field.</p></li>
+<li><p>Also skip the "App domain" fields.</p></li>
+<li><p>Also skip the "Authorized domains" field.</p></li>
+<li><p>Enter your email address in the "Developer contact information" field.</p></li>
+<li><p>Click the "SAVE AND CONTINUE" button</p></li>
+<li><p>In the "Edit app registration" screen, click the "ADD OR REMOVE SCOPES" button.</p></li>
+</ul>
+
+<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--um_EQPo---/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hbf84frm5bwu67oh8j5f.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--um_EQPo---/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/hbf84frm5bwu67oh8j5f.png" alt="Alt Text"></a></p>
+
+<ul>
+<li>
+<p>From the popup window "Update selected scopes" click the checkmark next to the following scopes:</p>
+
+<ul>
+<li> <code>.../auth/drive.file</code>
+</li>
+<li> <code>.../auth/drive.metadata.readonly</code>
+</li>
+<li> <code>.../auth/drive.readonly</code>
+<img src="https://res.cloudinary.com/practicaldev/image/fetch/s--xn_P0yTu--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/6wklz7q6ll7fxou15ne3.png" alt="Alt Text">
+</li>
+</ul>
+
+<p>Note that only the scopes you select in the popup window can be requested by the app. For instance, if the app later requests all of the above three scopes, the user will be presented with a consent screen with the three alternatives, like this: <br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--yUeaYEHg--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/oigchzayg9mjwck70h6g.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--yUeaYEHg--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/oigchzayg9mjwck70h6g.png" alt="Alt Text"></a><br>
+  The first alternative in the screen shot above corresponds to the <code>drive.readonly</code> scope, the second corresponds to the <code>drive.metadata.readonly</code> scope, and the third one corresponds to the <code>drive.file</code> scope.</p>
+</li>
+<li><p>Click the "UPDATE" button at the bottom of the window</p></li>
+<li><p>Click "SAVE AND CONTINUE" in the "Edit app registration" screen.</p></li>
+<li><p>In the "Test users" screen, click the "+ ADD USERS" button, and add yourself (your gmail address) to the list.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--ZM2aULEl--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/9asem9f77t2f1p7ikrg7.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--ZM2aULEl--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/9asem9f77t2f1p7ikrg7.png" alt="Alt Text"></a></p></li>
+<li><p>Click "SAVE AND CONTINUE".</p></li>
+<li><p>The Summary screen is shown. Click the "BACK TO DASHBOARD" button.</p></li>
+</ul>
+<h2>
+  <a href="#create-credentials">
+  </a>
+  Create credentials
+</h2>
+
+<p>In order for the app (the script) to obtain an access token, it needs to pass a set of credentials to to the Google authorization server. Together with the credentials, the script passes (as a parameter) the set of scopes that it would like to access. The authorization server then present the user of the script with a screen where they can log in with their Google account. After logging in, the user is asked whether they are willing to grant one or more permissions that your app is requesting. This process is called user consent as discussed in the previous section.</p>
+
+<p>To obtain the set of credentials that the script should present to the authorization server (see: <a href="https://developers.google.com/workspace/guides/create-credentials">workspace/guides/create-credentials</a>), we do the following:</p>
+
+<ul>
+<li><p>In the Google cloud console, click the drop down menu in top left corner, and select "APIs &amp; Services" -&gt; "Credentials". The credential page for your project appears.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Sr_BTzCn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/9iq785aga4qfahi6sirs.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Sr_BTzCn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/9iq785aga4qfahi6sirs.png" alt="Image description"></a></p></li>
+<li><p>Select the "DesktopApp" project, by clicking project button in the top menu bar. If it already shows "DesktopApp", you can skip this step.</p></li>
+<li><p>Click the "+ CREATE CREDENTIALS" button on the top of the<br>
+page. Select "OAuth Client ID" from the drop down menu.</p></li>
+<li><p>Select "Desktop app" from the "Application type" drop down menu.</p></li>
+<li><p>Select a client name in the "Name" field, or use the suggested name.</p></li>
+<li><p>Click the "CREATE" button at the bottom of the page.</p></li>
+<li><p>Click "OK" in the "OAuth client created" dialog box.</p></li>
+<li><p>Next, still in the Google cloud console: click the drop down menu in top left corner, and select "APIs &amp; Services" -&gt; "Credentials". The credential page for your project appears.</p></li>
+<li><p>Select the "DesktopApp" project, by clicking project button in the top menu bar. If it already shows "DesktopApp", you can skip this step.</p></li>
+<li><p>Under "OAuth 2.0 Client IDs", click the download button under the "Actions" heading.<br>
+<a href="https://res.cloudinary.com/practicaldev/image/fetch/s--aOEh-Ry1--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4b8mwjqq5q4gpqc3gii5.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--aOEh-Ry1--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/4b8mwjqq5q4gpqc3gii5.png" alt="Image description"></a></p></li>
+<li><p>Select "DOWNLOAD JSON" in the popup window.</p></li>
+<li><p>Rename the file as "credentials.json" on your computer.</p></li>
+</ul>
+<h2>
+  <a href="#obtaining-the-access-token">
+  </a>
+  Obtaining the access token
+</h2>
+
+<p>Now as we have the credentials, we can obtain the access token. I have rewritten the <a href="https://metacpan.org/release/ATOOMIC/Net-Google-Drive-Simple-0.19/source/eg/google-drive-init">google-drive-init</a> script provided by <a href="https://metacpan.org/pod/Net::Google::Drive::Simple">Net::Google::Drive::Simple</a> slightly:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">v5</span><span class="mf">.26</span><span class="p">;</span> <span class="c1"># Indented here-docs introduced in 5.26</span>
+<span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw(say)</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">experimental</span> <span class="sx">qw(signatures)</span><span class="p">;</span>
+<span class="k">use</span> <span class="nb">open</span> <span class="sx">qw(:std :encoding(utf-8))</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">Mojo</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">JSON</span><span class="p">;</span>
+<span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$credentials</span> <span class="o">=</span> <span class="nv">read_credentials</span><span class="p">();</span>
+    <span class="k">my</span> <span class="nv">$token_dir</span> <span class="o">=</span> <span class="p">'</span><span class="s1">.</span><span class="p">';</span>
+    <span class="c1"># NOTE: if you change the scopes below, you should delete the previous</span>
+    <span class="c1">#  access token file (.google-drive.yml) and then rerun this script..</span>
+    <span class="k">my</span> <span class="nv">@scopes</span>  <span class="o">=</span> <span class="p">(</span>
+        <span class="p">"</span><span class="s2">drive.file</span><span class="p">",</span>
+        <span class="p">"</span><span class="s2">drive.metadata.readonly</span><span class="p">",</span>
+        <span class="p">"</span><span class="s2">drive.readonly</span><span class="p">"</span>
+    <span class="p">);</span>
+    <span class="k">my</span> <span class="nv">$scopes</span> <span class="o">=</span> <span class="nb">join</span> <span class="p">'</span><span class="s1"> </span><span class="p">',</span> <span class="nb">map</span> <span class="p">{</span> <span class="p">"</span><span class="s2">https://www.googleapis.com/auth/</span><span class="si">$_</span><span class="p">"</span> <span class="p">}</span> <span class="nv">@scopes</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$oauth</span> <span class="o">=</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+        <span class="s">client_id</span>     <span class="o">=&gt;</span> <span class="nv">$credentials</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">client_id</span><span class="p">},</span>
+        <span class="s">client_secret</span> <span class="o">=&gt;</span> <span class="nv">$credentials</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">client_secret</span><span class="p">},</span>
+        <span class="s">login_uri</span>     <span class="o">=&gt;</span> <span class="nv">$credentials</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">auth_uri</span><span class="p">},</span>
+        <span class="s">token_uri</span>     <span class="o">=&gt;</span> <span class="nv">$credentials</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">token_uri</span><span class="p">},</span>
+        <span class="s">scope</span>         <span class="o">=&gt;</span> <span class="nv">$scopes</span><span class="p">,</span>
+        <span class="s">homedir</span>       <span class="o">=&gt;</span> <span class="nv">$token_dir</span>
+    <span class="p">);</span>
+    <span class="k">print</span> <span class="o">&lt;&lt;~</span><span class="p">'</span><span class="s1">INFO_STR</span><span class="p">';</span>
+    <span class="nv">Running</span> <span class="nv">the</span> <span class="nv">token</span> <span class="nv">collector</span> <span class="nv">web</span> <span class="nv">server</span> <span class="nv">at</span> <span class="nv">http:</span><span class="sr">//local</span><span class="nv">host:8082</span>
+    <span class="o">-</span> <span class="nv">Open</span> <span class="nv">your</span> <span class="nv">web</span> <span class="nv">browser</span> <span class="ow">and</span> <span class="nv">go</span> <span class="nv">to</span> <span class="nv">http:</span><span class="sr">//local</span><span class="nv">host:8082</span><span class="p">,</span> <span class="k">then</span> <span class="nv">click</span> <span class="nv">the</span> <span class="nb">link</span>
+      <span class="p">"</span><span class="s2">Login on google-drive</span><span class="p">"</span> <span class="ow">and</span> <span class="nv">fill</span> <span class="nv">out</span> <span class="nv">the</span> <span class="nv">OAuth</span> <span class="nv">consent</span> <span class="nv">screen</span> <span class="nv">granting</span>
+      <span class="nv">your</span> <span class="nv">Perl</span> <span class="nv">scripts</span> <span class="nv">access</span> <span class="nv">to</span> <span class="nv">your</span> <span class="nv">google</span> <span class="nv">drive</span><span class="o">.</span>
+    <span class="o">-</span> <span class="nv">Click</span> <span class="nv">the</span> <span class="nv">check</span> <span class="nv">boxes</span> <span class="k">for</span> <span class="nv">what</span> <span class="nv">the</span> <span class="nv">app</span> <span class="nv">can</span> <span class="nv">access</span> <span class="p">(</span><span class="nv">the</span> <span class="nv">scopes</span><span class="p">)</span>
+    <span class="o">-</span> <span class="nv">Then</span> <span class="nv">click</span> <span class="p">"</span><span class="s2">Continue</span><span class="p">"</span>
+    <span class="o">-</span> <span class="nv">When</span> <span class="nv">the</span> <span class="nv">message</span> <span class="p">"</span><span class="s2">Tokens saved in ./.google-drive.yml</span><span class="p">"</span> <span class="nv">appears</span><span class="p">,</span> <span class="nv">the</span>
+      <span class="nv">access</span> <span class="nv">token</span> <span class="nv">was</span> <span class="nv">successfully</span> <span class="nv">generated</span> <span class="ow">and</span> <span class="nv">saved</span> <span class="nv">to</span> <span class="nv">the</span> <span class="nb">local</span> <span class="nv">file</span>
+      <span class="o">.</span><span class="nv">google</span><span class="o">-</span><span class="nv">drive</span><span class="o">.</span><span class="nv">yml</span><span class="o">.</span>
+    <span class="o">-</span> <span class="nv">You</span> <span class="nv">can</span> <span class="k">then</span> <span class="nv">quit</span> <span class="nv">the</span> <span class="nv">server</span> <span class="p">(</span><span class="nv">this</span> <span class="nv">script</span><span class="p">)</span> <span class="nv">by</span> <span class="nv">pressing</span> <span class="nv">CTRL</span><span class="o">-</span><span class="nv">C</span><span class="o">.</span>
+    <span class="o">----------------------------------------------------------------</span>
+    <span class="nv">INFO_STR</span>
+    <span class="k">my</span> <span class="nv">$app</span> <span class="o">=</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">Mojo</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+        <span class="s">oauth</span> <span class="o">=&gt;</span> <span class="nv">$oauth</span><span class="p">,</span>
+    <span class="p">);</span>
+    <span class="nv">$app</span><span class="o">-&gt;</span><span class="nv">start</span><span class="p">(</span> <span class="p">'</span><span class="s1">daemon</span><span class="p">',</span> <span class="p">'</span><span class="s1">-l</span><span class="p">',</span> <span class="nv">$oauth</span><span class="o">-&gt;</span><span class="nv">local_uri</span> <span class="p">);</span>
+    <span class="c1"># After you filled out the consent screens, you need to press CTRL-C in the shell</span>
+    <span class="c1">#  window to exit this script.</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">Server finished.</span><span class="p">";</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">Done.</span><span class="p">";</span>
+<span class="p">}</span>
+
+
+<span class="k">sub </span><span class="nf">read_credentials</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$fn</span> <span class="o">=</span> <span class="p">'</span><span class="s1">credentials.json</span><span class="p">';</span>
+    <span class="nb">open</span> <span class="p">(</span> <span class="k">my</span> <span class="nv">$fh</span><span class="p">,</span> <span class="p">'</span><span class="s1">&lt;</span><span class="p">',</span> <span class="nv">$fn</span> <span class="p">)</span> <span class="ow">or</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">Could not open file '</span><span class="si">$fn</span><span class="s2">': $!</span><span class="p">";</span>
+    <span class="k">my</span> <span class="nv">$str</span> <span class="o">=</span> <span class="k">do</span> <span class="p">{</span> <span class="nb">local</span> <span class="vg">$/</span><span class="p">;</span> <span class="o">&lt;</span><span class="nv">$fh</span><span class="o">&gt;</span> <span class="p">};</span>
+    <span class="nb">close</span> <span class="nv">$fh</span><span class="p">;</span>
+    <span class="k">my</span> <span class="nv">$json</span> <span class="o">=</span> <span class="nv">JSON</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">();</span>
+    <span class="k">my</span> <span class="nv">$hash</span> <span class="o">=</span> <span class="nv">$json</span><span class="o">-&gt;</span><span class="nv">decode</span><span class="p">(</span> <span class="nv">$str</span> <span class="p">);</span>
+    <span class="nb">die</span> <span class="p">"</span><span class="si">$fn</span><span class="s2">: Expected installed app</span><span class="p">"</span> <span class="k">if</span> <span class="o">!</span><span class="p">(</span><span class="nb">exists</span> <span class="nv">$hash</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">installed</span><span class="p">});</span>
+    <span class="k">return</span> <span class="nv">$hash</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">installed</span><span class="p">};</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>If you run this script (after installing <a href="https://metacpan.org/pod/OAuth::Cmdline">OAuth::Cmdline</a>), the access token should be saved in a file <code>.google-drive.yml</code> in the current directory.</p>
+
+<h2>
+  <a href="#uploading-a-file-to-google-drive">
+  </a>
+  Uploading a file to Google Drive
+</h2>
+
+<p>Finally, we have the access token and we can start to use the module <a href="https://metacpan.org/pod/Net::Google::Drive::Simple">Net::Google::Drive::Simple</a>. We will start by uploading a file to Google Drive. Unfortunately, when I tested the <a href="https://metacpan.org/pod/Net::Google::Drive::Simple#METHODS"><code>file_upload( $file, $dir_id )</code></a> method, it did not work as expected, see <a href="https://github.com/mschilli/net-google-drive-simple/issues/47">issue # 47</a>. I created <a href="https://github.com/mschilli/net-google-drive-simple/pull/48">a pull request</a> to fix the issue. Since the pull request has not yet been merged I suggest that you (if you want to upload files) install the module (<code>Net::Google::Drive::Simple</code>) like this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code>git clone https://github.com/mschilli/net-google-drive-simple.git
+<span class="nb">cd </span>net-google-drive-simple
+git fetch origin pull/48/head:pr_48
+git checkout pr_48
+cpanm <span class="nt">--installdeps</span> <span class="nb">.</span>
+perl Makefile.PL
+make
+make <span class="nb">test
+</span>make <span class="nb">install</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Now, create a dummy <code>hello.txt</code> file that we will upload to the root directory of Google Drive:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nv">$ </span><span class="nb">echo</span> <span class="s2">"Hello world!"</span> <span class="o">&gt;</span> hello.txt 
+</code></pre>
+
+</div>
+
+
+
+<p>Then save the following script as <code>upload.pl</code> (in the same directory as you have the access token file):<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw(say)</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Net::Google::Drive::</span><span class="nv">Simple</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="p">;</span>
+
+<span class="k">my</span> <span class="nv">$token_dir</span> <span class="o">=</span> <span class="p">'</span><span class="s1">.</span><span class="p">';</span>
+<span class="k">my</span> <span class="nv">$oauth</span> <span class="o">=</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+    <span class="s">scope</span>         <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">https://www.googleapis.com/auth/drive.file</span><span class="p">",</span>
+    <span class="s">homedir</span>       <span class="o">=&gt;</span> <span class="nv">$token_dir</span>
+<span class="p">);</span>
+<span class="k">my</span> <span class="nv">$gd</span> <span class="o">=</span> <span class="nn">Net::Google::Drive::</span><span class="nv">Simple</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span> <span class="s">oauth</span> <span class="o">=&gt;</span> <span class="nv">$oauth</span> <span class="p">);</span>
+<span class="k">my</span> <span class="nv">$file</span> <span class="o">=</span> <span class="p">'</span><span class="s1">hello.txt</span><span class="p">';</span>
+<span class="k">my</span> <span class="nv">$parent</span> <span class="o">=</span> <span class="p">'</span><span class="s1">root</span><span class="p">';</span>
+<span class="k">my</span> <span class="nv">$file_id</span> <span class="o">=</span> <span class="nv">$gd</span><span class="o">-&gt;</span><span class="nv">file_upload</span><span class="p">(</span> <span class="nv">$file</span><span class="p">,</span> <span class="nv">$parent</span> <span class="p">)</span> <span class="ow">or</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">Upload failed: $!</span><span class="p">";</span>
+<span class="nv">say</span> <span class="p">"</span><span class="s2">Uploaded file: </span><span class="si">$file</span><span class="s2"> (id: </span><span class="si">$file_id</span><span class="s2">) to directory with id: </span><span class="si">$parent</span><span class="p">";</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Then run the script:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight shell"><code><span class="nv">$ </span>perl upload.pl
+Uploaded file: hello.txt <span class="o">(</span><span class="nb">id</span>: 1x5pc9_rvAFeLgkp0zLUeuKAIMWptplz9<span class="o">)</span> to directory with <span class="nb">id</span>: root
+</code></pre>
+
+</div>
+
+
+
+<p>to upload the <code>hello.txt</code> file to your Google Drive!</p>
+
+<h2>
+  <a href="#downloading-a-file-from-google-drive">
+  </a>
+  Downloading a file from Google Drive
+</h2>
+
+<p>It is not enough to simply specify the directory and filename to download a file. There can be multiple files with the same name in the same directory, however a file's ID is unique. When we uploaded the <code>hello.txt</code> the API returned the ID of the uploaded file, namely <code>1x5pc9_rvAFeLgkp0zLUeuKAIMWptplz9</code>. Another way to determine the ID is to right click a file in the Google Drive UI and select "Get link" from the drop down menu. If you know that the file name is unique, a third way is to use the <a href="https://metacpan.org/pod/Net::Google::Drive::Simple#METHODS"><code>search()</code></a> method. I first show how to download a file when you know the ID. The following script can download a file that the app created (if you want to download any file, you should replace the <code>drive.file</code> scope with the <code>drive.readonly</code> scope) :<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw(say)</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Net::Google::Drive::</span><span class="nv">Simple</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="p">;</span>
+
+<span class="k">my</span> <span class="nv">$token_dir</span> <span class="o">=</span> <span class="p">'</span><span class="s1">.</span><span class="p">';</span>
+<span class="k">my</span> <span class="nv">$oauth</span> <span class="o">=</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+    <span class="s">scope</span>         <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">https://www.googleapis.com/auth/drive.file</span><span class="p">",</span>
+    <span class="s">homedir</span>       <span class="o">=&gt;</span> <span class="nv">$token_dir</span>
+<span class="p">);</span>
+<span class="k">my</span> <span class="nv">$gd</span> <span class="o">=</span> <span class="nn">Net::Google::Drive::</span><span class="nv">Simple</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span> <span class="s">oauth</span> <span class="o">=&gt;</span> <span class="nv">$oauth</span> <span class="p">);</span>
+<span class="k">my</span> <span class="nv">$file_id</span> <span class="o">=</span> <span class="p">'</span><span class="s1">1x5pc9_rvAFeLgkp0zLUeuKAIMWptplz9</span><span class="p">';</span>
+<span class="k">my</span> <span class="nv">$url</span> <span class="o">=</span> <span class="nv">download_url</span><span class="p">(</span><span class="nv">$file_id</span><span class="p">);</span>
+<span class="nv">say</span> <span class="p">"</span><span class="s2">Downloading from: </span><span class="si">$url</span><span class="p">";</span>
+<span class="k">my</span> <span class="nv">$save_fn</span> <span class="o">=</span> <span class="p">'</span><span class="s1">hello2.txt</span><span class="p">';</span>
+<span class="k">if</span> <span class="p">(</span><span class="nv">$gd</span><span class="o">-&gt;</span><span class="nv">download</span><span class="p">(</span><span class="nv">$url</span><span class="p">,</span> <span class="nv">$save_fn</span><span class="p">))</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">Downloaded file with id '</span><span class="si">$file_id</span><span class="s2">' as '</span><span class="si">$save_fn</span><span class="s2">'</span><span class="p">";</span>
+<span class="p">}</span>
+<span class="k">else</span> <span class="p">{</span>
+    <span class="nb">die</span> <span class="p">"</span><span class="s2">Failed to download </span><span class="si">$file_id</span><span class="s2">: </span><span class="p">",</span> <span class="nv">$gd</span><span class="o">-&gt;</span><span class="nv">error</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">download_url</span> <span class="p">{</span>
+        <span class="p">'</span><span class="s1">https://www.googleapis.com/drive/v2/files/</span><span class="p">'</span>
+      <span class="o">.</span> <span class="vg">$_</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+      <span class="o">.</span> <span class="p">'</span><span class="s1">?alt=media&amp;source=downloadUrl</span><span class="p">';</span>
+<span class="p">}</span>
+
+</code></pre>
+
+</div>
+
+
+
+<p>Alternatively, if you know that the file name is unique across the whole Google Drive and you don't want to look in the UI for the file ID, you can use the <code>search()</code> method like this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw(say)</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Net::Google::Drive::</span><span class="nv">Simple</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="p">;</span>
+
+<span class="k">my</span> <span class="nv">$token_dir</span> <span class="o">=</span> <span class="p">'</span><span class="s1">.</span><span class="p">';</span>
+<span class="k">my</span> <span class="nv">$oauth</span> <span class="o">=</span> <span class="nn">OAuth::Cmdline::</span><span class="nv">GoogleDrive</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+    <span class="s">scope</span>         <span class="o">=&gt;</span>  <span class="p">(</span> <span class="p">"</span><span class="s2">https://www.googleapis.com/auth/drive.readonly</span><span class="p">"</span> <span class="o">.</span> <span class="p">'</span><span class="s1"> </span><span class="p">'</span>
+                     <span class="o">.</span> <span class="p">"</span><span class="s2">https://www.googleapis.com/auth/drive.file</span><span class="p">"),</span>
+    <span class="s">homedir</span>       <span class="o">=&gt;</span> <span class="nv">$token_dir</span>
+<span class="p">);</span>
+<span class="k">my</span> <span class="nv">$gd</span> <span class="o">=</span> <span class="nn">Net::Google::Drive::</span><span class="nv">Simple</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span> <span class="s">oauth</span> <span class="o">=&gt;</span> <span class="nv">$oauth</span> <span class="p">);</span>
+<span class="k">my</span> <span class="nv">$fn</span> <span class="o">=</span> <span class="p">'</span><span class="s1">hello.txt</span><span class="p">';</span>
+<span class="k">my</span> <span class="nv">$children</span><span class="o">=</span> <span class="nv">$gd</span><span class="o">-&gt;</span><span class="nv">search</span><span class="p">(</span>
+    <span class="p">{</span> <span class="s">maxResults</span> <span class="o">=&gt;</span> <span class="mi">2</span> <span class="p">},</span>
+    <span class="p">{</span> <span class="s">page</span> <span class="o">=&gt;</span> <span class="mi">1</span> <span class="p">},</span>
+    <span class="p">"</span><span class="s2">title = '</span><span class="si">$fn</span><span class="s2">'</span><span class="p">"</span>
+<span class="p">);</span>
+<span class="nb">die</span> <span class="p">"</span><span class="s2">Multiple files matching '</span><span class="si">$fn</span><span class="s2">' found.</span><span class="p">"</span> <span class="k">if</span> <span class="nv">@$children</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">;</span>
+<span class="nb">die</span> <span class="p">"</span><span class="s2">No files matching '</span><span class="si">$fn</span><span class="s2">' found.</span><span class="p">"</span> <span class="k">if</span> <span class="nv">@$children</span> <span class="o">==</span> <span class="mi">0</span><span class="p">;</span>
+
+<span class="k">my</span> <span class="nv">$child</span> <span class="o">=</span> <span class="nv">$children</span><span class="o">-&gt;</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+<span class="k">my</span> <span class="nv">$save_fn</span> <span class="o">=</span> <span class="p">'</span><span class="s1">hello2.txt</span><span class="p">';</span>
+<span class="k">if</span> <span class="p">(</span><span class="nv">$gd</span><span class="o">-&gt;</span><span class="nv">download</span><span class="p">(</span><span class="nv">$child</span><span class="p">,</span> <span class="nv">$save_fn</span><span class="p">))</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">Downloaded file with name '</span><span class="si">$fn</span><span class="s2">' as '</span><span class="si">$save_fn</span><span class="s2">'</span><span class="p">";</span>
+<span class="p">}</span>
+<span class="k">else</span> <span class="p">{</span>
+    <span class="nb">die</span> <span class="p">"</span><span class="s2">Failed to download </span><span class="si">$fn</span><span class="s2">: </span><span class="p">",</span> <span class="nv">$gd</span><span class="o">-&gt;</span><span class="nv">error</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/read-the-fantastic-manual-how-to-get-the-most-out-of-perl-documentation-4bca">Read The Fantastic Manual: How to get the most out of Perl documentation</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -180,7 +573,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/533.html">#533 - Consulting work</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -195,7 +588,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-the-roaar-flyer-3d05">The ephemeral miniconf - The roaar flyer !</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -213,7 +606,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/2021-09-raku-ci-bot-grant-report">Raku CI Bot Grant Report for September 2021</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -245,7 +638,7 @@ I'm hopeful to do so in the coming days.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/davorg/in-place-editing-with-dancer2-and-jquery-efd">In-place editing with Dancer2 and jQuery</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -459,7 +852,7 @@ true;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/10/ccclxii-7-great-cpan-modules-released.html">(ccclxii) 7 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -471,7 +864,7 @@ true;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/10/cdlxxxvi-metacpan-weekly-report.html">(cdlxxxvi) metacpan weekly report - Dist::Zilla::MintingProfile::FFI</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -483,7 +876,7 @@ true;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/10/dvii-stackoverflow-perl-report.html">(dvii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -495,7 +888,7 @@ true;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-133-7gi">Weekly Challenge 133</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -607,7 +1000,7 @@ $ ./ch-1.pl 101
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/10/perl-weekly-challenge-133-integer-square-roots-and-smith-numbers.html">Perl Weekly Challenge 133: Integer Square Roots and Smith Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1070,7 +1463,7 @@ say "@result";
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/jonathan-raku-dispatch-and-compiler-improvements-2">Raku Dispatch and Compiler Improvements: Final Grant Report Jonathan Worthington</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1129,7 +1522,7 @@ available.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-warnings-a-belated-introduction.html">My Favorite Warnings &amp;mdash; A Belated Introduction</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1167,93 +1560,6 @@ available.</p>
 
         
            </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_14">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/mjgardner/lamp-is-dead-long-live-perl-web-frameworks-42g7">LAMP is dead! Long live (Perl) web frameworks!</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Mark Gardner
- on Tuesday 05 October 2021 14:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Twitter recently recommended <a href="https://twitter.com/eugzolotarenko/status/1443132448636801024">a tweet</a> to me (all hail the algorithm) touting what the author viewed as the “top 5 web development stacks.”</p>
-
-
-<blockquote class="ltag__twitter-tweet">
-
-  <div class="ltag__twitter-tweet__main">
-    <div class="ltag__twitter-tweet__header">
-      <img class="ltag__twitter-tweet__profile-image" src="https://res.cloudinary.com/practicaldev/image/fetch/s--w-8jEAab--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://pbs.twimg.com/profile_images/1445267542142980096/TTQep8wI_normal.png" alt="Eugene 💛 Zolotarenko profile image">
-      <div class="ltag__twitter-tweet__full-name">
-        Eugene 💛 Zolotarenko
-      </div>
-      <div class="ltag__twitter-tweet__username">
-        @eugzolotarenko
-      </div>
-      <div class="ltag__twitter-tweet__twitter-logo">
-        <img src="https://res.cloudinary.com/practicaldev/image/fetch/s--ir1kO05j--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev.to/assets/twitter-f95605061196010f91e64806688390eb1a4dbc9e913682e043eb8b1e06ca484f.svg" alt="twitter logo">
-      </div>
-    </div>
-    <div class="ltag__twitter-tweet__body">
-      Top 5 Web Development Stacks 👇<br><br>1. MERN (MongoDB, Express, React, Node.js)<br>2. MEVN (MongoDB, Express, Vue.js, Node.js)<br>3. MEAN (MongoDB, Express, Angular, Node.js)<br>4. PERN (PostgreSQL, Express, React, Node.js)<br>5. LAMP (Linux, Apache, MySQL, PHP/Python/Perl)<br><br>What is your pick?
-    </div>
-    <div class="ltag__twitter-tweet__date">
-      08:36 AM - 29 Sep 2021
-    </div>
-
-
-    <div class="ltag__twitter-tweet__actions">
-      <a href="https://twitter.com/intent/tweet?in_reply_to=1443132448636801024" class="ltag__twitter-tweet__actions__button">
-        <img src="https://res.cloudinary.com/practicaldev/image/fetch/s--fFnoeFxk--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev.to/assets/twitter-reply-action-238fe0a37991706a6880ed13941c3efd6b371e4aefe288fe8e0db85250708bc4.svg" alt="Twitter reply action">
-      </a>
-      <a href="https://twitter.com/intent/retweet?tweet_id=1443132448636801024" class="ltag__twitter-tweet__actions__button">
-        <img src="https://res.cloudinary.com/practicaldev/image/fetch/s--k6dcrOn8--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev.to/assets/twitter-retweet-action-632c83532a4e7de573c5c08dbb090ee18b348b13e2793175fea914827bc42046.svg" alt="Twitter retweet action">
-      </a>
-      <a href="https://twitter.com/intent/like?tweet_id=1443132448636801024" class="ltag__twitter-tweet__actions__button">
-        <img src="https://res.cloudinary.com/practicaldev/image/fetch/s--SRQc9lOp--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev.to/assets/twitter-like-action-1ea89f4b87c7d37465b0eb78d51fcb7fe6c03a089805d7ea014ba71365be5171.svg" alt="Twitter like action">
-      </a>
-    </div>
-  </div>
-</blockquote>
-
-
-<p><a href="https://developer.mozilla.org/en-US/docs/Web/javascript">JavaScript</a>/<a href="https://nodejs.org">Node.js</a> options dominated the four-letter acronyms as expected, but the fifth one surprised me: LAMP, the combination of the <a href="https://www.kernel.org/"><strong>L</strong>inux</a> operating system, <a href="https://httpd.apache.org/"><strong>A</strong>pache web server</a>, <a href="https://www.mysql.com/"><strong>M</strong>ySQL</a> relational database, and <a href="https://www.perl.org/"><strong>P</strong>erl</a>, <a href="https://www.php.net/"><strong>P</strong>HP</a>, or <a href="https://www.python.org/"><strong>P</strong>ython</a> programming languages. A <a href="https://duckduckgo.com/?q=top+web+development+stacks">quick web search</a> for similar lists <a href="https://www.octalsoftware.com/blog/best-web-development-stacks">yielded</a> <a href="https://enkonix.com/blog/web-development-stacks">similar</a> <a href="https://dzone.com/articles/7-top-web-development-technology-stacks-for-2021">results</a>. Clearly, this meme (in the <a href="https://richarddawkins.net/2014/02/whats-in-a-meme/">Dawkins sense</a>) has outlasted <a href="https://web.archive.org/web/20010304112803/http://www.onlamp.com/pub/a/onlamp/2001/01/25/lamp.html">its popularization by tech publisher O’Reilly</a> in the 2000s.</p>
-
-<p>Originally coined in 1998 during the <a href="https://en.wikipedia.org/wiki/Dot-com_bubble">“dot-com” bubble</a>, I had thought that the term “LAMP” had faded with developers in the intervening decades with the rise of language-specific web frameworks for:</p>
-
-<ul>
-<li>Perl (e.g., <a href="http://www.catalystframework.org/">Catalyst</a>, <a href="https://www.perldancer.org/">Dancer</a>, <a href="https://mojolicious.org/">Mojolicious</a>),</li>
-<li>PHP (e.g., <a href="https://laravel.com/">Laravel</a>, <a href="https://symfony.com/">Symfony</a>, <a href="https://getlaminas.org/">Zend/Laminas</a>),</li>
-<li>and Python (e.g., <a href="https://www.djangoproject.com/">Django</a>, <a href="https://flask.palletsprojects.com/">Flask</a>, <a href="http://web2py.com/">web2py</a>).</li>
-</ul>
-
-<p>Certainly on the Perl side (with which I’m most familiar), the community has long since <a href="https://perldoc.perl.org/perlfaq9#Should-I-use-a-web-framework?">recommended the use of a framework</a> built on the <a href="https://metacpan.org/pod/PSGI">PSGI</a> specification, <a href="https://www.perl.com/article/perl-and-cgi/#why-not-to-use-cgi">deprecating 1990s-era CGI</a> scripts and the <a href="https://perl.apache.org/">mod_perl Apache extension</a>. Although general-purpose web servers like Apache or <a href="https://nginx.org/">Nginx</a> may be part of an overall system, they’re typically used as <a href="https://docs.mojolicious.org/Mojolicious/Guides/Cookbook#Nginx">proxies</a> or load balancers for Perl-specific servers either <a href="https://docs.mojolicious.org/Mojo/Server/Hypnotoad">provided by the framework</a> or a <a href="https://metacpan.org/pod/Dancer2::Manual::Deployment#Running-on-PSGI-based-Perl-webservers">third-party module</a>.</p>
-
-<p>Granted, PHP <a href="https://www.php.net/manual/en/install.php">still relies</a> on web server-specific modules, APIs, or variations of the <a href="https://fastcgi-archives.github.io/">FastCGI protocol</a> for interfacing with a web server. And Python web applications typically make use of its <a href="https://wsgi.readthedocs.io/">WSGI protocol</a> either as a web server extension or, like the Perl examples above, as a <a href="https://flask.palletsprojects.com/en/2.0.x/deploying/wsgi-standalone/#proxy-setups">proxied</a> <a href="https://flask.palletsprojects.com/en/2.0.x/deploying/wsgi-standalone/">standalone server</a>. But all of these are deployment details and do little to describe how developers implement and extend a web application’s structure.</p>
-
-<p>Note how the various four-letter JavaScript stacks (e.g., MERN, MEVN, MEAN, PERN) differentiate themselves mostly by frontend framework (e.g., <a href="https://angular.io/">Angular</a>, <a href="https://reactjs.org/">React</a>, <a href="https://vuejs.org/">Vue.js</a>) and maybe by the (relational or <a href="https://en.wikipedia.org/wiki/NoSQL">NoSQL</a>) database (e.g., <a href="https://www.mongodb.com/">MongoDB</a>, MySQL, <a href="https://www.postgresql.org/">PostgreSQL</a>). All however seem standardized on the Node.js runtime and <a href="http://expressjs.com/">Express</a> backend web framework, which could, in theory, be replaced with non-JavaScript options like the more mature LAMP-associated languages and frameworks. (Or if you prefer languages that don’t start with “P”, there’s <a href="https://docs.microsoft.com/en-us/dotnet/csharp/">C#</a>, <a href="https://golang.org/">Go</a>, <a href="https://www.oracle.com/java/">Java</a>, <a href="https://www.ruby-lang.org/">Ruby</a>, etc.)</p>
-
-<p><strong>My point is that “LAMP” as the name of a web development stack has outlived its usefulness.</strong> It’s at once too specific (about operating system and web server details that are often abstracted away for developers) and too broad (covering three separate programming languages and not the frameworks they favor). It also leaves out other non-JavaScript back-end languages and their associated frameworks.</p>
-
-<p>The question is: what can replace it? I’d propose “NoJS” as reminiscent of “NoSQL,” but that inaccurately excludes JavaScript from its necessary role in the front-end. “NJSB” doesn’t exactly roll off the tongue, either, and still has the same ambiguity problem as “LAMP.”</p>
-
-<p>How about pithy sort-of-acronyms patterned like <em>database-frontend-backend</em>? Here are some Perl examples:</p>
-
-<ul>
-<li>
-<strong>MRDancer</strong>: MySQL, React, and Dancer (I use this at <a href="https://www.hostgator.com/">work</a>. Yes, the M could also stand for MongoDB. <a href="https://www.karlton.org/2017/12/naming-things-hard/">Naming things is hard.</a>)</li>
-<li>
-<strong>MRMojo</strong>: MongoDB, React, and Mojolicious</li>
-<li>
-<strong>PACat</strong>: PostgreSQL, Angular, and Catalyst</li>
-<li>etc.</li>
-</ul>
-
-<p>Ultimately it comes down to community and industry adoption. If you’re involved with back-end web development, please let me know in the comments if you agree or disagree that “LAMP” is still a useful term, and if not, what should replace it.</p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2615,7 +2921,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 14 October 2021 20:42 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 15 October 2021 00:58 UTC</address>
             </div>
           </div>
         </div><!-- container -->
