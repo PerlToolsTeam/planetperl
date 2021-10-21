@@ -57,6 +57,123 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/gugod/making-single-binary-release-with-pp-5171">Making Single-binary Release with pp</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Kang-min Liu
+ on Thursday 21 October 2021 15:01</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p><code>pp</code> comes with <code>PAR::Packer</code>, which is a tool for "compiling" a bunch of modules and codes and makes a single binary.</p>
+
+<p><code>perldoc pp</code> already contains a good amount of documentation one can refer to.</p>
+
+<p>While it works with system perl, I found it even easier to first prepare a directory of <code>local::lib</code>, then just package that entire directory.</p>
+
+<p><code>pp</code> tries its best to determine the list of dependencies of the given program in various ways but none of those are guaranteed to be 100% accurate. As matter of fact that guarantee is impossible to make. This is partially due to the fact that a running program can load modules in ways that cannot be easily determined by reading the program source code, or in a relative hidden code path that cannot be easily captured.</p>
+
+<p>That is a good amount of flexibility, but definitely a pricey one. Although, arguably it is also an issue brought by the tool (<code>pp</code>, <code>perlcc</code>, <code>perl2exe</code>, etc.). I guess that is because the dynamic nature is so convenient as long as all the installation are done right. Having a tool that is able to automically complie all dependencies together was not needed that much. It has definidently needed, that is why we have those tools now, but in the last mile of their completion, lies an undecidable problem.</p>
+
+<p>So we will need to manually add those missing depedencies to <code>pp</code> command, which is fine only when the list is small. Since we wish to just pack all the declared dependencies together, we don't care that much even if that's going to make the result a little bigger than it has to be. If we can have the same build script that works everywhere, it is as happy as in Christmas. (An pure metaphoric experssion. Pesonally I feel nothing spceial in Dec 25.)</p>
+
+<p>Anyway...... it turns out to be much easier to decide the dependency at installation time, since that's all well-declared and tools like <code>cpm</code>, or <code>cpanm</code> already does this perfectly. If we install dependencies in a self-contained directory, we could just archive the entire directory together with the program we are packing, and that should be good to go.</p>
+
+<p>Let's say we cd into the source code of <code>foo</code> and we are trying to compile the program <code>foo</code> as a binary. The executable is at <code>bin/foo</code>, while its own moulders such as <code>Foo.pm</code>, <code>Foo/Bar.pm</code> are put under the conventional directory <code>lib</code>.</p>
+
+<p>Given that, this script should produce <code>foo</code> as a single binary that as if all dependencies are "statically-linked" inside:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/bin/bash
+
+# Prepare local/ 
+cpanm -L local -q --installdeps .
+# or: cpm install
+
+perlversion=$(perl -MConfig -e 'print $Config{version}')
+pp -B \
+    -I ./local/lib/perl5 \
+    -a "./local/lib/perl5/;$perlversion/" \
+    -a lib \
+    -o foo \
+    bin/foo
+</code></pre>
+
+</div>
+
+
+
+<p>Alas, this is almost perfect -- except modules in corelist might still be missing. They won't be inside <code>local/</code> and if they are somehow not discovered by <code>pp</code> then they'll be missing in the end result. We won't know this until we manually test the result <code>foo</code> thoroughly. Basically we should always add a bunch of <code>-M</code> flags in the build script instead of assuming <code>pp</code> would do the right thing.</p>
+
+<p>For example, like so, when all of <code>Getopt::Long</code>, <code>JSON::PP</code>, and <code>Sys::Hostname</code> are required.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>pp -B \
+    -M Getopt::Long:: \
+    -M JSON::PP:: \
+    -M Sys::Hostname:: \
+    -I local/lib/perl5 \
+    -a "./local/lib/perl5/;$perlversion/" \
+    -a lib \
+    -o foo \
+    bin/foo
+</code></pre>
+
+</div>
+
+
+
+<p>A rather tedious modification as the list of dependent modules my exist in two places in the repo. Surely there is some way to refactor this.</p>
+
+<p>I've verified the following script <code>build-minicpan.sh</code> that can download the tarball of <code>CPAN::Mini</code> and build a working <code>minicpan</code> out of it:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/bin/bash
+set -e
+
+curl --silent -O https://cpan.metacpan.org/authors/id/R/RJ/RJBS/CPAN-Mini-1.111016.tar.gz
+
+tar -xzf CPAN-Mini-1.111016.tar.gz
+
+cd CPAN-Mini-1.111016
+
+cpanm -n -q -L local --installdeps .
+
+perlversion=$(perl -MConfig -e 'print $Config{version}')
+
+pp -B \
+   -M Getopt::Long:: \
+   -I ./local/lib/perl5 \
+   -a "./local/lib/perl5/;$perlversion/" \
+   -a lib \
+   -o ../minicpan \
+   bin/minicpan
+
+echo "DONE: minicpan"
+</code></pre>
+
+</div>
+
+
+
+<p>To me this seems to be an area worth exploring... I've been experimenting the automation of this in a side-project: <a href="https://github.com/gugod/pau">pau</a>, which is a collection of shell functions that can install app to their own self-contained directory and expose just the program it self. Very similar to what <a href="https://pypa.github.io/pipx/">pipx</a> does. <code>pp</code> support was added not long ago but still there is no good way to figure out all the missing modules and automatically add them as <code>-M</code> arguments.</p>
+
+<p>Maybe as a lazy solution, we should just <em>always</em> produce a heavy-pack that includes the whole core lib directory (usually <code>$INC[-1]</code>) regardless whether any of them are used.</p>
+
+<p>Maybe.</p>
+
+
+
+
+<p>Originally posted at: <a href="https://gugod.org/2021/10/perl-making-single-binary-release-with-pp/">gugod's blog -- Making single binary release with pp</a></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-modules-diagnostics-one.html">My Favorite Modules: diagnostics</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -105,7 +222,7 @@ $ env PERL5OPT=-Mdiagnostics perl my-flaky-perl.PL
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/10/perl-weekly-challenge-135-middle-3-digits-and-validate-sedol.html">Perl Weekly Challenge 135: Middle 3-Digits and Validate SEDOL</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -319,7 +436,7 @@ B0YBKL9: 1
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/the-reports-of-perls-death-have-been-greatly-exaggerated-2p61">The reports of Perl’s death have been greatly exaggerated</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -355,7 +472,7 @@ B0YBKL9: 1
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/10/i-try-match-syntax-using-syntaxkeywordmatch.html">I try match syntax using Syntax::Keyword::Match</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -498,7 +615,7 @@ It's four or five
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/534.html">#534 - Are you CPAN contributor?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -517,7 +634,7 @@ It's four or five
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/10/17#pwc134">A Couple of Brute Force Computations</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -675,7 +792,7 @@ necessary to represent the
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-157-of-perl-workflow-a-bug-fix-release-4d7m">Release 1.57 of perl-workflow, a bug fix release</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -723,7 +840,7 @@ necessary to represent the
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/10/ccclxiii-10-great-cpan-modules-released.html">(ccclxiii) 10 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -735,7 +852,7 @@ necessary to represent the
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/10/cdlxxxvii-metacpan-weekly-report.html">(cdlxxxvii) metacpan weekly report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -747,7 +864,7 @@ necessary to represent the
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/10/dviii-stackoverflow-perl-report.html">(dviii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -759,7 +876,7 @@ necessary to represent the
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/10/perl-weekly-challenge-134-pandigital-numbers-and-distinct-term-count.html">Perl Weekly Challenge 134: Pandigital Numbers and Distinct Term Count</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -971,7 +1088,7 @@ Count: 22
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/mohammad_s_anwar/2021/10/monthly-report---september-2.html">Monthly Report - September</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1125,7 +1242,7 @@ Count: 22
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/hakonhagland/using-google-drive-with-perl-5gli">Using Google Drive with Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1514,7 +1631,7 @@ Uploaded file: hello.txt <span class="o">(</span><span class="nb">id</span>: 1x5
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/read-the-fantastic-manual-how-to-get-the-most-out-of-perl-documentation-4bca">Read The Fantastic Manual: How to get the most out of Perl documentation</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1607,7 +1724,7 @@ Uploaded file: hello.txt <span class="o">(</span><span class="nb">id</span>: 1x5
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/533.html">#533 - Consulting work</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1619,24 +1736,6 @@ Uploaded file: hello.txt <span class="o">(</span><span class="nb">id</span>: 1x5
 <p>I just had a meeting with a company in the UK that were looking for some consulting in Perl. After our conversation I felt that what they are interested in is not really where my expertise is, so I referred them to two other people who have a lot more experience in those areas. However I realized I don't know who is providing consulting or development service these days. So let me know. Who knows next time I might be able to refer the clients to you.</p>
 <p>On the other hand I just found out that my client, where I do some refactoring on a web-application with some machine-learning backend (written in Python). is likely to move the project to their parent company. This probably means I'll be free for other projects to introduce test automation, CI, and refactoring code.</p>
 <p>Enjoy your week!</p>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_16">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-the-roaar-flyer-3d05">The ephemeral miniconf - The roaar flyer !</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tib
- on Monday 11 October 2021 08:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Earlier today I took my best drawing software (Gimp), gathered all my skills and it's finally time to unveil <strong>the ephemeral miniconf</strong> flyer! </p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--t2IHaQBJ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/5klghup0d0k9l24ekbot.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--t2IHaQBJ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/5klghup0d0k9l24ekbot.png" alt="The ephemeral miniconf flyer"></a></p>
-
-<p>Spread the word with this flyer!</p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2520,7 +2619,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 21 October 2021 12:50 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 21 October 2021 16:54 UTC</address>
             </div>
           </div>
         </div><!-- container -->

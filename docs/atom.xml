@@ -7,9 +7,128 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-10-21T12:50:41Z</updated>
+  <updated>2021-10-21T16:54:11Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Making Single-binary Release with pp</title>
+    <link rel="alternate" href="https://dev.to/gugod/making-single-binary-release-with-pp-5171" type="text/html"/>
+    <content type="html">&lt;p&gt;&lt;code&gt;pp&lt;/code&gt; comes with &lt;code&gt;PAR::Packer&lt;/code&gt;, which is a tool for "compiling" a bunch of modules and codes and makes a single binary.&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;perldoc pp&lt;/code&gt; already contains a good amount of documentation one can refer to.&lt;/p&gt;
+
+&lt;p&gt;While it works with system perl, I found it even easier to first prepare a directory of &lt;code&gt;local::lib&lt;/code&gt;, then just package that entire directory.&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;pp&lt;/code&gt; tries its best to determine the list of dependencies of the given program in various ways but none of those are guaranteed to be 100% accurate. As matter of fact that guarantee is impossible to make. This is partially due to the fact that a running program can load modules in ways that cannot be easily determined by reading the program source code, or in a relative hidden code path that cannot be easily captured.&lt;/p&gt;
+
+&lt;p&gt;That is a good amount of flexibility, but definitely a pricey one. Although, arguably it is also an issue brought by the tool (&lt;code&gt;pp&lt;/code&gt;, &lt;code&gt;perlcc&lt;/code&gt;, &lt;code&gt;perl2exe&lt;/code&gt;, etc.). I guess that is because the dynamic nature is so convenient as long as all the installation are done right. Having a tool that is able to automically complie all dependencies together was not needed that much. It has definidently needed, that is why we have those tools now, but in the last mile of their completion, lies an undecidable problem.&lt;/p&gt;
+
+&lt;p&gt;So we will need to manually add those missing depedencies to &lt;code&gt;pp&lt;/code&gt; command, which is fine only when the list is small. Since we wish to just pack all the declared dependencies together, we don't care that much even if that's going to make the result a little bigger than it has to be. If we can have the same build script that works everywhere, it is as happy as in Christmas. (An pure metaphoric experssion. Pesonally I feel nothing spceial in Dec 25.)&lt;/p&gt;
+
+&lt;p&gt;Anyway...... it turns out to be much easier to decide the dependency at installation time, since that's all well-declared and tools like &lt;code&gt;cpm&lt;/code&gt;, or &lt;code&gt;cpanm&lt;/code&gt; already does this perfectly. If we install dependencies in a self-contained directory, we could just archive the entire directory together with the program we are packing, and that should be good to go.&lt;/p&gt;
+
+&lt;p&gt;Let's say we cd into the source code of &lt;code&gt;foo&lt;/code&gt; and we are trying to compile the program &lt;code&gt;foo&lt;/code&gt; as a binary. The executable is at &lt;code&gt;bin/foo&lt;/code&gt;, while its own moulders such as &lt;code&gt;Foo.pm&lt;/code&gt;, &lt;code&gt;Foo/Bar.pm&lt;/code&gt; are put under the conventional directory &lt;code&gt;lib&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Given that, this script should produce &lt;code&gt;foo&lt;/code&gt; as a single binary that as if all dependencies are "statically-linked" inside:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;#!/bin/bash
+
+# Prepare local/ 
+cpanm -L local -q --installdeps .
+# or: cpm install
+
+perlversion=$(perl -MConfig -e 'print $Config{version}')
+pp -B \
+    -I ./local/lib/perl5 \
+    -a "./local/lib/perl5/;$perlversion/" \
+    -a lib \
+    -o foo \
+    bin/foo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Alas, this is almost perfect -- except modules in corelist might still be missing. They won't be inside &lt;code&gt;local/&lt;/code&gt; and if they are somehow not discovered by &lt;code&gt;pp&lt;/code&gt; then they'll be missing in the end result. We won't know this until we manually test the result &lt;code&gt;foo&lt;/code&gt; thoroughly. Basically we should always add a bunch of &lt;code&gt;-M&lt;/code&gt; flags in the build script instead of assuming &lt;code&gt;pp&lt;/code&gt; would do the right thing.&lt;/p&gt;
+
+&lt;p&gt;For example, like so, when all of &lt;code&gt;Getopt::Long&lt;/code&gt;, &lt;code&gt;JSON::PP&lt;/code&gt;, and &lt;code&gt;Sys::Hostname&lt;/code&gt; are required.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;pp -B \
+    -M Getopt::Long:: \
+    -M JSON::PP:: \
+    -M Sys::Hostname:: \
+    -I local/lib/perl5 \
+    -a "./local/lib/perl5/;$perlversion/" \
+    -a lib \
+    -o foo \
+    bin/foo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;A rather tedious modification as the list of dependent modules my exist in two places in the repo. Surely there is some way to refactor this.&lt;/p&gt;
+
+&lt;p&gt;I've verified the following script &lt;code&gt;build-minicpan.sh&lt;/code&gt; that can download the tarball of &lt;code&gt;CPAN::Mini&lt;/code&gt; and build a working &lt;code&gt;minicpan&lt;/code&gt; out of it:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;#!/bin/bash
+set -e
+
+curl --silent -O https://cpan.metacpan.org/authors/id/R/RJ/RJBS/CPAN-Mini-1.111016.tar.gz
+
+tar -xzf CPAN-Mini-1.111016.tar.gz
+
+cd CPAN-Mini-1.111016
+
+cpanm -n -q -L local --installdeps .
+
+perlversion=$(perl -MConfig -e 'print $Config{version}')
+
+pp -B \
+   -M Getopt::Long:: \
+   -I ./local/lib/perl5 \
+   -a "./local/lib/perl5/;$perlversion/" \
+   -a lib \
+   -o ../minicpan \
+   bin/minicpan
+
+echo "DONE: minicpan"
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;To me this seems to be an area worth exploring... I've been experimenting the automation of this in a side-project: &lt;a href="https://github.com/gugod/pau"&gt;pau&lt;/a&gt;, which is a collection of shell functions that can install app to their own self-contained directory and expose just the program it self. Very similar to what &lt;a href="https://pypa.github.io/pipx/"&gt;pipx&lt;/a&gt; does. &lt;code&gt;pp&lt;/code&gt; support was added not long ago but still there is no good way to figure out all the missing modules and automatically add them as &lt;code&gt;-M&lt;/code&gt; arguments.&lt;/p&gt;
+
+&lt;p&gt;Maybe as a lazy solution, we should just &lt;em&gt;always&lt;/em&gt; produce a heavy-pack that includes the whole core lib directory (usually &lt;code&gt;$INC[-1]&lt;/code&gt;) regardless whether any of them are used.&lt;/p&gt;
+
+&lt;p&gt;Maybe.&lt;/p&gt;
+
+
+
+
+&lt;p&gt;Originally posted at: &lt;a href="https://gugod.org/2021/10/perl-making-single-binary-release-with-pp/"&gt;gugod's blog -- Making single binary release with pp&lt;/a&gt;&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Kang-min Liu</name>
+    </author>
+    <id>https://dev.to/gugod/making-single-binary-release-with-pp-5171</id>
+    <published>2021-10-21T15:01:08Z</published>
+    <updated>2021-10-21T15:01:08Z</updated>
+    <category term="perl"/>
+    <category term="cpan"/>
+    <category term="compiling"/>
+  </entry>
   <entry>
     <title>My Favorite Modules: diagnostics</title>
     <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-modules-diagnostics-one.html"/>
@@ -1609,25 +1728,6 @@ Uploaded file: hello.txt &lt;span class="o"&gt;(&lt;/span&gt;&lt;span class="nb"
     <published>2021-10-11T10:00:00Z</published>
     <updated>2021-10-11T10:00:00Z</updated>
     <category term="list of tags?"/>
-  </entry>
-  <entry>
-    <title>The ephemeral miniconf - The roaar flyer !</title>
-    <link rel="alternate" href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-the-roaar-flyer-3d05" type="text/html"/>
-    <content type="html">&lt;p&gt;Earlier today I took my best drawing software (Gimp), gathered all my skills and it's finally time to unveil &lt;strong&gt;the ephemeral miniconf&lt;/strong&gt; flyer! &lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--t2IHaQBJ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/5klghup0d0k9l24ekbot.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--t2IHaQBJ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/5klghup0d0k9l24ekbot.png" alt="The ephemeral miniconf flyer"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Spread the word with this flyer!&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Tib</name>
-    </author>
-    <id>https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-the-roaar-flyer-3d05</id>
-    <published>2021-10-11T08:00:52Z</published>
-    <updated>2021-10-11T08:00:52Z</updated>
-    <category term="perl"/>
-    <category term="raku"/>
   </entry>
   <entry>
   <title>Raku CI Bot Grant Report for September 2021</title>
