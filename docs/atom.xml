@@ -7,9 +7,143 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-11-09T12:51:24Z</updated>
+  <updated>2021-11-09T16:51:17Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Taming the Moose: Classing up Perl attributes</title>
+    <link rel="alternate" href="https://dev.to/mjgardner/taming-the-moose-classing-up-perl-attributes-b65" type="text/html"/>
+    <content type="html">&lt;p&gt;At &lt;a href="https://www.hostgator.com/"&gt;my work&lt;/a&gt;, we extensively use the &lt;a href="https://metacpan.org/pod/Moose"&gt;Moose&lt;/a&gt; object system to take care of what would ordinarily be very tedious boilerplate &lt;a href="https://perldoc.perl.org/perlobj"&gt;object-oriented Perl code&lt;/a&gt;. In one part of the codebase, we have a family of &lt;a href="https://metacpan.org/pod/Moose::Manual::Classes"&gt;classes&lt;/a&gt; that, among other things, map &lt;a href="https://perldoc.perl.org/perlobj#A-Method-is-Simply-a-Subroutine"&gt;Perl methods&lt;/a&gt; to the names of various calls in a third-party API within our larger organization. Those private Perl methods are in turn called from public methods provided by &lt;a href="https://metacpan.org/pod/Moose::Role"&gt;roles&lt;/a&gt; &lt;a href="https://metacpan.org/pod/Moose::Manual::Roles#CONSUMING-ROLES"&gt;consumed&lt;/a&gt; by these classes so that other areas aren’t concerned with said API’s details.&lt;/p&gt;
+
+&lt;p&gt;Without going into too many specifics, I had a bunch of classes all with sections that looked like this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_create_method&lt;/span&gt;    &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_add&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_retrieve_method&lt;/span&gt;  &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_info&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_search_method&lt;/span&gt;    &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_list&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_update_method&lt;/span&gt;    &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_update&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_cancel_method&lt;/span&gt;    &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_remove&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_suspend_method&lt;/span&gt;   &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_disable&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_unsuspend_method&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_restore&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="o"&gt;...&lt;/span&gt; &lt;span class="c1"&gt;# etc.&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The values returned by these very simple methods might differ from class to class depending on the API call needed, and different classes might have a different mix of these methods depending on what roles they consume.&lt;/p&gt;
+
+&lt;p&gt;These methods had built up over time as developers had expanded the classes’ functionality, and this week it was my turn. I decided to apply the &lt;a href="https://en.wikipedia.org/wiki/Don't_repeat_yourself"&gt;DRY (don’t repeat yourself) principle&lt;/a&gt; and create them from a simple hash table like so:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;%METHOD_MAP&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="s"&gt;_create_method&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_add&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;_retrieve_method&lt;/span&gt;  &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_info&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;_search_method&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_list&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;_update_method&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_update&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;_cancel_method&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_remove&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;_suspend_method&lt;/span&gt;   &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_disable&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;_unsuspend_method&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;api_restore&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;At first, I thought to myself, “These look like private read-only &lt;a href="https://metacpan.org/pod/Moose::Manual::Attributes"&gt;attributes&lt;/a&gt;!” So I wrote:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;Moose&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="o"&gt;...&lt;/span&gt;
+
+&lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="s"&gt;is&lt;/span&gt;       &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ro&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;init_arg&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="s"&gt;default&lt;/span&gt;  &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$METHOD_MAP&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="p"&gt;},&lt;/span&gt;
+&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="nb"&gt;keys&lt;/span&gt; &lt;span class="nv"&gt;%METHOD_MAP&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Of course, I’d have to move the classes’ &lt;a href="https://metacpan.org/pod/Moose::Manual::Roles#CONSUMING-ROLES"&gt;&lt;code&gt;with&lt;/code&gt;&lt;/a&gt; statements after these definitions so the roles they consume could “see” these runtime-defined attributes. But some of the methods used to read these are class methods (e.g., called as &lt;code&gt;ClassName-&amp;gt;foo()&lt;/code&gt; rather than &lt;code&gt;$object-&amp;gt;foo()&lt;/code&gt;), and Moose attributes are only set after the construction of a class instance.&lt;/p&gt;
+
+&lt;p&gt;Then I thought, “Hey, Moose has a &lt;a href="https://metacpan.org/dist/Moose/view/lib/Moose/Manual/MOP.pod"&gt;MOP (meta-object protocol)&lt;/a&gt;! I’ll use that to generate these methods at runtime!”&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$meta&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;__PACKAGE__&lt;/span&gt; &lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;meta&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;while&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$api_call&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;each&lt;/span&gt; &lt;span class="nv"&gt;%METHOD_MAP&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nv"&gt;$meta&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;add_method&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;$api_call&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The &lt;a href="https://metacpan.org/pod/Class::MOP::Class#%24metaclass-%3Eadd_method(%24method_name,-%24method)"&gt;&lt;code&gt;add_method&lt;/code&gt; documentation&lt;/a&gt; “strongly encourage[s]” you to pass a metamethod object rather than a code reference, though, so that would look like:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Moose::Meta::&lt;/span&gt;&lt;span class="nv"&gt;Method&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$meta&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;__PACKAGE__&lt;/span&gt; &lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;meta&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;while&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$api_call&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;each&lt;/span&gt; &lt;span class="nv"&gt;%METHOD_MAP&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nv"&gt;$meta&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;add_method&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Moose::Meta::&lt;/span&gt;&lt;span class="nv"&gt;Method&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;wrap&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+      &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;$api_call&lt;/span&gt;&lt;span class="p"&gt;},&lt;/span&gt; &lt;span class="nv"&gt;__PACKAGE__&lt;/span&gt; &lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$meta&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+    &lt;span class="p"&gt;);&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This was getting ugly. There had to be a better way, and fortunately there was in the form of &lt;a href="https://houseabsolute.com/"&gt;Dave Rolsky&lt;/a&gt;’s &lt;a href="https://metacpan.org/pod/MooseX::ClassAttribute"&gt;MooseX::ClassAttribute&lt;/a&gt; module. It simplifies the above to:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;MooseX::&lt;/span&gt;&lt;span class="nv"&gt;ClassAttribute&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="nv"&gt;class_has&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="s"&gt;is&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ro&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;default&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$METHOD_MAP&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="p"&gt;},&lt;/span&gt;
+&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="nb"&gt;keys&lt;/span&gt; &lt;span class="nv"&gt;%METHOD_MAP&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Note there’s no need for &lt;code&gt;init_arg =&amp;gt; undef&lt;/code&gt; to prevent setting the attribute in the constructor. Although they’re still Moose attributes, they act like class methods so long as the class consumes the roles that require them after the attribute definitions.&lt;/p&gt;
+
+&lt;p&gt;Lastly, if we were using &lt;a href="https://metacpan.org/pod/Moo"&gt;Moo&lt;/a&gt; as a lightweight alternative to Moose, I could have instead selected &lt;a href="https://toby.ink/"&gt;Toby Inkster&lt;/a&gt;’s &lt;a href="https://metacpan.org/pod/MooX::ClassAttribute"&gt;MooX::ClassAttribute&lt;/a&gt;. Although it has &lt;a href="https://metacpan.org/pod/MooX::ClassAttribute#CAVEATS"&gt;some&lt;/a&gt; &lt;a href="https://metacpan.org/pod/Method::Generate::ClassAccessor#CAVEATS"&gt;caveats&lt;/a&gt;, it’s pretty much the only alternative to our initial class method definitions as Moo &lt;a href="https://metacpan.org/pod/Moo#META-OBJECT"&gt;lacks a meta-object protocol&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The lesson as always is to &lt;a href="https://phoenixtrap.com/2021/10/12/read-the-fantastic-manual-how-to-get-the-most-out-of-perl-documentation/#metacpan"&gt;check CPAN&lt;/a&gt; (or the appropriate mix of your language’s software repository, forums like &lt;a href="https://stackoverflow.com/"&gt;Stack Overflow&lt;/a&gt;, etc.) for anything that could conceivably have application outside of your particular circumstances. Twenty-five years into my career and I’m still leaping into code without first considering that someone smarter than me has already done the work.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Mark Gardner</name>
+    </author>
+    <id>https://dev.to/mjgardner/taming-the-moose-classing-up-perl-attributes-b65</id>
+    <published>2021-11-09T15:00:00Z</published>
+    <updated>2021-11-09T15:00:00Z</updated>
+    <category term="perl"/>
+    <category term="oop"/>
+    <category term="moose"/>
+    <category term="cpan"/>
+  </entry>
   <entry>
     <title>#537 - How do you spend your free time?</title>
     <link rel="alternate" href="https://perlweekly.com/archive/537.html" type="text/html"/>
@@ -2424,132 +2558,6 @@ Number of sequences for 100: 9
 
     </content>
 </entry>
-  <entry>
-    <title>Weekly Challenge 136</title>
-    <link rel="alternate" href="https://dev.to/simongreennet/weekly-challenge-136-12m7" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-136/">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-136/sgreen">My solutions</a></p>
-
-<h2>
-  <a href="#task-1-two-friendly">
-  </a>
-  TASK #1 › Two Friendly
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>You are given 2 positive numbers, <code>$m</code> and <code>$n</code>.</p>
-
-<p>Write a script to find out if the given two numbers are Two Friendly.</p>
-
-<p>Two positive numbers, m and n are two friendly when gcd(m, n) = 2<sup>p</sup> where p &gt; 0. The greatest common divisor (gcd) of a set of numbers is the largest positive number that divides all the numbers in the set without remainder.</p>
-
-<h3>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h3>
-
-<p>Pretty straight forward task to start with. It really is broken down to two parts. Both of them are rather crude methods of finding a solution. Given that we are dealing with small numbers, this really isn't a major issue.</p>
-
-<ol>
-<li>Calculate the G.C.D. For this I start the lower value of the two inputs, and count down by one until we find a number that divides both inputs with no remainder.</li>
-<li>Calculate whether the GCD is a power of two. For this I set the variable <code>$i</code> to count from 1. If 2<sup>$i</sup> is the GCD, we return 1. If it is larger than the GCD, we return zero. Otherwise we add one to <code>$i</code> and check again.</li>
-</ol>
-
-<p>Now that I think about it (a few days after I wrote this code), a better solution would be to divide both numbers by 2 until their is an odd number. With these two numbers, if any of them are divisible by any other number (between 3 and the smallest), then we know that the combination is not a number of two.</p>
-
-<h3>
-  <a href="#examples">
-  </a>
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-1.pl 8 24
-1
-
-$ ./ch-1.pl 26 39
-0
-
-$ ./ch-1.pl 4 10
-1
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  <a href="#task-2-fibonacci-sequence">
-  </a>
-  TASK #2 › Fibonacci Sequence
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>You are given a positive number <code>$n</code>.</p>
-
-<p>Write a script to find how many different sequences you can create using <a href="https://en.wikipedia.org/wiki/Fibonacci_number">Fibonacci numbers</a> where the sum of unique numbers in each sequence are the same as the given number.</p>
-
-<h3>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h3>
-
-<p>I start by generating a list of Fibonacci numbers between one and the input. Although the sequence actually starts with (0, 1), I take a short cut and start with (1, 2).</p>
-
-<p>Like with the above task, there are probably two ways to solve this (although some bright sparks might have an even better solution). The first method is to use a binary switch to compute all possible solutions. This works well when there is a small number of solutions, the possible solutions is 2<sup>n</sup> where n is the number of Fibonacci numbers.</p>
-
-<p>In the end I decided to use a recursive function <code>_find_sums</code>. It takes two inputs, the remaining target and the remaining numbers. For each iteration I pop off the largest number. If that number or all remaining numbers match the target then we count this as a solution. If the remaining numbers is larger than the remaining target, we call the function again. If it is less, no solution is possible.</p>
-
-<p>Finally I display the result.</p>
-
-<h3>
-  <a href="#examples">
-  </a>
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-2.pl 16
-4
-
-$ ./ch-2.pl 9
-2
-
-$ ./ch-2.pl 15
-2
-</code></pre>
-
-</div>
-
-
-
-</div>
-    </content>
-    <author>
-      <name>Simon Green</name>
-    </author>
-    <id>https://dev.to/simongreennet/weekly-challenge-136-12m7</id>
-    <published>2021-10-31T11:05:45Z</published>
-    <updated>2021-10-31T11:05:45Z</updated>
-    <category term="perl"/>
-    <category term="theweeklychallenge"/>
-  </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-1012543495466695315</id>
     <published>2021-10-30T15:52:00.000+02:00</published>
