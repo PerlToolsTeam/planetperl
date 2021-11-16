@@ -57,6 +57,136 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/nerdvana/2021/11/ssl-is-easy-with-traefik.html">The Quickest Way to Set Up HTTPS</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Nerdvana
+ on Tuesday 16 November 2021 11:09</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>I registered on blogs.perl.org today so that I could comment on posts about object systems.  However, the very first thing I encountered was a password page with NO SSL.  So, even though I have a ton to say about object systems, my first blog post will instead be about setting up SSL.</p>
+
+<p>(I&#8217;m aware that this is a &#8220;legacy server problem&#8221; but I also recently learned that it doesn&#8217;t matter with traefik.)</p>
+
+<p>In this grand year of 2021 you can add SSL to any site, on any architecture, for free, by adding 3 files to your server, making one small config change to Apache, and running a service.  We are <i>truly</i> living in the future.</p>
+
+<h2>traefik</h2>
+
+<p>is the first file.  It comes from <a href="https://github.com/traefik/traefik/releases">https://github.com/traefik/traefik/releases</a>, and there is one for any architecture, for instance:</p>
+
+<ul>
+<li><a href="https://github.com/traefik/traefik/releases/download/v2.5.4/traefik_v2.5.4_linux_amd64.tar.gz">traefik<em>v2.5.4</em>linux_amd64.tar.gz</a></li>
+<li><a href="https://github.com/traefik/traefik/releases/download/v2.5.4/traefik_v2.5.4_linux_386.tar.gz">traefik<em>v2.5.4</em>linux_386.tar.gz</a></li>
+</ul>
+
+<p>The archive contains one binary, named &#8216;traefik&#8217;.  It is a universal Linux static binary and does not depend on any library in the host system.  Traefik is a reverse proxy, with lots of good defaults, and lots of features, most of which this guide is ignoring.  The feature that we are going for is the automatic LetsEncrypt support built into traefik.</p>
+
+<p>Put this file somewhere like /usr/local/bin/traefik</p>
+
+<pre>wget https://github.com/traefik/traefik/releases/download/v2.5.4/traefik_v2.5.4_linux_amd64.tar.gz
+tar -xzf traefik_v2.5.4_linux_amd64.tar.gz
+mkdir -p /usr/local/bin
+mv traefik /usr/local/bin/
+</pre>
+
+<h2>traefik.toml</h2>
+
+<p>is the second file.  You can actually configure traefik with yaml or json as well, but I happen to have .toml files on hand, and toml is a little less likely to get whitespace-dammaged during copy/paste.</p>
+
+<pre><code>
+[entryPoints.http]
+  address = ":80"
+[entryPoints.https]
+  address = ":443"
+[entryPoints.traefik]
+  address = "localhost:9999"
+#[api]
+#  insecure = true
+#  dashboard = true
+#  debug = true
+[providers.file]
+  directory = "/etc/traefik/conf"
+  watch = true
+[certificatesResolvers.le.acme]
+  email = "hostmaster@perl.org"
+  storage = "/etc/traefik/acme.json"
+  caServer = "https://acme-v02.api.letsencrypt.org/directory"
+  #caServer = "https://acme-staging-v02.api.letsencrypt.org/directory"
+[certificatesResolvers.le.acme.httpChallenge]
+  entryPoint = "http"
+</code></pre>
+
+<p>Put this at /etc/traefik/traefik.toml</p>
+
+<h2>blogs.perl.org.toml</h2>
+
+<p>is the third file.  This describes how traefik should proxy your back-end service.  It goes into a different config file because it is part of the &#8220;dynamic config&#8221; rather than the &#8220;static config&#8221;.  You can update any of the files in the dynamic config on the fly and traefik will pick up the changes automatically without any signaling or restart.</p>
+
+<pre><code>
+#[http.middlewares.https_redirect.redirectScheme]
+#  scheme = "https"
+
+[http.routers.blogs]
+  entryPoints = ["http"]
+#  middlewares = ["https_redirect"]
+  service = "blogs"
+  rule = "Host(`blogs.perl.org`)"
+
+[http.routers.blogstls]
+  entryPoints = ["https"]
+  service = "blogs"
+  rule = "Host(`blogs.perl.org`)"
+  [http.routers.blogstls.tls]
+    certResolver = "le"
+    [[http.routers.blogstls.tls.domains]]
+      main = "blogs.perl.org"
+
+[http.services.blogs.loadBalancer]
+  passHostHeader = true
+  [[http.services.blogs.loadBalancer.servers]]
+    url = "http://localhost:8080/"
+</code></pre>
+
+<p>Put this at /etc/traefik/conf/blogs.perl.org.toml</p>
+
+<h2>Apache Config Change</h2>
+
+<p>Next, you need apache to listen on a different port than 80.  Why does traefik need 80? because the LetsEncrypt registration requires challenges to be found at port 80, and Traefik is automatically creating these responses.  The configs above assume apache is moved to port 8080 on localhost.</p>
+
+<p>Apache configurations vary widely per Linux distribution, so I can&#8217;t really guess at the location of these files, but if you search for</p>
+
+<pre>egrep -Ri '(listen|virtualhost).*80' /etc/apache*</pre>
+
+<p>you should see it.  Simply change all occurrences of :80 to localhost:8080 and restart apache.</p>
+
+<h2>Running Traefik</h2>
+
+<p>This is another varies-by-distro situation.  You want to run Traefik as a service at startup.  </p>
+
+<p>With SysV init, this means creating an init script.  Traefik does not provide one (as traefik is typically run inside docker) but <a href="https://gist.github.com/yaxin-cn/3f134bfcdec97812e66e82e798cf2308">github user yaxin-cn shared one</a>.</p>
+
+<p>With systemd, you need a service file.  The traefik project <a href="https://github.com/traefik/traefik/blob/master/contrib/systemd/traefik.service">provides one</a>.  There is also a nice <a href="https://gist.github.com/ubergesundheit/7c9d875befc2d7bfd0bf43d8b3862d85">write-up of the steps by github user ubergesundheit</a>.</p>
+
+<h2>Debugging</h2>
+
+<p>If all goes as planned, you should suddenly be able to access https://blogs.perl.org, and &#8220;just work&#8221;.  Since that seldom happens, you&#8217;ll see above in traefik.toml where I commented out the &#8220;[api]&#8221; keys.  Un-comment those, and now you can access traefik&#8217;s dashboard on localhost:9999.  To reach that, you likely need an ssh tunnel:</p>
+
+<pre>ssh -L9999:localhost:9999 blogs.perl.org</pre>
+
+<p>Now you can browse to localhost:9999 and see traefik&#8217;s interpretation of the live state of your config files.  Tinker with the configs until all errors are resolved.</p>
+
+<p>As a final consideration, there is a commented-out middleware in blogs.perl.org.toml, which redirects http to https.  Once you have https fully working, you can un-comment that to push everyone over to SSL.  You might decide not to do that for some reason, but keep in mind that Google gives a boost to sites that force SSL, making the blogs more visible.</p>
+
+<p>Thanks for reading!  And thanks for hosting a community forum!</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/538.html">#538 - Are you Perl blogger?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
 
@@ -71,7 +201,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/perl-tk-menu">Perl Tk: The label, button, and entry widgets</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -83,7 +213,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/11/i-finally-start-to-translate-japanese-perl-zemi-to-english.html">I finally start to translate Japanese Perl Zemi to English.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -117,7 +247,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/damian_conway/2021/11/a-dream-resyntaxed.html">A dream resyntaxed</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -603,7 +733,7 @@ more consistent, and &mdash; most importantly &mdash; more Perlish.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-of-perl-distribution-of-cryptopensslpkcs12-18-28nh">Release of Perl distribution of Crypt::OpenSSL::PKCS12 1.8</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -704,7 +834,7 @@ more consistent, and &mdash; most importantly &mdash; more Perlish.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/11/ccclxvii-6-great-cpan-modules-released.html">(ccclxvii) 6 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -716,7 +846,7 @@ more consistent, and &mdash; most importantly &mdash; more Perlish.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/11/cdxc-metacpan-weekly-report.html">(cdxc) metacpan weekly report </a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -728,7 +858,7 @@ more consistent, and &mdash; most importantly &mdash; more Perlish.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/11/dx-stackoverflow-perl-report.html">(dx) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -740,7 +870,7 @@ more consistent, and &mdash; most importantly &mdash; more Perlish.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/oodler_577/2021/11/i-made-a-calculator.html">I made a calculator</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -796,7 +926,7 @@ more consistent, and &mdash; most importantly &mdash; more Perlish.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tiib/2021/11/the-ephemeral-miniconf.html">The Ephemeral Miniconf</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -836,272 +966,6 @@ Pass: 42</strong></p>
 
 <p>So my message is basically, it's coming, book your calendar and I'm looking forward to see you at <strong>The Ephemeral Miniconf</strong>! </p>
         
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_11">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/11/perl-weekly-challenge-138-workdays-and-split-number.html">Perl Weekly Challenge 138: Workdays and Split Number</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Friday 12 November 2021 20:13</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 138 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-138/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on November 14, 2021 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Workdays</h2>
-
-<p>*You are given a year, <code>$year</code> in 4-digits form.</p>
-
-<p><em>Write a script to calculate the total number of workdays in the given year.</em></p>
-
-<blockquote>
-  <p><em>For the task, we consider, Monday - Friday as workdays.</em></p>
-</blockquote>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: $year = 2021
-Output: 261
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: $year = 2020
-Output: 262
-</code></pre>
-
-<p>A year has 52 weeks, plus one or two days (when the year is leap). So, we will have <code>5 * 52 = 260</code> work days, plus 0, 1, or 2 days. So we basically start with 260 work days and add one if Dec. 31 falls on a week day, plus another work day if the year is leap and if Dec. 30 falls on a week day.</p>
-
-<h3>Workdays in Raku</h3>
-
-<p>In Raku, we start with Jan. 1 of the input year and add 52 weeks to it. The <a href="https://docs.raku.org/type/Dateish#method_later">later</a> of the <a href="https://docs.raku.org/type/Dateish">Dateish</a> role will happily compute the date 52 weeks after Jan. 1 and accurately take care of leap years, so that it will return Dec. 30 on leap years and Dec. 31 on other years. It is then only a matter to find out is these dates fall on week days.</p>
-
-<pre><code>sub work-days (UInt $y) {
-    my $new-year-day = Date.new("$y-01-01");
-    my $fifty-two-weeks-later = $new-year-day.later(:52weeks);
-    my $count = 52 * 5;
-    $count++ if 1 &lt;= $fifty-two-weeks-later.day-of-week &lt; 6;
-    return $count if $fifty-two-weeks-later.day == 31;
-    $count++ if 1 &lt;= $fifty-two-weeks-later.later(:1days).day-of-week &lt; 6;
-    return $count;
-}
-say "$_ -&gt; ", work-days $_ for 2000..2021;
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./working-days.raku
-2000 -&gt; 260
-2001 -&gt; 261
-2002 -&gt; 261
-2003 -&gt; 261
-2004 -&gt; 262
-2005 -&gt; 260
-2006 -&gt; 260
-2007 -&gt; 261
-2008 -&gt; 262
-2009 -&gt; 261
-2010 -&gt; 261
-2011 -&gt; 260
-2012 -&gt; 261
-2013 -&gt; 261
-2014 -&gt; 261
-2015 -&gt; 261
-2016 -&gt; 261
-2017 -&gt; 260
-2018 -&gt; 261
-2019 -&gt; 261
-2020 -&gt; 262
-2021 -&gt; 261
-</code></pre>
-
-<h3>Workdays in Perl</h3>
-
-<p>In Perl, we&#8217;ll use the core <a href="https://perldoc.perl.org/Time::Piece">Time::Piece</a> module. We&#8217;ll use a slightly different strategy: we start with <code>5 * 52 = 260</code> work days, add one if Dec. 31 is a week day, and add one more if the year is leap and if Dec. 30 is a week day.</p>
-
-<pre><code>use warnings;
-use feature qw/say/;
-use Time::Piece;
-
-sub work_days {
-    my $y = shift;
-    my $count = 52 * 5;
-    my $t = Time::Piece-&gt;strptime("$y Dec 31", '%Y %b %e');
-    my $last_d = $t-&gt;day_of_week;
-    $count++ if $last_d &gt; 0 and $last_d &lt; 6;
-    if ($t-&gt;is_leap_year) {
-        my $thirtieth = ($last_d - 1) % 7;
-        $count++ if $thirtieth &gt; 0 and $thirtieth &lt; 6;
-    }
-    return $count;
-}
-say "$_ -&gt; ", work_days $_ for 2000..2021;
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ perl ./working-days.pl
-2000 -&gt; 260
-2001 -&gt; 261
-2002 -&gt; 261
-2003 -&gt; 261
-2004 -&gt; 262
-2005 -&gt; 260
-2006 -&gt; 260
-2007 -&gt; 261
-2008 -&gt; 262
-2009 -&gt; 261
-2010 -&gt; 261
-2011 -&gt; 260
-2012 -&gt; 261
-2013 -&gt; 261
-2014 -&gt; 261
-2015 -&gt; 261
-2016 -&gt; 261
-2017 -&gt; 260
-2018 -&gt; 261
-2019 -&gt; 261
-2020 -&gt; 262
-2021 -&gt; 261
-</code></pre>
-
-<h2>Task 2: Split Number</h2>
-
-<p><em>You are given a perfect square.</em></p>
-
-<p><em>Write a script to figure out if the square root the given number is same as sum of 2 or more splits of the given number.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: $n = 81
-Output: 1
-
-Since, sqrt(81) = 8 + 1
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: $n = 9801
-Output: 1
-
-Since, sqrt(9801) = 98 + 0 + 1
-</code></pre>
-
-<p><em>Example 3:</em></p>
-
-<pre><code>Input: $n = 36
-Output: 0
-
-Since, sqrt(36) != 3 + 6
-</code></pre>
-
-<h3>Split Number in Raku</h3>
-
-<p>I first thought I could use some combination of the <code>combinations</code> and <code>permutations</code> methods to solve the problem, but this turned out to be more complicated than expected. So I decided to write a recursive <code>partition</code> subroutine to build the various partitions of the input square number and add the various parts. The <code>split-square</code> subroutine checks that the input number is a perfect square and calls the <code>partition</code> subroutine, passing to it a list of the input number digits. Note that we are using dynamic variables (<code>$*found</code> and <code>$*root</code>) to avoid passing them back and forth in the recursive subroutine calls.</p>
-
-<pre><code>use v6;
-
-sub partition (Int $sum is copy, @in) {
-    if @in.elems == 0 {
-        $*found = 1 if $sum == $*root;
-        return;
-    }
-    for 1..@in.elems -&gt; $i {
-        my $new-sum = $sum + join "", @in[0..($i-1)];
-        last if $new-sum &gt; $*root;
-        partition $new-sum, @in[$i..@in.end];
-    }
-}
-
-sub split-square (UInt $sq) {
-    my $*root = sqrt($sq).Int;
-    say "$sq is not a perfect square\n" and return 0 if $*root² != $sq;
-    my $*found = 0;
-    partition(0, $sq.comb);
-    return $*found;
-}
-for &lt;1 27 81 100 225 1296 6561 9801&gt; -&gt; $test {
-    say $test.fmt("%5d\t") , split-square $test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<p>raku ./split-squares.raku
-        1   1
-    27 is not a perfect square</p>
-
-<pre><code>   27   0
-   81   1
-  100   1
-  225   0
- 1296   1
- 6561   0
- 9801   1
-</code></pre>
-
-<h3>Split Number in Perl</h3>
-
-<p>This is essentially a Perl port of the Raku solution above. We also implement a recursive <code>partition</code> subroutine to build the various partitions of the input square number and add the various parts. The <code>split_square</code> subroutine checks that the input number is a perfect square and calls the <code>partition</code> subroutine, passing to it a list of the input number digits.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-my ($found, $root);
-
-sub partition {
-    my ($sum, @in) = @_;    
-    if (scalar @in == 0) {
-        $found = 1 if $sum == $root;
-        return;
-    }
-    for my $i (1..(scalar @in)) {
-        my $new_sum = $sum + join "", @in[0..($i-1)];
-        last if $new_sum &gt; $root;
-        partition ($new_sum, @in[$i..$#in]);
-    }
-}
-
-sub split_square {
-    my $sq = shift;
-    $root = int sqrt($sq);
-    say "$sq is not a perfect square\n" and return 0 if $root ** 2 != $sq;
-    $found = 0;
-    partition(0, split //, $sq);
-    return $found;
-}
-for my $test (qw&lt;1 27 81 100 225 1296 6561 9801&gt;) {
-    printf "%5d\t%d\n", $test , split_square $test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./split-squares.pl
-    1   1
-27 is not a perfect square
-
-   27   0
-   81   1
-  100   1
-  225   0
- 1296   1
- 6561   0
- 9801   1
-</code></pre>
-
-<p>## Wrapping up</p>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on November 21, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
            </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
@@ -3388,7 +3252,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 16 November 2021 08:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 16 November 2021 12:50 UTC</address>
             </div>
           </div>
         </div><!-- container -->
