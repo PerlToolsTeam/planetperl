@@ -57,6 +57,199 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/mjgardner/vicious-test-mockery-of-a-perl-modulino-3l4g">Vicious (test) mockery of a Perl modulino</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Mark Gardner
+ on Tuesday 30 November 2021 15:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Over the past two years, I’ve gotten back into playing <a href="https://dnd.wizards.com/">Dungeons &amp; Dragons</a>, the famous tabletop fantasy role-playing game. As a software developer and musician, one of my favorite character classes to play is the <a href="https://www.dndbeyond.com/classes/bard">bard</a>, a magical and inspiring performer or wordsmith. The list of basic bardic spells includes <a href="https://www.dndbeyond.com/spells/vicious-mockery">Vicious Mockery</a>, enchanting verbal barbs that have the power to psychically damage and disadvantage an opponent <em>even if they don’t understand the words</em>. (Can you see why this is so appealing to a coder?)</p>
+
+<p>Mocking has a role to play in software testing as well, in the form of <a href="https://en.wikipedia.org/wiki/Mock_object">mock objects</a> that simulate parts of a system that are too brittle, too slow, too complicated, or otherwise too finicky to use in reality. They enable discrete <a href="https://en.wikipedia.org/wiki/Unit_testing">unit testing</a> without relying on dependencies external to the code being tested. Mocks are great for databases, web services, or other network resources where the goal is to test what you wrote, not what’s out in “the cloud” somewhere.</p>
+
+<p>Speaking of web services and mocking, one of my favorites is the long-running <a href="https://foaas.com/">FOAAS</a> (link has language not safe for work), a surprisingly expansive <a href="https://restfulapi.net/">RESTful</a> insult service. There’s a corresponding <a href="https://metacpan.org/pod/WebService::FOAAS">Perl client API</a>, of course, but what I was missing was a handy Perl script to call that API from the terminal command line. So I wrote the following over <a href="https://en.wikipedia.org/wiki/Thanksgiving_(United_States)">Thanksgiving</a> break, trying to keep it simple while also showing the basics of mocking such an API. It also demonstrates some newer Perl syntax and testing techniques as well as <a href="https://briandfoy.github.io/">brian d foy</a>’s <a href="https://perlmaven.com/modulino-both-script-and-module">modulino</a> concept from <em><a href="https://www.masteringperl.org/">Mastering Perl</a> (second edition, 2014)</em> that marries script and module into a self-contained <a href="https://rosettacode.org/wiki/Executable_library">executable library</a>.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
+
+<span class="nb">package</span> <span class="nn">Local::</span><span class="nv">CallFOAAS</span><span class="p">;</span> <span class="c1"># this is a modulino</span>
+<span class="k">use</span> <span class="nn">Test2::</span><span class="nv">V0</span><span class="p">;</span> <span class="c1"># enables strict, warnings, utf8</span>
+
+<span class="c1"># declare all the new stuff we're using</span>
+<span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw(say state)</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">experimental</span> <span class="sx">qw(isa postderef signatures)</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Feature::Compat::</span><span class="nv">Try</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Syntax::</span><span class="nv">Construct</span> <span class="sx">qw(non-destructive-substitution)</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nn">WebService::</span><span class="nv">FOAAS</span> <span class="p">();</span>
+<span class="k">use</span> <span class="nn">Package::</span><span class="nv">Stash</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Exception::</span><span class="nv">Class</span> <span class="p">(</span>
+    <span class="s">NoMethodException</span> <span class="o">=&gt;</span> <span class="p">{</span>
+        <span class="s">alias</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">throw_no_method</span><span class="p">',</span>
+        <span class="s">fields</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">method</span><span class="p">',</span>
+    <span class="p">},</span>
+    <span class="s">ServiceException</span> <span class="o">=&gt;</span> <span class="p">{</span> <span class="s">alias</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">throw_service</span><span class="p">'</span> <span class="p">},</span>
+<span class="p">);</span>
+
+<span class="k">my</span> <span class="nv">$foaas</span> <span class="o">=</span> <span class="nn">Package::</span><span class="nv">Stash</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">('</span><span class="s1">WebService::FOAAS</span><span class="p">');</span>
+
+<span class="k">my</span> <span class="nv">$run_as</span> <span class="o">=</span>
+    <span class="o">!!</span><span class="nv">$ENV</span><span class="p">{</span><span class="nv">CPANTEST</span><span class="p">}</span> <span class="p">?</span> <span class="p">'</span><span class="s1">test</span><span class="p">'</span>
+  <span class="p">:</span> <span class="o">!</span><span class="nb">defined</span> <span class="nb">scalar</span> <span class="nb">caller</span> <span class="p">?</span> <span class="p">'</span><span class="s1">run</span><span class="p">'</span>
+  <span class="p">:</span> <span class="nb">undef</span><span class="p">;</span>
+<span class="nv">__PACKAGE__</span> <span class="o">-&gt;</span><span class="nv">$run_as</span><span class="p">(</span><span class="nv">@ARGV</span><span class="p">)</span> <span class="k">if</span> <span class="nb">defined</span> <span class="nv">$run_as</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">run</span> <span class="p">( $class, @args ) {</span>
+    <span class="nv">try</span> <span class="p">{</span> <span class="nv">say</span> <span class="nv">$class</span><span class="o">-&gt;</span><span class="nv">call_method</span><span class="p">(</span><span class="nv">@args</span><span class="p">)</span> <span class="p">}</span>
+    <span class="nv">catch</span> <span class="p">(</span><span class="nv">$e</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nb">die</span> <span class="p">'</span><span class="s1">No method </span><span class="p">',</span> <span class="nv">$e</span><span class="o">-&gt;</span><span class="nv">method</span><span class="p">,</span> <span class="p">"</span><span class="se">\n</span><span class="p">"</span>
+          <span class="k">if</span> <span class="nv">$e</span> <span class="nv">isa</span> <span class="nv">NoMethodException</span><span class="p">;</span>
+        <span class="nb">die</span> <span class="p">'</span><span class="s1">Service error: </span><span class="p">',</span> <span class="nv">$e</span><span class="o">-&gt;</span><span class="nv">error</span><span class="p">,</span> <span class="p">"</span><span class="se">\n</span><span class="p">"</span>
+          <span class="k">if</span> <span class="nv">$e</span> <span class="nv">isa</span> <span class="nv">ServiceException</span><span class="p">;</span>
+        <span class="nb">die</span> <span class="p">"</span><span class="si">$e</span><span class="se">\n</span><span class="p">";</span>
+    <span class="p">}</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1"># Utilities</span>
+
+<span class="k">sub </span><span class="nf">methods</span> <span class="p">($)</span> <span class="p">{</span>
+    <span class="nv">state</span> <span class="nv">@methods</span> <span class="o">=</span> <span class="nb">sort</span> <span class="nb">map</span> <span class="sr">s/^foaas_(.+)/$1/r</span><span class="p">,</span>
+      <span class="nb">grep</span> <span class="sr">/^foaas_/</span><span class="p">,</span> <span class="nv">$foaas</span><span class="o">-&gt;</span><span class="nv">list_all_symbols</span><span class="p">('</span><span class="s1">CODE</span><span class="p">');</span>
+    <span class="k">return</span> <span class="nv">@methods</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">call_method</span> <span class="p">( $class, $method = '', @args ) {</span>
+    <span class="nv">state</span> <span class="nv">%methods</span> <span class="o">=</span> <span class="nb">map</span> <span class="p">{</span> <span class="vg">$_</span> <span class="o">=&gt;</span> <span class="mi">1</span> <span class="p">}</span> <span class="nv">$class</span><span class="o">-&gt;</span><span class="nv">methods</span><span class="p">();</span>
+    <span class="nv">throw_no_method</span><span class="p">(</span> <span class="s">method</span> <span class="o">=&gt;</span> <span class="nv">$method</span> <span class="p">)</span>
+      <span class="k">unless</span> <span class="nv">$methods</span><span class="p">{</span><span class="nv">$method</span><span class="p">};</span>
+    <span class="k">return</span> <span class="k">do</span> <span class="p">{</span>
+        <span class="nv">try</span> <span class="p">{</span> <span class="nv">$foaas</span><span class="o">-&gt;</span><span class="nv">get_symbol</span><span class="p">("</span><span class="s2">&amp;</span><span class="si">$method</span><span class="p">")</span><span class="o">-&gt;</span><span class="p">(</span><span class="nv">@args</span><span class="p">)</span> <span class="p">}</span>
+        <span class="nv">catch</span> <span class="p">(</span><span class="nv">$e</span><span class="p">)</span> <span class="p">{</span> <span class="nv">throw_service</span><span class="p">(</span> <span class="s">error</span> <span class="o">=&gt;</span> <span class="nv">$e</span> <span class="p">)</span> <span class="p">}</span>
+    <span class="p">};</span>
+<span class="p">}</span>
+
+<span class="c1"># Testing</span>
+
+<span class="k">sub </span><span class="nf">test</span> <span class="p">( $class, @ ) {</span>
+    <span class="nv">state</span> <span class="nv">$stash</span> <span class="o">=</span> <span class="nn">Package::</span><span class="nv">Stash</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="nv">$class</span><span class="p">);</span>
+    <span class="nv">state</span> <span class="nv">@tests</span> <span class="o">=</span> <span class="nb">sort</span> <span class="nb">grep</span> <span class="sr">/^_test_/</span><span class="p">,</span>
+      <span class="nv">$stash</span><span class="o">-&gt;</span><span class="nv">list_all_symbols</span><span class="p">('</span><span class="s1">CODE</span><span class="p">');</span>
+
+    <span class="k">for</span> <span class="k">my</span> <span class="nv">$test</span> <span class="p">(</span><span class="nv">@tests</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nv">subtest</span> <span class="nv">$test</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+            <span class="nv">try</span> <span class="p">{</span> <span class="nv">$class</span><span class="o">-&gt;</span><span class="nv">$test</span><span class="p">()</span> <span class="p">}</span>
+            <span class="nv">catch</span> <span class="p">(</span><span class="nv">$e</span><span class="p">)</span> <span class="p">{</span> <span class="nv">diag</span> <span class="nv">$e</span> <span class="p">}</span>
+        <span class="p">};</span>
+    <span class="p">}</span>
+    <span class="nv">done_testing</span><span class="p">();</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">_test_can</span> <span class="p">($class) {</span>
+    <span class="nv">state</span> <span class="nv">@subs</span> <span class="o">=</span> <span class="sx">qw(run call_method methods test)</span><span class="p">;</span>
+    <span class="nv">can_ok</span><span class="p">(</span> <span class="nv">$class</span><span class="p">,</span> <span class="o">\</span><span class="nv">@subs</span><span class="p">,</span> <span class="p">"</span><span class="s2">can do: </span><span class="si">@subs</span><span class="p">"</span> <span class="p">);</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">_test_methods</span> <span class="p">($class) {</span>
+    <span class="k">my</span> <span class="nv">$mock</span> <span class="o">=</span> <span class="nv">mock</span> <span class="p">'</span><span class="s1">WebService::FOAAS</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="p">(</span> <span class="s">track</span> <span class="o">=&gt;</span> <span class="mi">1</span> <span class="p">);</span>
+
+    <span class="k">for</span> <span class="k">my</span> <span class="nv">$method</span> <span class="p">(</span> <span class="nv">$class</span><span class="o">-&gt;</span><span class="nv">methods</span><span class="p">()</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="nv">$mock</span><span class="o">-&gt;</span><span class="nv">override</span><span class="p">(</span> <span class="nv">$method</span> <span class="o">=&gt;</span> <span class="mi">1</span> <span class="p">);</span>
+
+        <span class="nv">ok</span> <span class="nv">lives</span> <span class="p">{</span> <span class="nv">$class</span><span class="o">-&gt;</span><span class="nv">call_method</span><span class="p">(</span><span class="nv">$method</span><span class="p">)</span> <span class="p">},</span>
+          <span class="p">"</span><span class="si">$method</span><span class="s2"> lives</span><span class="p">";</span>
+        <span class="nv">ok</span> <span class="nb">scalar</span> <span class="nv">$mock</span><span class="o">-&gt;</span><span class="nv">sub_tracking</span><span class="o">-&gt;</span><span class="p">{</span><span class="nv">$method</span><span class="p">}</span><span class="o">-&gt;</span><span class="err">@</span><span class="o">*</span><span class="p">,</span>
+          <span class="p">"</span><span class="si">$method</span><span class="s2"> called</span><span class="p">";</span>
+    <span class="p">}</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">_test_service_failure</span> <span class="p">($class) {</span>
+    <span class="k">my</span> <span class="nv">$mock</span> <span class="o">=</span> <span class="nv">mock</span> <span class="p">'</span><span class="s1">WebService::FOAAS</span><span class="p">';</span>
+
+    <span class="k">for</span> <span class="k">my</span> <span class="nv">$method</span> <span class="p">(</span> <span class="nv">$class</span><span class="o">-&gt;</span><span class="nv">methods</span><span class="p">()</span> <span class="p">)</span> <span class="p">{</span>
+        <span class="nv">$mock</span><span class="o">-&gt;</span><span class="nv">override</span><span class="p">(</span> <span class="nv">$method</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> <span class="nb">die</span> <span class="p">'</span><span class="s1">mocked</span><span class="p">'</span> <span class="p">}</span> <span class="p">);</span>
+
+        <span class="k">my</span> <span class="nv">$exception</span> <span class="o">=</span>
+          <span class="nv">dies</span> <span class="p">{</span> <span class="nv">$class</span><span class="o">-&gt;</span><span class="nv">call_method</span><span class="p">(</span><span class="nv">$method</span><span class="p">)</span> <span class="p">};</span>
+        <span class="nv">isa_ok</span> <span class="nv">$exception</span><span class="p">,</span> <span class="p">['</span><span class="s1">ServiceException</span><span class="p">'],</span>
+          <span class="p">"</span><span class="si">$method</span><span class="s2"> throws ServiceException on failure</span><span class="p">";</span>
+        <span class="nv">like</span> <span class="nv">$exception</span><span class="o">-&gt;</span><span class="nv">error</span><span class="p">,</span> <span class="sx">qr/^mocked/</span><span class="p">,</span>
+          <span class="p">"</span><span class="s2">correct error in </span><span class="si">$method</span><span class="s2"> exception</span><span class="p">";</span>
+    <span class="p">}</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Let’s walk through the code above.</p>
+
+<h2>
+  <a href="#preliminaries">
+  </a>
+  Preliminaries
+</h2>
+
+<p>First, there’s a generic <a href="https://en.wikipedia.org/wiki/Shebang_(Unix)">shebang line</a> to indicate that Unix and Linux systems should use the <code>perl</code> executable found in the user’s PATH via the <code>env</code> command. I declare a package name (<a href="https://phoenixtrap.com/2021/04/13/avoid-cpan-conflicts-in-your-personal-perl-modules/">in the Local:: namespace</a>) so as not to pollute the default <code>main</code> package of other scripts that might want to <code>require</code> this as a module. Then I use the <a href="https://metacpan.org/pod/Test2::V0">Test2::V0 bundle</a> from <a href="https://metacpan.org/pod/Test2::Suite">Test2::Suite</a> since the embedded testing code uses many of its functions. This also has the side effect of enabling the <a href="https://perldoc.perl.org/strict">strict</a>, <a href="https://perldoc.perl.org/warnings">warnings</a>, and <a href="https://perldoc.perl.org/utf8">utf8</a> pragmas, so there’s no need to explicitly <code>use</code> them here.</p>
+
+<p>(Why <a href="https://metacpan.org/pod/Test2">Test2</a> instead of <a href="https://metacpan.org/pod/Test::More">Test::More</a> and its derivatives and add-ons? Both are <a href="https://metacpan.org/author/EXODIST">maintained by the same author</a>, who recommends the former. I’m seeing more and more modules using it, so I thought this would be a great opportunity to learn.)</p>
+
+<p>I then declare all the new-ish Perl features I’d like to use that need to be explicitly enabled so as not to sacrifice <a href="https://perldoc.perl.org/perlpolicy#BACKWARD-COMPATIBILITY-AND-DEPRECATION">backward compatibility</a> with older versions of Perl 5. As of this writing, some of these features (the <a href="https://perldoc.perl.org/perlop#Class-Instance-Operator"><code>isa</code> class instance operator</a>, named argument <a href="https://perldoc.perl.org/perlsub#Signatures">subroutine signatures</a>, and <a href="https://perldoc.perl.org/perlsyn#Try-Catch-Exception-Handling"><code>try</code>/<code>catch</code> exception handling</a> syntax) are considered <a href="https://perldoc.perl.org/experimental"><code>experimental</code></a>, with the latter enabled in older versions of Perl via the <a href="https://metacpan.org/pod/Feature::Compat::Try">Feature::Compat::Try</a> module. The friendlier <a href="https://perldoc.pl/perlref#Postfix-Dereference-Syntax">postfix dereferencing</a> syntax was <a href="https://perldoc.perl.org/perl5240delta#Postfix-dereferencing-is-no-longer-experimental">mainlined in Perl version 5.24</a>, but versions 5.20 and 5.22 still need it experimental. Finally, I <code>use Syntax::Construct</code> to announce the <code>/r</code> flag for non-destructive regular expression <a href="https://perldoc.perl.org/perlop#s/PATTERN/REPLACEMENT/msixpodualngcer">text substitutions</a> <a href="https://perldoc.perl.org/perl5140delta#Non-destructive-substitution">introduced in version 5.14</a>.</p>
+
+<p>Next, I bring in the aforementioned FOAAS Perl API without importing any of its functions, <a href="https://metacpan.org/pod/Package::Stash">Package::Stash</a> to make <a href="https://en.wikipedia.org/wiki/Metaprogramming">metaprogramming</a> easier, and a couple of <a href="https://metacpan.org/pod/Exception::Class">exception classes</a> so that the command line function and other consumers might better tell what caused a failure. In preparation for the methods below dynamically discovering what functions are provided by <a href="https://metacpan.org/pod/WebService::FOAAS">WebService::FOAAS</a>, I <a href="https://metacpan.org/pod/Package::Stash#new-%24package_name">gather up</a> its symbol table (or stash) into the <code>$foaas</code> variable.</p>
+
+<p>The next block determines how, if at all, I’m going to run the code as a script. If the <code>CPANTEST</code> environment variable is set, I’ll call the <code>test</code> class method <code>sub</code>, but if there’s no subroutine <a href="https://perldoc.perl.org/functions/caller">calling</a> me I’ll execute the <code>run</code> class method. Either will receive the <a href="https://perldoc.perl.org/variables/@ARGV">command line arguments from <code>@ARGV</code></a>. If neither of these conditions is true, do nothing; the rest of the code is method declarations.</p>
+
+<h2>
+  <a href="#modulino-methods-metaprogramming-and-exceptions">
+  </a>
+  Modulino methods, metaprogramming, and exceptions
+</h2>
+
+<p>The first of these is the <code>run</code> method. It’s a thin wrapper around the <code>call_method</code> class method detailed below, either outputting its result or <code>die</code>ing with an appropriate error depending on the class of exception thrown. Although I chose not to write tests for this output, future tests might call this method and catch these rethrown exceptions to match against them. The messages end with a <code>\n</code> newline character so <code>die</code> knows not to append the current script line number.</p>
+
+<p>Next is a utility method called <code>methods</code> that uses Package::Stash’s <code>list_all_symbols</code> to retrieve the names of all named <code>CODE</code> blocks (i.e., <code>sub</code>s) from WebService::FOAAS’s symbol table. Reading from right to left, these are then filtered with <code>grep</code> to only find those <a href="https://metacpan.org/pod/WebService::FOAAS#AVAILABLE-METHODS">beginning in <code>foaas_</code></a> and then transformed with <code>map</code> to remove that prefix. The list is then <code>sort</code>ed and stored in a <code>state</code> variable and returned so it need not be initialized again.</p>
+
+<p>(As an aside, although <code>perlcritic</code> sternly warns against it I’ve chosen the expression forms of <code>grep</code> and <code>map</code> here over their <a href="https://metacpan.org/pod/Perl::Critic::Policy::BuiltinFunctions::RequireBlockGrep">block</a> <a href="https://metacpan.org/pod/Perl::Critic::Policy::BuiltinFunctions::RequireBlockMap">forms</a> for simplicity’s sake. It’s OK to <a href="https://metacpan.org/pod/Perl::Critic#BENDING-THE-RULES">bend the rules</a> if you have a good reason.)</p>
+
+<p><code>sub call_method</code> is where the real action takes place. Its parameters are the class that called it, the name of a FOAAS <code>$method</code> (defaulted to the empty string), and an array of optional arguments in <code>@args</code>. I build a hash or associative array from the earlier <code>methods</code> method which I then use to see if the passed method name is one I know about. If not, I throw a <code>NoMethodException</code> using the <code>throw_no_method</code> alias function <a href="https://metacpan.org/pod/Exception::Class#DECLARING-EXCEPTION-CLASSES">created when I used Exception::Class</a> at the beginning. Using a function instead of <code>NoMethodException-&gt;throw()</code> means that it’s checked at compile time rather than runtime, catching typos.</p>
+
+<p>I get the subroutine (denoted by a <code>&amp;</code> sigil) named by <code>$method</code> from the <code>$foaas</code> stash and pass it any further received arguments from <code>@args</code>. If that WebService::FOAAS subroutine throws an exception it’ll be caught and re-thrown as a <code>ServiceException</code>; otherwise <code>call_method</code> returns the result. It’s up to the caller to determine what, if anything, to do with that result or any thrown exceptions.</p>
+
+<h2>
+  <a href="#testing-the-modulino-with-mocks">
+  </a>
+  Testing the modulino with mocks
+</h2>
+
+<p>This is where I start using those <a href="https://metacpan.org/pod/Test2::Suite#Test2::V#">Test2::Suite tools</a> I mentioned at the beginning. The <code>test</code> class method starts by building a filtered list of all <code>sub</code>s beginning with <code>_test_</code> in the current class, much like <code>methods</code> did above with WebService::FOAAS. I then loop through that list of <code>sub</code>s, running each as a <a href="https://metacpan.org/pod/Test2::V0#SUBTEST"><code>subtest</code></a> containing a class method with any exceptions <a href="https://metacpan.org/pod/Test2::Tools::Basic#diag(@messages)">reported as diagnostics</a>.</p>
+
+<p>The rest of the modulino is subtest methods, starting with a simple <code>_test_can</code> sanity check for the public methods in the class. Following that is <code>_test_methods</code>, which starts by <code>mock</code>ing the WebService::FOAAS package and telling Test2::Mock I want to <code>track</code> any added, overridden, or set <code>sub</code>s. I then loop through all the method names returned by the <code>methods</code> class method, <code>override</code>ing each one to return a simple true value. I then test passing those names to <code>call_method</code> and use the hash reference returned by <code>sub_tracking</code> to check that the overridden <code>sub</code> was called. This seems a lot simpler than the <a href="https://metacpan.org/pod/Test::Builder">Test::Builder</a>-based mocking libraries I’ve tried like <a href="https://metacpan.org/pod/Test::MockModule">Test::MockModule</a> and <a href="https://metacpan.org/pod/Test::MockObject">Test::MockObject</a>.</p>
+
+<p><code>_test_service_failure</code> acts in much the same way, checking that <code>call_method</code> correctly throws <code>ServiceException</code>s if the wrapped WebService::FOAAS function <code>die</code>s. The main difference is that the mocked WebService::FOAAS <code>sub</code>s are now overridden with a code reference (<code>sub { die 'mocked' }</code>), which <code>call_method</code> uses to populate the rethrown <code>ServiceException</code>’s <code>error</code> field.</p>
+
+<h2>
+  <a href="#wrapping-up">
+  </a>
+  Wrapping up
+</h2>
+
+<p>With luck, this article has given you some ideas, whether it’s in making scripts (perhaps legacy code) testable to improve them, or writing better unit tests that mock dependencies, or delving a little into metaprogramming so you can dynamically support and test new features of said dependencies. I hope you haven’t come away too offended, at least. Let me know in the comments what you think.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/shawn1/2021/11/developing-a-game-engine-with-perl.html">Developing A Game Engine with Perl</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -99,7 +292,7 @@ Shawn<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-3b8">Developing A Game Engine with Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -157,7 +350,7 @@ Shawn</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/540.html">#540 - 24 Pull Requests</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -167,18 +360,18 @@ Shawn</p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Hi there</p>
 <p>Did you participate in <strong>Hacktoberfest 2021</strong>?</p>
-<p>If not then you have one more chance to participate in the global event <a href="https://24pullrequests.com">24 Pull Requests</a>. Participation is simple, you just have submit one pull qequest each day between 1st Dec 2021 and 24th Dec 2021. It is one of my favourite events. I have participated in the event each year, without a break, since 2015. I was introduced to it by <a href="http://blogs.perl.org/users/neilb/2015/11/24-pull-requests.html">Neil Bowers</a>. Last year I was going through rough patch so, unfortunately, I had to skip it. My best performance was in the year 2018 when I contributed <strong>125 pull requests</strong> in the first 24 days of December. If I am not mistaken then the <strong>24 Pull Requests</strong> event is little more relaxed as compare to <strong>Hacktoberfest</strong>. You don't have to submit a pull request every day. Instead, you can submit in bulk on one day and then takea break. However, make sure you have submitted 24 pull requests by the end of play on 24th December.</p>
+<p>If not then you have one more chance to participate in the global event <a href="https://24pullrequests.com">24 Pull Requests</a>. Participation is simple, you just have to submit one pull request each day between 1st Dec 2021 and 24th Dec 2021. It is one of my favourite events. I have participated in the event each year, without a break, since 2015. I was introduced to it by <a href="http://blogs.perl.org/users/neilb/2015/11/24-pull-requests.html">Neil Bowers</a>. Last year I was going through rough patch so, unfortunately, I had to skip it. My best performance was in the year 2018 when I contributed <strong>125 pull requests</strong> in the first 24 days of December. If I am not mistaken then the <strong>24 Pull Requests</strong> event is little more relaxed as compare to <strong>Hacktoberfest</strong>. You don't have to submit a pull request every day. Instead, you can submit in bulk one day and then take a break. However, make sure you have submitted at least 24 pull requests by the end of play on 24th December.</p>
 <p>Happy Hacking !!!</p>
 <p>Do you follow the much-discussed <strong>Perl</strong> project <strong>Corinna</strong>?</p>
 <p>The project is run by <strong>Curtis</strong> and his dedicated team of experts. I came across a <a href="https://ovid.github.io/articles/why-is-perl-not-putting-moose-in-the-core.html">blog post</a> by <strong>Curtis</strong> talking about "<strong>Why is Perl not putting Moose in the core?</strong>" There is a bold statement in the post in response to the question "<strong>What’s an Object in Perl?</strong>" and it is "<strong>Perl knows nothing about OOP. It doesn’t know what objects are.</strong>"</p>
 <p><strong>Curtis</strong> doesn't say things without a reason. Please read the full blog post for more informations. I am one of the biggest followers of <strong>Curtis</strong> and never miss his posts.</p>
-<p>If you remember, I mentioned <strong>Advent Calendars</strong> in the editorial of the weekly newsletter edition <a href="https://www.perlweekly.com/archive/536.html">#536</a>. Ever since then, I have noticed lots of activities in the <strong>Perl</strong> and <strong>Raku</strong> communities about <strong>Advent Calendars</strong>. I am confident this year we are going to have another fun filled <strong>Advent</strong>.</p>
+<p>If you remember, I mentioned <strong>Advent Calendars</strong> in the editorial of the weekly newsletter edition <a href="https://www.perlweekly.com/archive/536.html">#536</a>. Ever since then, I have noticed lots of activities in the <strong>Perl</strong> and <strong>Raku</strong> communities about <strong>Advent Calendars</strong>. I am confident this year we are going to have another fun filled <strong>Advent Calendar</strong>.</p>
 <p>Last but not least, <a href="https://theweeklychallenge.org">The Weekly Challenge</a> (also known as <strong>Perl Weekly Challenge</strong>) is going to complete <strong>1000 days</strong> on <strong>18th December 2021</strong>. To celebrate the day, the team is running a <strong>FREE T-shirt</strong> campaign. If you are interested in knowing about it then please check out the <a href="https://theweeklychallenge.org/blog/1000-days">blog post</a>.</p>
 <p>Stay safe and avoid the new <strong>COVID-19</strong> variant <strong>Omicron</strong>.</p>       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-install">Dancer2: Install Perl, editor, Dancer2</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -193,7 +386,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/11/perl-weekly-challenge-140-add-binary.html">Perl Weekly Challenge 140: Add Binary</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -319,7 +512,7 @@ for my $test ( [11, 1], [101, 1], [100, 11], [100, 100], [1011, 11]) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/11/perl-weekly-challenge-140-multiplication-tables.html">Perl Weekly Challenge 140: Multiplication Tables</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -437,7 +630,7 @@ for my $test ([2, 3, 4], [3, 3, 6]) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/11/28#pwc140">A Binary Addition Simulation / Nth from a Sorted Multiplication: Table The Weekly Challenge 140</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -562,7 +755,7 @@ just went with a couple of <code>for</code> loops!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl5_tony_cook_oct_2021">Maintaining Perl 5 Core (Tony Cook): October 2021</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -641,7 +834,7 @@ applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/11/ccclxix-12-great-cpan-modules-released.html">(ccclxix) 12 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -653,7 +846,7 @@ applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/11/cdxcii-metacpan-weekly-report-dbdpg.html">(cdxcii) metacpan weekly report - DBD::Pg</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -665,7 +858,7 @@ applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/11/dxi-stackoverflow-perl-report.html">(dxi) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -677,7 +870,7 @@ applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/11/my-favorite-warnings-experimental.html">My Favorite Warnings: experimental</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -717,7 +910,7 @@ applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-140-a50">Weekly Challenge 140</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -854,7 +1047,7 @@ $ ./ch-2.pl 3 3 6
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/neilb/2021/11/addressing-cpan-vulnerabilities-related-to-checksums.html">Addressing CPAN vulnerabilities related to checksums</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1016,7 +1209,7 @@ $ ./ch-2.pl 3 3 6
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/5-cool-perlrakuprogramming-links-50dj">5 cool Perl/Raku/Programming links </a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1060,240 +1253,19 @@ $ ./ch-2.pl 3 3 6
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/lancew/building-a-simple-rss-aggregator-with-perl-and-mojolicious-to-replace-a-php-app-4a3n">Building a simple RSS aggregator with Perl and Mojolicious to replace a PHP app</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Lance Wicks
- on Tuesday 23 November 2021 00:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>In the last tale I shared a little of my experience of using the Digital Ocean app services for build, deploy and hosting of a simple web application.</p>
-
-<p>In this tale, I'd like to summarise the small application I built.</p>
-
-<h1>
-  <a href="#introduction">
-  </a>
-  Introduction
-</h1>
-
-<p>The application I am replacing is a old (early 2000s) PHP application. It aggregates RSS feeds from a variety of Judo blogs and produces both a web presentation and a new RSS feed of the combined RSS items. The old site has limped along with little modification since early 2010s. It did well untill the hosting platform it was on (cPanel) upgraded PHP and broke the site.</p>
-
-<p>There were two specific hacks that both helped and hindered. The web pages were being writen to static HTML files by a cron job that ran the PHP. To address multi-ligual need, the site had three installations of the same code running against different OPML files of sites. This actually menat the site stayed "up" when the PHP upgrade broke the app.</p>
-
-<h1>
-  <a href="#new-version">
-  </a>
-  New Version
-</h1>
-
-<p>I decided to build the site using Mojolicious. I've done a lot of work with Dancer2 in the past, so this was a good opportunity to build something real with Mojo.</p>
-
-<p>Making the site properly multi-lingual was high on my agenda. Fast also an important factor for me.</p>
-
-<h1>
-  <a href="#starting">
-  </a>
-  Starting
-</h1>
-
-<p>I started by using the Mojolicious command line tool to scaffold a working application:</p>
-
-<p><code><br>
-mojo generate app<br>
-</code></p>
-
-<p>This gave me the shape of the app; Mojo/Mojolicious gives a pretty standard MVC web application structure to work with. As someone familiar with Dancer2 it's not difficult to adjust. All your regular tools for handling <code>GET</code> and <code>POST</code> requests are there already. Mojo also comes with <code>Morbo</code>.</p>
-<h2>
-  <a href="#morbo">
-  </a>
-  Morbo
-</h2>
-
-<p>Morbo is a development server that handles HTTP and has an almost mandatory feature for me... hot reloading. When you change some code, Morbo identifies that and reloads. This is pretty common in other languages and it's nice to have it baked into Mojo.</p>
-<h2>
-  <a href="#testmojo">
-  </a>
-  Test::Mojo
-</h2>
-
-<p>Mojo comes with <code>Test::Mojo</code> which is a really nice library to help you test the WebUI elements of your application. This is really nice and works well. I like to try and build things in a Test Driven Development style. Both in terms of unit tests AND integration style tests. Test::Mojo makes it easy to describe the web page I want to build and then confirm I have done it as I build it.</p>
-
-<p>It does not replace unit testing for business logic (I still use <code>Test2::V0</code>) for that. Test::Mojo provides a ovely out of the box, pre-wired web page testing tool. The ease of use as a developer is important to me and frankly makes doing a more TDD style of development more of a default option than if you have to wire things together yourself.</p>
-<h2>
-  <a href="#xml">
-  </a>
-  XML
-</h2>
-
-<p>This was actually the hardest part of the puzzle. There are many options and in the end I have been using <code>XML::OPML</code> to parse the lists of sites in each language. <code>XML::Feed</code> handles the reading and and writing of the RSS feeds. Beyond this, I use <code>HTML::Strip</code> to clean the content from the external feeds along with <code>Text::Truncate</code> to limit the text shown for each item shown on screen. Lastly, I am using <code>Moo</code> for forming the object oriented "business logic" part of the code.</p>
-
-<p>SInce starting (and in part from writing this tale) I see that Mojolicious has "JSON and HTML/XML parser with CSS selector support." so maybe I don't need all this? I shallneed to explore.</p>
-<h1>
-  <a href="#code-structure">
-  </a>
-  Code structure
-</h1>
-
-<p>The site is pretty simple at the moment, I have broken it into two parts. Feed fetching, parsing, aggregating is one part. Starting with reading an OPML file and culminating in writing an RSS file.</p>
-
-<p>The second part is the website that reads the RSS file and presents it on screen. Currently, the website does not fetch the feeds from the external sites. This is being done locally on my machine as a stand alone script; this will probably change; though it does mean that the site is very simple currently.</p>
-<h2>
-  <a href="#routes">
-  </a>
-  Routes
-</h2>
-
-<p>The code is simple easy:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>
- $r-&gt;get('/')-&gt;to('Home#welcome');
- $r-&gt;get('/:lang')-&gt;to('Main#index');
-
-</code></pre>
-
-</div>
-
-
-
-<p>The whole site is basically one route that is the language we are serving i.e. <code>/english</code>, <code>/french</code> or <code>/spanish</code>. The <code>:lang</code> is used within the code to decide which RSS file to read and display. So <code>/english</code> reads <code>rss_english.xml</code> and displays it. Currently the controller looks like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>
-sub index ($self) {
-    my $xml
-        = XML::Feed-&gt;parse( 'public/rss_' . $self-&gt;param('lang') . '.xml' );
-    my $opml_parser = XML::OPML-&gt;new;
-    my $opml
-        = $opml_parser-&gt;parse( 'public/' . $self-&gt;param('lang') . '.opml' );
-
-    # Rendel template "example/welcome.html.ep" with message
-    $self-&gt;render(
-        lang =&gt; ucfirst $self-&gt;param('lang'),
-        rss_xml =&gt; $xml,
-        opml =&gt; $opml,
-    );
-}
-
-</code></pre>
-
-</div>
-
-
-
-<p>As you can see, we read the OPML file (to show a list of sites down one side of the page) and the aggregated RSS feed for each item from the sites on the list.</p>
-
-<h3>
-  <a href="#hidden-complexity-in-the-template">
-  </a>
-  Hidden complexity in the template
-</h3>
-
-<p>The conroller is simple, which is in part becuase I have hidden a large about of code in the template itself. The template engine is complex enough to allow me to generate loops, strip HTML, truncate etc. This is convenient for me, but feels very wrong.</p>
-
-<h2>
-  <a href="#bootstrap">
-  </a>
-  Bootstrap
-</h2>
-
-<p>There is a little Bootstrap used to apply some design.</p>
-
-<h1>
-  <a href="#summary">
-  </a>
-  Summary
-</h1>
-
-<p>So for me Mojolisious has been enjoyable; well worth a try if you are looking for a developer focussed web framework; no matter what language you are coming from. The tooling (Morbo and Test::Mojo) make for an easy and reliable development process. The app structure is familiar to someone coming from most any MVC framework (be that Dancer2, Ruby on Rails, Django or Express.</p>
-
-<p>Give it a try.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
           <div class="card" id="card_17">
             <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/the-ephemeral-miniconf-the-videos-e2d">The ephemeral miniconf - The videos</a></h2>
+              <h2 class="card-title"><a href="https://dev.to/mjgardner/video-a-year-of-being-wrong-on-the-internet-4ocn">Video: “A Year of Being Wrong on the Internet”</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
-              <p class="text-right"><small>Published by Tib
- on Monday 22 November 2021 18:08</small></p>
+              <p class="text-right"><small>Published by Mark Gardner
+ on Tuesday 23 November 2021 15:00</small></p>
             </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p><strong>The ephemeral miniconf</strong> was last week 😎 It went very well 👍 and it’s time to share all the videos: <a href="https://m.youtube.com/channel/UCoUiZ7IoTXa1us8jvCyQl6g/videos">[The epehemeral miniconf Youtube channel]</a></p>
+     <div class="card-body">       <div class="card-text"><p>I’m busy this week hosting my parents’ first visit to Houston, but I didn’t want to let this Tuesday go by without linking to my talk from last week’s <a href="https://thibaultduponchelle.github.io/the-ephemeral-miniconf/">Ephemeral Miniconf</a>. Thanks so much to <a href="https://dev.to/thibaultduponchelle">Thibault Duponchelle</a> for organizing such a terrific event, to all the other speakers for coming together to present, and to everyone who attended for welcoming me.</p>
 
-<h4>
-  <a href="#native-github-actions-in-perl-juan-juli%C3%A1n-merelo-guerv%C3%B3s">
-  </a>
-  <a href="https://m.youtube.com/watch?v=XNi8FMEI1Wo">Native GitHub actions in Perl - Juan Julián Merelo Guervós</a>
-</h4>
-
-<p><a href="https://m.youtube.com/watch?v=XNi8FMEI1Wo"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--zeCN4W62--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/v4mj9zz450226zsypew3.png" alt="Native GitHub actions in Perl" width="880" height="443"></a></p>
-
-<h4>
-  <a href="#do-you-really-know-xml-thibault-duponchelle">
-  </a>
-  <a href="https://m.youtube.com/watch?v=NgsDI2XeLLY">Do you really know XML? - Thibault Duponchelle</a>
-</h4>
-
-<p><a href="https://m.youtube.com/watch?v=NgsDI2XeLLY"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--tde3PcDc--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/0tkd7fobluwiok1ozmoo.png" alt="Do you really know XML?" width="880" height="408"></a></p>
-
-<h4>
-  <a href="#automatic-observability-jos%C3%A9-joaqu%C3%ADn-atria">
-  </a>
-  <a href="https://m.youtube.com/watch?v=a6mlym8nVHc">Automatic Observability - José Joaquín Atria</a>
-</h4>
-
-<p><a href="https://m.youtube.com/watch?v=a6mlym8nVHc"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--VfcTO4xN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/q5v8xtmi54jgptj2bdqc.png" alt="Automatic Observability" width="880" height="423"></a></p>
-
-<h4>
-  <a href="#open-food-facts-stephane-gigandet">
-  </a>
-  <a href="https://m.youtube.com/watch?v=9SOROdmJn4g">Open Food Facts - Stephane Gigandet</a>
-</h4>
-
-<p><a href="https://m.youtube.com/watch?v=9SOROdmJn4g"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--lU6T5eag--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/yfesxwfwua9o1mxjlcdf.png" alt="Open Food Facts" width="880" height="455"></a></p>
-
-<h4>
-  <a href="#cunninghams-law-a-year-of-being-wrong-on-the-internet-mark-gardner">
-  </a>
-  <a href="https://m.youtube.com/watch?v=mC_FLFH8FMw">Cunningham’s Law: A Year of Being Wrong on the Internet - Mark Gardner</a>
-</h4>
-
-<p><a href="https://m.youtube.com/watch?v=mC_FLFH8FMw"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--RO6F7ewp--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/sz8z4m815ldeidm30ccn.png" alt="Cunningham’s Law: A Year of Being Wrong on the Internet" width="880" height="359"></a></p>
-
-<h4>
-  <a href="#lemonldapng-clement-oudot">
-  </a>
-  <a href="https://m.youtube.com/watch?v=6jLaZt_grtM">LemonLDAP::NG - Clement Oudot</a>
-</h4>
-
-<p><a href="https://m.youtube.com/watch?v=6jLaZt_grtM"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--GCmF0Otk--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/999f56qe1dxyyv5r67jx.png" alt="LemonLDAP::NG - Clement Oudot" width="880" height="353"></a></p>
-
-<h4>
-  <a href="#once-upon-perl-acronyms-thibault-duponchelle">
-  </a>
-  <a href="https://m.youtube.com/watch?v=Zdp3rKWq3-I">Once Upon Perl Acronyms - Thibault Duponchelle</a>
-</h4>
-
-<p><a href="https://m.youtube.com/watch?v=Zdp3rKWq3-I"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--m1hcOEtn--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/lwx8zbf3suf0lphp0ojs.png" alt="Once Upon Perl Acronyms" width="880" height="765"></a></p>
-
-<h1>
-  <a href="#your-turn-to-watchenjoylike-them-now">
-  </a>
-  Your turn to watch/enjoy/like them now
-</h1>
-
-<h1>
-  <a href="#grinning">
-  </a>
-  😀
-</h1>
+<p><iframe width="710" height="399" src="https://www.youtube.com/embed/mC_FLFH8FMw">
+</iframe>
+</p>
 
        </div><!-- card-text -->     </div>
             <div class="card-footer">
@@ -2841,7 +2813,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 30 November 2021 12:47 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 30 November 2021 16:51 UTC</address>
             </div>
           </div>
         </div><!-- container -->
