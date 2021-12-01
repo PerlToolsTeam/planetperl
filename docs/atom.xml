@@ -7,9 +7,116 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-12-01T08:43:45Z</updated>
+  <updated>2021-12-01T12:50:40Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Merging multiple git repos with their commit history</title>
+    <link href="http://domm.plix.at/perl/2021_12_git_merge_repos_with_history.html"/>
+    <id>http://domm.plix.at/perl/2021_12_git_merge_repos_with_history.html</id>
+    <updated>2021-12-01T12:14:41+00:00</updated>
+    <category term="perl"/>
+    <summary type="html">Advent of Code has started again and I'm again publishing my solutions to github (and probably also here). In the last two years I created on git repo for each year, but this year I changed my mind ...</summary>
+    <content type="html">&lt;p&gt;&lt;a href="https://adventofcode.com/2021"&gt;Advent of Code&lt;/a&gt; has started again and I'm again publishing my solutions to github (and probably also here). In the last two years I created on git repo for each year, but this year I changed my mind and want to have on repo containing a dir for each year.&lt;/p&gt;
+
+&lt;p&gt;Now I could just copy all the files into the &lt;a href="https://github.com/domm/advent_of_code"&gt;new repo&lt;/a&gt;, but that would lose the commit history. Which is unacceptable!&lt;/p&gt;
+
+&lt;h4&gt;The status quo ante&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code&gt;.
+├── advent2019
+│   ├── 01_1.pl
+│   └── 01_2.pl
+└── advent2020
+    ├── 01_1.pl
+    └── 01_2.pl&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4&gt;What I want&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code&gt;.
+└─── advent_of_code
+    ├── 2019
+    │   ├── 01_1.pl
+    │   └── 01_2.pl
+    └── 2020
+        ├── 01_1.pl
+        └── 01_2.pl&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;I know that git allows you to rewrite history and have once munged a repo using &lt;code&gt;git filter-branch&lt;/code&gt; (to completely delete some files and commits). I of course forgot the details, but after a little bit of searching and trial and error I got it working!&lt;/p&gt;
+
+&lt;h4&gt;First, prepare the old repo&lt;/h4&gt;
+
+&lt;p&gt;To prevent merge conflicts later, I first move the code in the old repo from the root dir into a new dir, eg &lt;code&gt;2019&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;So this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;.
+└─── advent2019
+    ├── 01_1.pl
+    └── 01_2.pl&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Should look like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;.
+└─── advent2019
+    └─── 2019
+        ├── 01_1.pl
+        └── 01_2.pl&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;I found &lt;a href="https://gist.github.com/fabiomaggio/ce7ecd7dffd27b32a45325204288efce"&gt;this gist&lt;/a&gt; very helpful, and adapted it to my needs:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;cd advent2019
+mkdir 2019
+git filter-branch --tree-filter 'mkdir -p /tmp/ad; mv * /tmp/ad; mkdir 2019; mv /tmp/ad/* 2019/' --tag-name-filter cat --prune-empty -- --all&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This uses &lt;code&gt;git filter-branch&lt;/code&gt; to move the old code to a temp dir (&lt;code&gt;mv * /tmp/ad&lt;/code&gt;) and then move it back to the new location (&lt;code&gt;mv /tmp/ad/* 2019/&lt;/code&gt;), using some git magic to keep the history.&lt;/p&gt;
+
+&lt;p&gt;While I was at it, I also removed some of the AdventOfCode input files which I had commited (but which we should not commit):&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;git filter-branch -f --tree-filter 'rm -f 2019/*.data' HEAD&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4&gt;Second, import the repo&lt;/h4&gt;
+
+&lt;p&gt;Now I can merge the old repo into my new unified repo. This time this &lt;a href="https://stackoverflow.com/a/6004865"&gt;StackOverflow comment&lt;/a&gt; pointed me in the right direction. The basic idea is to add the old repo as a new remote, fetch the commits, and then merge them using &lt;code&gt;--allow-unrelated-histories&lt;/code&gt;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;cd advent_of_code
+git remote add old19 ../advent2019/
+git fetch old19
+git merge --allow-unrelated-histories old19/master
+git remote remove old19&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;And then push, and we're done and have a nice unified repo:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;~/perl/advent_of_code$ tree
+.
+├── 2019
+│   ├── 01_1.pl
+│   ├── 01_2.pl
+├── 2020
+│   ├── 01_1.pl
+│   ├── 01_2.pl
+│   ├── 01_2_golf.pl
+├── 2021
+│   ├── 01_1.pl
+│   ├── 01_1_golf.pl
+│   └── 01_2.pl
+└── README.md&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;And the history was preserved:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;~/perl/advent_of_code$ git log 2019/24_1.pl
+commit dbaf0bc1df645bda61ec5cf7e623d478a179947e
+Author: Thomas Klausner &amp;lt;domm@plix.at&amp;gt;
+Date:   Fri Dec 27 10:10:10 2019 +0100
+
+    no need to keep a map around, the rating is unique per map&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Win!&lt;/p&gt;
+
+&lt;p&gt;Next steps: Fix all links pointing to the old repos to point to the new location, and maybe archive / delete the github repos (and/or have them redirect to the new unified repo)&lt;/p&gt;</content>
+    <category term="git"/>
+    <category term="AdventOfCode"/>
+  </entry>
   <entry>
     <title>Developing A Game Engine with Perl: Part 5 - 32bit -&gt; 64bit &amp; Perl's Storable</title>
     <link rel="alternate" href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-5-32bit-64bit-perls-storable-5l8" type="text/html"/>
@@ -2846,19 +2953,4 @@ into my coding time.</p>
       <name>Gabor Szabo</name>
     </author>
 </entry>
-  <entry>
-    <title>#536 - Auf Wiedersehen Hacktoberfest</title>
-    <link rel="alternate" href="https://perlweekly.com/archive/536.html" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>Hi there</p>
-<p>The headline of this week's newsletter is dedicated to all my German friends. However, the message is global "Good bye Hacktoberfest". I don't know the language, so I asked Google to help me. I am sure you all celebrated the month-long festival with loads of contributions to many opensource codebases. I can completely understand the feeling at the end of the month. Those who have participated and completed the challenge successfully i.e. submitted at least 4 eligible Pull Requests, should just relax and wait for their FREE gift. Please take November as a break as December will bring in another fun challenge i.e. <a href="https://24pullrequests.com">24 Pull Requests</a> for you.</p>
-<p>Anything else to look forward to?</p>
-<p>For me, there is another fun bit is the "Advent Calendar". There will be plenty of Advent Calendars available during the month. It is really hard to follow all of them. I came across something called, <a href="http://www.lenjaffe.com/AdventPlanet">Advent Planet</a>, which collects almost all popular Advent Calendars for us. Please do check it out, if you want a early peek. I really miss those days when I used to have time for such things. I have contributed to the Perl/Raku advent calendars in the past. If you have spare time and interest then please do get in touch with the person behind the project now and book your slot. There is one <a href="https://theweeklychallenge.org/blog/advent-calendar-2020">Advent Calendar</a> dedicated to the members of <a href="https://theweeklychallenge.org">The Weekly Challenge</a> only. I make sure the tradition continues every year. I hope everything goes as per the plan and we have another fun Advent Calendar by the dedicated members this year.</p>
-<p>Start your week with yet another informative newsletter. You take care of yourself and your family. Keep a safe distance and stay safe,</p></div>
-    </content>
-    <id>https://perlweekly.com/archive/536.html</id>
-    <published>2021-11-01T10:00:00Z</published>
-    <updated>2021-11-01T10:00:00Z</updated>
-    <category term="list of tags?"/>
-  </entry>
 </feed>
