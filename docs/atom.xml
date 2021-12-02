@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-12-02T08:44:16Z</updated>
+  <updated>2021-12-02T12:50:28Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -540,6 +540,161 @@ Shawn</p>]]>
     </content>
 </entry>
   <entry>
+    <title>Developing A Game Engine with Perl: Part 6 - A Colourful Telnet Server</title>
+    <link rel="alternate" href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-6-a-colourful-telnet-server-4i7g" type="text/html"/>
+    <content type="html">&lt;p&gt;&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-2-mouse-input-43nj"&gt;I'll stop reminding you that...&lt;/a&gt; &lt;strong&gt;I DO NOT KNOW WHAT I AM DOING.&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;If you want to start reading from the beginning. Check out the &lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-3b8"&gt;first article in this series&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#what-is-ansi-game-engine"&gt;
+  &lt;/a&gt;
+  What is ANSI Game Engine?
+&lt;/h2&gt;
+
+&lt;p&gt;Well, at it's core, &lt;a href="https://www.facebook.com/ANSIGameEngine"&gt;ANSI Game Engine&lt;/a&gt; is a very colourful and interactive telnet server.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Why telnet!?&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;I know, right!? I still ask myself the same question today, but at this point, I'm kinda committed. Initially, it all came down to my decision &lt;strong&gt;NOT&lt;/strong&gt; to code the client side. I looked into it, and it just wasn't something I wanted to do. And honestly, it seemed too far outside my comfort level with Perl. I feel much more comfortable, and interested in, working with server side code, as may be true for other Perl dev's out there. That's where &lt;a href="https://www.perl.org/"&gt;Perl&lt;/a&gt; is quite prolific. Since I was going with &lt;a href="https://en.wikipedia.org/wiki/ANSI_art"&gt;ANSI graphics&lt;/a&gt;, they are best known these days, for me at least, to be used in telnet/terminal clients and &lt;a href="https://en.wikipedia.org/wiki/Bulletin_board_system"&gt;BBS's&lt;/a&gt;, which are mainly telnet based now. This being said, it wasn't long searching google before I came across SyncTERM. &lt;a href="https://syncterm.bbsdev.net/"&gt;SyncTERM&lt;/a&gt; is, in my opinion, the best available choice for cross-platform rendering of ANSI graphics over telnet. I've tried many different clients, on Mac, Windows, and Linux. SyncTERM works the most consistent across these platforms, it's been around for a long time and is still actively being developed. So telnet it is!&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Telnet.... Fork me...&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;The engine has to be multiplayer. Depending on the specific game requirements, this does not necessarily mean players interacting with each other, but at least having multiple players connected at the same time to the same server. This is a minimum initial requirement. To me, this is a great opportunity to work with &lt;a href="http://man.he.net/man2/fork"&gt;Fork&lt;/a&gt;. I really like the idea of creating multiple processes with fork that can interact with each other. This is an area I have little experience with and a great opportunity to learn.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Have you heard of Perl's CPAN?&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;If you are a Perl dev, obviously yes. If you code in another language, perhaps you've heard of it. &lt;a href="https://www.cpan.org/"&gt;Comprehensive Perl Archive Network&lt;/a&gt;, or CPAN, is Perl's repository of code modules. If you want to do something, chances are someone has already made a module for that. As of writing this article, CPAN currently has 208,034 Perl modules written by 14,179 authors. It's absolutely amazing!&lt;/p&gt;
+
+&lt;p&gt;This is where I found the modules to develop a telnet server. A forking telnet server, can you believe it? Fork yah! Okokok.... I'll stop making that joke, I promise!&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Let's get to coding!&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;The first step was to get a telnet server that could accept multiple simultaneous connections. I read up on how to make a telnet server with Perl and from that reading I quickly learned about &lt;a href="https://metacpan.org/pod/IO::Socket::INET"&gt;IO::Socket::INET&lt;/a&gt;. It wasn't long after I had working code for a telnet server!&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use strict;
+use warnings;
+use IO::Socket::INET;
+print "\nBEGIN\n";
+
+print "Setting up listen socket\n";
+my $socket = new IO::Socket::INET (
+    LocalHost =&amp;gt; '192.168.1.15',
+    LocalPort =&amp;gt; '27777',
+    Proto =&amp;gt; 'tcp',
+    Listen =&amp;gt; SOMAXCONN,
+    ReuseAddr =&amp;gt; 1
+);
+
+my $player_socket;
+my $player_data;
+
+print "Waiting for connection ...\n";
+while(1) {
+
+    next unless $player_socket = $socket-&amp;gt;accept();
+    print "Incomming Connection!\n";
+
+    my $player_address = $player_socket-&amp;gt;peerhost();
+    my $player_port    = $player_socket-&amp;gt;peerport();
+
+    my $response = "Player Connection Info: $player_address : $player_port. ";
+    print "$response\n";
+
+    $response .= "Press Any Key To Disconnect...\n";
+    $player_socket-&amp;gt;send($response);
+
+    print "Waiting for player to press a key and disconnect...\n";
+    while ($player_socket-&amp;gt;connected()) {
+
+        $player_socket-&amp;gt;recv($player_data, 1024);
+        if ($player_data) {
+            print "Player Disconnecting $player_address : $player_port\n";
+            $socket-&amp;gt;close();
+            print "Player Disconnected\n";
+            last;
+        }
+
+    }
+    last;
+}
+print "Good Bye!\n";
+exit;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Running this code and connecting with SyncTERM shows:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;localhost:~ # perl telnet_server.pl 
+
+BEGIN
+Setting up listen socket
+Waiting for connection ...
+Incomming Connection!
+Player Connection Info: 192.168.1.9 : 55414. 
+Waiting for player to press a key and disconnect...
+Player Disconnecting 192.168.1.9 : 55414
+Player Disconnected
+Good Bye!
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--QEvJGtrE--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/th0yb9l6o49xidryn1xg.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--QEvJGtrE--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/th0yb9l6o49xidryn1xg.png" alt="Image description" width="880" height="692"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;I read my &lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-4-uefi-vs-opensuse-installer-5e1c"&gt;Linux OpenSuSE&lt;/a&gt; server's man page for &lt;a href="https://man7.org/linux/man-pages/man2/listen.2.html"&gt;listen(2)&lt;/a&gt;, and the best I can understand is that the value for SOMAXCONN in  &lt;a href="https://perldoc.perl.org/IO::Socket#Listen"&gt;&lt;code&gt;Listen =&amp;gt; SOMAXCONN&lt;/code&gt;&lt;/a&gt; will allow me to have up to  4096 connections!? I think this is correct. It says the value can be found in &lt;code&gt;/proc/sys/net/core/somaxconn&lt;/code&gt; and doing a &lt;a href="https://man7.org/linux/man-pages/man1/cat.1.html"&gt;cat&lt;/a&gt; of that file shows 4096.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;localhost:~ # cat /proc/sys/net/core/somaxconn 
+4096
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;&lt;strong&gt;Now we just need to fork!&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;This process turned out to be a bit more difficult to understand (for me) and a few more lines of code then did the telnet portion. I'll pick up from here in the next article.&lt;/p&gt;
+
+&lt;p&gt;Have you done any telnet programming before? If so, what modules have you found useful? (CPAN or otherwise)&lt;/p&gt;
+
+&lt;p&gt;If you have any suggestions or comments please share constructively. Also please visit our social media pages for lots of fun videos and pictures showing the game engine in action. &lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://www.instagram.com/ANSIGameEngine/"&gt;ANSI Game Engine on Instagram&lt;/a&gt;&lt;br&gt;
+&lt;a href="https://www.facebook.com/ANSIGameEngine"&gt;ANSI Game Engine on Facebook&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-5-32bit-64bit-perls-storable-5l8"&gt;Prev &amp;lt;&amp;lt; Part 5 - 32bit -&amp;gt; 64bit &amp;amp; Perl's Storable&lt;/a&gt;&lt;br&gt;
+&lt;strong&gt;&lt;em&gt;Next &amp;gt;&amp;gt; Coming Soon&lt;/em&gt;&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;Cheers!&lt;br&gt;
+Shawn&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Shawn Holland</name>
+    </author>
+    <id>https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-6-a-colourful-telnet-server-4i7g</id>
+    <published>2021-12-02T09:06:57Z</published>
+    <updated>2021-12-02T09:06:57Z</updated>
+    <category term="perl"/>
+    <category term="gamedev"/>
+    <category term="linux"/>
+    <category term="devjournal"/>
+  </entry>
+  <entry>
     <title>Developing A Game Engine with Perl: Part 5 - 32bit -&gt; 64bit &amp; Perl's Storable </title>
     <link rel="alternate" href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-5---32bit---64bit-perls-storable.html"/>
     <id>tag:blogs.perl.org,2021:/users/shawn1//3947.10555</id>
@@ -852,7 +1007,7 @@ to&lt;br&gt;
 &lt;a href="https://www.facebook.com/ANSIGameEngine"&gt;ANSI Game Engine on Facebook&lt;/a&gt;&lt;/p&gt;
 
 &lt;p&gt;&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-4-uefi-vs-opensuse-installer-5e1c"&gt;Prev &amp;lt;&amp;lt; Part 4 - UEFI vs OpenSuSE Installer&lt;/a&gt;&lt;br&gt;
-&lt;strong&gt;&lt;em&gt;Next &amp;gt;&amp;gt; Coming Soon&lt;/em&gt;&lt;/strong&gt;&lt;/p&gt;
+&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-6-a-colourful-telnet-server-4i7g"&gt;Next &amp;gt;&amp;gt; Part 6 - A Colourful Telnet Server&lt;/a&gt;&lt;/p&gt;
 
 &lt;p&gt;Cheers!&lt;br&gt;
 Shawn&lt;/p&gt;
@@ -1919,71 +2074,6 @@ Shawn&lt;/p&gt;
     <category term="testing"/>
     <category term="mocking"/>
     <category term="metaprogramming"/>
-  </entry>
-  <entry>
-    <title>Developing A Game Engine with Perl</title>
-    <link rel="alternate" href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-3b8" type="text/html"/>
-    <content type="html">&lt;h2&gt;
-  &lt;a href="#perl-what-really"&gt;
-  &lt;/a&gt;
-  Perl? What... really?
-&lt;/h2&gt;
-
-&lt;p&gt;To most in the know, coding a game engine with Perl would be a surprise. I've certainly been asked, "&lt;em&gt;Why Perl?&lt;/em&gt;". You see, unlike C++, C#, Java and others, which are well established languages in game engine design, Perl is not (well) known for it's role in the development of games. Especially not as a game engine language. You are much more likely to see Perl managing the network infrastructure for the gaming industry then you are to see it powering your favourite video games.&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#so-why-use-perl-then"&gt;
-  &lt;/a&gt;
-  So why use Perl then?
-&lt;/h2&gt;
-
-&lt;p&gt;Because It's what I know. It's that simple. I've spent many years using Perl to solve many problems throughout my career. I've been fortunate to write Perl code that interacts with a wide variety of hardware, Linux servers and network services. But never a game engine. So I answer "&lt;em&gt;Why Perl?&lt;/em&gt;" with "&lt;em&gt;Why not Perl?&lt;/em&gt;"&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#why-design-another-game-engine-why-not-just-use-an-existing-engine-to-make-games"&gt;
-  &lt;/a&gt;
-  Why design another game engine? Why not just use an existing engine to make games?
-&lt;/h2&gt;
-
-&lt;p&gt;I had to ask myself these questions early on. You see, I've always wanted to create games and for most of my life I've been tinkering with other peoples game code. &lt;/p&gt;
-
-&lt;p&gt;Do you remember &lt;a href="https://en.wikipedia.org/wiki/Gorillas_(video_game)"&gt;Gorillas&lt;/a&gt;? The QuickBASIC game that came installed on Dos back in the early 90's.  I sure do. That was one of the first memories I have opening up and messing around with game code. &lt;/p&gt;
-
-&lt;p&gt;What about &lt;a href="https://en.wikipedia.org/wiki/Bulletin_board_system"&gt;Bulletin Board Systems&lt;/a&gt;? The Internet before the Internet, using 16 colour ANSI graphics with a 80x25 "Pixel" resolution. That's OK if you've never heard of a BBS. Or ANSI graphics. But for me, that was my first introduction to hosting a game server, and also where I wrote my first online game. I got to see people logging onto my server and playing my door game for the first time. They are called door games for BBS systems, don't ask me why. I coded it in QuickBASIC (pre Perl days for me) and it ran on my &lt;a href="https://renegadebbs.info/"&gt;Renegade BBS&lt;/a&gt; I was running my own multi-node dial-up BBS with 14.4Kbps modems. That's right, online gaming at 14.4 kbit/s. Can you imagine the ping times!&lt;/p&gt;
-
-&lt;p&gt;One of the things about me is that I prefer to do things myself if I can. This extends into my programming life as well. So fast forward many years later, me still tinkering in various game code / modding along the way, using Perl extensively in my career, I came to the conclusion that I was just gonna do it. I was going to make my own game (engine). But I didn't go to school for it and have little to no actual knowledge in this field. Sure I've written lots of Perl code, but I don't know much more than a casual hobbyist at best when it comes to writing a game. Buuuut.... I &lt;strong&gt;DO&lt;/strong&gt; know how to code in Perl, I &lt;strong&gt;DO&lt;/strong&gt; know a little bit about ANSI Graphics and I &lt;strong&gt;DO&lt;/strong&gt; know about telnet. That's the Language, The graphics (and audio, ANSI codes can be used for producing sounds) and I can make it online play for Windows, Mac and Linux using &lt;a href="https://syncterm.bbsdev.net/"&gt;SyncTERM&lt;/a&gt; as the telnet ANSI client and Linux &lt;a href="https://www.opensuse.org/"&gt;OpenSUSE&lt;/a&gt; as the server.&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#and-thats-where-it-all-begins"&gt;
-  &lt;/a&gt;
-  And that's where it all begins.
-&lt;/h2&gt;
-
-&lt;p&gt;I know just enough to get started. So I did, and I've made great progress, but I still have much much more to do. Which is why I decided to create a blog, to share what I learn along the way as I journey for the first time in making &lt;a href="https://www.facebook.com/ANSIGameEngine"&gt;ANSI Game Engine&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://fb.watch/9CHFnX1uBl/"&gt;&amp;gt;&amp;gt;Watch the first trailer here&amp;lt;&amp;lt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;If you have any suggestions or comments please share constructively. Also please visit our social media pages for lots of fun videos and pictures showing the game engine in action. &lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://www.instagram.com/ANSIGameEngine/"&gt;ANSI Game Engine on Instagram&lt;/a&gt;&lt;br&gt;
-&lt;a href="https://www.facebook.com/ANSIGameEngine"&gt;ANSI Game Engine on Facebook&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-2-mouse-input-43nj"&gt;Next &amp;gt;&amp;gt; Part 2 - Mouse Input &lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Cheers!&lt;br&gt;
-Shawn&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Shawn Holland</name>
-    </author>
-    <id>https://dev.to/ansigameengine/developing-a-game-engine-with-perl-3b8</id>
-    <published>2021-11-30T03:49:56Z</published>
-    <updated>2021-11-30T03:49:56Z</updated>
-    <category term="perl"/>
-    <category term="gamedev"/>
-    <category term="linux"/>
-    <category term="devjournal"/>
   </entry>
   <entry>
     <title>#540 - 24 Pull Requests</title>
