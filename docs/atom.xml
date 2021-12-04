@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-12-03T20:44:00Z</updated>
+  <updated>2021-12-04T00:59:18Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -107,6 +107,194 @@ sub unlock-door (%door-id) {
         
     </content>
 </entry>
+  <entry>
+    <title>Developing A Game Engine with Perl: Part 7 - Fork</title>
+    <link rel="alternate" href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-7-fork-3acm" type="text/html"/>
+    <content type="html">&lt;p&gt;&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-2-mouse-input-43nj"&gt;Pssssst...&lt;/a&gt; &lt;strong&gt;I DO NOT KNOW WHAT I AM DOING.&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;If you want to start reading from the beginning. Check out the &lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-3b8"&gt;first article in this series&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Continuing from our last post, I talked about how &lt;a href="https://www.instagram.com/ANSIGameEngine/"&gt;ANSI Game Engine&lt;/a&gt; is a &lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-6-a-colourful-telnet-server-4i7g"&gt;colourful telnet server&lt;/a&gt;. We left off with needing to fork the engines telnet server.&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#player-2-has-joined-the-game"&gt;
+  &lt;/a&gt;
+  Player 2 has joined the game!
+&lt;/h2&gt;
+
+&lt;p&gt;Time to level up our telnet server and make it multi-player with some knify forky.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Mh4vwXMU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pyx9lszlna5k69crhw62.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Mh4vwXMU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pyx9lszlna5k69crhw62.png" alt="Image description" width="487" height="365"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;I've added in the &lt;a href="https://man7.org/linux/man-pages/man3/strftime.3.html"&gt;&lt;code&gt;strftime&lt;/code&gt;&lt;/a&gt; identifier from &lt;a href="https://perldoc.perl.org/POSIX"&gt;Perl's POSIX module&lt;/a&gt; to help with time stamping the output. The &lt;a href="https://man7.org/linux/man-pages/man2/setsid.2.html"&gt;&lt;code&gt;setsid&lt;/code&gt;&lt;/a&gt; identifier is for starting a new session and group ID for each forked process. A.K.A, the child process. &lt;a href="https://perldoc.perl.org/functions/waitpid"&gt;&lt;code&gt;:sys_wait_h&lt;/code&gt;&lt;/a&gt; is for returning without wait after the child process has exited, using the WNOHANG flag when calling &lt;a href="https://man7.org/linux/man-pages/man2/wait.2.html"&gt;waitpid()&lt;/a&gt;. This provides non-blocking wait for all pending &lt;strong&gt;zombie&lt;/strong&gt; children.&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#zombie-attack"&gt;
+  &lt;/a&gt;
+  Zombie Attack!!!
+&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--4_dXRqOa--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/31gew1fffn1ac0v0zfzn.jpeg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--4_dXRqOa--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/31gew1fffn1ac0v0zfzn.jpeg" alt="Image description" width="500" height="281"&gt;&lt;/a&gt;&lt;br&gt;
+You see, when a process dies (exits), it becomes a zombie and needs to be &lt;strong&gt;reaped&lt;/strong&gt;. This will be done when our parent process calls &lt;a href="https://man7.org/linux/man-pages/man2/wait.2.html"&gt;waitpid&lt;/a&gt; after receiving a &lt;a href="https://man7.org/linux/man-pages/man7/signal.7.html"&gt;CHLD signal&lt;/a&gt;, indicating the child has stopped or terminated.&lt;/p&gt;
+
+&lt;p&gt;Ok, I hope that will give you enough information to work with while dissecting the code:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;#!/usr/bin/perl
+use strict;
+use warnings;
+use IO::Socket::INET;
+use POSIX qw(setsid);
+use POSIX qw(strftime);
+use POSIX ":sys_wait_h";
+
+sub timestamp {
+    my $epoc_seconds = time();
+    my $time = strftime "%H:%M:%S", localtime($epoc_seconds);
+    my $date = strftime "%m/%d/%Y", localtime;
+    my $return = $date . " " . $time;
+    return ($return);
+}
+
+sub logmsg { print timestamp . " -&amp;gt; $0 -&amp;gt; PID:$$: @_ \n" }
+logmsg "Begin";
+
+my $socket = new IO::Socket::INET (
+    LocalHost =&amp;gt; '192.168.1.15',
+    LocalPort =&amp;gt; '27777',
+    Proto =&amp;gt; 'tcp',
+    Listen =&amp;gt; SOMAXCONN,
+    ReuseAddr =&amp;gt; 1
+);
+
+my $waitedpid = 0;
+my $player_data;
+my $player_socket;
+
+sub REAPER {
+    local $!;   # don't let waitpid() overwrite current error
+    logmsg "Ending Player's Game";
+    while ((my $pid = waitpid(-1, WNOHANG)) &amp;gt; 0 &amp;amp;&amp;amp; WIFEXITED($?)) {
+        logmsg "Closed Game ID:$pid : WaitPid:$waitedpid : " . ($? ? " with exit $?" : "");
+    }
+    $SIG{CHLD} = \&amp;amp;REAPER;  # loathe SysV
+}
+#if we get the CHLD signal call REAPER sub
+$SIG{CHLD} = \&amp;amp;REAPER;
+
+logmsg "Ready and waiting for connection";
+while(1)
+{
+    next unless $player_socket = $socket-&amp;gt;accept();
+    logmsg ("Incomming Connection");
+    logmsg ("Spawning Player A Game");
+    my $pid = fork();
+
+    next if $pid; #NEXT if $pid exists (parent)
+
+    #As Child
+    setsid();
+    my $proc = $$;
+
+    logmsg ("Game ID:$proc -&amp;gt; Ready");
+
+    # get information about a newly connected player
+    my $player_address = $player_socket-&amp;gt;peerhost();
+    my $player_port    = $player_socket-&amp;gt;peerport();
+    logmsg "Game ID:$proc -&amp;gt; Connection from $player_address:$player_port";
+
+    my $response = "Welcome Player: $player_address:$player_port. Press any key to disconnect.";
+    $player_socket-&amp;gt;send($response);
+
+    while ($player_socket-&amp;gt;connected()) {
+        $player_socket-&amp;gt;recv($player_data, 1024);
+            if ($player_data) {
+                logmsg "Player Disconnecting $player_address : $player_port";
+                $socket-&amp;gt;close();
+                logmsg "Player Disconnected";
+                last;
+            }
+    }
+    last;
+}
+exit;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Running this code and connecting with two players via &lt;a href="https://syncterm.bbsdev.net/"&gt;SyncTERM&lt;/a&gt;, our &lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-6-a-colourful-telnet-server-4i7g"&gt;client of choice&lt;/a&gt;, shows the following:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;localhost:~/ANSIGameEngine # perl forking_telnet_server.pl 
+12/03/2021 18:16:58 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Begin 
+12/03/2021 18:16:58 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Ready and waiting for connection 
+12/03/2021 18:17:04 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Incomming Connection 
+12/03/2021 18:17:04 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Spawning Player A Game 
+12/03/2021 18:17:04 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15979: Game ID:15979 -&amp;gt; Ready 
+12/03/2021 18:17:04 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15979: Game ID:15979 -&amp;gt; Connection from 192.168.1.9:33422 
+12/03/2021 18:17:08 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Incomming Connection 
+12/03/2021 18:17:08 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Spawning Player A Game 
+12/03/2021 18:17:08 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15980: Game ID:15980 -&amp;gt; Ready 
+12/03/2021 18:17:08 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15980: Game ID:15980 -&amp;gt; Connection from 192.168.1.9:33428 
+12/03/2021 18:17:11 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15979: Player Disconnecting 192.168.1.9 : 33422 
+12/03/2021 18:17:11 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15979: Player Disconnected 
+12/03/2021 18:17:11 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Ending Player's Game 
+12/03/2021 18:17:11 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Closed Game ID:15979 : WaitPid:0 :  
+12/03/2021 18:17:13 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15980: Player Disconnecting 192.168.1.9 : 33428 
+12/03/2021 18:17:13 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15980: Player Disconnected 
+12/03/2021 18:17:13 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Ending Player's Game 
+12/03/2021 18:17:13 -&amp;gt; forking_telnet_server.pl -&amp;gt; PID:15978: Closed Game ID:15980 : WaitPid:0 :  
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--lJVxSJuN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/my89biw6wsyhn0kx7klb.png" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--lJVxSJuN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/my89biw6wsyhn0kx7klb.png" alt="Image description" width="880" height="1100"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#how-it-all-works"&gt;
+  &lt;/a&gt;
+  How it all works
+&lt;/h2&gt;
+
+&lt;p&gt;The main (parent) process that accepts new incoming telnet requests is &lt;code&gt;PID:15978&lt;/code&gt; in the above example. After it sets up the listen server, it waits for a connection request and creates a forked process when a new player connects (child). The code distinguishes the parent (main waiting telnet server) process from the child (player) process with the value &lt;a href="https://perldoc.perl.org/functions/fork"&gt;&lt;code&gt;fork()&lt;/code&gt;&lt;/a&gt; returns. The parent process receives the child's (player) PID as the return value of &lt;code&gt;fork()&lt;/code&gt;, so it loops back up and waits for another player to connect. The child (player) process receives a value of &lt;code&gt;0&lt;/code&gt; from &lt;code&gt;fork()&lt;/code&gt;, so we continue downward in the code. In Perl doing &lt;code&gt;if($pid)&lt;/code&gt; does &lt;strong&gt;NOT&lt;/strong&gt; evaluate &lt;code&gt;TRUE&lt;/code&gt; if &lt;code&gt;$pid == (0 || undef)&lt;/code&gt;, which is what the child (player) process will receive as the returned value from &lt;code&gt;fork()&lt;/code&gt;. We give the child (player) process a new session, record it's PID (&lt;code&gt;$$&lt;/code&gt;) and wait for them to press any key. When the player presses a key the socket is closed and the child (player) process exists and becomes a zombie. This is when the parent (main) process receives the CHLD signal (&lt;code&gt;$SIG{CHLD}&lt;/code&gt;) and calls &lt;strong&gt;&lt;code&gt;REAPER&lt;/code&gt;&lt;/strong&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  &lt;a href="#how-about-you"&gt;
+  &lt;/a&gt;
+  How about you?
+&lt;/h2&gt;
+
+&lt;p&gt;Have you worked with fork before? Have you unleashed a zombie apocalypse forgetting to reap? Comment about your experience, I'd love to hear your stories.&lt;/p&gt;
+
+&lt;p&gt;If you have any suggestions or comments please share constructively. Also please visit our social media pages for lots of fun videos and pictures showing the game engine in action. &lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://www.instagram.com/ANSIGameEngine/"&gt;ANSI Game Engine on Instagram&lt;/a&gt;&lt;br&gt;
+&lt;a href="https://www.facebook.com/ANSIGameEngine"&gt;ANSI Game Engine on Facebook&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-6-a-colourful-telnet-server-4i7g"&gt;Prev &amp;lt;&amp;lt; Part 6 - A Colourful Telnet Server&lt;/a&gt;&lt;br&gt;
+&lt;strong&gt;&lt;em&gt;Next &amp;gt;&amp;gt; Coming Soon&lt;/em&gt;&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;Cheers!&lt;br&gt;
+Shawn&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Shawn Holland</name>
+    </author>
+    <id>https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-7-fork-3acm</id>
+    <published>2021-12-03T23:34:45Z</published>
+    <updated>2021-12-03T23:34:45Z</updated>
+    <category term="perl"/>
+    <category term="linux"/>
+    <category term="gamedev"/>
+    <category term="devjournal"/>
+  </entry>
   <entry>
     <title>Developing A Game Engine with Perl: Part 5 - 32bit -&gt; 64bit &amp; Perl's Storable </title>
     <link rel="alternate" href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-5---32bit---64bit-perls-storable.html"/>
@@ -911,7 +1099,7 @@ Good Bye!
 &lt;a href="https://www.facebook.com/ANSIGameEngine"&gt;ANSI Game Engine on Facebook&lt;/a&gt;&lt;/p&gt;
 
 &lt;p&gt;&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-5-32bit-64bit-perls-storable-5l8"&gt;Prev &amp;lt;&amp;lt; Part 5 - 32bit -&amp;gt; 64bit &amp;amp; Perl's Storable&lt;/a&gt;&lt;br&gt;
-&lt;strong&gt;&lt;em&gt;Next &amp;gt;&amp;gt; Coming Soon&lt;/em&gt;&lt;/strong&gt;&lt;/p&gt;
+&lt;a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-7-fork-3acm"&gt;Next &amp;gt;&amp;gt; Part 7 - Fork&lt;/a&gt;&lt;/p&gt;
 
 &lt;p&gt;Cheers!&lt;br&gt;
 Shawn&lt;/p&gt;
@@ -1953,202 +2141,6 @@ Shawn&lt;/p&gt;
     <updated>2021-12-01T00:31:10Z</updated>
     <category term="cpan"/>
     <category term="perl"/>
-  </entry>
-  <entry>
-    <title>Vicious (test) mockery of a Perl modulino</title>
-    <link rel="alternate" href="https://dev.to/mjgardner/vicious-test-mockery-of-a-perl-modulino-3l4g" type="text/html"/>
-    <content type="html">&lt;p&gt;Over the past two years, I’ve gotten back into playing &lt;a href="https://dnd.wizards.com/"&gt;Dungeons &amp;amp; Dragons&lt;/a&gt;, the famous tabletop fantasy role-playing game. As a software developer and musician, one of my favorite character classes to play is the &lt;a href="https://www.dndbeyond.com/classes/bard"&gt;bard&lt;/a&gt;, a magical and inspiring performer or wordsmith. The list of basic bardic spells includes &lt;a href="https://www.dndbeyond.com/spells/vicious-mockery"&gt;Vicious Mockery&lt;/a&gt;, enchanting verbal barbs that have the power to psychically damage and disadvantage an opponent &lt;em&gt;even if they don’t understand the words&lt;/em&gt;. (Can you see why this is so appealing to a coder?)&lt;/p&gt;
-
-&lt;p&gt;Mocking has a role to play in software testing as well, in the form of &lt;a href="https://en.wikipedia.org/wiki/Mock_object"&gt;mock objects&lt;/a&gt; that simulate parts of a system that are too brittle, too slow, too complicated, or otherwise too finicky to use in reality. They enable discrete &lt;a href="https://en.wikipedia.org/wiki/Unit_testing"&gt;unit testing&lt;/a&gt; without relying on dependencies external to the code being tested. Mocks are great for databases, web services, or other network resources where the goal is to test what you wrote, not what’s out in “the cloud” somewhere.&lt;/p&gt;
-
-&lt;p&gt;Speaking of web services and mocking, one of my favorites is the long-running &lt;a href="https://foaas.com/"&gt;FOAAS&lt;/a&gt; (link has language not safe for work), a surprisingly expansive &lt;a href="https://restfulapi.net/"&gt;RESTful&lt;/a&gt; insult service. There’s a corresponding &lt;a href="https://metacpan.org/pod/WebService::FOAAS"&gt;Perl client API&lt;/a&gt;, of course, but what I was missing was a handy Perl script to call that API from the terminal command line. So I wrote the following over &lt;a href="https://en.wikipedia.org/wiki/Thanksgiving_(United_States)"&gt;Thanksgiving&lt;/a&gt; break, trying to keep it simple while also showing the basics of mocking such an API. It also demonstrates some newer Perl syntax and testing techniques as well as &lt;a href="https://briandfoy.github.io/"&gt;brian d foy&lt;/a&gt;’s &lt;a href="https://perlmaven.com/modulino-both-script-and-module"&gt;modulino&lt;/a&gt; concept from &lt;em&gt;&lt;a href="https://www.masteringperl.org/"&gt;Mastering Perl&lt;/a&gt; (second edition, 2014)&lt;/em&gt; that marries script and module into a self-contained &lt;a href="https://rosettacode.org/wiki/Executable_library"&gt;executable library&lt;/a&gt;.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/env perl&lt;/span&gt;
-
-&lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nn"&gt;Local::&lt;/span&gt;&lt;span class="nv"&gt;CallFOAAS&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# this is a modulino&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Test2::&lt;/span&gt;&lt;span class="nv"&gt;V0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="c1"&gt;# enables strict, warnings, utf8&lt;/span&gt;
-
-&lt;span class="c1"&gt;# declare all the new stuff we're using&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="sx"&gt;qw(say state)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;experimental&lt;/span&gt; &lt;span class="sx"&gt;qw(isa postderef signatures)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Feature::Compat::&lt;/span&gt;&lt;span class="nv"&gt;Try&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Syntax::&lt;/span&gt;&lt;span class="nv"&gt;Construct&lt;/span&gt; &lt;span class="sx"&gt;qw(non-destructive-substitution)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;WebService::&lt;/span&gt;&lt;span class="nv"&gt;FOAAS&lt;/span&gt; &lt;span class="p"&gt;();&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Package::&lt;/span&gt;&lt;span class="nv"&gt;Stash&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Exception::&lt;/span&gt;&lt;span class="nv"&gt;Class&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-    &lt;span class="s"&gt;NoMethodException&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="s"&gt;alias&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;throw_no_method&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-        &lt;span class="s"&gt;fields&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;method&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-    &lt;span class="p"&gt;},&lt;/span&gt;
-    &lt;span class="s"&gt;ServiceException&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;alias&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;throw_service&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt;
-&lt;span class="p"&gt;);&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$foaas&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Package::&lt;/span&gt;&lt;span class="nv"&gt;Stash&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;WebService::FOAAS&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
-
-&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$run_as&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt;
-    &lt;span class="o"&gt;!!&lt;/span&gt;&lt;span class="nv"&gt;$ENV&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;CPANTEST&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;?&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;test&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt;
-  &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="o"&gt;!&lt;/span&gt;&lt;span class="nb"&gt;defined&lt;/span&gt; &lt;span class="nb"&gt;scalar&lt;/span&gt; &lt;span class="nb"&gt;caller&lt;/span&gt; &lt;span class="p"&gt;?&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;run&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt;
-  &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="nv"&gt;__PACKAGE__&lt;/span&gt; &lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;$run_as&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@ARGV&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nb"&gt;defined&lt;/span&gt; &lt;span class="nv"&gt;$run_as&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;run&lt;/span&gt; &lt;span class="p"&gt;( $class, @args ) {&lt;/span&gt;
-    &lt;span class="nv"&gt;try&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;say&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;call_method&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@args&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="nv"&gt;catch&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$e&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="nb"&gt;die&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;No method &lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="nv"&gt;$e&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;method&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;
-          &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nv"&gt;$e&lt;/span&gt; &lt;span class="nv"&gt;isa&lt;/span&gt; &lt;span class="nv"&gt;NoMethodException&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-        &lt;span class="nb"&gt;die&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Service error: &lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="nv"&gt;$e&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;error&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;
-          &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nv"&gt;$e&lt;/span&gt; &lt;span class="nv"&gt;isa&lt;/span&gt; &lt;span class="nv"&gt;ServiceException&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-        &lt;span class="nb"&gt;die&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$e&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-    &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="c1"&gt;# Utilities&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;methods&lt;/span&gt; &lt;span class="p"&gt;($)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-    &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;@methods&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;sort&lt;/span&gt; &lt;span class="nb"&gt;map&lt;/span&gt; &lt;span class="sr"&gt;s/^foaas_(.+)/$1/r&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="nb"&gt;grep&lt;/span&gt; &lt;span class="sr"&gt;/^foaas_/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$foaas&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;list_all_symbols&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;CODE&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;@methods&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;call_method&lt;/span&gt; &lt;span class="p"&gt;( $class, $method = '', @args ) {&lt;/span&gt;
-    &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;%methods&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;map&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="vg"&gt;$_&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;methods&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
-    &lt;span class="nv"&gt;throw_no_method&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;method&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt;
-      &lt;span class="k"&gt;unless&lt;/span&gt; &lt;span class="nv"&gt;$methods&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;};&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="k"&gt;do&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="nv"&gt;try&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;$foaas&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;get_symbol&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;&amp;amp;&lt;/span&gt;&lt;span class="si"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;")&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@args&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-        &lt;span class="nv"&gt;catch&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$e&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;throw_service&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;error&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$e&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="p"&gt;};&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="c1"&gt;# Testing&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;test&lt;/span&gt; &lt;span class="p"&gt;( $class, @ ) {&lt;/span&gt;
-    &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;$stash&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Package::&lt;/span&gt;&lt;span class="nv"&gt;Stash&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-    &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;@tests&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;sort&lt;/span&gt; &lt;span class="nb"&gt;grep&lt;/span&gt; &lt;span class="sr"&gt;/^_test_/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="nv"&gt;$stash&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;list_all_symbols&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;CODE&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
-
-    &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$test&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;@tests&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="nv"&gt;subtest&lt;/span&gt; &lt;span class="nv"&gt;$test&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
-            &lt;span class="nv"&gt;try&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;$test&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-            &lt;span class="nv"&gt;catch&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$e&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;diag&lt;/span&gt; &lt;span class="nv"&gt;$e&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-        &lt;span class="p"&gt;};&lt;/span&gt;
-    &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="nv"&gt;done_testing&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_test_can&lt;/span&gt; &lt;span class="p"&gt;($class) {&lt;/span&gt;
-    &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;@subs&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="sx"&gt;qw(run call_method methods test)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-    &lt;span class="nv"&gt;can_ok&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;@subs&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;can do: &lt;/span&gt;&lt;span class="si"&gt;@subs&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_test_methods&lt;/span&gt; &lt;span class="p"&gt;($class) {&lt;/span&gt;
-    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mock&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;mock&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;WebService::FOAAS&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;track&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-
-    &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;methods&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="nv"&gt;$mock&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;override&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-
-        &lt;span class="nv"&gt;ok&lt;/span&gt; &lt;span class="nv"&gt;lives&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;call_method&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt;
-          &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$method&lt;/span&gt;&lt;span class="s2"&gt; lives&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-        &lt;span class="nv"&gt;ok&lt;/span&gt; &lt;span class="nb"&gt;scalar&lt;/span&gt; &lt;span class="nv"&gt;$mock&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;sub_tracking&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="err"&gt;@&lt;/span&gt;&lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-          &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$method&lt;/span&gt;&lt;span class="s2"&gt; called&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-    &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;_test_service_failure&lt;/span&gt; &lt;span class="p"&gt;($class) {&lt;/span&gt;
-    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$mock&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;mock&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;WebService::FOAAS&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
-
-    &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;methods&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-        &lt;span class="nv"&gt;$mock&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;override&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$method&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;die&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;mocked&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-
-        &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$exception&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt;
-          &lt;span class="nv"&gt;dies&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;$class&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;call_method&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$method&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
-        &lt;span class="nv"&gt;isa_ok&lt;/span&gt; &lt;span class="nv"&gt;$exception&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;['&lt;/span&gt;&lt;span class="s1"&gt;ServiceException&lt;/span&gt;&lt;span class="p"&gt;'],&lt;/span&gt;
-          &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$method&lt;/span&gt;&lt;span class="s2"&gt; throws ServiceException on failure&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-        &lt;span class="nv"&gt;like&lt;/span&gt; &lt;span class="nv"&gt;$exception&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;error&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="sx"&gt;qr/^mocked/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-          &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;correct error in &lt;/span&gt;&lt;span class="si"&gt;$method&lt;/span&gt;&lt;span class="s2"&gt; exception&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
-    &lt;span class="p"&gt;}&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Let’s walk through the code above.&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#preliminaries"&gt;
-  &lt;/a&gt;
-  Preliminaries
-&lt;/h2&gt;
-
-&lt;p&gt;First, there’s a generic &lt;a href="https://en.wikipedia.org/wiki/Shebang_(Unix)"&gt;shebang line&lt;/a&gt; to indicate that Unix and Linux systems should use the &lt;code&gt;perl&lt;/code&gt; executable found in the user’s PATH via the &lt;code&gt;env&lt;/code&gt; command. I declare a package name (&lt;a href="https://phoenixtrap.com/2021/04/13/avoid-cpan-conflicts-in-your-personal-perl-modules/"&gt;in the Local:: namespace&lt;/a&gt;) so as not to pollute the default &lt;code&gt;main&lt;/code&gt; package of other scripts that might want to &lt;code&gt;require&lt;/code&gt; this as a module. Then I use the &lt;a href="https://metacpan.org/pod/Test2::V0"&gt;Test2::V0 bundle&lt;/a&gt; from &lt;a href="https://metacpan.org/pod/Test2::Suite"&gt;Test2::Suite&lt;/a&gt; since the embedded testing code uses many of its functions. This also has the side effect of enabling the &lt;a href="https://perldoc.perl.org/strict"&gt;strict&lt;/a&gt;, &lt;a href="https://perldoc.perl.org/warnings"&gt;warnings&lt;/a&gt;, and &lt;a href="https://perldoc.perl.org/utf8"&gt;utf8&lt;/a&gt; pragmas, so there’s no need to explicitly &lt;code&gt;use&lt;/code&gt; them here.&lt;/p&gt;
-
-&lt;p&gt;(Why &lt;a href="https://metacpan.org/pod/Test2"&gt;Test2&lt;/a&gt; instead of &lt;a href="https://metacpan.org/pod/Test::More"&gt;Test::More&lt;/a&gt; and its derivatives and add-ons? Both are &lt;a href="https://metacpan.org/author/EXODIST"&gt;maintained by the same author&lt;/a&gt;, who recommends the former. I’m seeing more and more modules using it, so I thought this would be a great opportunity to learn.)&lt;/p&gt;
-
-&lt;p&gt;I then declare all the new-ish Perl features I’d like to use that need to be explicitly enabled so as not to sacrifice &lt;a href="https://perldoc.perl.org/perlpolicy#BACKWARD-COMPATIBILITY-AND-DEPRECATION"&gt;backward compatibility&lt;/a&gt; with older versions of Perl 5. As of this writing, some of these features (the &lt;a href="https://perldoc.perl.org/perlop#Class-Instance-Operator"&gt;&lt;code&gt;isa&lt;/code&gt; class instance operator&lt;/a&gt;, named argument &lt;a href="https://perldoc.perl.org/perlsub#Signatures"&gt;subroutine signatures&lt;/a&gt;, and &lt;a href="https://perldoc.perl.org/perlsyn#Try-Catch-Exception-Handling"&gt;&lt;code&gt;try&lt;/code&gt;/&lt;code&gt;catch&lt;/code&gt; exception handling&lt;/a&gt; syntax) are considered &lt;a href="https://perldoc.perl.org/experimental"&gt;&lt;code&gt;experimental&lt;/code&gt;&lt;/a&gt;, with the latter enabled in older versions of Perl via the &lt;a href="https://metacpan.org/pod/Feature::Compat::Try"&gt;Feature::Compat::Try&lt;/a&gt; module. The friendlier &lt;a href="https://perldoc.pl/perlref#Postfix-Dereference-Syntax"&gt;postfix dereferencing&lt;/a&gt; syntax was &lt;a href="https://perldoc.perl.org/perl5240delta#Postfix-dereferencing-is-no-longer-experimental"&gt;mainlined in Perl version 5.24&lt;/a&gt;, but versions 5.20 and 5.22 still need it experimental. Finally, I &lt;code&gt;use Syntax::Construct&lt;/code&gt; to announce the &lt;code&gt;/r&lt;/code&gt; flag for non-destructive regular expression &lt;a href="https://perldoc.perl.org/perlop#s/PATTERN/REPLACEMENT/msixpodualngcer"&gt;text substitutions&lt;/a&gt; &lt;a href="https://perldoc.perl.org/perl5140delta#Non-destructive-substitution"&gt;introduced in version 5.14&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;Next, I bring in the aforementioned FOAAS Perl API without importing any of its functions, &lt;a href="https://metacpan.org/pod/Package::Stash"&gt;Package::Stash&lt;/a&gt; to make &lt;a href="https://en.wikipedia.org/wiki/Metaprogramming"&gt;metaprogramming&lt;/a&gt; easier, and a couple of &lt;a href="https://metacpan.org/pod/Exception::Class"&gt;exception classes&lt;/a&gt; so that the command line function and other consumers might better tell what caused a failure. In preparation for the methods below dynamically discovering what functions are provided by &lt;a href="https://metacpan.org/pod/WebService::FOAAS"&gt;WebService::FOAAS&lt;/a&gt;, I &lt;a href="https://metacpan.org/pod/Package::Stash#new-%24package_name"&gt;gather up&lt;/a&gt; its symbol table (or stash) into the &lt;code&gt;$foaas&lt;/code&gt; variable.&lt;/p&gt;
-
-&lt;p&gt;The next block determines how, if at all, I’m going to run the code as a script. If the &lt;code&gt;CPANTEST&lt;/code&gt; environment variable is set, I’ll call the &lt;code&gt;test&lt;/code&gt; class method &lt;code&gt;sub&lt;/code&gt;, but if there’s no subroutine &lt;a href="https://perldoc.perl.org/functions/caller"&gt;calling&lt;/a&gt; me I’ll execute the &lt;code&gt;run&lt;/code&gt; class method. Either will receive the &lt;a href="https://perldoc.perl.org/variables/@ARGV"&gt;command line arguments from &lt;code&gt;@ARGV&lt;/code&gt;&lt;/a&gt;. If neither of these conditions is true, do nothing; the rest of the code is method declarations.&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#modulino-methods-metaprogramming-and-exceptions"&gt;
-  &lt;/a&gt;
-  Modulino methods, metaprogramming, and exceptions
-&lt;/h2&gt;
-
-&lt;p&gt;The first of these is the &lt;code&gt;run&lt;/code&gt; method. It’s a thin wrapper around the &lt;code&gt;call_method&lt;/code&gt; class method detailed below, either outputting its result or &lt;code&gt;die&lt;/code&gt;ing with an appropriate error depending on the class of exception thrown. Although I chose not to write tests for this output, future tests might call this method and catch these rethrown exceptions to match against them. The messages end with a &lt;code&gt;\n&lt;/code&gt; newline character so &lt;code&gt;die&lt;/code&gt; knows not to append the current script line number.&lt;/p&gt;
-
-&lt;p&gt;Next is a utility method called &lt;code&gt;methods&lt;/code&gt; that uses Package::Stash’s &lt;code&gt;list_all_symbols&lt;/code&gt; to retrieve the names of all named &lt;code&gt;CODE&lt;/code&gt; blocks (i.e., &lt;code&gt;sub&lt;/code&gt;s) from WebService::FOAAS’s symbol table. Reading from right to left, these are then filtered with &lt;code&gt;grep&lt;/code&gt; to only find those &lt;a href="https://metacpan.org/pod/WebService::FOAAS#AVAILABLE-METHODS"&gt;beginning in &lt;code&gt;foaas_&lt;/code&gt;&lt;/a&gt; and then transformed with &lt;code&gt;map&lt;/code&gt; to remove that prefix. The list is then &lt;code&gt;sort&lt;/code&gt;ed and stored in a &lt;code&gt;state&lt;/code&gt; variable and returned so it need not be initialized again.&lt;/p&gt;
-
-&lt;p&gt;(As an aside, although &lt;code&gt;perlcritic&lt;/code&gt; sternly warns against it I’ve chosen the expression forms of &lt;code&gt;grep&lt;/code&gt; and &lt;code&gt;map&lt;/code&gt; here over their &lt;a href="https://metacpan.org/pod/Perl::Critic::Policy::BuiltinFunctions::RequireBlockGrep"&gt;block&lt;/a&gt; &lt;a href="https://metacpan.org/pod/Perl::Critic::Policy::BuiltinFunctions::RequireBlockMap"&gt;forms&lt;/a&gt; for simplicity’s sake. It’s OK to &lt;a href="https://metacpan.org/pod/Perl::Critic#BENDING-THE-RULES"&gt;bend the rules&lt;/a&gt; if you have a good reason.)&lt;/p&gt;
-
-&lt;p&gt;&lt;code&gt;sub call_method&lt;/code&gt; is where the real action takes place. Its parameters are the class that called it, the name of a FOAAS &lt;code&gt;$method&lt;/code&gt; (defaulted to the empty string), and an array of optional arguments in &lt;code&gt;@args&lt;/code&gt;. I build a hash or associative array from the earlier &lt;code&gt;methods&lt;/code&gt; method which I then use to see if the passed method name is one I know about. If not, I throw a &lt;code&gt;NoMethodException&lt;/code&gt; using the &lt;code&gt;throw_no_method&lt;/code&gt; alias function &lt;a href="https://metacpan.org/pod/Exception::Class#DECLARING-EXCEPTION-CLASSES"&gt;created when I used Exception::Class&lt;/a&gt; at the beginning. Using a function instead of &lt;code&gt;NoMethodException-&amp;gt;throw()&lt;/code&gt; means that it’s checked at compile time rather than runtime, catching typos.&lt;/p&gt;
-
-&lt;p&gt;I get the subroutine (denoted by a &lt;code&gt;&amp;amp;&lt;/code&gt; sigil) named by &lt;code&gt;$method&lt;/code&gt; from the &lt;code&gt;$foaas&lt;/code&gt; stash and pass it any further received arguments from &lt;code&gt;@args&lt;/code&gt;. If that WebService::FOAAS subroutine throws an exception it’ll be caught and re-thrown as a &lt;code&gt;ServiceException&lt;/code&gt;; otherwise &lt;code&gt;call_method&lt;/code&gt; returns the result. It’s up to the caller to determine what, if anything, to do with that result or any thrown exceptions.&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#testing-the-modulino-with-mocks"&gt;
-  &lt;/a&gt;
-  Testing the modulino with mocks
-&lt;/h2&gt;
-
-&lt;p&gt;This is where I start using those &lt;a href="https://metacpan.org/pod/Test2::Suite#Test2::V#"&gt;Test2::Suite tools&lt;/a&gt; I mentioned at the beginning. The &lt;code&gt;test&lt;/code&gt; class method starts by building a filtered list of all &lt;code&gt;sub&lt;/code&gt;s beginning with &lt;code&gt;_test_&lt;/code&gt; in the current class, much like &lt;code&gt;methods&lt;/code&gt; did above with WebService::FOAAS. I then loop through that list of &lt;code&gt;sub&lt;/code&gt;s, running each as a &lt;a href="https://metacpan.org/pod/Test2::V0#SUBTEST"&gt;&lt;code&gt;subtest&lt;/code&gt;&lt;/a&gt; containing a class method with any exceptions &lt;a href="https://metacpan.org/pod/Test2::Tools::Basic#diag(@messages)"&gt;reported as diagnostics&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;The rest of the modulino is subtest methods, starting with a simple &lt;code&gt;_test_can&lt;/code&gt; sanity check for the public methods in the class. Following that is &lt;code&gt;_test_methods&lt;/code&gt;, which starts by &lt;code&gt;mock&lt;/code&gt;ing the WebService::FOAAS package and telling Test2::Mock I want to &lt;code&gt;track&lt;/code&gt; any added, overridden, or set &lt;code&gt;sub&lt;/code&gt;s. I then loop through all the method names returned by the &lt;code&gt;methods&lt;/code&gt; class method, &lt;code&gt;override&lt;/code&gt;ing each one to return a simple true value. I then test passing those names to &lt;code&gt;call_method&lt;/code&gt; and use the hash reference returned by &lt;code&gt;sub_tracking&lt;/code&gt; to check that the overridden &lt;code&gt;sub&lt;/code&gt; was called. This seems a lot simpler than the &lt;a href="https://metacpan.org/pod/Test::Builder"&gt;Test::Builder&lt;/a&gt;-based mocking libraries I’ve tried like &lt;a href="https://metacpan.org/pod/Test::MockModule"&gt;Test::MockModule&lt;/a&gt; and &lt;a href="https://metacpan.org/pod/Test::MockObject"&gt;Test::MockObject&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;&lt;code&gt;_test_service_failure&lt;/code&gt; acts in much the same way, checking that &lt;code&gt;call_method&lt;/code&gt; correctly throws &lt;code&gt;ServiceException&lt;/code&gt;s if the wrapped WebService::FOAAS function &lt;code&gt;die&lt;/code&gt;s. The main difference is that the mocked WebService::FOAAS &lt;code&gt;sub&lt;/code&gt;s are now overridden with a code reference (&lt;code&gt;sub { die 'mocked' }&lt;/code&gt;), which &lt;code&gt;call_method&lt;/code&gt; uses to populate the rethrown &lt;code&gt;ServiceException&lt;/code&gt;’s &lt;code&gt;error&lt;/code&gt; field.&lt;/p&gt;
-
-&lt;h2&gt;
-  &lt;a href="#wrapping-up"&gt;
-  &lt;/a&gt;
-  Wrapping up
-&lt;/h2&gt;
-
-&lt;p&gt;With luck, this article has given you some ideas, whether it’s in making scripts (perhaps legacy code) testable to improve them, or writing better unit tests that mock dependencies, or delving a little into metaprogramming so you can dynamically support and test new features of said dependencies. I hope you haven’t come away too offended, at least. Let me know in the comments what you think.&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Mark Gardner</name>
-    </author>
-    <id>https://dev.to/mjgardner/vicious-test-mockery-of-a-perl-modulino-3l4g</id>
-    <published>2021-11-30T15:00:00Z</published>
-    <updated>2021-11-30T15:00:00Z</updated>
-    <category term="perl"/>
-    <category term="testing"/>
-    <category term="mocking"/>
-    <category term="metaprogramming"/>
   </entry>
   <entry>
     <title>#540 - 24 Pull Requests</title>
