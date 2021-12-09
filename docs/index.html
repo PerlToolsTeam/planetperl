@@ -57,6 +57,195 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/12/my-favorite-warnings-shadow.html">My Favorite Warnings: shadow</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Thursday 09 December 2021 21:21</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p><cite>Who knows what evil lurks in the hearts of men? <a href="https://en.wikipedia.org/wiki/The_Shadow">The Shadow</a> knows!</cite></p>
+
+<p>OK, Perl does not literally have a warning about a 1930's pulp fiction and radio serial character. But Perl 5.28 introduced <a href="https://perldoc.perl.org/perldiag#s--variable--s-masks-earlier-declaration-in-same--s"><code>shadow</code></a> as a new warning category for cases where a variable is redeclared in the same scope. Previously, such warnings were under <code>misc</code>.</p>
+
+<p>To tickle this it is sufficient to</p>
+
+<pre>
+$ perl -Mstrict -Mwarnings -Mdiagnostics -e 'my $x; my $x;'
+</pre>
+
+<p>If your Perl is at least 5.28.0, you get the diagnostic</p>
+
+<pre>
+"my" variable $x masks earlier declaration in same scope at -e line 1 (#1)
+    (W shadow) A "my", "our" or "state" variable has been redeclared in the
+    current scope or statement, effectively eliminating all access to the
+    previous instance.  This is almost always a typographical error.  Note
+    that the earlier variable will still exist until the end of the scope
+    or until all closure references to it are destroyed.
+</pre>
+
+<p>Earlier Perls (back to 5.6 which is when <code>warnings</code> was introduced) give a similar warning, but the category is <code>misc</code>.</p>
+
+<p>It is hard to come up with a reason why you would want to disable this warning. An extremely contrived example (do not try this at home!) would be something like</p>
+
+<pre>
+sub make_closures {
+    my ( $x ) = @_;
+    my $c1 = sub { $x * $_[0] };
+    my $x = $x * 2;
+    return ( $c1, sub { $x * $_[0] } );
+}
+</pre>
+
+<p>But it would be far simpler and clearer just to call the second variable something else. If you absolutely, positively have to disable this under a range of versions of Perl, the changing category for this warning means you have to jump through some hoops. Something like this should do the trick:</p>
+
+<pre>
+my $x; # or whatever
+no if "$]" &gt;= 5.028, qw{ warnings shadow };
+no if "$]" &lt; 5.028, qw{ warnings misc };
+my $x;
+</pre>
+
+<p>Note that this warning category only covers earlier declarations in the same scope. Using the same-named variable in nested scopes does not generate this diagnostic:</p>
+
+<pre>
+$ perl -Mstrict -Mwarnings -Mdiagnostics -e 'my $x; { my $x; }'
+</pre>
+
+<p>is silent.</p>
+
+<p>This warning category also covers <code>our</code> and <code>state</code> variables, and lexical subroutines.</p>
+
+<p><br />
+<p><cite>The weed of crime bears bitter fruit! Crime does not pay...The Shadow knows!</cite></p></p>
+
+<p>Previous entries in this series:</p>
+<ol>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-warnings-a-belated-introduction.html">A Belated Introduction</a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/09/my-favorite-warnings-once.html"><code>once</code></a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/09/my-favorite-warnings-redundant-and-missing.html"><code>redundant</code> and <code>missing</code></a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/09/my-favorite-warnings-exiting.html"><code>exiting</code></a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-warnings-uninitialized.html"><code>uninitialized</code></a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-warnings-redefine-sooner.html"><code>redefine</code></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/11/my-favorite-warnings---ex-warnings.html">Ex-Warnings</a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/11/my-favorite-warnings-deprecated.html"><code>deprecated</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2021/11/my-favorite-warnings-experimental.html"><code>experimental</code></a></li>
+</ol>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/12/closures.html">Closures</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Thursday 02 December 2021 03:41</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p><cite>A casual remark about closures which I made in <a href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-warnings-redefine-sooner.html">My Favorite Warnings: <code>redefine</code></a> touched off a long off-topic exchange with Aristotle that I thought ought to be promoted to a top-level blog entry. The big thing I learned was that <strong>any Perl subroutine can be a closure.</strong> The rest of this blog will try to make clear why I now believe this. The words are my own, as are any errors or misconceptions.</cite></p>
+
+<p>The second sentence of <a href="https://en.wikipedia.org/wiki/Closure_(computer_programming)">Wikipedia&apos;s definition of a closure</a> says "Operationally, a closure is a record storing a function together with an environment." This makes it sound a lot like an object, and therefore of little additional interest in an O-O environment.</p>
+
+<p>But I came to closures pragmatically through Perl, and to me they were a magic way to make data available somewhere else. All I had to do was get a code reference where it needed to be, and any external lexical variables got the values <i>at the time the reference was taken</i>. So much I understood up to the fatal blog post, and it sufficed for my simple needs.</p>
+
+<p>A fairly typical Perl example of closures in action is:</p>
+
+<pre>
+my $add_one = make_adder( 1 );
+my $add_two = make_adder( 2 );
+say $add_one-&gt;( 5 );  # 6
+say $add_two-&gt;( 8 );  # 10
+
+<p>sub make_adder {<br />
+    my ( $addend ) = @_;<br />
+    return sub { $addend + $_[0] };<br />
+}<br />
+</pre></p>
+
+<p>A deeper understanding of this magic requires a look at how it works. In this case, the man behind the curtain is the lexical variable <code>$addend</code>.</p>
+
+<p>The usual argument for using lexical variables is that they are only accessable in a given scope -- specifically from the point they come into existence with <code>my</code> to the end of the enclosing scope. Compared to global variables this is a big win in itself. But closures make use of another property of lexical variables: that each entry into the scope results in a new instance of the variable. The returned code reference incorporates not only the code itself but the current instance of any relevant lexicals, in this case <code>$addend</code>. In fact if you add to the above code example</p>
+
+<pre>
+say '$add_one is ', $add_one;
+say '$add_two is ', $add_two;
+</pre>
+
+<p>you will see that though both variables nominally refer to the same subroutine, different values are printed.</p>
+
+<p>To differentiate the behaviour of closures from a simple object, consider:</p>
+
+<pre>
+my ( $add_two, $mul_two, $chg_two ) = make_closures( 2 );
+my ( $add_four, $mul_four, $chg_four ) = make_closures( 4 );
+
+<p>say $add_two-&gt;( 3 );  # 5<br />
+say $mul_two-&gt;( 3 );  # 6<br />
+say $add_four-&gt;( 3 ); # 7<br />
+say $mul_four-&gt;( 3 ); # 12</p>
+
+<p>$chg_two-&gt;( 5 );      # What will happen now?</p>
+
+<p>say $add_two-&gt;( 3 );  # 8 !!!<br />
+say $mul_two-&gt;( 3 );  # 15 !!!<br />
+say $add_four-&gt;( 3 ); # Still 7<br />
+say $mul_four-&gt;( 3 ); # Still 12</p>
+
+<p>sub make_closures {<br />
+    my ( $operand ) = @_;<br />
+    return(<br />
+        sub { $operand + $_[0] },<br />
+	sub { $operand * $_[0] },<br />
+	sub { $operand = $_[0] },<br />
+    );<br />
+}<br />
+</pre></p>
+
+<p>The point of this example is that all three closures share not only the value of <code>$operand</code> but the actual instance. If the value of the instance is changed by one closure, the other closures over that instance of the variable see the new value; but closures over other instances of that same variable do not. This was new to me, but not really startling.</p>
+
+<p>The big surprise to me was the realization that <i>any Perl subroutine can be a closure.</i> A normal named subroutine simply closes over the first instance of the variable -- the one that was current when it was compiled.</p>
+
+<p>To see this, add to the end of <code>sub make_closures</code>, just before the right curly bracket,</p>
+
+<pre>
+    no warnings 'closure';
+    sub add_first { $operand + $_[0] }
+</pre>
+
+<p>Subroutine <code>add_first()</code> will only see the first instance of <code>$operand</code>, which is the point of this example. But we need to silence a warning since nested named subroutines making use of the outer subroutine's arguments are so far from normal Perl that they may well represent an error on the part of the programmer. (Translation of the previous sentence: <i>Don't try this at home.</i>)</p>
+
+<p>If we then insert calls to <code>add_first( 3 )</code> both before and after the call to <code>$chg_two-&gt;( 5 );</code> we see that <code>add_first()</code> returns the same value as <code>$add_two-&gt;()</code>, which shows that it accesses the same instance of <code>$operand</code> as <code>$add_two</code> and friends.</p>
+
+<p>After all the above, it should come as no surprise that in the following, <code>sub increment{}</code> and <code>sub decremnt{}</code> close over <code>$number</code>.</p>
+
+<pre>
+{
+    my $number = 0;
+    sub increment {
+        return $number++;
+    }
+    sub decrement {
+        return --$number;
+    }
+}
+</pre>
+
+<p>No warning is generated because there is only ever one instance of <code>$number</code>. Of course, if there were only one subroutine above, it could also be written with a <code>state</code> variable. But the whole question of <code>my</code>, <code>our</code>, <code>state</code>, and <code>use vars</code> is a subject for another time.
+
+<p>A demonstration of all the points discussed in this blog post is available on GitHub as <a href="https://gist.github.com/trwyant/d73e823d5ceb267101f1969569351395"><code>closures.t</code></a>.</p>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/hackothon-events-planning-2022">Do you want to partner with the Perl Marketing Committee to organize Hack-o-thons in 2022?</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
 
@@ -87,7 +276,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_06_to_08.html">Advent of Code Day 6, 7 and 8</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -247,7 +436,7 @@ say $hit;</code></pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/12/javascript-supported-web-scraping-using-perl-and-selenium.html">JavaScript Supported Web Scraping using Perl and Selenium</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -282,7 +471,7 @@ say $hit;</code></pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/12/perl-weekly-challenge-142-divisor-last-digit-and-sleep-sort.html">Perl Weekly Challenge 142: Divisor Last Digit and Sleep Sort</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -447,7 +636,7 @@ wait;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/javascript-supported-web-scraping-using-perl-and-selenium-with-google-chromedriver-31n">JavaScript Supported Web Scraping using Perl and Selenium with Google ChromeDriver</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -484,7 +673,7 @@ wait;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/sweeter-perl-exception-classes-23hl">Sweeter Perl exception classes</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -691,7 +880,7 @@ wait;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-6---a-colourful-telnet-server.html">Developing A Game Engine with Perl: Part 6 - A Colourful Telnet Server</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -900,220 +1089,7 @@ Shawn</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-7---fork.html">Developing A Game Engine with Perl: Part 7 - Fork </a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Shawn Holland
- on Monday 06 December 2021 11:09</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p><a href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-2---mouse-input.html">Pssssst...</a> <strong>I DO NOT KNOW WHAT I AM DOING.</strong></p>
-
-<p>If you want to start reading from the beginning. Check out the <a href="http://blogs.perl.org/users/shawn1/2021/11/developing-a-game-engine-with-perl.html">first article in this series</a></p>
-
-<p>Continuing from our last post, I talked about how <a href="https://www.instagram.com/ANSIGameEngine/">ANSI Game Engine</a> is a <a href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-6---a-colourful-telnet-server.html">colourful telnet server</a>. We left off with needing to fork the engines telnet server.</p>
-
-<h2>
-  Player 2 has joined the game!
-</h2>
-
-<p>Time to level up our telnet server and make it multi-player with some knify forky.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--Mh4vwXMU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pyx9lszlna5k69crhw62.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--Mh4vwXMU--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pyx9lszlna5k69crhw62.png" alt="Image description" width="487" height="365" /></a></p>
-
-<p>I've added in the <a href="https://man7.org/linux/man-pages/man3/strftime.3.html"><code>strftime</code></a> identifier from <a href="https://perldoc.perl.org/POSIX">Perl's POSIX module</a> to help with time stamping the output. The <a href="https://man7.org/linux/man-pages/man2/setsid.2.html"><code>setsid</code></a> identifier is for starting a new session and group ID for each forked process. A.K.A, the child process. <a href="https://perldoc.perl.org/functions/waitpid"><code>:sys_wait_h</code></a> is for returning without wait after the child process has exited, using the WNOHANG flag when calling <a href="https://man7.org/linux/man-pages/man2/wait.2.html">waitpid()</a>. This provides non-blocking wait for all pending <strong>zombie</strong> children.</p>
-
-<h2>
-  <a name="zombie-attack" href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-7-fork-3acm#zombie-attack">
-  </a>
-  Zombie Attack!!!
-</h2>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--4_dXRqOa--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/31gew1fffn1ac0v0zfzn.jpeg" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--4_dXRqOa--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/31gew1fffn1ac0v0zfzn.jpeg" alt="Image description" width="500" height="281" /></a><br />
-You see, when a process dies (exits), it becomes a zombie and needs to be <strong>reaped</strong>. This will be done when our parent process calls <a href="https://man7.org/linux/man-pages/man2/wait.2.html">waitpid</a> after receiving a <a href="https://man7.org/linux/man-pages/man7/signal.7.html">CHLD signal</a>, indicating the child has stopped or terminated.</p>
-
-<p>Ok, I hope that will give you enough information to work with while dissecting the code:<br />
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>#!/usr/bin/perl
-use strict;
-use warnings;
-use IO::Socket::INET;
-use POSIX qw(setsid);
-use POSIX qw(strftime);
-use POSIX ":sys_wait_h";
-
-sub timestamp {
-    my $epoc_seconds = time();
-    my $time = strftime "%H:%M:%S", localtime($epoc_seconds);
-    my $date = strftime "%m/%d/%Y", localtime;
-    my $return = $date . " " . $time;
-    return ($return);
-}
-
-sub logmsg { print timestamp . " -&gt; $0 -&gt; PID:$$: @_ \n" }
-logmsg "Begin";
-
-my $socket = new IO::Socket::INET (
-    LocalHost =&gt; '192.168.1.15',
-    LocalPort =&gt; '27777',
-    Proto =&gt; 'tcp',
-    Listen =&gt; SOMAXCONN,
-    ReuseAddr =&gt; 1
-);
-
-my $waitedpid = 0;
-my $player_data;
-my $player_socket;
-
-sub REAPER {
-    local $!;   # don't let waitpid() overwrite current error
-    logmsg "Ending Player's Game";
-    while ((my $pid = waitpid(-1, WNOHANG)) &gt; 0 &amp;&amp; WIFEXITED($?)) {
-        logmsg "Closed Game ID:$pid : WaitPid:$waitedpid : " . ($? ? " with exit $?" : "");
-    }
-    $SIG{CHLD} = \&amp;REAPER;  # loathe SysV
-}
-#if we get the CHLD signal call REAPER sub
-$SIG{CHLD} = \&amp;REAPER;
-
-logmsg "Ready and waiting for connection";
-while(1)
-{
-    next unless $player_socket = $socket-&gt;accept();
-    logmsg ("Incomming Connection");
-    logmsg ("Spawning Player A Game");
-    my $pid = fork();
-
-    next if $pid; #NEXT if $pid exists (parent)
-
-    #As Child
-    setsid();
-    my $proc = $$;
-
-    logmsg ("Game ID:$proc -&gt; Ready");
-
-    # get information about a newly connected player
-    my $player_address = $player_socket-&gt;peerhost();
-    my $player_port    = $player_socket-&gt;peerport();
-    logmsg "Game ID:$proc -&gt; Connection from $player_address:$player_port";
-
-    my $response = "Welcome Player: $player_address:$player_port. Press any key to disconnect.";
-    $player_socket-&gt;send($response);
-
-    while ($player_socket-&gt;connected()) {
-        $player_socket-&gt;recv($player_data, 1024);
-            if ($player_data) {
-                logmsg "Player Disconnecting $player_address : $player_port";
-                $socket-&gt;close();
-                logmsg "Player Disconnected";
-                last;
-            }
-    }
-    last;
-}
-exit;
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" viewbox="0 0 24 24" class="highlight-action crayons-icon highlight-action--fullscreen-on">
-    </svg></div></div></div><div class="highlight js-code-highlight"><div class="highlight__panel js-actions-panel"><div class="highlight__panel-action js-fullscreen-code-action"><svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" viewbox="0 0 24 24" class="highlight-action crayons-icon highlight-action--fullscreen-on">
-</svg>
-
-    
-
-</div>
-</div>
-</div>
-
-
-
-<p>Running this code and connecting with two players via <a href="https://syncterm.bbsdev.net/">SyncTERM</a>, our <a href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-6---a-colourful-telnet-server.html">client of choice</a>, shows the following:<br />
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>localhost:~/ANSIGameEngine # perl forking_telnet_server.pl 
-12/03/2021 18:16:58 -&gt; forking_telnet_server.pl -&gt; PID:15978: Begin 
-12/03/2021 18:16:58 -&gt; forking_telnet_server.pl -&gt; PID:15978: Ready and waiting for connection 
-12/03/2021 18:17:04 -&gt; forking_telnet_server.pl -&gt; PID:15978: Incomming Connection 
-12/03/2021 18:17:04 -&gt; forking_telnet_server.pl -&gt; PID:15978: Spawning Player A Game 
-12/03/2021 18:17:04 -&gt; forking_telnet_server.pl -&gt; PID:15979: Game ID:15979 -&gt; Ready 
-12/03/2021 18:17:04 -&gt; forking_telnet_server.pl -&gt; PID:15979: Game ID:15979 -&gt; Connection from 192.168.1.9:33422 
-12/03/2021 18:17:08 -&gt; forking_telnet_server.pl -&gt; PID:15978: Incomming Connection 
-12/03/2021 18:17:08 -&gt; forking_telnet_server.pl -&gt; PID:15978: Spawning Player A Game 
-12/03/2021 18:17:08 -&gt; forking_telnet_server.pl -&gt; PID:15980: Game ID:15980 -&gt; Ready 
-12/03/2021 18:17:08 -&gt; forking_telnet_server.pl -&gt; PID:15980: Game ID:15980 -&gt; Connection from 192.168.1.9:33428 
-12/03/2021 18:17:11 -&gt; forking_telnet_server.pl -&gt; PID:15979: Player Disconnecting 192.168.1.9 : 33422 
-12/03/2021 18:17:11 -&gt; forking_telnet_server.pl -&gt; PID:15979: Player Disconnected 
-12/03/2021 18:17:11 -&gt; forking_telnet_server.pl -&gt; PID:15978: Ending Player's Game 
-12/03/2021 18:17:11 -&gt; forking_telnet_server.pl -&gt; PID:15978: Closed Game ID:15979 : WaitPid:0 :  
-12/03/2021 18:17:13 -&gt; forking_telnet_server.pl -&gt; PID:15980: Player Disconnecting 192.168.1.9 : 33428 
-12/03/2021 18:17:13 -&gt; forking_telnet_server.pl -&gt; PID:15980: Player Disconnected 
-12/03/2021 18:17:13 -&gt; forking_telnet_server.pl -&gt; PID:15978: Ending Player's Game 
-12/03/2021 18:17:13 -&gt; forking_telnet_server.pl -&gt; PID:15978: Closed Game ID:15980 : WaitPid:0 :  
-</code></pre>
-<div class="highlight__panel js-actions-panel">
-<div class="highlight__panel-action js-fullscreen-code-action">
-    <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" viewbox="0 0 24 24" class="highlight-action crayons-icon highlight-action--fullscreen-on">
-    </svg></div></div></div><div class="highlight js-code-highlight"><div class="highlight__panel js-actions-panel"><div class="highlight__panel-action js-fullscreen-code-action"><svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" viewbox="0 0 24 24" class="highlight-action crayons-icon highlight-action--fullscreen-on">
-</svg>
-
-    
-
-</div>
-</div>
-</div>
-
-
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--lJVxSJuN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/my89biw6wsyhn0kx7klb.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--lJVxSJuN--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/my89biw6wsyhn0kx7klb.png" alt="Image description" width="880" height="1100" /></a></p>
-
-<h2>
-  <a name="how-it-all-works" href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-7-fork-3acm#how-it-all-works">
-  </a>
-  How it all works
-</h2>
-
-<p>The main (parent) process that accepts new incoming telnet requests is <code>PID:15978</code>
- in the above example. After it sets up the listen server, it waits for a
- connection request and creates a forked process when a new player 
-connects (child). The code distinguishes the parent (main waiting telnet
- server) process from the child (player) process with the value <a href="https://perldoc.perl.org/functions/fork"><code>fork()</code></a> returns. The parent process receives the child's (player) PID as the return value of <code>fork()</code>, so it loops back up and waits for another player to connect. The child (player) process receives a value of <code>0</code> from <code>fork()</code>, so we continue downward in the code. In Perl doing <code>if($pid)</code> does <strong>NOT</strong> evaluate <code>TRUE</code> if <code>$pid == (0 || undef)</code>, which is what the child (player) process will receive as the returned value from <code>fork()</code>. We give the child (player) process a new session, record it's PID (<code>$$</code>)
- and wait for them to press any key. When the player presses a key the 
-socket is closed and the child (player) process exists and becomes a 
-zombie. This is when the parent (main) process receives the CHLD signal (<code>$SIG{CHLD}</code>) and calls <strong><code>REAPER</code></strong></p>
-
-<h2>
-  <a name="how-about-you" href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-7-fork-3acm#how-about-you">
-  </a>
-  How about you?
-</h2>
-
-<p>Have you worked with fork before? Have you unleashed a zombie 
-apocalypse forgetting to reap? Comment about your experience, I'd love 
-to hear your stories.</p>
-
-<p>If you have any suggestions or comments please share constructively. 
-Also please visit our social media pages for lots of fun videos and 
-pictures showing the game engine in action. </p>
-
-<p><a href="https://www.instagram.com/ANSIGameEngine/">ANSI Game Engine on Instagram</a><br />
-<a href="https://www.facebook.com/ANSIGameEngine">ANSI Game Engine on Facebook</a></p>
-
-<p><a href="http://blogs.perl.org/users/shawn1/2021/12/developing-a-game-engine-with-perl-part-6---a-colourful-telnet-server.html">Prev &lt;&lt; Part 6 - A Colourful Telnet Server</a><br />
-<strong><em>Next &gt;&gt; Coming Soon</em></strong></p>
-
-<p>Cheers!<br />
-Shawn</p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/541.html">#541 - Hanukkah is over - Advent started</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1129,7 +1105,7 @@ Shawn</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-8-vim-2gj5">Developing A Game Engine with Perl: Part 8 - Vim</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1271,7 +1247,7 @@ There are <a href="https://linux.die.net/man/1/sed">many ways</a> to <a href="ht
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/05#pwc141">Like, It’s Just the First Ten Numbers Man!</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1400,7 +1376,7 @@ I would think would be the more common method but I guess not!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_01_to_05.html">Advent of Code Day 1 to 5</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -1478,7 +1454,7 @@ I would think would be the more common method but I guess not!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/2021-10-raku-ci-bot-grant-update">Raku CI Bot Grant Report October and November 2021</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1560,90 +1536,6 @@ GitHub is not yet working reliably.</p>
 
     
          </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_14">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/sylvain_colinet/2021/12/writing-a-snes-assembler-compilerdisassembler---day-2.html">Writing a SNES assembler compiler/disassembler - Day 2</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Sylvain Colinet
- on Saturday 04 December 2021 19:54</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <h1 data-line="0" class="code-line" id="first-look-at-generating-grammars-1" style="padding-bottom: 0.3em; line-height: 1.25; border-bottom: 1px solid rgb(234, 236, 239); font-weight: 600; box-sizing: border-box; border-top-color: rgba(255, 255, 255, 0.18); border-right-color: rgba(255, 255, 255, 0.18); border-left-color: rgba(255, 255, 255, 0.18); margin-bottom: 16px; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;">First look at generating grammars</h1><p data-line="2" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">This will be very short even if that take me a lot of time to figure this part.</p><p data-line="4" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">In my&nbsp;<code style="color: inherit; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: 1.357em; box-sizing: border-box; padding: 0.2em 0.4em; background-color: rgba(27, 31, 35, 0.05); border-radius: 3px;">ASM65816Grammar.rakumod</code>&nbsp;I manually wrote the Number and Addressing grammar but obiously for the instructions it's not really possible.</p><h2 data-line="7" class="code-line" id="general-asm-grammar-1" style="margin-top: 24px; font-weight: 600; margin-bottom: 16px; box-sizing: border-box; line-height: 1.25; padding-bottom: 0.3em; border-bottom: 1px solid rgb(234, 236, 239); position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;">General ASM grammar</h2><p data-line="9" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">First let's focus on parsing something simple.</p><p data-line="11" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">The basic gist of what you can write in an asm file is very short</p><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="13" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">    lda $42
-    clc
-    adc #3 
-    cmp #0005:beq $4855 ; if $42 + 3 is 5 branch to $4855
-
-</div></code></code></pre><p data-line="21" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">You have an instruction per line, or you can have multiple instructions separated with a&nbsp;<code style="color: inherit; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: 1.357em; box-sizing: border-box; padding: 0.2em 0.4em; background-color: rgba(27, 31, 35, 0.05); border-radius: 3px;">:</code>, and&nbsp;<code style="color: inherit; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: 1.357em; box-sizing: border-box; padding: 0.2em 0.4em; background-color: rgba(27, 31, 35, 0.05); border-radius: 3px;">;</code>&nbsp;are used to mark a comment.</p><p data-line="24" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">I don't handle label for now since I just want to dumbly generate a grammar for all the valid instruction from my instruction list and see if that work well.</p><p data-line="27" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">The final grammar look like that</p><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="29" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">grammar GrammarASM65816 is InstructionGrammar is export {
-    token TOP {
-        &lt;thing&gt;+
-    }
-    token thing {
-        || &lt;asm-comment&gt;
-        || &lt;instruction-line&gt; &lt;.ws&gt; &lt;.asm-comment&gt;*
-        || &lt;instruction&gt; &lt;.ws&gt; &lt;.asm-comment&gt;*
-    }
-    token instruction-line{
-        &lt;instruction&gt; (&lt;.ws&gt; ':' &lt;.ws&gt; &lt;instruction&gt;)+
-    }
-    token asm-comment {
-        ';' .*
-    }
-}
-</div></code></code></pre><h3 data-line="48" class="code-line" id="today-i-learn-1" style="margin-top: 24px; font-weight: 600; margin-bottom: 16px; box-sizing: border-box; font-size: 1.25em; line-height: 1.25; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;">Today I learn</h3><p data-line="50" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">Don't use &lt;.ws&gt;* &lt;.ws&gt; already have a quantifier, adding a * make Raku goes on forever. Maybe there should have a warning about that?</p><h2 data-line="52" class="code-line" id="instructiongrammar-1" style="margin-top: 24px; font-weight: 600; margin-bottom: 16px; box-sizing: border-box; line-height: 1.25; padding-bottom: 0.3em; border-bottom: 1px solid rgb(234, 236, 239); position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;">InstructionGrammar</h2><p data-line="54" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">Yes, I like to compose my grammar with multiple piece since I plan to support like 2-3 ASM grammars : My own for my SLANG and one compatible with xkas/Asar a tool used in romhacking (this include instructions to specify where to inject code in a ROM)</p><p data-line="57" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">Before generating each token, let manually write 1-2 token to see if that work. I use a proto token for instruction since I will not really care about indivisual instructions in the Action class.</p><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="60" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">grammar InstructionGrammar is Addressing {
-    proto token instruction {*}
-    token instruction:sym&lt;LDA&gt; {:i "LDA"&lt;.ws&gt;&lt;word&gt;}
-    token instruction:sym&lt;RTL&gt; {:i "RTL"}
-}
-</div></code></code></pre><p data-line="67" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">The&nbsp;<code style="color: inherit; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: 1.357em; box-sizing: border-box; padding: 0.2em 0.4em; background-color: rgba(27, 31, 35, 0.05); border-radius: 3px;">:i</code>&nbsp;adverb makes the token ignore the case.</p><p data-line="69" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">let's run this to see if that work</p><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="71" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">raku -I lib -e 'use ASM65816Grammar; say GrammarASM65816.parse("RTL")'
-｢RTL｣
- thing =&gt; ｢RTL｣
-  instruction =&gt; ｢RTL｣
-</div></code></code></pre><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="78" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">raku -I lib -e 'use ASM65816Grammar; say GrammarASM65816.parse("RTL:lda 42;piko")'
-｢RTL:lda 42;piko｣
- thing =&gt; ｢RTL:lda 42;piko｣
-  instruction-line =&gt; ｢RTL:lda 42｣
-   instruction =&gt; ｢RTL｣
-   0 =&gt; ｢:lda 42｣
-    instruction =&gt; ｢lda 42｣
-      word =&gt; ｢42｣
-</div></code></code></pre><p data-line="89" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">We don't see the ;piko since It's not captured in the grammar. Also my grammar for word is not really right, 42 is not a word but a byte. This is fine for now :)</p><h2 data-line="91" class="code-line " id="generating-the-intruction-tokens-1" style="margin-top: 24px; font-weight: 600; margin-bottom: 16px; box-sizing: border-box; line-height: 1.25; padding-bottom: 0.3em; border-bottom: 1px solid rgb(234, 236, 239); position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;">Generating the intruction tokens</h2><p data-line="93" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">From this advent post&nbsp;<a href="https://perl6advent.wordpress.com/2015/12/08/day-8-grammars-generating-grammars/" data-href="https://perl6advent.wordpress.com/2015/12/08/day-8-grammars-generating-grammars/" title="https://perl6advent.wordpress.com/2015/12/08/day-8-grammars-generating-grammars/" style="color: rgb(3, 102, 214); text-decoration-line: none; box-sizing: border-box; background-color: initial;">https://perl6advent.wordpress.com/2015/12/08/day-8-grammars-generating-grammars/</a>&nbsp;that generate Raku grammar from BNF grammar it look possible. We need to use&nbsp;<code style="color: inherit; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: 1.357em; box-sizing: border-box; padding: 0.2em 0.4em; background-color: rgba(27, 31, 35, 0.05); border-radius: 3px;">^add_method</code>&nbsp;and&nbsp;<code style="color: inherit; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: 1.357em; box-sizing: border-box; padding: 0.2em 0.4em; background-color: rgba(27, 31, 35, 0.05); border-radius: 3px;">EVAL</code>&nbsp;to add our token.</p><p data-line="96" class="code-line    code-active-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">Let's do only simple instructions like&nbsp;<code style="color: inherit; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: 1.357em; box-sizing: border-box; padding: 0.2em 0.4em; background-color: rgba(27, 31, 35, 0.05); border-radius: 3px;">TXA</code>&nbsp;that does not take an argument.</p><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="98" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">sub gen-instru {
-    for @ASM65816::instructions -&gt; $instruct {
-        my $token-name = $instruct.inst ~ '-' ~ $instruct.addressing.Str;
-        if $instruct.addressing == IMPLIED {
-            InstructionGrammar.^add_method("instruction:sym&lt;{ $instruct.inst }&gt;",
-                EVAL "my token instruction:sym&lt;{ $instruct.inst }&gt;" ~ '{:i "' ~ $instruct.inst ~ '"}');
-        }
-    }
-}
-</div></code></code></pre><p data-line="110" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">And....</p><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="112" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">$ raku -I lib -e 'use ASM65816Grammar; say GrammarASM65816.parse("TXA")'
-TOP
-|  thing
-|  |  asm-comment
-|  |  * FAIL
-|  |  instruction-line
-|  |  |  instruction
-|  |  |  * FAIL
-|  |  * FAIL
-|  |  instruction
-|  |  * FAIL
-|  * FAIL
-* FAIL
-Nil
-skarsnik@DESKTOP-UIA12T1:/mnt/f/Project/SnesASM$
-</div></code></code></pre><p data-line="130" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">I added Grammar::Tracer to have more details, and that does not work. You can probably tell me, "But wait, in the article they create a new grammar and compose it at the end, maybe that why it does not work?"</p><p data-line="133" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">I don't really know, let have a look if both grammars have the right method :</p><pre style="box-sizing: border-box; padding: 16px; border-radius: 3px; overflow: auto; background-color: rgb(246, 248, 250); color: initial; margin-bottom: 16px; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; overflow-wrap: normal; line-height: 1.45; white-space: pre-wrap; background-image: initial !important; background-position: initial !important; background-size: initial !important; background-repeat: initial !important; background-attachment: initial !important; background-origin: initial !important; background-clip: initial !important;"><code data-line="135" class="code-line" style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 13.6px; line-height: inherit; tab-size: 4; box-sizing: border-box; background: initial; border-radius: 3px; word-break: normal; white-space: pre; display: inline; overflow: visible; overflow-wrap: normal; position: relative;"><code style="color: initial; font-family: SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, Menlo, monospace; font-size: 11.56px; line-height: inherit; tab-size: 4; box-sizing: border-box; background-color: initial; border-radius: 3px; display: inline; overflow: visible; overflow-wrap: normal;"><div style="box-sizing: border-box; background: none;">#After the Grammar definitons
-say "Instruction Grammar - Name : ", $_.name, " Method :", $_ if $_.name ~~ /TXA/ for InstructionGrammar.^methods;
-say "Grammar ASM65816 - Name : ", $_.name, " Method :", $_ if $_.name ~~ /TXA/ for GrammarASM65816.^methods;
-
-$ raku -I lib -e 'use ASM65816Grammar; say GrammarASM65816.parse("TXA")'
-Instruction Grammar - Name : instruction:sym&lt;TXA&gt; Method :token instruction:sym&lt;TXA&gt;{:i "TXA"}
-Grammar ASM65816 - Name : instruction:sym&lt;TXA&gt; Method :token instruction:sym&lt;TXA&gt;{:i "TXA"}
-</div></code></code></pre><p data-line="145" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">So yes, the token are here but it probably missing something to be a real token.</p><p data-line="147" class="code-line" style="margin-bottom: 16px; box-sizing: border-box; position: relative; color: rgb(36, 41, 46); font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;; font-size: 16px;">So for now I opted to generate the lines defining the instructions tokens and copy/paste then in the file. It's not really great if I want to tweak the whole grammar.</p>
-        
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3568,7 +3460,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 09 December 2021 12:51 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 09 December 2021 16:51 UTC</address>
             </div>
           </div>
         </div><!-- container -->
