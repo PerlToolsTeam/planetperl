@@ -7,9 +7,245 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-12-12T08:43:29Z</updated>
+  <updated>2021-12-12T12:49:58Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>A (not so) simple matter of privacy</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/damian_conway/2021/12/a-not-so-simple-matter-of-privacy.html"/>
+    <id>tag:blogs.perl.org,2021:/users/damian_conway//875.10580</id>
+    <published>2021-12-11T22:03:25Z</published>
+    <updated>2021-12-12T11:10:15Z</updated>
+    <author>
+        <name>Damian Conway</name>
+        <uri>http://damian.conway.org</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/damian_conway/">
+        <![CDATA[<p>You may have seen <a href="https://old.reddit.com/r/perl/comments/rdcziv/corinna_discussion_with_the_perl_steering/">Ovid's recent post</a>
+on his discussions with the Perl Steering Committee
+about moving forward with implementing an initial subset
+of the <a href="https://github.com/Ovid/Cor">Corinna proposal</a> in the Perl core.</p>
+
+<p>One of the issues that came up during those discussions was the best way to provide private
+methods in Corinna. The current Corinna proposal is that this would be done <em>(like almost
+everything else in Corinna)</em> via an attribute:</p>
+
+<p><code>    method do_internal <strong>:private</strong> () {...}</code></p>
+
+<p>Thereafter, the <code>do_internal()</code> method can only be called from within
+the current class, and is never overridden by derived-class methods when
+it is called within its original class.</p>
+
+<p>In other words, the <code>:private</code> method effectively prepends the following
+code to the start of the method:</p>
+
+<p><code>    croak "Can't call method 'do_internal'"</code><br/>
+<code>        if caller ne &lowbar;&lowbar;CLASS&lowbar;&lowbar;;</code></p>
+
+<p>...and, in addition, causes the compiler to treat any call to that particular method
+from within the current class as a <a href="https://perldoc.perl.org/perlobj#Method-Names-with-a-Fully-Qualified-Name">fully qualified method call</a>.
+That is, within any class <code>C</code> with a private <code>do_internal()</code> method, any call
+to <code>$self-&gt;do_internal()</code> is treated as a call to <code>$self-&gt;<strong>C::do_internal</strong>()</code>.</p>
+
+<p>All of which means that there is no way to call a private method from anywhere
+except within the same class. Which, of course, is the whole point of <em>having</em> private methods
+in the first place.</p>
+
+<p>But the need to automagically convert any call to a private method into a fully qualified
+method call is <em>(to put it mildly)</em> a complication for the compiler.
+So the members of the <em><s>Perl Steering Committee</s></em> Cor design team suggested that rather than having private methods,
+Perl should have lexical methods instead. Specifically, they suggested that instead of:</p>
+
+<p><code>    method do&lowbar;internal <strong>:private</strong> () {...}</code><br/>
+<code></code><br/>
+<code>    method do_external () {</code><br/>
+<code>        $self-&gt;<strong>do&lowbar;internal()</strong>;   # Call private method</code><br/>
+<code>        ...</code><br/>
+<code>    }</code></p>
+
+<p>...Perl would provide anonymous methods, which you could place in lexical variables
+and then call using the existing <a href="https://perldoc.perl.org/perlobj#Subroutine-References-as-Methods"><em>call-via-reference</em> method call syntax</a>:</p>
+
+<p><code>    my $do&lowbar;internal = <strong>method () {...}</strong>;</code><br/>
+<code></code><br/>
+<code>    method do_external () {</code><br/>
+<code>        $self-&gt;<strong>$do&lowbar;internal()</strong>;   # Call lexical method</code><br/>
+<code>        ...</code><br/>
+<code>    }</code></p>
+
+<p>That neatly avoids of the challenge of rewriting private methods to check their caller,
+or the much greater challenge of rewriting private method calls to be fully qualified.
+Instead, it cleverly enforces the <em>“can be called only from the current class”</em> requirement
+by making it impossible to refer to the method at all, except in the lexical scope of the
+<code>$do_internal</code> variable.</p>
+
+<p>You could even consider the slightly uglier <code>$self-&gt;$do_internal()</code> call syntax as a win:
+because it means that private method calls are explicitly marked as such.</p>
+
+<p>The only downsides are:</p>
+
+<ul>
+<li><p>The <em>call-via-reference</em> syntax is more obscure and perhaps
+a little more challenging for less-experienced Perl developers.
+That might discourage them from using this approach,
+even for methods that really should be private,
+thereby penalizing a good OO practice.</p></li>
+<li><p>Using anonymous methods to implement private methods is <strong><em>structural</em></strong> rather that
+<strong><em>declarative</em></strong>. That is: we can’t just say <strong><em>what</em></strong> we want to have happen,
+we have to say <strong><em>how</em></strong> to actually implement it. In practical terms, this
+means that private method definitions are no longer explicitly marked
+as being private, and hence are far less searchable.</p></li>
+</ul>
+
+<p>And that second issue is the real problem here. Because they’re structural, not declarative,
+lexical methods specified like this are also much easier to <a href="https://media.pragprog.com/articles/jan_03_enbug.pdf">“enbug”</a>.
+For example, if the developer mistakenly wrote something like this:</p>
+
+<p><code>    method other () {</code><br/>
+<code>        ...</code><br/>
+<code>        $do_internal++;</code><br/>
+<code>        ...</code><br/>
+<code>    }</code></p>
+
+<p>Then any call to the <code>$do_external()</code> method will be fine so long as the
+<code>other()</code> method is never called. But after <code>other()</code> has been
+called, the next call to <code>$do_external()</code> will throw a weird exception:</p>
+
+<p><tt>&nbsp;&nbsp;&nbsp;Can't locate object method "140362266577153" via class "C"</tt></p>
+
+<p>Of course, we can get around that potential bug by making <code>$do_internal</code> immutable:</p>
+
+<p><code>    <strong>use Const::Fast;</strong></code><br/>
+<code>    <strong>const</strong> my $do_internal => method () {...};</code></p>
+
+<p>but that’s now an extra module load, and even more infrastructure to get right.</p>
+
+<p><em>(BTW, wouldn’t it be cool if the existing <code>:const</code> subroutine attribute
+could also be applied to scalar variables, in which case we’d just need:</p>
+
+<p><code>    my $do_internal :const = method () {...};</code></p>
+
+<p>Maybe one day!)</em></p>
+
+<p>Yet another issue with using anonymous methods as private methods is that
+they make it easy to subvert the intended encapsulation:</p>
+
+<p><code>    our $do_internal = method () {...};</code></p>
+
+<p>That’s no longer a private method, because you can now call it from literally anywhere in your code:</p>
+
+<p><code>    $obj-&gt;<strong>$C::do_internal</strong>();</code></p>
+
+<p>And, even if it were still a <code>my</code> variable, there’s nothing to prevent a class
+from explicitly exporting it:</p>
+
+<p><code>    method circumvent&lowbar;privacy () { return $do&lowbar;internal }</code></p>
+
+<p>As an OO purist, I find that possibility worrying. And as someone who has reviewed a vast
+amount of real-world Perl OO code over the past few decades, I think that kind of expedient
+kludge is...inevitable.</p>
+
+<p>So what do we do?</p>
+
+<p>The good folks of the <em><s>Perl Steering Committee</s></em> Cor team suggested an approach that does address
+some of these issues. They proposed that the syntax for private methods be:</p>
+
+<p><code>    method <strong>$do&lowbar;internal</strong> () {...}</code><br/>
+<code></code><br/>
+<code>    method do&lowbar;external () {</code><br/>
+<code>        $self-&gt;<strong>$do&lowbar;internal()</strong>;   # Call private method</code><br/>
+<code>        ...</code><br/>
+<code>    }</code></p>
+
+<p>That is: when you want to declare a private method, you put a <code>$</code> at the start of its name.
+This form of the <code>method</code> keyword would then create a <em>(presumably immutable!)</em> lexical
+<code>$do_internal</code> variable, initialized with a reference to an anonymous method.
+You could then use the reference in that variable to call the private method.</p>
+
+<p>While it doesn’t solve the problem of evil developers explicitly exporting that variable, it
+does make the syntax declarative again, and it could solve the issue of accidentally changing
+the variable <em>(assuming the variable were indeed to be created as immutable)</em>.</p>
+
+<p>The only problem is that now we have the <code>method</code> keyword not just declaring methods,<br/>
+but also declaring variables.</p>
+
+<p>Which, from the perspective of a language designer, is...less than ideal.<br/>
+And, from the perspective of someone who actually still teaches Perl,<br/>
+is <strong><em>much</em></strong> less than ideal.</p>
+
+<p>So, how do we solve that?</p>
+
+<p>Well, Raku solves it by marking private methods not with a <code>$</code>, but with a <code>!</code><br/>
+and then calling them with the <code>!</code> as well (rather than Raku’s usual <code>.</code> method call operator):</p>
+
+<p><code>    # In Raku...</code><br/>
+<code>    method <strong>!do&lowbar;internal</strong> () {...}  # Private method</code><br/>
+<code></code><br/>
+<code>    method do&lowbar;external () {</code><br/>
+<code>        self<strong>!do&lowbar;internal</strong>();       # Private method call</code><br/>
+<code>        ...</code><br/>
+<code>    }</code></p>
+
+<p>That’s a neat solution, but it probably wouldn’t work for Perl.</p>
+
+<p>Nevertheless, the ideal of prefix-marking private methods and private method calls in some way
+<em>might</em> work. For example, we could consider formalizing the <em>“private methods start with an
+underscore”</em> convention inside the new <code>class</code> blocks:</p>
+
+<p><code>    method <strong>&lowbar;do&lowbar;internal</strong> () {...}</code><br/>
+<code></code><br/>
+<code>    method do&lowbar;external () {</code><br/>
+<code>        $self-&gt;<strong>&lowbar;do&lowbar;internal</strong>();</code><br/>
+<code>        ...</code><br/>
+<code>    }</code></p>
+
+<p>In other words, we could specify that any method definition that starts with an
+underscore <strong><em>doesn’t</em></strong> get added to the method symbol table. Instead, it implicitly creates
+an immutable and invisible lexical scalar within the class. Then, within any <code>class</code> block,
+any call to a method whose name starts with an underscore actually calls the method through the
+associated invisible lexical scalar instead.</p>
+
+<p>Or, to put it more simply: it’s precisely the <em><s>Steering Committee</s></em> Cor team’s proposal, but: <code>s/\$/_/g</code><br/>
+And with the added advantage that the lexical is not otherwise accessible within its scope,<br/>
+and therefore not accidentally modifiable, or maliciously exportable.</p>
+
+<p>That’s by far the safest alternative I can think of, but I concede that it might still be too magical.</p>
+
+<p>In which case we’d instead need to address just the immediate problem: that we’re contemplating
+using the <code>method</code> declarator to declare something that isn’t actually a method. Specifically,
+we’re using <code>method</code> to declare variables.</p>
+
+<p>And the easiest solution to that problem is simply to define another declarator:</p>
+
+<p><code>    <strong>private</strong> $do&lowbar;internal () {...}   # Declare private method</code><br/>
+<code></code><br/>
+<code>    method do_external () {</code><br/>
+<code>        $self-&gt;<strong>$do&lowbar;internal()</strong>;      # Call private method</code><br/>
+<code>        ...</code><br/>
+<code>    }</code></p>
+
+<p>Now <code>method</code> once again only declares named methods, and we can easily explain
+that <code>private</code> declares a lexically scoped variable whose immutable value
+is a reference to the anonymous method.</p>
+
+<p>We get very clear declarative labelling of private methods
+and equally clear labelling of calls to those private methods.</p>
+
+<p>We <strong><em>don’t</em></strong> solve the <em>“naughty folk can export that variable to circumvent privacy”</em>
+problem, but I suppose we could always just spin that as a feature, rather than a bug. <a href="https://www.urbandictionary.com/define.php?term=%2FS">/s</a></p>
+
+<p>For the moment, however, unless the <em><s>Steering Committee</s></em> Cor team is happy with either
+the <em>“underscore enforces private”</em> approach or the addition of a <code>private</code> keyword,
+I expect what we’ll actually have to do is to remove private methods entirely
+from the first stage of the implementation, and simply keep on pondering
+how to get them exactly right.</p>
+
+<p>In the meantime, don’t let <em>anyone</em> ever tell you that language (re-)design is easy. <tt>:-)</tt></p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>Weekly Challenge 142</title>
     <link rel="alternate" href="https://dev.to/simongreennet/weekly-challenge-142-1gb3" type="text/html"/>
@@ -144,242 +380,6 @@ $ ./ch-2.pl 3 0.1 2 2.5 1
     <category term="perl"/>
     <category term="theweeklychallenge"/>
   </entry>
-  <entry>
-    <title>A (not so) simple matter of privacy</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/damian_conway/2021/12/a-not-so-simple-matter-of-privacy.html"/>
-    <id>tag:blogs.perl.org,2021:/users/damian_conway//875.10580</id>
-    <published>2021-12-11T22:03:25Z</published>
-    <updated>2021-12-12T03:09:36Z</updated>
-    <author>
-        <name>Damian Conway</name>
-        <uri>http://damian.conway.org</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/damian_conway/">
-        <![CDATA[<p>You may have seen <a href="https://old.reddit.com/r/perl/comments/rdcziv/corinna_discussion_with_the_perl_steering/">Ovid's recent post</a>
-on his discussions with the Perl Steering Committee
-about moving forward with implementing an initial subset
-of the <a href="https://github.com/Ovid/Cor">Corinna proposal</a> in the Perl core.</p>
-
-<p>One of the issues that came up during those discussions was the best way to provide private
-methods in Corinna. The current Corinna proposal is that this would be done <em>(like almost
-everything else in Corinna)</em> via an attribute:</p>
-
-<p><code>    method do_internal <strong>:private</strong> () {...}</code></p>
-
-<p>Thereafter, the <code>do_internal()</code> method can only be called from within
-the current class, and is never overridden by derived-class methods when
-it is called within its original class.</p>
-
-<p>In other words, the <code>:private</code> method effectively prepends the following
-code to the start of the method:</p>
-
-<p><code>    croak "Can't call method 'do_internal'"</code><br/>
-<code>        if caller ne &lowbar;&lowbar;CLASS&lowbar;&lowbar;;</code></p>
-
-<p>...and, in addition, causes the compiler to treat any call to that particular method
-from within the current class as a <a href="https://perldoc.perl.org/perlobj#Method-Names-with-a-Fully-Qualified-Name">fully qualified method call</a>.
-That is, within any class <code>C</code> with a private <code>do_internal()</code> method, any call
-to <code>$self-&gt;do_internal()</code> is treated as a call to <code>$self-&gt;<strong>C::do_internal</strong>()</code>.</p>
-
-<p>All of which means that there is no way to call a private method from anywhere
-except within the same class. Which, of course, is the whole point of <em>having</em> private methods
-in the first place.</p>
-
-<p>But the need to automagically convert any call to a private method into a fully qualified
-method call is <em>(to put it mildly)</em> a complication for the compiler.
-So the members of the Perl Steering Committee suggested that rather than having private methods,
-Perl should have lexical methods instead. Specifically, they suggested that instead of:</p>
-
-<p><code>    method do&lowbar;internal <strong>:private</strong> () {...}</code><br/>
-<code></code><br/>
-<code>    method do_external () {</code><br/>
-<code>        $self-&gt;<strong>do&lowbar;internal()</strong>;   # Call private method</code><br/>
-<code>        ...</code><br/>
-<code>    }</code></p>
-
-<p>...Perl would provide anonymous methods, which you could place in lexical variables
-and then call using the existing <a href="https://perldoc.perl.org/perlobj#Subroutine-References-as-Methods"><em>call-via-reference</em> method call syntax</a>:</p>
-
-<p><code>    my $do&lowbar;internal = <strong>method () {...}</strong>;</code><br/>
-<code></code><br/>
-<code>    method do_external () {</code><br/>
-<code>        $self-&gt;<strong>$do&lowbar;internal()</strong>;   # Call lexical method</code><br/>
-<code>        ...</code><br/>
-<code>    }</code></p>
-
-<p>That neatly avoids of the challenge of rewriting private methods to check their caller,
-or the much greater challenge of rewriting private method calls to be fully qualified.
-Instead, it cleverly enforces the <em>“can be called only from the current class”</em> requirement
-by making it impossible to refer to the method at all, except in the lexical scope of the
-<code>$do_internal</code> variable.</p>
-
-<p>You could even consider the slightly uglier <code>$self-&gt;$do_internal()</code> call syntax as a win:
-because it means that private method calls are explicitly marked as such.</p>
-
-<p>The only downsides are:</p>
-
-<ul>
-<li><p>The <em>call-via-reference</em> syntax is more obscure and perhaps
-a little more challenging for less-experienced Perl developers.
-That might discourage them from using this approach,
-even for methods that really should be private,
-thereby penalizing a good OO practice.</p></li>
-<li><p>Using anonymous methods to implement private methods is <strong><em>structural</em></strong> rather that
-<strong><em>declarative</em></strong>. That is: we can’t just say <strong><em>what</em></strong> we want to have happen,
-we have to say <strong><em>how</em></strong> to actually implement it. In practical terms, this
-means that private method definitions are no longer explicitly marked
-as being private, and hence are far less searchable.</p></li>
-</ul>
-
-<p>And that second issue is the real problem here. Because they’re structural, not declarative,
-lexical methods specified like this are also much easier to <a href="https://media.pragprog.com/articles/jan_03_enbug.pdf">“enbug”</a>.
-For example, if the developer mistakenly wrote something like this:</p>
-
-<p><code>    method other () {</code><br/>
-<code>        ...</code><br/>
-<code>        $do_internal++;</code><br/>
-<code>        ...</code><br/>
-<code>    }</code></p>
-
-<p>Then any call to the <code>$do_external()</code> method will be fine so long as the
-<code>other()</code> method is never called. But after <code>other()</code> has been
-called, the next call to <code>$do_external()</code> will throw a weird exception:</p>
-
-<p><tt>&nbsp;&nbsp;&nbsp;Can't locate object method "140362266577153" via class "C"</tt></p>
-
-<p>Of course, we can get around that potential bug by making <code>$do_internal</code> immutable:</p>
-
-<p><code>    <strong>use Const::Fast;</strong></code><br/>
-<code>    <strong>const</strong> my $do_internal => method () {...};</code></p>
-
-<p>but that’s now an extra module load, and even more infrastructure to get right.</p>
-
-<p><em>(BTW, wouldn’t it be cool if the existing <code>:const</code> subroutine attribute
-could also be applied to scalar variables, in which case we’d just need:</p>
-
-<p><code>    my $do_internal :const = method () {...};</code></p>
-
-<p>Maybe one day!)</em></p>
-
-<p>Yet another issue with using anonymous methods as private methods is that
-they make it easy to subvert the intended encapsulation:</p>
-
-<p><code>    our $do_internal = method () {...};</code></p>
-
-<p>That’s no longer a private method, because you can now call it from literally anywhere in your code:</p>
-
-<p><code>    $obj-&gt;<strong>$C::do_internal</strong>();</code></p>
-
-<p>And, even if it were still a <code>my</code> variable, there’s nothing to prevent a class
-from explicitly exporting it:</p>
-
-<p><code>    method circumvent&lowbar;privacy () { return $do&lowbar;internal }</code></p>
-
-<p>As an OO purist, I find that possibility worrying. And as someone who has reviewed a vast
-amount of real-world Perl OO code over the past few decades, I think that kind of expedient
-kludge is...inevitable.</p>
-
-<p>So what do we do?</p>
-
-<p>The good folks of the Perl Steering Committee suggested an approach that does address
-some of these issues. They proposed that the syntax for private methods be:</p>
-
-<p><code>    method <strong>$do&lowbar;internal</strong> () {...}</code><br/>
-<code></code><br/>
-<code>    method do&lowbar;external () {</code><br/>
-<code>        $self-&gt;<strong>$do&lowbar;internal()</strong>;   # Call private method</code><br/>
-<code>        ...</code><br/>
-<code>    }</code></p>
-
-<p>That is: when you want to declare a private method, you put a <code>$</code> at the start of its name.
-This form of the <code>method</code> keyword would then create a <em>(presumably immutable!)</em> lexical
-<code>$do_internal</code> variable, initialized with a reference to an anonymous method.
-You could then use the reference in that variable to call the private method.</p>
-
-<p>While it doesn’t solve the problem of evil developers explicitly exporting that variable, it
-does make the syntax declarative again, and it could solve the issue of accidentally changing
-the variable <em>(assuming the variable were indeed to be created as immutable)</em>.</p>
-
-<p>The only problem is that now we have the <code>method</code> keyword not just declaring methods,<br/>
-but also declaring variables.</p>
-
-<p>Which, from the perspective of a language designer, is...less than ideal.<br/>
-And, from the perspective of someone who actually still teaches Perl,<br/>
-is <strong><em>much</em></strong> less than ideal.</p>
-
-<p>So, how do we solve that?</p>
-
-<p>Well, Raku solves it by marking private methods not with a <code>$</code>, but with a <code>!</code><br/>
-and then calling them with the <code>!</code> as well (rather than Raku’s usual <code>.</code> method call operator):</p>
-
-<p><code>    # In Raku...</code><br/>
-<code>    method <strong>!do&lowbar;internal</strong> () {...}  # Private method</code><br/>
-<code></code><br/>
-<code>    method do&lowbar;external () {</code><br/>
-<code>        self<strong>!do&lowbar;internal</strong>();       # Private method call</code><br/>
-<code>        ...</code><br/>
-<code>    }</code></p>
-
-<p>That’s a neat solution, but it probably wouldn’t work for Perl.</p>
-
-<p>Nevertheless, the ideal of prefix-marking private methods and private method calls in some way
-<em>might</em> work. For example, we could consider formalizing the <em>“private methods start with an
-underscore”</em> convention inside the new <code>class</code> blocks:</p>
-
-<p><code>    method <strong>&lowbar;do&lowbar;internal</strong> () {...}</code><br/>
-<code></code><br/>
-<code>    method do&lowbar;external () {</code><br/>
-<code>        $self-&gt;<strong>&lowbar;do&lowbar;internal</strong>();</code><br/>
-<code>        ...</code><br/>
-<code>    }</code></p>
-
-<p>In other words, we could specify that any method definition that starts with an
-underscore <strong><em>doesn’t</em></strong> get added to the method symbol table. Instead, it implicitly creates
-an immutable and invisible lexical scalar within the class. Then, within any <code>class</code> block,
-any call to a method whose name starts with an underscore actually calls the method through the
-associated invisible lexical scalar instead.</p>
-
-<p>Or, to put it more simply: it’s precisely the Steering Committee’s proposal, but: <code>s/\$/_/g</code><br/>
-And with the added advantage that the lexical is not otherwise accessible within its scope,<br/>
-and therefore not accidentally modifiable, or maliciously exportable.</p>
-
-<p>That’s by far the safest alternative I can think of, but I concede that it might still be too magical.</p>
-
-<p>In which case we’d instead need to address just the immediate problem: that we’re contemplating
-using the <code>method</code> declarator to declare something that isn’t actually a method. Specifically,
-we’re using <code>method</code> to declare variables.</p>
-
-<p>And the easiest solution to that problem is simply to define another declarator:</p>
-
-<p><code>    <strong>private</strong> $do&lowbar;internal () {...}   # Declare private method</code><br/>
-<code></code><br/>
-<code>    method do_external () {</code><br/>
-<code>        $self-&gt;<strong>$do&lowbar;internal()</strong>;      # Call private method</code><br/>
-<code>        ...</code><br/>
-<code>    }</code></p>
-
-<p>Now <code>method</code> once again only declares named methods, and we can easily explain
-that <code>private</code> declares a lexically scoped variable whose immutable value
-is a reference to the anonymous method.</p>
-
-<p>We get very clear declarative labelling of private methods
-and equally clear labelling of calls to those private methods.</p>
-
-<p>We <strong><em>don’t</em></strong> solve the <em>“naughty folk can export that variable to circumvent privacy”</em>
-problem, but I suppose we could always just spin that as a feature, rather than a bug. <a href="https://www.urbandictionary.com/define.php?term=%2FS">/s</a></p>
-
-<p>For the moment, however, unless the Steering Committee is happy with either
-the <em>“underscore enforces private”</em> approach or the addition of a <code>private</code> keyword,
-I expect what we’ll actually have to do is to remove private methods entirely
-from the first stage of the implementation, and simply keep on pondering
-how to get them exactly right.</p>
-
-<p>In the meantime, don’t let <em>anyone</em> ever tell you that language (re-)design is easy. <tt>:-)</tt></p>
-]]>
-        
-
-    </content>
-</entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-6969056211502125629</id>
     <published>2021-12-11T23:42:00.001+01:00</published>
