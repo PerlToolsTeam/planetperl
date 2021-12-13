@@ -7,9 +7,66 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-12-13T12:50:43Z</updated>
+  <updated>2021-12-13T16:51:19Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>GNU timeout annoyed me so I replaced it; or an extremely simple introduction to fork() and signal handling in perl</title>
+    <link rel="alternate" href="https://dev.to/drhyde/gnu-timeout-annoyed-me-so-i-replaced-it-or-an-extremely-simple-introduction-to-fork-and-signal-handling-in-perl-32f7" type="text/html"/>
+    <content type="html">&lt;p&gt;Previously on this channel ... &lt;a href="https://dev.to/drhyde/gnu-tree-annoyed-me-so-i-fixed-it-2pnk"&gt;GNU tree annoyed me so I fixed it&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;I am one of the &lt;a href="https://www.cpantesters.org/"&gt;CPAN-testers&lt;/a&gt;. That means that I automatically download code from the internet and run it. I can protect against most of the evils that exposes me to by running it in a VM with limited resources and privileges and so on. There is, however, one attack that is hard to defend against like that. Often - due to bugs and not malice - some code that I'm testing will just hang, and sit there doing nothing. It's not using much CPU, or memory, or thrashing the disk, or using the network, it's just sitting there doing nothing. Usually waiting for something on the console. But because my testing is largely automated I'm not paying any attention to the console, so I don't placate it, and so my whole testing pipeline shudders to a halt as something sits there doing nothing for hours or even days.&lt;/p&gt;
+
+&lt;p&gt;The obvious solution is to impose a time limit (a wall-clock time limit, not a CPU time limit of course), and the obvious tool for that is &lt;a href="https://man7.org/linux/man-pages/man1/timeout.1.html"&gt;GNU timeout&lt;/a&gt;. It's very good, and I recommend it. However, it doesn't &lt;em&gt;quite&lt;/em&gt; fit my needs. In particular, its &lt;code&gt;--foreground&lt;/code&gt; option, which allows the command it runs to read the terminal and get terminal signals, has a fatal flaw in that if there's a timeout &lt;em&gt;only that command will be killed&lt;/em&gt;, leaving any child processes still running. In my use case it's almost always a child process that hangs.&lt;/p&gt;
+
+&lt;p&gt;There are a few other similar tools out there, but they all have some problem or other that makes them unsuitable for my use. Some of them don't preserve the command's exit status, and others aren't conveniently packaged for all the different OSes I use. So I wrote my own.&lt;/p&gt;
+
+&lt;p&gt;I'm leaving out some details here, but the core of the program is this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;    &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Proc::&lt;/span&gt;&lt;span class="nv"&gt;Killfam&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$pid&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;fork&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+    &lt;span class="k"&gt;if&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;!&lt;/span&gt;&lt;span class="nb"&gt;defined&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$pid&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nb"&gt;die&lt;/span&gt;&lt;span class="p"&gt;("&lt;/span&gt;&lt;span class="s2"&gt;Error forking&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;")&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="k"&gt;elsif&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$pid&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="c1"&gt;# still in the ptimeout process&lt;/span&gt;
+        &lt;span class="nv"&gt;$SIG&lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nv"&gt;TERM&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;exit&lt;/span&gt; &lt;span class="mi"&gt;124&lt;/span&gt; &lt;span class="p"&gt;};&lt;/span&gt;
+
+        &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$status&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;system&lt;/span&gt; &lt;span class="nv"&gt;@command_args&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+        &lt;span class="nb"&gt;kill&lt;/span&gt; &lt;span class="s"&gt;SIGTERM&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$pid&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+        &lt;span class="nb"&gt;exit&lt;/span&gt; &lt;span class="nv"&gt;$status&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;8&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="c1"&gt;# watchdog child process&lt;/span&gt;
+        &lt;span class="nb"&gt;sleep&lt;/span&gt; &lt;span class="nv"&gt;$timeout&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+        &lt;span class="nv"&gt;killfam&lt;/span&gt; &lt;span class="s"&gt;SIGTERM&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nb"&gt;getppid&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;It forks off a child process which acts as a watchdog. If for any reason we can't fork it just stops immediately, as nothing will work anyway.&lt;/p&gt;
+
+&lt;p&gt;The watchdog immediately goes to sleep for &lt;code&gt;$timeout&lt;/code&gt; seconds. If it ever reaches the end of that period it sends a &lt;code&gt;SIGTERM&lt;/code&gt; to its parent process &lt;em&gt;and all its children&lt;/em&gt; (the &lt;code&gt;killfam&lt;/code&gt; function is what finds and kills all the children, its implemented in &lt;a href="https://metacpan.org/pod/Proc::Killfam"&gt;&lt;code&gt;Proc::Killfam&lt;/code&gt;&lt;/a&gt; which you can find on the CPAN).&lt;/p&gt;
+
+&lt;p&gt;The original process, in the mean time, creates a signal handler for &lt;code&gt;SIGTERM&lt;/code&gt; and then runs whatever command you told it to.&lt;/p&gt;
+
+&lt;p&gt;If that command finishes quickly, before the timeout, then the original process sends a &lt;code&gt;SIGTERM&lt;/code&gt; to the watchdog, killing it as it is no longer needed, then exits with the same exit status code as the command.&lt;/p&gt;
+
+&lt;p&gt;Otherwise, if the timeout is reached, the watchdog sends a &lt;code&gt;SIGTERM&lt;/code&gt; to the original command and all its children, including the command that you told it to run and any of &lt;em&gt;its&lt;/em&gt; children that it can find. The original command's signal handler for &lt;code&gt;SIGTERM&lt;/code&gt; catches the signal and turns it into an exit status of 124, just like GNU timeout does, so that it's reasonably easy to tell the difference between a normal exit-with-failure and a timeout.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>David Cantrell</name>
+    </author>
+    <id>https://dev.to/drhyde/gnu-timeout-annoyed-me-so-i-replaced-it-or-an-extremely-simple-introduction-to-fork-and-signal-handling-in-perl-32f7</id>
+    <published>2021-12-13T15:24:50Z</published>
+    <updated>2021-12-13T15:24:50Z</updated>
+    <category term="signals"/>
+    <category term="fork"/>
+    <category term="perl"/>
+  </entry>
   <entry>
     <title>#542 - Perl Advent Calendar</title>
     <link rel="alternate" href="https://perlweekly.com/archive/542.html" type="text/html"/>
@@ -1986,435 +2043,6 @@ GitHub is not yet working reliably.</p>
       <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
     </author>
     <thr:total>0</thr:total>
-  </entry>
-  <entry>
-    <title>100 Languages Speedrun: Episode 15: Awk</title>
-    <link rel="alternate" href="https://dev.to/taw/100-languages-speedrun-episode-15-awk-1d55" type="text/html"/>
-    <content type="html">&lt;p&gt;Awk is basically a proto-Perl. As Perl was one of the most influential language of all times (JavaScript, Ruby, and PHP are all Perl's direct descendants), Awk is indirectly quite historically important.&lt;/p&gt;
-
-&lt;p&gt;There hasn't been any good reason to use Awk for decades now. As I keep saying over and over, if you write anything nontrivial, just use a real programming language like Ruby, Python, or Perl. But it's still interesting for historical reason, so let's check what coding was like back in the 1980s.&lt;/p&gt;
-
-&lt;h3&gt;
-  &lt;a href="#hello-world"&gt;
-  &lt;/a&gt;
-  Hello, World!
-&lt;/h3&gt;
-
-&lt;p&gt;Awk scripts are a series of &lt;code&gt;pattern { command }&lt;/code&gt;, where pattern is most often a regular expression. If script contains any such pattern, it will be executed on each line.&lt;/p&gt;
-
-&lt;p&gt;Here's one way to say Hello, World! in Awk:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="sr"&gt;/./&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Hello, &lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;!&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ seq 1 5 | ./hello.awk
-Hello, 1!
-Hello, 2!
-Hello, 3!
-Hello, 4!
-Hello, 5!
-$ ./hello.awk
-World
-Hello, World!
-Bob Ross
-Hello, Bob!
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;So any line that contains non-whitespace characters will result in a hello. String concatenation is done by just putting a few strings next to each other. &lt;code&gt;"Hello, " $1 "!"&lt;/code&gt; is what would be &lt;code&gt;"Hello, " + $1 + "!"&lt;/code&gt; or &lt;code&gt;"Hello, " . $1 . "!"&lt;/code&gt; or such in a more reasonable language.&lt;/p&gt;
-
-&lt;p&gt;Each line is &lt;code&gt;$0&lt;/code&gt;, and it's also automatically split into words, so &lt;code&gt;$1&lt;/code&gt; means first word of currently processed lines, &lt;code&gt;$2&lt;/code&gt; means second word, etc. Those special variables are used for regular expression's first, second etc. match in Perl, Ruby, and some other languages, and I think that's where they came from.&lt;/p&gt;
-
-&lt;h3&gt;
-  &lt;a href="#sum-numbers-from-stdin"&gt;
-  &lt;/a&gt;
-  Sum numbers from STDIN
-&lt;/h3&gt;
-
-&lt;p&gt;There are some other patterns like &lt;code&gt;BEGIN&lt;/code&gt; and &lt;code&gt;END&lt;/code&gt; to do before and after processing lines. Here's a simple Awk program for adding all numbers, one per line:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="k"&gt;BEGIN&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="sr"&gt;/[0-9]+/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="o"&gt;+=&lt;/span&gt; &lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="k"&gt;END&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Which works like this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ seq 10 20 | ./sum.awk
-165
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Awk has pre-Perl regular expressions, so things like &lt;code&gt;\d&lt;/code&gt; don't work. That's another reason why it's better to use something more modern.&lt;/p&gt;
-
-&lt;p&gt;Awk's &lt;code&gt;BEGIN { }&lt;/code&gt; and &lt;code&gt;END { }&lt;/code&gt; blocks are still present in Perl, Ruby, and some other languages.&lt;/p&gt;
-
-&lt;h3&gt;
-  &lt;a href="#fizzbuzz-with-regexp"&gt;
-  &lt;/a&gt;
-  FizzBuzz with regexp
-&lt;/h3&gt;
-
-&lt;p&gt;One way to do the FizzBuzz is to reuse our regular expressions from episode 7. At first you might think command block would just do &lt;code&gt;{ print "FizzBuzz" }&lt;/code&gt; or such, but then all the other blocks would match too (divisible by 15 is also divisible by 3 and 5 etc.). An easy way is to modify &lt;code&gt;$0&lt;/code&gt; variable (current line). We print it at the end.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="sr"&gt;/^(([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|[0369]*[258])(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|([147][0369]*[258]|[0369]?))*(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*[258][0369]*|[147][0369]*)|([0369]*[147]([258][0369]*[147]|[0369])*[258][0369]*|[0369]*))0$/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;FizzBuzz&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="sr"&gt;/^(([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|[0369]*[258])(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|([147][0369]*[258]|[0369]?))*(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[147]|[0369]?)|([147][0369]*[147]|[258]))|([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[147]|[0369]?)|[0369]*[147]))5$/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;FizzBuzz&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="sr"&gt;/^.*[05]$/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Buzz&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="sr"&gt;/^(([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|[0369]*[258])(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|([147][0369]*[258]|[0369]?))*(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*[258][0369]*|[147][0369]*)|([0369]*[147]([258][0369]*[147]|[0369])*[258][0369]*|[0369]*))$/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Fizz&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="sr"&gt;/./&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;To use it:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ seq 1 20 | ./fizzbuzz.awk
-1
-2
-Fizz
-4
-Buzz
-Fizz
-7
-8
-Fizz
-Buzz
-11
-Fizz
-13
-14
-FizzBuzz
-16
-17
-Fizz
-19
-Buzz
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h3&gt;
-  &lt;a href="#fizzbuzz"&gt;
-  &lt;/a&gt;
-  FizzBuzz
-&lt;/h3&gt;
-
-&lt;p&gt;A less ridiculous version would be this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="mi"&gt;15&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;FizzBuzz&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt; &lt;span class="k"&gt;next&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="mi"&gt;5&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Buzz&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt; &lt;span class="k"&gt;next&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="o"&gt;%&lt;/span&gt; &lt;span class="mi"&gt;3&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Fizz&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt; &lt;span class="k"&gt;next&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Any expression can be used as pattern. &lt;code&gt;next&lt;/code&gt; prevents all other pattern checks for the current lines.&lt;/p&gt;
-
-&lt;h3&gt;
-  &lt;a href="#file-output"&gt;
-  &lt;/a&gt;
-  File output
-&lt;/h3&gt;
-
-&lt;p&gt;Awk makes it really easy to print to files. This script sort out the input to &lt;code&gt;odd.txt&lt;/code&gt; and &lt;code&gt;even.txt&lt;/code&gt;:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="sr"&gt;/[13579]$/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;odd.txt&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="sr"&gt;/[02468]$/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;even.txt&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Like in shell &lt;code&gt;&amp;gt;&lt;/code&gt; means overwrite the file, and &lt;code&gt;&amp;gt;&amp;gt;&lt;/code&gt; means append. But while it might look like it will keep reopening and overwriting so you only see last line, each file will be opened just once:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt; % seq 20 30 | ./file_output.awk
-$ cat odd.txt
-21
-23
-25
-27
-29
-$ cat even.txt
-20
-22
-24
-26
-28
-30
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;And &lt;code&gt;print&lt;/code&gt; without arguments is the same as &lt;code&gt;print $0&lt;/code&gt;.&lt;/p&gt;
-
-&lt;h3&gt;
-  &lt;a href="#pipe-output"&gt;
-  &lt;/a&gt;
-  Pipe output
-&lt;/h3&gt;
-
-&lt;p&gt;Even nicer, we can do similar redirection with pipes:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="sr"&gt;/[13579]$/&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="o"&gt;|&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;tac&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Which matches all the lines with odd numbers and send them to &lt;code&gt;tac&lt;/code&gt; program to print them in backward order.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ seq 10 30 | ./reverse_odds.awk
-29
-27
-25
-23
-21
-19
-17
-15
-13
-11
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h3&gt;
-  &lt;a href="#fibbonacci"&gt;
-  &lt;/a&gt;
-  Fibbonacci
-&lt;/h3&gt;
-
-&lt;p&gt;Awk has normal function definitions. There's no distinction between number and string variables. If we put a command block without a pattern, it will match every line.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="nv"&gt;function&lt;/span&gt; &lt;span class="nv"&gt;fib&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;n&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-  &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;n&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;=&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-  &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;fib&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;n&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;fib&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;n&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
-  &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nv"&gt;fib&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Which does:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ seq 1 20 | ./fib.awk
-1
-1
-2
-3
-5
-8
-13
-21
-34
-55
-89
-144
-233
-377
-610
-987
-1597
-2584
-4181
-6765
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h3&gt;
-  &lt;a href="#rolling-dice"&gt;
-  &lt;/a&gt;
-  Rolling Dice
-&lt;/h3&gt;
-
-&lt;p&gt;Awk has some trouble with command line arguments - it normally treats them as files to open. This code only works because we don't actually have any per-line patterns.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="k"&gt;BEGIN&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-  &lt;span class="k"&gt;for&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;i&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;i&lt;/span&gt;&lt;span class="o"&gt;&amp;lt;&lt;/span&gt;&lt;span class="nv"&gt;ARGV&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;];&lt;/span&gt; &lt;span class="nv"&gt;i&lt;/span&gt;&lt;span class="o"&gt;++&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-    &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nb"&gt;int&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;rand&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="nv"&gt;ARGV&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;]);&lt;/span&gt;
-  &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;We can use it to roll 5 100-sided dice:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ ./dice.awk 100 5
-84
-39
-78
-79
-91
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h3&gt;
-  &lt;a href="#tally"&gt;
-  &lt;/a&gt;
-  Tally
-&lt;/h3&gt;
-
-&lt;p&gt;Awk has associative arrays (nowadays usually called hashes or dictionaries).&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;#!/usr/bin/awk -f&lt;/span&gt;
-
-&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nv"&gt;tally&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="err"&gt;$&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;&lt;span class="o"&gt;++&lt;/span&gt; &lt;span class="p"&gt;}&lt;/span&gt;
-
-&lt;span class="k"&gt;END&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-  &lt;span class="k"&gt;for&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;n&lt;/span&gt; &lt;span class="nv"&gt;in&lt;/span&gt; &lt;span class="nv"&gt;tally&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-    &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nv"&gt;n&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;tally&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nv"&gt;n&lt;/span&gt;&lt;span class="p"&gt;]&lt;/span&gt;
-  &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Awk has no way to print regular arrays or associative arrays. If you try to &lt;code&gt;print tally&lt;/code&gt; it will give you an error. It's another feature of modern programming languages that has roots in times of Awk, but is now done in much better ways.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ ./dice.awk 6 100 | ./tally.awk
-2 17
-3 18
-4 17
-5 22
-0 13
-1 13
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h3&gt;
-  &lt;a href="#should-you-use-awk"&gt;
-  &lt;/a&gt;
-  Should you use Awk?
-&lt;/h3&gt;
-
-&lt;p&gt;No.&lt;/p&gt;
-
-&lt;p&gt;Special purpose languages have their place, but what Awk is doing - processing text files - is no longer "special purpose". Pretty much every modern language excels at processing text files and matching regular expressions, and handles everything Awk does a lot better.&lt;/p&gt;
-
-&lt;p&gt;Awk made a lot of sense back when its originated, as C was godawful at text processing, and Unix shell was godawful at writing any kind of structured programs, so Awk was addressing an obvious need. In modern times where every programmer is familiar with a language like Ruby, Python, Perl, or pretty much anything else that can process text, there's no place for Awk.&lt;/p&gt;
-
-&lt;p&gt;The language also definitely shows its age. Its regular expression engine is bad. It doesn't have &lt;code&gt;console.log&lt;/code&gt; equivalent. It can't handle common text formats like CSV or JSON. It doesn't have sufficient Unicode capabilities. And so on. It does quite decently on conciseness, but only if you do exactly the kind of programs it likes - common requirements like parsing command line arguments will not work too well.&lt;/p&gt;
-
-&lt;p&gt;Awk is mainly of historical relevance, but it's not completely dead yet. If you work with a lot of Unix shell scripts, short Awk programs will be occasionally used there. I don't approve of this at all (seriously, just use real programming language like Ruby, Python, or Perl), but it might be useful to learn basics of Awk so you can read such shell code.&lt;/p&gt;
-
-&lt;h3&gt;
-  &lt;a href="#code"&gt;
-  &lt;/a&gt;
-  Code
-&lt;/h3&gt;
-
-&lt;p&gt;&lt;a href="https://github.com/taw/100-languages-speedrun"&gt;All code examples for the series will be in this repository&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://github.com/taw/100-languages-speedrun/tree/master/episode-15-awk"&gt;Code for the Awk episode is available here&lt;/a&gt;.&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Tomasz Wegrzanowski</name>
-    </author>
-    <id>https://dev.to/taw/100-languages-speedrun-episode-15-awk-1d55</id>
-    <published>2021-12-04T14:49:33Z</published>
-    <updated>2021-12-04T14:49:33Z</updated>
-    <category term="unix"/>
-    <category term="awk"/>
-    <category term="perl"/>
   </entry>
   <entry>
   <title>Grant report: Optimizations building upon the new Raku dispatch mechanism</title>

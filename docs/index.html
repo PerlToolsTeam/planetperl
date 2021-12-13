@@ -57,6 +57,61 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/drhyde/gnu-timeout-annoyed-me-so-i-replaced-it-or-an-extremely-simple-introduction-to-fork-and-signal-handling-in-perl-32f7">GNU timeout annoyed me so I replaced it; or an extremely simple introduction to fork() and signal handling in perl</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by David Cantrell
+ on Monday 13 December 2021 15:24</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Previously on this channel ... <a href="https://dev.to/drhyde/gnu-tree-annoyed-me-so-i-fixed-it-2pnk">GNU tree annoyed me so I fixed it</a></p>
+
+<p>I am one of the <a href="https://www.cpantesters.org/">CPAN-testers</a>. That means that I automatically download code from the internet and run it. I can protect against most of the evils that exposes me to by running it in a VM with limited resources and privileges and so on. There is, however, one attack that is hard to defend against like that. Often - due to bugs and not malice - some code that I'm testing will just hang, and sit there doing nothing. It's not using much CPU, or memory, or thrashing the disk, or using the network, it's just sitting there doing nothing. Usually waiting for something on the console. But because my testing is largely automated I'm not paying any attention to the console, so I don't placate it, and so my whole testing pipeline shudders to a halt as something sits there doing nothing for hours or even days.</p>
+
+<p>The obvious solution is to impose a time limit (a wall-clock time limit, not a CPU time limit of course), and the obvious tool for that is <a href="https://man7.org/linux/man-pages/man1/timeout.1.html">GNU timeout</a>. It's very good, and I recommend it. However, it doesn't <em>quite</em> fit my needs. In particular, its <code>--foreground</code> option, which allows the command it runs to read the terminal and get terminal signals, has a fatal flaw in that if there's a timeout <em>only that command will be killed</em>, leaving any child processes still running. In my use case it's almost always a child process that hangs.</p>
+
+<p>There are a few other similar tools out there, but they all have some problem or other that makes them unsuitable for my use. Some of them don't preserve the command's exit status, and others aren't conveniently packaged for all the different OSes I use. So I wrote my own.</p>
+
+<p>I'm leaving out some details here, but the core of the program is this:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code>    <span class="k">use</span> <span class="nn">Proc::</span><span class="nv">Killfam</span><span class="p">;</span>
+
+    <span class="k">my</span> <span class="nv">$pid</span> <span class="o">=</span> <span class="nb">fork</span><span class="p">();</span>
+    <span class="k">if</span><span class="p">(</span><span class="o">!</span><span class="nb">defined</span><span class="p">(</span><span class="nv">$pid</span><span class="p">))</span> <span class="p">{</span>
+        <span class="nb">die</span><span class="p">("</span><span class="s2">Error forking</span><span class="se">\n</span><span class="p">")</span>
+    <span class="p">}</span> <span class="k">elsif</span><span class="p">(</span><span class="nv">$pid</span><span class="p">)</span> <span class="p">{</span> <span class="c1"># still in the ptimeout process</span>
+        <span class="nv">$SIG</span><span class="p">{</span><span class="nv">TERM</span><span class="p">}</span> <span class="o">=</span> <span class="k">sub </span><span class="p">{</span> <span class="nb">exit</span> <span class="mi">124</span> <span class="p">};</span>
+
+        <span class="k">my</span> <span class="nv">$status</span> <span class="o">=</span> <span class="nb">system</span> <span class="nv">@command_args</span><span class="p">;</span>
+        <span class="nb">kill</span> <span class="s">SIGTERM</span> <span class="o">=&gt;</span> <span class="nv">$pid</span><span class="p">;</span>
+        <span class="nb">exit</span> <span class="nv">$status</span> <span class="o">&gt;&gt;</span> <span class="mi">8</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span> <span class="c1"># watchdog child process</span>
+        <span class="nb">sleep</span> <span class="nv">$timeout</span><span class="p">;</span>
+        <span class="nv">killfam</span> <span class="s">SIGTERM</span> <span class="o">=&gt;</span> <span class="nb">getppid</span><span class="p">;</span>
+    <span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>It forks off a child process which acts as a watchdog. If for any reason we can't fork it just stops immediately, as nothing will work anyway.</p>
+
+<p>The watchdog immediately goes to sleep for <code>$timeout</code> seconds. If it ever reaches the end of that period it sends a <code>SIGTERM</code> to its parent process <em>and all its children</em> (the <code>killfam</code> function is what finds and kills all the children, its implemented in <a href="https://metacpan.org/pod/Proc::Killfam"><code>Proc::Killfam</code></a> which you can find on the CPAN).</p>
+
+<p>The original process, in the mean time, creates a signal handler for <code>SIGTERM</code> and then runs whatever command you told it to.</p>
+
+<p>If that command finishes quickly, before the timeout, then the original process sends a <code>SIGTERM</code> to the watchdog, killing it as it is no longer needed, then exits with the same exit status code as the command.</p>
+
+<p>Otherwise, if the timeout is reached, the watchdog sends a <code>SIGTERM</code> to the original command and all its children, including the command that you told it to run and any of <em>its</em> children that it can find. The original command's signal handler for <code>SIGTERM</code> catches the signal and turns it into an exit status of 124, just like GNU timeout does, so that it's reasonably easy to tell the difference between a normal exit-with-failure and a timeout.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/542.html">#542 - Perl Advent Calendar</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
 
@@ -74,7 +129,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/12#pwc142">Sleeping Divisors</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -274,7 +329,7 @@ starting point.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/damian_conway/2021/12/a-not-so-simple-matter-of-privacy.html">A (not so) simple matter of privacy</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -510,7 +565,7 @@ how to get them exactly right.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-142-1gb3">Weekly Challenge 142</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -640,7 +695,7 @@ $ ./ch-2.pl 3 0.1 2 2.5 1
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/12/ccclxxi-8-great-cpan-modules-released.html">(ccclxxi) 8 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -652,7 +707,7 @@ $ ./ch-2.pl 3 0.1 2 2.5 1
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/12/dxiii-stackoverflow-perl-report.html">(dxiii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -664,7 +719,7 @@ $ ./ch-2.pl 3 0.1 2 2.5 1
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/12/my-favorite-warnings-shadow.html">My Favorite Warnings: shadow</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -747,7 +802,7 @@ $ perl -Mstrict -Mwarnings -Mdiagnostics -e 'my $x; { my $x; }'
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/12/closures.html">Closures</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -853,7 +908,7 @@ say $mul_four-&gt;( 3 ); # Still 12</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/hackothon-events-planning-2022">Do you want to partner with the Perl Marketing Committee to organize Hackathons in 2022?</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -885,7 +940,7 @@ say $mul_four-&gt;( 3 ); # Still 12</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_06_to_08.html">Advent of Code Day 6, 7 and 8</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -1045,7 +1100,7 @@ say $hit;</code></pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/12/javascript-supported-web-scraping-using-perl-and-selenium.html">JavaScript Supported Web Scraping using Perl and Selenium</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1080,7 +1135,7 @@ say $hit;</code></pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/12/perl-weekly-challenge-142-divisor-last-digit-and-sleep-sort.html">Perl Weekly Challenge 142: Divisor Last Digit and Sleep Sort</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1245,7 +1300,7 @@ wait;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/javascript-supported-web-scraping-using-perl-and-selenium-with-google-chromedriver-31n">JavaScript Supported Web Scraping using Perl and Selenium with Google ChromeDriver</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1282,7 +1337,7 @@ wait;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/sweeter-perl-exception-classes-23hl">Sweeter Perl exception classes</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1489,7 +1544,7 @@ wait;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/541.html">#541 - Hanukkah is over - Advent started</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1505,7 +1560,7 @@ wait;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/ansigameengine/developing-a-game-engine-with-perl-part-8-vim-2gj5">Developing A Game Engine with Perl: Part 8 - Vim</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1647,7 +1702,7 @@ There are <a href="https://linux.die.net/man/1/sed">many ways</a> to <a href="ht
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/05#pwc141">Like, It’s Just the First Ten Numbers Man!</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1776,7 +1831,7 @@ I would think would be the more common method but I guess not!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_01_to_05.html">Advent of Code Day 1 to 5</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -1854,7 +1909,7 @@ I would think would be the more common method but I guess not!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/2021-10-raku-ci-bot-grant-update">Raku CI Bot Grant Report October and November 2021</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1939,7 +1994,7 @@ GitHub is not yet working reliably.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/12/ccclxx-12-great-cpan-modules-released.html">(ccclxx) 12 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1951,7 +2006,7 @@ GitHub is not yet working reliably.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/12/cdxciii-metacpan-weekly-report.html">(cdxciii) metacpan weekly report - Mojolicious</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1963,7 +2018,7 @@ GitHub is not yet working reliably.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/12/dxii-stackoverflow-perl-report.html">(dxii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1972,433 +2027,6 @@ GitHub is not yet working reliably.</p>
  on Saturday 04 December 2021 17:25</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>These are the ten most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br/>Between brackets: [<b>question score</b> / answers count]<br/>Build date: 2021-12-04 16:19:09 GMT</p><hr/><ol><li><a href="http://stackoverflow.com/questions/70167857" target="_blank">Why would you ever need (?(R)...|...) if condition in a regex?</a> - [<b>5</b>/1]</li><li><a href="http://stackoverflow.com/questions/70158802" target="_blank">MultiDimensional array Input to Single array in Perl</a> - [<b>2</b>/2]</li><li><a href="http://stackoverflow.com/questions/70139704" target="_blank">Perl code executed alongside C program writes incorrect byte length to memory in Windows</a> - [<b>2</b>/1]</li><li><a href="http://stackoverflow.com/questions/70207227" target="_blank">Perl way to allocate some memory inglobal array</a> - [<b>2</b>/1]</li><li><a href="http://stackoverflow.com/questions/70179933" target="_blank">Perl Dynaloader gives Usage error while calling function with parameters</a> - [<b>2</b>/0]</li><li><a href="http://stackoverflow.com/questions/70181597" target="_blank">In Mojolicious can I forward to another action?</a> - [<b>2</b>/0]</li><li><a href="http://stackoverflow.com/questions/70190875" target="_blank">How do I search and replace a string after an arbitrary amount of white space in bash?</a> - [<b>1</b>/4]</li><li><a href="http://stackoverflow.com/questions/70193994" target="_blank">How to avoid line insert to the file if the line is already present in the file?</a> - [<b>1</b>/4]</li><li><a href="http://stackoverflow.com/questions/70138714" target="_blank">Perl match and extract phone number with (312) 555-1212 format</a> - [<b>1</b>/2]</li><li><a href="http://stackoverflow.com/questions/70160375" target="_blank">Perl: What is the preferred way of evaluating expressions besides eval?</a> - [<b>1</b>/2]</li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_23">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/taw/100-languages-speedrun-episode-15-awk-1d55">100 Languages Speedrun: Episode 15: Awk</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Tomasz Wegrzanowski
- on Saturday 04 December 2021 14:49</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Awk is basically a proto-Perl. As Perl was one of the most influential language of all times (JavaScript, Ruby, and PHP are all Perl's direct descendants), Awk is indirectly quite historically important.</p>
-
-<p>There hasn't been any good reason to use Awk for decades now. As I keep saying over and over, if you write anything nontrivial, just use a real programming language like Ruby, Python, or Perl. But it's still interesting for historical reason, so let's check what coding was like back in the 1980s.</p>
-
-<h3>
-  <a href="#hello-world">
-  </a>
-  Hello, World!
-</h3>
-
-<p>Awk scripts are a series of <code>pattern { command }</code>, where pattern is most often a regular expression. If script contains any such pattern, it will be executed on each line.</p>
-
-<p>Here's one way to say Hello, World! in Awk:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="sr">/./</span> <span class="p">{</span> <span class="k">print</span> <span class="p">"</span><span class="s2">Hello, </span><span class="p">"</span> <span class="err">$</span><span class="mi">1</span> <span class="p">"</span><span class="s2">!</span><span class="p">"</span> <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ seq 1 5 | ./hello.awk
-Hello, 1!
-Hello, 2!
-Hello, 3!
-Hello, 4!
-Hello, 5!
-$ ./hello.awk
-World
-Hello, World!
-Bob Ross
-Hello, Bob!
-</code></pre>
-
-</div>
-
-
-
-<p>So any line that contains non-whitespace characters will result in a hello. String concatenation is done by just putting a few strings next to each other. <code>"Hello, " $1 "!"</code> is what would be <code>"Hello, " + $1 + "!"</code> or <code>"Hello, " . $1 . "!"</code> or such in a more reasonable language.</p>
-
-<p>Each line is <code>$0</code>, and it's also automatically split into words, so <code>$1</code> means first word of currently processed lines, <code>$2</code> means second word, etc. Those special variables are used for regular expression's first, second etc. match in Perl, Ruby, and some other languages, and I think that's where they came from.</p>
-
-<h3>
-  <a href="#sum-numbers-from-stdin">
-  </a>
-  Sum numbers from STDIN
-</h3>
-
-<p>There are some other patterns like <code>BEGIN</code> and <code>END</code> to do before and after processing lines. Here's a simple Awk program for adding all numbers, one per line:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="k">BEGIN</span> <span class="p">{</span> <span class="nv">x</span> <span class="o">=</span> <span class="mi">0</span> <span class="p">}</span>
-<span class="sr">/[0-9]+/</span> <span class="p">{</span> <span class="nv">x</span> <span class="o">+=</span> <span class="err">$</span><span class="mi">1</span> <span class="p">}</span>
-<span class="k">END</span> <span class="p">{</span> <span class="k">print</span> <span class="nv">x</span> <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Which works like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ seq 10 20 | ./sum.awk
-165
-</code></pre>
-
-</div>
-
-
-
-<p>Awk has pre-Perl regular expressions, so things like <code>\d</code> don't work. That's another reason why it's better to use something more modern.</p>
-
-<p>Awk's <code>BEGIN { }</code> and <code>END { }</code> blocks are still present in Perl, Ruby, and some other languages.</p>
-
-<h3>
-  <a href="#fizzbuzz-with-regexp">
-  </a>
-  FizzBuzz with regexp
-</h3>
-
-<p>One way to do the FizzBuzz is to reuse our regular expressions from episode 7. At first you might think command block would just do <code>{ print "FizzBuzz" }</code> or such, but then all the other blocks would match too (divisible by 15 is also divisible by 3 and 5 etc.). An easy way is to modify <code>$0</code> variable (current line). We print it at the end.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="sr">/^(([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|[0369]*[258])(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|([147][0369]*[258]|[0369]?))*(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*[258][0369]*|[147][0369]*)|([0369]*[147]([258][0369]*[147]|[0369])*[258][0369]*|[0369]*))0$/</span> <span class="p">{</span> <span class="err">$</span><span class="mi">0</span><span class="o">=</span><span class="p">"</span><span class="s2">FizzBuzz</span><span class="p">"</span> <span class="p">}</span>
-<span class="sr">/^(([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|[0369]*[258])(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|([147][0369]*[258]|[0369]?))*(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[147]|[0369]?)|([147][0369]*[147]|[258]))|([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[147]|[0369]?)|[0369]*[147]))5$/</span> <span class="p">{</span> <span class="err">$</span><span class="mi">0</span><span class="o">=</span><span class="p">"</span><span class="s2">FizzBuzz</span><span class="p">"</span> <span class="p">}</span>
-<span class="sr">/^.*[05]$/</span> <span class="p">{</span> <span class="err">$</span><span class="mi">0</span><span class="o">=</span><span class="p">"</span><span class="s2">Buzz</span><span class="p">"</span> <span class="p">}</span>
-<span class="sr">/^(([0369]*[147]([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|[0369]*[258])(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*([258][0369]*[258]|[147])|([147][0369]*[258]|[0369]?))*(([147][0369]*[147]|[258])([258][0369]*[147]|[0369])*[258][0369]*|[147][0369]*)|([0369]*[147]([258][0369]*[147]|[0369])*[258][0369]*|[0369]*))$/</span> <span class="p">{</span> <span class="err">$</span><span class="mi">0</span><span class="o">=</span><span class="p">"</span><span class="s2">Fizz</span><span class="p">"</span> <span class="p">}</span>
-<span class="sr">/./</span> <span class="p">{</span> <span class="k">print</span> <span class="err">$</span><span class="mi">1</span> <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>To use it:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ seq 1 20 | ./fizzbuzz.awk
-1
-2
-Fizz
-4
-Buzz
-Fizz
-7
-8
-Fizz
-Buzz
-11
-Fizz
-13
-14
-FizzBuzz
-16
-17
-Fizz
-19
-Buzz
-</code></pre>
-
-</div>
-
-
-
-<h3>
-  <a href="#fizzbuzz">
-  </a>
-  FizzBuzz
-</h3>
-
-<p>A less ridiculous version would be this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="err">$</span><span class="mi">0</span> <span class="o">%</span> <span class="mi">15</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span> <span class="k">print</span> <span class="p">"</span><span class="s2">FizzBuzz</span><span class="p">";</span> <span class="k">next</span> <span class="p">}</span>
-<span class="err">$</span><span class="mi">0</span> <span class="o">%</span> <span class="mi">5</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span> <span class="k">print</span> <span class="p">"</span><span class="s2">Buzz</span><span class="p">";</span> <span class="k">next</span> <span class="p">}</span>
-<span class="err">$</span><span class="mi">0</span> <span class="o">%</span> <span class="mi">3</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span> <span class="k">print</span> <span class="p">"</span><span class="s2">Fizz</span><span class="p">";</span> <span class="k">next</span> <span class="p">}</span>
-<span class="p">{</span> <span class="k">print</span> <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Any expression can be used as pattern. <code>next</code> prevents all other pattern checks for the current lines.</p>
-
-<h3>
-  <a href="#file-output">
-  </a>
-  File output
-</h3>
-
-<p>Awk makes it really easy to print to files. This script sort out the input to <code>odd.txt</code> and <code>even.txt</code>:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="sr">/[13579]$/</span> <span class="p">{</span> <span class="k">print</span> <span class="o">&gt;</span><span class="p">"</span><span class="s2">odd.txt</span><span class="p">"</span> <span class="p">}</span>
-<span class="sr">/[02468]$/</span> <span class="p">{</span> <span class="k">print</span> <span class="o">&gt;</span><span class="p">"</span><span class="s2">even.txt</span><span class="p">"</span> <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Like in shell <code>&gt;</code> means overwrite the file, and <code>&gt;&gt;</code> means append. But while it might look like it will keep reopening and overwriting so you only see last line, each file will be opened just once:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code> % seq 20 30 | ./file_output.awk
-$ cat odd.txt
-21
-23
-25
-27
-29
-$ cat even.txt
-20
-22
-24
-26
-28
-30
-</code></pre>
-
-</div>
-
-
-
-<p>And <code>print</code> without arguments is the same as <code>print $0</code>.</p>
-
-<h3>
-  <a href="#pipe-output">
-  </a>
-  Pipe output
-</h3>
-
-<p>Even nicer, we can do similar redirection with pipes:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="sr">/[13579]$/</span> <span class="p">{</span> <span class="k">print</span> <span class="o">|</span> <span class="p">"</span><span class="s2">tac</span><span class="p">"</span> <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Which matches all the lines with odd numbers and send them to <code>tac</code> program to print them in backward order.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ seq 10 30 | ./reverse_odds.awk
-29
-27
-25
-23
-21
-19
-17
-15
-13
-11
-</code></pre>
-
-</div>
-
-
-
-<h3>
-  <a href="#fibbonacci">
-  </a>
-  Fibbonacci
-</h3>
-
-<p>Awk has normal function definitions. There's no distinction between number and string variables. If we put a command block without a pattern, it will match every line.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="nv">function</span> <span class="nv">fib</span><span class="p">(</span><span class="nv">n</span><span class="p">)</span> <span class="p">{</span>
-  <span class="k">if</span> <span class="p">(</span><span class="nv">n</span> <span class="o">&lt;=</span> <span class="mi">2</span><span class="p">)</span> <span class="p">{</span>
-    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-    <span class="k">return</span> <span class="nv">fib</span><span class="p">(</span><span class="nv">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="nv">fib</span><span class="p">(</span><span class="nv">n</span> <span class="o">-</span> <span class="mi">2</span><span class="p">);</span>
-  <span class="p">}</span>
-<span class="p">}</span>
-
-<span class="p">{</span> <span class="k">print</span> <span class="nv">fib</span><span class="p">(</span><span class="err">$</span><span class="mi">1</span><span class="p">)</span> <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Which does:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ seq 1 20 | ./fib.awk
-1
-1
-2
-3
-5
-8
-13
-21
-34
-55
-89
-144
-233
-377
-610
-987
-1597
-2584
-4181
-6765
-</code></pre>
-
-</div>
-
-
-
-<h3>
-  <a href="#rolling-dice">
-  </a>
-  Rolling Dice
-</h3>
-
-<p>Awk has some trouble with command line arguments - it normally treats them as files to open. This code only works because we don't actually have any per-line patterns.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="k">BEGIN</span> <span class="p">{</span>
-  <span class="k">for</span><span class="p">(</span><span class="nv">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nv">i</span><span class="o">&lt;</span><span class="nv">ARGV</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span> <span class="nv">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-    <span class="k">print</span> <span class="nb">int</span><span class="p">(</span><span class="nb">rand</span><span class="p">()</span> <span class="o">*</span> <span class="nv">ARGV</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
-  <span class="p">}</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>We can use it to roll 5 100-sided dice:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./dice.awk 100 5
-84
-39
-78
-79
-91
-</code></pre>
-
-</div>
-
-
-
-<h3>
-  <a href="#tally">
-  </a>
-  Tally
-</h3>
-
-<p>Awk has associative arrays (nowadays usually called hashes or dictionaries).<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/awk -f</span>
-
-<span class="p">{</span> <span class="nv">tally</span><span class="p">[</span><span class="err">$</span><span class="mi">0</span><span class="p">]</span><span class="o">++</span> <span class="p">}</span>
-
-<span class="k">END</span> <span class="p">{</span>
-  <span class="k">for</span><span class="p">(</span><span class="nv">n</span> <span class="nv">in</span> <span class="nv">tally</span><span class="p">)</span> <span class="p">{</span>
-    <span class="k">print</span> <span class="nv">n</span><span class="p">,</span> <span class="nv">tally</span><span class="p">[</span><span class="nv">n</span><span class="p">]</span>
-  <span class="p">}</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Awk has no way to print regular arrays or associative arrays. If you try to <code>print tally</code> it will give you an error. It's another feature of modern programming languages that has roots in times of Awk, but is now done in much better ways.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./dice.awk 6 100 | ./tally.awk
-2 17
-3 18
-4 17
-5 22
-0 13
-1 13
-</code></pre>
-
-</div>
-
-
-
-<h3>
-  <a href="#should-you-use-awk">
-  </a>
-  Should you use Awk?
-</h3>
-
-<p>No.</p>
-
-<p>Special purpose languages have their place, but what Awk is doing - processing text files - is no longer "special purpose". Pretty much every modern language excels at processing text files and matching regular expressions, and handles everything Awk does a lot better.</p>
-
-<p>Awk made a lot of sense back when its originated, as C was godawful at text processing, and Unix shell was godawful at writing any kind of structured programs, so Awk was addressing an obvious need. In modern times where every programmer is familiar with a language like Ruby, Python, Perl, or pretty much anything else that can process text, there's no place for Awk.</p>
-
-<p>The language also definitely shows its age. Its regular expression engine is bad. It doesn't have <code>console.log</code> equivalent. It can't handle common text formats like CSV or JSON. It doesn't have sufficient Unicode capabilities. And so on. It does quite decently on conciseness, but only if you do exactly the kind of programs it likes - common requirements like parsing command line arguments will not work too well.</p>
-
-<p>Awk is mainly of historical relevance, but it's not completely dead yet. If you work with a lot of Unix shell scripts, short Awk programs will be occasionally used there. I don't approve of this at all (seriously, just use real programming language like Ruby, Python, or Perl), but it might be useful to learn basics of Awk so you can read such shell code.</p>
-
-<h3>
-  <a href="#code">
-  </a>
-  Code
-</h3>
-
-<p><a href="https://github.com/taw/100-languages-speedrun">All code examples for the series will be in this repository</a>.</p>
-
-<p><a href="https://github.com/taw/100-languages-speedrun/tree/master/episode-15-awk">Code for the Awk episode is available here</a>.</p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3722,7 +3350,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 13 December 2021 12:50 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 13 December 2021 16:51 UTC</address>
             </div>
           </div>
         </div><!-- container -->
