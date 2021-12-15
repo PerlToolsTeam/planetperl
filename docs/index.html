@@ -57,6 +57,365 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/12/post.html">Perl Weekly Challenge 143: Calculator and Stealthy Numbers</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+ on Wednesday 15 December 2021 15:05</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 143 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-143/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on December 19, 2021 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Calculator</h2>
+
+<p><em>You are given a string, <code>$s</code>, containing mathematical expression.</em></p>
+
+<p><em>Write a script to print the result of the mathematical expression. To keep it simple, please only accept</em> <code>+ - * ()</code>.</p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $s = "10 + 20 - 5"
+Output: 25
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: $s = "(10 + 20 - 5) * 2"
+Output: 50
+</code></pre>
+
+<h3>Calculator in Raku</h3>
+
+<p>This is a perfect case where we could showcase the use of grammars in Raku. However, we have a much simpler solution: the <a href="https://docs.raku.org/routine/EVAL">EVAL</a> routine will evaluate (i.e. compile and execute) an input string as a piece of Raku code and return the result. So we will use here this simpler solution (but will provide below an example of implementation with a grammar). There is, however, a big caveat: the <code>EVAL</code> routine <em>is dangerous</em> because its input string may contain malicious code. For that reason, you need to use the <a href="https://docs.raku.org/language/pragmas#index-entry-MONKEY-SEE-NO-EVAL__pragma">MONKEY-SEE-NO-EVAL</a> pragma. If we try to use <code>EVAL</code> without turning on first the <code>MONKEY-SEE-NO-EVAL</code> (or <code>MONKEY</code>) pragma, we get the following error message:</p>
+
+<blockquote>
+  <p>EVAL is a very dangerous function!!! (use the MONKEY-SEE-NO-EVAL pragma
+to override this error but only if you&#8217;re VERY sure your data contains
+no injection attacks).</p>
+</blockquote>
+
+<p>The <code>EVAL</code> routine is particularly dangerous if its input string comes from outside the program (for example as an input parameter, user input, or input file). A typical example would be a malicious user entering a string calling the operating system to execute a shell command such as <code>rm -rf /*</code> (don&#8217;t try this command), which may wipe out the entire file system (at least if you have root privileges). In our case, the strings to be <code>EVAL</code>ed come from within our program, so, assuming we know what we&#8217;re doing, we can be reasonably confident that nothing bad should happen. However, to make our <code>calc</code> subroutine completely innocuous, we use a regular expression to detect and reject any input string which doesn&#8217;t consist only of digits, spaces, arithmetic operators <code>+ - *</code>, and parentheses.</p>
+
+<pre><code>use v6;
+use MONKEY-SEE-NO-EVAL;
+
+sub calc (Str $expr) {
+    return "Not a valid arithmetic expression" unless 
+        $expr ~~ /^&lt;[-\d \s +*()]&gt;+$/;
+    return EVAL $expr;
+}
+for "10 + 20 - 5", "(10 + 20 - 5) * 2", "7 + a", "6 * 7" -&gt; $test {
+    say calc $test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./calculator.raku
+25
+50
+Not a valid arithmetic expression
+42
+</code></pre>
+
+<h3>Calculator in Perl</h3>
+
+<p>In Perl, we will use the <code>eval</code> built-in subroutine, in a way that is similar to the use of <code>EVAL</code> in the Raku solution above. The Perl <code>eval</code> has similar risks: it is dangerous because its input string may contain malicious code. This is particularly risky if the input string comes from outside the program (input parameter, user input, input file, etc.). In our case, the string to be <code>eval</code>ed are hard-coded in our program so that the risk is reasonably small if we know what we&#8217;re doing. However, to make our <code>calc</code> subroutine completely innocuous, we use a regular expression to detect and reject any input string which doesn&#8217;t consist only of digits, spaces, arithmetic operators (<code>+ - *</code>), and parentheses.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub calc {
+    my $expr = shift;
+    return "Not a valid arithmetic expression" unless 
+        $expr =~ /^[-\d\s+*()]+$/;
+    return eval $expr;
+}
+for my $test ("10 + 20 - 5", "(10 + 20 - 5) * 2", "7 + a", "6 * 7") {
+    say calc $test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./calculator.pl
+25
+50
+Not a valid arithmetic expression
+42
+</code></pre>
+
+<h2>Task 2: Stealthy Number</h2>
+
+<p><em>You are given a positive number, <code>$n</code>.</em></p>
+
+<p><em>Write a script to find out if the given number is Stealthy Number.</em></p>
+
+<blockquote>
+  <p>A positive integer N is stealthy, if there exist positive integers a, b, c, d such that <code>a * b = c * d = N</code> and <code>a + b = c + d + 1</code>.</p>
+</blockquote>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: $n = 36
+Output: 1
+
+Since 36 = 4 (a) * 9 (b) = 6 (c) * 6 (d) and 4 (a) + 9 (b) = 6 (c) + 6 (d) + 1.
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: $n = 12
+Output: 1
+
+Since 2 * 6 = 3 * 4 and 2 + 6 = 3 + 4 + 1
+</code></pre>
+
+<p><em>Example 3:</em></p>
+
+<pre><code>Input: $n = 6
+Output: 0
+
+Since 2 * 3 = 1 * 6 but 2 + 3 != 1 + 6 + 1
+</code></pre>
+
+<p>I had never heard before about stealthy numbers, but the description provided is pretty clear.</p>
+
+<h3>Stealthy Number in Raku</h3>
+
+<p>We basically need to find all divisors of the input number and look at every combination of them to see if it matches the specified criteria.</p>
+
+<p>After having generated all divisors of the input number (in the <code>@divisors</code> array), I thought about using the <code>combinations</code> method to generate all pairs of divisors. But that doesn&#8217;t work properly for perfect squares because the square root of the input number appears only once in the divisors list, and therefore cannot be used twice in the same pair of divisor. For example, if the input integer is 36, we would need to have <code>(6, 6)</code> in the list of divisor pairs. The <code>combinations</code> method cannot do that (unless we manually add a second instance of 6 in the divisor list. Rather than adding code for handling such edge case, I found it easier to use the <code>X</code> <a href="https://docs.raku.org/language/operators#index-entry-cross_product_operator">cross product operator</a> between the <code>@divisors</code> array and itself and to filter out all those pairs of divisors whose product is not equal to the input integer. The result of this operation goes into the <code>@div-pairs</code> array. </p>
+
+<p>Then, we can use the <code>combinations</code> method to generate pairs of pairs and check wheter they satisfy the second condition (<code>a + b = c + d + 1</code>). Since (a, b) and (c, d) are interchangeable, we actually check whether <code>a + b - c - d</code> is equal to either 1 or -1 (we do it here with a junction because it&#8217;s fun, but we could also compare the absolute value of that expression with 1, as we do below in our Perl implementation).</p>
+
+<pre><code>use v6;
+
+sub stealthy-nums (UInt $n) {
+    my @divisors = grep {$n %% $_}, 1..$n;
+    my @div-pairs = grep { $_[0] * $_[1] == $n }, (@divisors X @divisors);
+    # say @div-pairs;
+    for @div-pairs.combinations: 2 -&gt; $c {
+        return $c if $c[0][0] + $c[0][1] - $c[1][0] - $c[1][1] == any(1, -1)
+    }
+    return False
+}
+
+for &lt;36 12 6&gt; -&gt; $test {
+    my $result = stealthy-nums $test;
+    say "$test \t", 
+    $result ?? "1 -&gt; $result" !! 0;
+}
+</code></pre>
+
+<p>This script display the following output:</p>
+
+<pre><code>$ raku ./stealthy-numbers.raku
+36  1 -&gt; 4 9 6 6
+12  1 -&gt; 2 6 3 4
+6   0
+</code></pre>
+
+<p>I thought it would interesting to find more stealthy numbers. So I changed the final <code>for</code> block to this:</p>
+
+<pre><code>for (1..100) -&gt; $test {
+    my $result = stealthy-nums $test;
+    say "$test \t $result" if $result;
+}
+</code></pre>
+
+<p>and found 8 stealthy numbers below 100:</p>
+
+<pre><code>raku ./main.raku
+4    1 4 2 2
+12   2 6 3 4
+24   3 8 4 6
+36   4 9 6 6
+40   4 10 5 8
+60   5 12 6 10
+72   6 12 8 9
+84   6 14 7 12
+</code></pre>
+
+<p>Increasing the range to 1..1000, we find that there are 39 stealthy numbers below 1000, and that they are all even. And, by the way, there are 2851 stealthy integers below 1,000,000.</p>
+
+<h3>Stealthy Number in Perl</h3>
+
+<p>The Perl solution is essentially a port of the Raku solution, except that I had to write my own simple <code>cross</code> subroutine, since the cross product operator doesn&#8217;t exist in Perl.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub cross {
+    my @nums = @_;
+    my @num_pairs;
+    for my $i (@nums) {
+        for my $j (@nums) {
+            next if $j &gt; $i; # filter out duplicates such as [12, 3] and [3, 12]
+            push @num_pairs, [$i, $j];
+        }
+    }
+    return @num_pairs;
+}
+
+sub stealthy_nums  {
+    my $n = shift;
+    my @divisors = grep {$n % $_ == 0} 1..$n;
+    my @div_pairs = grep { $_-&gt;[0] * $_-&gt;[1] == $n } cross @divisors;
+    for my $c (@div_pairs) {
+        for my $d (@div_pairs) {
+            return "@$c and @$d" if abs($c-&gt;[0] + $c-&gt;[1] - $d-&gt;[0] - $d-&gt;[1]) == 1;
+        }
+    }
+    return 0;
+}
+
+for my $test (qw &lt;36 12 6&gt;) {
+    my $result = stealthy_nums $test;
+    say "$test \t", 
+    $result ? "1 -&gt; $result" : 0;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl stealthy-numbers.pl
+36      1 -&gt; 6 6 and 9 4
+12      1 -&gt; 4 3 and 6 2
+6       0
+</code></pre>
+
+<h2>A Raku Grammar for a Calculator</h2>
+
+<p>For implementing a calculator in Raku, we used the built-in <code>EVAL</code> routine, as this a a very simple solution. I can&#8217;t resist, however, to the desire and fun of presenting a full-fledged Raku grammar. This is derived in large part from a solution to the exercises that I provided in my Raku book.</p>
+
+<h3>The Calculator Grammar</h3>
+
+<p>Here&#8217;s one way to write the grammar itself:</p>
+
+<pre><code>my grammar Calculator {
+    rule TOP            { &lt;expr&gt; }
+    rule expr           { &lt;term&gt; + % &lt;plus-minus-op&gt; }
+    token plus-minus-op { [&lt; + - &gt;] }
+    rule term           { &lt;atom&gt; + % &lt;mult-div-op&gt; }
+    token mult-div-op   { [&lt; * / &gt;] }
+    rule atom {
+        | &lt;num&gt; { make +$&lt;num&gt; }
+        | &lt;paren-expr&gt; { make $&lt;paren-expr&gt;.made}
+    }
+    rule num            { &lt;sign&gt; ? [\d+ | \d+\.\d+ | \.\d+ ] }
+    rule paren-expr     { '(' &lt;expr&gt; ')' }
+    token sign          { [&lt; + - &gt;] }
+}
+</code></pre>
+
+<p>This solution is quite simple.</p>
+
+<p>An expression (<code>expr</code>) is made of one or several terms separated by <code>+</code> or <code>-</code> operators. A <code>term</code> is made of one or several atoms separated by <code>*</code> or <code>/</code> operators. An <code>atom</code> may be a bare number or a parenthesized expression.</p>
+
+<p>This guarantees that precedence rules are satisfied. Multiplications and divisions will be evaluated before additions and subtractions, since, when parsing an expression, you need to evaluate the individual terms before you can complete the expression evaluation. Similarly, since a parenthesized expression is an atom, it will have to be evaluated before the term in which it appears can be fully evaluated. Note that, in the case 
+of a parenthesized expression, the <code>expr</code> rule is called recursively.</p>
+
+<h3>The Actions Class</h3>
+
+<p>Notice that we have included two actions in the grammar (in the <code>atom</code> rule). One reason was for convenience: since the <code>atom</code> rule covers two very different named sub-rules, it is a bit easier to include the action just in the context of the sub-rules. If an action had been attached to the <code>atom</code> rule, it would have required finding out which sub-rule had been matched to know which action to perform. Nothing difficult, but doing so would have made the code slightly more complex. The other reason was for pedagogical purposes: although it often makes sense to create an actions class, it is useful to know that actions may be inserted in the grammar part. For a very simple grammar, it might be over-engineering to create an actions class with just one or two actions.</p>
+
+<p>The actions class might look like this:</p>
+
+<pre><code>class CalcActions {
+    method TOP ($/) {
+        make $&lt;expr&gt;.made
+    }
+    method expr ($/) {
+        $.calculate($/, $&lt;term&gt;, $&lt;plus-minus-op&gt;)
+    }
+    method term ($/) {
+        $.calculate($/, $&lt;atom&gt;, $&lt;mult-div-op&gt;)
+    }
+    method paren-expr ($/) {
+         make $&lt;expr&gt;.made;
+    }
+    method calculate ($/, $operands, $operators) {
+        my $result = (shift $operands).made;
+        while my $op = shift $operators {
+            my $num = (shift $operands).made;
+            given $op {
+                when '+' { $result += $num; }
+                when '-' { $result -= $num; }
+                when '*' { $result *= $num; }
+                when '/' { $result /= $num; }
+                default  { die "unknown operator "}
+            }
+        }
+        make $result;
+    }
+}
+</code></pre>
+
+<p>The <code>calculate</code> method computes expressions (terms separated by addition or subtraction operators) and terms atoms separated by multiplication or division operators) from left to right, since these operators are left associative.</p>
+
+<h3>Testing the Grammar and Actions Class</h3>
+
+<p>This grammar for a calculator and its associated actions class may be unit tested with the following code:</p>
+
+<pre><code>for |&lt; 3*4 5/6 3+5 74-32 5+7/3 5*3*2 (4*5) (3*2)+5 4+3-1/5 4+(3-1)/4 &gt;,
+    "12 + 6 * 5", " 7 + 12 + 23", " 2 + (10 * 4) ", "3 * (7 + 7)" { 
+    my $result = Calculator.parse($_, :actions(CalcActions));
+    # say $result;
+    printf "%-15s %.3f\n", $/,  $result.made if $result;
+}
+</code></pre>
+
+<p>which will display the following results:</p>
+
+<pre><code>3*4             12.000
+5/6             0.833
+3+5             8.000
+74-32           42.000
+5+7/3           7.333
+5*3*2           30.000
+(4*5)           20.000
+(3*2)+5         11.000
+4+3-1/5         6.800
+4+(3-1)/4       4.500
+12 + 6 * 5      42.000
+ 7 + 12 + 23    42.000
+ 2 + (10 * 4)   42.000
+3 * (7 + 7)     42.000
+</code></pre>
+
+<p>So, these limited tests yield the desired results.</p>
+
+<p>You might wonder whether this code works correctly with nested parenthesized expressions. I originally thought, when I wrote this code, that it might malfunction and that I might have to change or add something to get nested parenthesized expressions right and properly balanced. It turns out that it works fine out of the box. For example, consider the following test code with relatively deeply nested parenthesized expressions:</p>
+
+<pre><code>for "(((2+3)*(5-2))-1)*3", "2 * ((4-1)*((3*7) - (5+2)))"  { 
+    my $result = Calculator.parse($_, :actions(CalcActions));
+    printf "%-30s %.3f\n", $/,  $result.made if $result;
+}
+</code></pre>
+
+<p>The result is correct:</p>
+
+<pre><code>(((2+3)*(5-2))-1)*3            42.000
+2 * ((4-1)*((3*7) - (5+2)))    84.000
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on December 26, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/dbdmariadb-a-perl-database-driver-for-mariadb-35ij">DBD::MariaDB - a Perl Database Driver for MariaDB</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -92,7 +451,7 @@ while (my $ref = $sth-&gt;fetchrow_hashref()) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/cpanm-install-perl-module-on-your-home-directory-322l">cpanm - Install Perl Module on your Home Directory</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -108,7 +467,7 @@ while (my $ref = $sth-&gt;fetchrow_hashref()) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_09_to_14.html">Advent of Code Day 9 to 14</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -283,7 +642,7 @@ while (my $ref = $sth-&gt;fetchrow_hashref()) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/a-brief-note-on-log4perl-3m0b">A brief note on Log4perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -303,7 +662,7 @@ while (my $ref = $sth-&gt;fetchrow_hashref()) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/perl-536-2022-perl-new-release-contains-use-warnings-in-use-v536-2pp0">Perl 5.36 2022 Perl New Release contains &quot;use warnings&quot; in use v5.36</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -348,7 +707,7 @@ use v7;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-install-dbdmysql-on-centos-7-2og4">How to install DBD::mysql on CentOS 7?</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -374,7 +733,7 @@ yum install -y MariaDB-devel MariaDB-shared
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/542.html">#542 - Perl Advent Calendar</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -393,7 +752,7 @@ yum install -y MariaDB-devel MariaDB-shared
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/12#pwc142">Sleeping Divisors</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -593,7 +952,7 @@ starting point.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/damian_conway/2021/12/a-not-so-simple-matter-of-privacy.html">A (not so) simple matter of privacy</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -829,7 +1188,7 @@ how to get them exactly right.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/12/ccclxxi-8-great-cpan-modules-released.html">(ccclxxi) 8 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -841,7 +1200,7 @@ how to get them exactly right.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2021/12/dxiii-stackoverflow-perl-report.html">(dxiii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -853,7 +1212,7 @@ how to get them exactly right.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/12/my-favorite-warnings-shadow.html">My Favorite Warnings: shadow</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -936,7 +1295,7 @@ $ perl -Mstrict -Mwarnings -Mdiagnostics -e 'my $x; { my $x; }'
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/12/closures.html">Closures</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1042,7 +1401,7 @@ say $mul_four-&gt;( 3 ); # Still 12</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/hackothon-events-planning-2022">Do you want to partner with the Perl Marketing Committee to organize Hackathons in 2022?</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1074,7 +1433,7 @@ say $mul_four-&gt;( 3 ); # Still 12</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_06_to_08.html">Advent of Code Day 6, 7 and 8</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -1234,7 +1593,7 @@ say $hit;</code></pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2021/12/javascript-supported-web-scraping-using-perl-and-selenium.html">JavaScript Supported Web Scraping using Perl and Selenium</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1265,171 +1624,6 @@ say $hit;</code></pre>
 <p><br />
 </p>
         
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_17">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/12/perl-weekly-challenge-142-divisor-last-digit-and-sleep-sort.html">Perl Weekly Challenge 142: Divisor Last Digit and Sleep Sort</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Wednesday 08 December 2021 04:27</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 142 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-142/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on December 12, 2021 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Divisor Last Digit</h2>
-
-<p><em>You are given positive integers, <code>$m</code> and <code>$n</code>.</em></p>
-
-<p><em>Write a script to find total count of divisors of <code>$m</code> having last digit <code>$n</code>.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: $m = 24, $n = 2
-Output: 2
-
-The divisors of 24 are 1, 2, 3, 4, 6, 8 and 12.
-There are only 2 divisors having last digit 2 are 2 and 12.
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: $m = 30, $n = 5
-Output: 2
-
-The divisors of 30 are 1, 2, 3, 5, 6, 10 and 15.
-There are only 2 divisors having last digit 5 are 5 and 15.
-</code></pre>
-
-<h3>Divisor Last Digit in Raku</h3>
-
-<p>We first generate all divisors of the input integer (including 1 and the input number itself, as these may end-up with the right digit), using a <code>grep</code> testing the divisibility of each number less than or equal to the input integer, and then use another <code>grep</code> to keep all divisors ending with the same digit as the other input integer.</p>
-
-<pre><code>use v6;
-
-sub count_divisors (UInt $m, UInt $n) {
-    my @divisors = grep {$m %% $_}, 1..$m;
-    my $last-digit = substr $n, *-1;
-    my @eligible-divisors = grep { $last-digit == substr $_, *-1 }, @divisors;
-    return @eligible-divisors.elems;
-}
-
-for (24, 34), (24, 12), (30, 45) {
-  say "$_ -&gt; ", count_divisors $_[0], $_[1];
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./div_last_digit.raku
-24 34 -&gt; 2
-24 12 -&gt; 2
-30 45 -&gt; 2
-</code></pre>
-
-<h3>Divisor Last Digit in Perl</h3>
-
-<p>This is essentially a Perl port of the Raku program just above:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub count_divisors {
-    my ($m, $n) = @_;
-    my @divisors = grep {$m % $_ == 0} 1..$m;
-    my $last_digit = substr $n, -1, 1;
-    my @eligible_divisors = grep { $last_digit == substr $_, -1, 1 } @divisors;
-    return scalar @eligible_divisors;
-}
-for ([24, 34], [24, 12], [30, 45]) {
-  say "@$_ -&gt; ", count_divisors $_-&gt;[0], $_-&gt;[1];
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./div_last_digit.pl
-24 34 -&gt; 2
-24 12 -&gt; 2
-30 45 -&gt; 2
-</code></pre>
-
-<h2>Task 2: Sleep Sort</h2>
-
-<p><em>Another joke sort similar to JortSort suggested by champion Adam Russell.</em></p>
-
-<p><em>You are given a list of numbers.</em></p>
-
-<p><em>Write a script to implement Sleep Sort. For more information, please checkout this <a href="https://iq.opengenus.org/sleep-sort/">post</a>.</em></p>
-
-<p>The basic idea of the sleep sort is that you launch a thread (or a process) for each item in the array to be sorted.  Each thread then waits (or &#8220;sleeps&#8221;) for an amount of time proportional to the value of the element for which it was created and finally prints this value. If things go right, the array item with the smallest value is printed first, then the next higher value, and so on until lastly the item with largest value, so that you eventually get the array items in ascending sorted order. </p>
-
-<h3>Sleep Sort in Raku</h3>
-
-<p>For each value in the input array, we <a href="https://docs.raku.org/routine/start">start</a> a promise. In the code for each promise, the thread is made to <a href="https://docs.raku.org/routine/sleep">sleep</a> for an amount of time proportional to the value (here, half the value) and then prints the value:</p>
-
-<pre><code>use v6;
-
-await &lt;6 8 1 12 2 14 5 2 1 0&gt;.map: { start {sleep $_/2; .say} };
-</code></pre>
-
-<p>This scripts prints out the following output:</p>
-
-<pre><code>$ raku ./sleep-sort.raku
-0
-1
-1
-2
-2
-5
-6
-8
-12
-14
-</code></pre>
-
-<p>This nice <a href="https://andrewshitov.com/2019/09/09/sleep-sort-in-perl-6/">post by Andrew Shitov</a> provides a somewhat similar solution also using promises, together with quite a bit of further explanations.</p>
-
-<h3>Sleep Sort in Perl</h3>
-
-<p>The Perl solution is similar, but spawns processes using <code>fork</code>. The solution looks simple, but since I had not used <code>fork</code> for ages, it took me quite a while to get it to work properly.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-while ($_ = shift and @ARGV &gt;= 1) {
-    last unless fork;
-}
-sleep $_;
-say;
-wait;
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ perl sleep-sort.pl 5 7 3 4 1 2 9
-1
-2
-3
-4
-5
-7
-9
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on December 19, 2021. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
            </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
@@ -3050,22 +3244,6 @@ Showing how to create to bind keyboard an mouse events to functions in a Perl Tk
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://perlweekly.com/archive/538.html">#538 - Are you Perl blogger?</a></h2>
-<a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
-
-              <p class="text-right"><small>Published
- on Monday 15 November 2021 10:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Hi there</p>
-<p>Going back to the editorial of last week's <a href="https://perlweekly.com/archive/537.html">edition</a> of Perl Weekly, it is still there in my head raising many questions. It is a universal fact that Perl is no longer the favourite language among the youths in college these days. I remember when I was first introduced to Perl in 1999, it was the most popular language. Being a Perl fan, I feel it is my responsibility to bring Perl back to the discussion table. One way to do that is to talk about Perl-based projects and share them with the users of other languages. I have noticed that not as many people blog about Perl as they used to in the past. Talking about blogs, I would like to thank <a href="https://theweeklychallenge.org">The Weekly Challenge</a> team for spreading the power of Perl. For the record, in the last 138 weeks, the team have created and shared over 2000 blog posts. I used to blog regularly in the past but nowadays I hardly find time. Having said that, I still wrte a monthly report blog post where I talk about Perl and my other projects. I find making a live video is less time consuming than writing a blog post. I made some and then I stopped that as well, sorry. You can take a look my <a href="https://www.youtube.com/c/mohammadsajidanwar">YouTube Channel</a> if you fancy. I came across series of <a href="https://perlmaven.com/beginner-perl-maven-video-course">videos</a> by Gabor Szabo teaching Perl. It is great source for someone new to Perl and explore with live action.</p>
-<p>I remember, Dave Cross, wrote a <a href="https://dev.to/davorg/don-t-be-a-perl-programmer-4h2d">blog post</a> talking about something that not many people would speak about. I personally agree with him fully and believe knowing more than one programming languages helps you as a programmer. I can tell from my own experience, I picked up Raku last year while participating the weekly challenge. Whatever little I know about Raku to date, I can tell it has helped me a lot. I use that knowledge to write better Perl programs. Recently, I started writing Python as well - just the basics for now. So the question is, does knowing Raku or Python make me any less of a Perl programmer? I am still a Perl programmer and all of my thought processes still follow Perl's rules. Perl is my first love and will remain so for the rest of my life. Even today, after more than 22 years, I find features that I never knew existed before, especially in the field of regex. I would like to give credit to Abigail for sharing the magic of regex in Perl as part of his weekly contributions.</p>
-<p>While talking about blogs, how can I miss those who are doing great service on a regular basis? I would like to thank <a href="https://github.polettix.it/ETOOBUSY">Flavio Poletti</a> for blogging every day for months now. Also there is another name, <a href="https://phoenixtrap.com">Mark Gardner</a>, who writes a weekly blog post. Similarly we have weekly stats by <a href="https://niceperl.blogspot.com">Miguel Prz</a>.</p>
-<p>Enjoy the rest of the newsletter.</p>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
 
         </div><!-- col-md-8 -->
         <div class="col-md-2">
@@ -3086,7 +3264,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 15 December 2021 08:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 15 December 2021 12:50 UTC</address>
             </div>
           </div>
         </div><!-- container -->
