@@ -7,9 +7,284 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2021-12-26T20:43:17Z</updated>
+  <updated>2021-12-27T00:59:47Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>How to customize Makefile created by ExtUtils::MakeMaker</title>
+    <link rel="alternate" href="https://dev.to/yukikimoto/how-to-customize-makefile-created-by-extutilsmakemaker-3dln" type="text/html"/>
+    <content type="html">&lt;p&gt;How to customize Makefile created by &lt;a href="https://metacpan.org/pod/ExtUtils::MakeMaker"&gt;ExtUtils::MakeMaker&lt;/a&gt;?&lt;/p&gt;
+
+&lt;p&gt;The answer is to define a "My::postamble" subroutine that return added the content of the Makefile.&lt;/p&gt;
+
+&lt;p&gt;See current SPVM &lt;a href="https://github.com/yuki-kimoto/SPVM/blob/master/Makefile.PL"&gt;Makefile.PL&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;b&gt;dynamic&lt;/b&gt; section is used if you want to do something just after the default process of "make"&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub MY::postamble {
+
+  # The content of Makefile
+  my $make_rule = '';
+
+  # Compile native and precompile codes of standard modules
+  unless (grep { $_ eq '-DSPVM_DONT_COMPILE_CORE_MODULES' } @defines) {
+    # Native compile make rule
+    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Fn');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Hash');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Time');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Unicode');
+
+    # Precompile make rule
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Fn');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('List');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('ByteList');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('ShortList');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('IntList');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('LongList');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('FloatList');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('DoubleList');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('StringList');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('StringBuffer');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Hash');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Unicode');
+    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Regex');
+  }
+
+  # Create precompile tests
+  my @test_files;
+  find(
+    sub {
+      if (-f $File::Find::name) {
+        my $rel_path = $File::Find::name;
+        $rel_path =~ s|^\Q$FindBin::Bin/||;
+        if ($rel_path =~ /(\.t|\.pm|\.spvm|\.c|\.cpp|\.h)$/) {
+          push @test_files, $rel_path;
+        }
+      }
+    },
+    "$FindBin::Bin/t/default"
+  );
+  my $test_files_str = join(' ', @test_files);
+  $make_rule .= "dynamic :: $test_files_str\n";
+  $make_rule .= "\tperl t/copy_default_to_precompile.pl\n";
+
+  return $make_rule;
+}
+
+1;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;In case of other useful modules such as &lt;a href="https://metacpan.org/pod/Dist::Zilla"&gt;Dist::Zilla&lt;/a&gt;, I don't know the way. If you know it, write the comments.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Yuki Kimoto</name>
+    </author>
+    <id>https://dev.to/yukikimoto/how-to-customize-makefile-created-by-extutilsmakemaker-3dln</id>
+    <published>2021-12-26T23:35:34Z</published>
+    <updated>2021-12-26T23:35:34Z</updated>
+    <category term="perl"/>
+    <category term="make"/>
+    <category term="makefile"/>
+  </entry>
+  <entry>
+    <title>A Stocking Full of Numbers: Semiprimes and the Ulam Sequence</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/26#pwc144" type="text/html"/>
+    <content type="html">
+&lt;h1&gt;Merry Christmas and Happy New Year! May 2022 bring you less COVID and more Perl projects!&lt;/h1&gt;
+
+&lt;p&gt;&lt;em&gt;The examples used here are from The Weekly Challenge problem statement and demonstrate 
+the working solution.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Write a script to generate all Semiprime numbers &amp;lt;= 100.&lt;/em&gt; &lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use boolean; 
+use LWP::UserAgent;
+use constant N =&gt; 100; 
+use constant PRIME_URL =&gt; "http://primes.utm.edu/lists/small/100000.txt";
+
+sub get_primes{
+    my @primes;
+    my $ua = new LWP::UserAgent(
+        ssl_opts =&gt; {verify_hostname =&gt; 0}
+    );
+    my $response = $ua-&gt;get(PRIME_URL);
+    my @lines = split(/\n/,$response-&gt;decoded_content);
+    foreach my $line (@lines){
+        my @p = split(/\s+/, $line);
+        unless(@p &lt; 10){
+            push @primes, @p[1..(@p - 1)];
+        }
+    }
+    return @primes;
+}
+
+sub factor{
+    my($n) = @_;
+    my @factors = ();
+    for  my $j (2 .. sqrt($n)){
+        if($j**2 == $n){  
+            push @factors, [$j, $j] if $j**2 == $n;
+            next; 
+        }
+        push @factors, [$j, $n / $j] if $n % $j == 0;
+    }
+    return @factors;
+}
+
+sub semiprime{
+    my($n, $primes) = @_;
+    my @factors = factor($n);
+    return false if @factors != 1;  
+    my @prime_factors = grep {$factors[0]-&gt;[0] == $_ || $factors[0]-&gt;[1] == $_} @{$primes};     
+    return true if @prime_factors == 2 || $prime_factors[0]**2 == $n; 
+    return false; 
+}
+
+sub semiprime_n{
+    my @primes = get_primes; 
+    for my $n (1 .. N){
+        print "$n " if semiprime($n, \@primes);   
+    } 
+    print "\n"; 
+}
+
+MAIN:{
+    semiprime_n;
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl ch-1.pl
+4 6 9 10 14 15 21 22 25 26 33 34 35 38 39 46 49 51 55 57 58 62 65 69 74 77 82 85 86 87 91 93 94 95
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;I am sticking to the convention that I started a while back to not re-compute prime 
+numbers myself, but instead just grab them from one of several convenient online sources.
+The URL in the code above requires only a small amount of effort to scrape and parse. I 
+hope nobody minds the little bit of extra traffic to their site!&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Please do check out their main page listed below. It's a fun resource with interesting 
+facts and news on prime numbers and related research.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Once the list of the first 100k primes is obtained (that's more than enough for any of 
+these challenges) we proceed to factor and test candidate numbers. Provided the number
+has only two factors (which may be equal) and both of them are prime then it passes the 
+semiprime test.&lt;/p&gt;
+
+&lt;h2&gt;Part 2&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;You are given two positive numbers, $u and $v. Write a script to generate Ulam Sequence 
+having at least 10 Ulam numbers where $u and $v are the first 2 Ulam numbers.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use constant ULAM_LIMIT =&gt; 10;   
+
+sub ulam{
+    my($u, $v) = @_;    
+    my %pairs; 
+    my @ulam = ($u, $v); 
+    my $w = $u + $v;  
+    push @ulam, $w;  
+    $pairs{"$u,$v"} = $w; 
+    $pairs{"$u,$w"} = $u + $w; 
+    $pairs{"$v,$w"} = $v + $w; 
+    do{
+        my @sums = sort {$a &lt;=&gt; $b} grep{my $sum = $_; my @values = grep{$sum == $_} values %pairs; $sum if @values == 1 &amp;&amp; $sum &gt; $ulam[@ulam - 1]} values %pairs; 
+        my $u = $sums[0]; 
+        push @ulam, $u;
+        for my $pair (keys %pairs){
+            my($s, $t) = split(/,/, $pair);  
+            $pairs{"$s,$u"} = $s + $u;
+            $pairs{"$t,$u"} = $t + $u;
+        }   
+    }while(@ulam &lt; ULAM_LIMIT);
+    return @ulam;  
+}
+
+MAIN:{
+    my @ulam;
+    @ulam = ulam(1, 2);   
+    {
+        print shift @ulam;
+        print ", ";
+        redo if @ulam &gt; 1;
+    } 
+    print shift @ulam;
+    print "\n";
+
+    @ulam = ulam(2, 3);   
+    {
+        print shift @ulam;
+        print ", ";
+        redo if @ulam &gt; 1;
+    } 
+    print shift @ulam;
+    print "\n";
+
+    @ulam = ulam(2, 5);   
+    {
+        print shift @ulam;
+        print ", ";
+        redo if @ulam &gt; 1;
+    } 
+    print shift @ulam;
+    print "\n";
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+1, 2, 3, 4, 6, 8, 11, 13, 16, 18
+2, 3, 5, 7, 8, 9, 13, 14, 18, 19
+2, 5, 7, 9, 11, 12, 13, 15, 19, 23
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;The code here is a pretty direct translation of the definition: the next member of the
+sequence must be a sum of two previous members which is greater than the previous member
+and only be obtainable one way. Here that is done with a &lt;code&gt;grep&lt;/code&gt; filter, with the sequence
+itself being stored in an array, but for convenience the sums of all unique previous pairs
+are kept in a hash.&lt;/p&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-144/"&gt;Challenge 144&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://mathworld.wolfram.com/Semiprime.html"&gt;Semiprime Number&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://primes.utm.edu/"&gt;Prime Pages&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://mathworld.wolfram.com/UlamSequence.html"&gt;Ulam Sequence&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc144</id>
+    <published>2021-12-26T18:00:00-05:00</published>
+    <updated>2021-12-26T18:00:00-05:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-3558525717489565177</id>
     <published>2021-12-25T17:08:00.000+01:00</published>
@@ -2508,25 +2783,6 @@ True
     <category term="raku"/>
     <category term="perl"/>
     <category term="perl6"/>
-  </entry>
-  <entry>
-    <title>Larry Wall website???</title>
-    <link rel="alternate" href="https://dev.to/nic3point0/larry-wall-website-195p" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>Just wondoring if Laryy Wall and other programmers from back-in-the-day will ever update their <a href="http://www.wall.org/~larry/">websites</a>...</p>
-
-<p>Photo by <strong><a href="https://www.pexels.com/@lilzidesigns?utm_content=attributionCopyText&amp;utm_medium=referral&amp;utm_source=pexels">Laura Balbarde</a></strong> from <strong><a href="https://www.pexels.com/photo/pile-of-cassette-tapes-3642350/?utm_content=attributionCopyText&amp;utm_medium=referral&amp;utm_source=pexels">Pexels</a></strong></p>
-
-</div>
-    </content>
-    <author>
-      <name>Nic</name>
-    </author>
-    <id>https://dev.to/nic3point0/larry-wall-website-195p</id>
-    <published>2021-12-16T18:07:24Z</published>
-    <updated>2021-12-16T18:07:24Z</updated>
-    <category term="perl"/>
-    <category term="design"/>
   </entry>
   <entry>
     <title>Advent of Code Day 9 to 14</title>
