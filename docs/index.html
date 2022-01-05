@@ -57,6 +57,705 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/yukikimoto/install-strawberry-perl-using-chocolatey-on-windows-4if3">Install Strawberry Perl using chocolatey on Windows </a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Yuki Kimoto
+ on Wednesday 05 January 2022 07:31</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Install Strawberry Perl using chocolatey on Windows.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>choco install strawberryperl
+</code></pre>
+
+</div>
+
+
+
+<p>If you need 32bit Strawberry Perl, you can do the following.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>choco install strawberryperl --x86
+</code></pre>
+
+</div>
+
+
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/taw/100-languages-speedrun-episode-47-raku-perl-6-regular-expressions-4p8n">100 Languages Speedrun: Episode 47: Raku (Perl 6) Regular Expressions</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Tomasz Wegrzanowski
+ on Wednesday 05 January 2022 06:44</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>What gets to be included in languages and what gets pushed into some third party library is a result of history more than reason.</p>
+
+<p>For example pretty much every language comes with every possible trigonometric function included and preloaded, so you can run <code>Math.asinh(69.0)</code> without even requiring anything. What was the last time you wrote a program that needed <code>Math.asinh</code> in your program?</p>
+
+<p>Meanwhile string matching and processing is about the most common thing programs do, but before Perl I don't think any general purpose language included regular expressions. It was something either text processing languages like sed and awk did, or left for third party libraries. Perl fully embraced them, made them far more powerful, and in the post-Perl era including regular expressions is just a normal natural thing languages do.</p>
+
+<p>There's a similar story with package managers. First they didn't exist. Then they existed as poorly integrated third party tools like Ruby's rubygems, and JavaScript's npm. Nowadays, we expect every new language to simply have fully functioning package manager builtin.</p>
+
+<p>Anyway, since days of Perl, Perl Compatible Regular Expressions, or their very close variant, and the default regular expression engine for new languages. Nobody serious considers using any of the pre-Perl regular expression systems, with their limitations and irregularities (but if you want to try some, UNIX <code>grep</code> command is still using stupid 1970s style regexps by default - even <code>a|b</code> is broken!). <a href="https://gist.github.com/CMCDragonkai/6c933f4a7d713ef712145c5eb94a1816">You can see some comparison chart here</a>, the pre-Perl and post-Perl divide is really apparent, even if they disagree on a few issues.</p>
+
+<p>The only exception seems to be <a href="https://dev.to/taw/languages-speedrun-episode-26-raku-perl-6-4emf">Raku (originally known as Perl 6)</a>(<a href="https://taw.hashnode.dev/100-languages-speedrun-episode-26-raku-perl-6">https://taw.hashnode.dev/100-languages-speedrun-episode-26-raku-perl-6</a>), which decided to just design its own regular expression syntax, and it's about this sublanguage this episode is about.</p>
+
+<h3>
+  <a href="#i-found-a-massive-bug-in-raku-regular-expressions">
+  </a>
+  I found a massive bug in Raku Regular Expressions
+</h3>
+
+<p>Before I start, let's just get it out of the way - Raku has a massive design bug in its regular expressions:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+sub is_small_int($n) {
+  !!($n ~~ /^ \d ** {1..6} $ /)
+}
+
+my @examples = (
+  # Correctly True
+  '0',
+  '0001',
+  '12345',
+  # Correct False
+  '-17',
+  '1234567',
+  '3.14',
+  # Not ASCII digits
+  '๓๓๓',
+  '௫๓௫๓',
+  '១๑໑',
+);
+
+for @examples -&gt; $n {
+  say "is_small_int($n) = ", is_small_int($n);
+}
+</code></pre>
+
+</div>
+
+
+
+<p>What it does:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>./raku_bug.raku
+is_small_int(0) = True
+is_small_int(0001) = True
+is_small_int(12345) = True
+is_small_int(-17) = False
+is_small_int(1234567) = False
+is_small_int(3.14) = False
+is_small_int(๓๓๓) = True
+is_small_int(௫๓௫๓) = True
+is_small_int(១๑໑) = True
+</code></pre>
+
+</div>
+
+
+
+<p>The last three examples are just plain incorrect.</p>
+
+<p>The bug didn't take long to find - <a href="https://docs.raku.org/language/regexes">documentation for Raku regular expressions literally says this broken way is how <code>\d</code> works in Raku</a>.</p>
+
+<p>So why I'm saying it's a bug? Because regular expressions need to be able to process computer data, and matching a digit (ASCII 0 to 9) is about the second most common thing to do after matching a literal characters. In the entire history of regular expressions, I don't know if there was even one case when someone actually wanted to match Unicode digits, and it's not like their job was hard, Raku has zero problems matching by Unicode properties:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+sub is_unicode_digits($n) {
+  !!($n ~~ /^ &lt;:N&gt; ** {1..6} $ /)
+}
+
+my @examples = (
+  # Correctly True
+  '0',
+  '0001',
+  '12345',
+  # Correct False
+  '-17',
+  '1234567',
+  '3.14',
+  # Non ASCII digits
+  '๓๓๓',
+  '௫๓௫๓',
+  '១๑໑',
+);
+
+for @examples -&gt; $n {
+  say "is_unicode_digits($n) = ", is_unicode_digits($n);
+}
+</code></pre>
+
+</div>
+
+
+
+<p>If I said that wanting to match <code>[0-9]</code> is approximately a MILLION times more common than wanting to match <code>&lt;:N&gt;</code>, I'd be massively understating my case. We might be dividing my zero and getting an infinity here.</p>
+
+<p>And just to show that I'm right, the very same document that defines how <code>\d</code> works, then proceeds to casually assume <code>\d</code> will match ASCII numbers 0 to 9, with examples such as:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>/ &lt;[\d] - [13579]&gt; /;
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>s/ (\d+)\-(\d+)\-(\d+) /today/;
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>s/ (\d+)\-(\d+)\-(\d+) /$1-$2-$0/;
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>my regex ipv4-octet { \d ** 1..3 &lt;?{ True }&gt; }
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>my regex number { \d+ [ \. \d+ ]? }
+</code></pre>
+
+</div>
+
+
+
+<p>So without any doubt, Raku <code>\d</code> and <code>\D</code> are completely 100% broken, and hopefully they fix it, as broken <code>\d</code> means basically every regular expression will either be incorrect and potentially introduce security vulnerabilities, or people learn to avoid <code>\d</code> and use the extremely verbose <code>&lt;[0..9]&gt;</code> instead.</p>
+
+<p>This is not a trivial problem. By a quick greps for regexps in a few codebases in a few languages, <code>\d</code> is indeed the most ubiquitous regexp escape code, and it's supposed to mean ASCII digits 0 to 9 every single time.</p>
+
+<p>Raku didn't even come with this bug, another language was doing the same broken thing before. It's still 100% unquestionably broken.</p>
+
+<h3>
+  <a href="#regular-expression-basics">
+  </a>
+  Regular expression basics
+</h3>
+
+<p>Anyway, now that we got it out of the way, let's talk about Raku regular expressions basics.</p>
+
+<p>Traditional regular expressions really overloaded a few special characters and their combinations to mean so many different things, so when a new feature was added, it had to use more and more nasty combination of same few special characters. Raku does a big restart, making some common regular expressions more verbose, but now it has a lot more syntax to work with.</p>
+
+<p>As expected, regular expressions go between slashes <code>//</code>. You can match them with <code>~~</code>. A few common operations like substitution <code>s///</code> have extra syntax too.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+my $s = "Hello, World!";
+say "We are saying Hello" if $s ~~ /Hello/;
+
+$_ = "Hello, World!";
+say "We are saying Hello" if m/Hello/;
+
+# Spaces are ignored by default on the regexp side
+# but not on substitution side
+$_ = "Hello, World!";
+s/ World /Alice/;
+say $_;
+
+# :i for case insensitive
+$_ = "Hello, World!";
+s:i/ world /Alice/;
+say $_;
+
+my $n = "Alice";
+say "It is Alice" if $n ~~ regex {
+  ^       # start of string
+  (A | a) # lower or upper case A
+  l       # lower case l
+  i       # lower case i
+  c       # lower case c
+  e       # lower case e
+  $       # end of string
+}
+</code></pre>
+
+</div>
+
+
+
+<p>There are a few obvious changes:</p>
+
+<ul>
+<li>spaces are ignored by default, so you can make regular expressions a lot more readable, with spacing, comments, and so on</li>
+<li>switches go on the beginning not the end</li>
+<li>
+<code>^</code> and <code>$</code> are start and end of string, with no line stuff, and that's honestly a much more sensible default than complex rules traditional regular expressions had</li>
+<li>many of the common things like <code>|</code> and <code>()</code> work just the same</li>
+</ul>
+
+<h3>
+  <a href="#character-classes">
+  </a>
+  Character classes
+</h3>
+
+<p>Raku decided that very common task of a non-grouping match should get <code>[foo]</code> instead of <code>(?:foo)</code>. This meant that character classes now needed something more verbose so <code>[0-9]</code> is now <code>&lt;[0..9]&gt;</code>.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+my $number_regexp = rx/
+  ^
+  '-'?
+  &lt;[0..9]&gt;+
+  [
+    '.'
+    &lt;[0..9]&gt;+
+  ]?
+  $
+/;
+
+my @examples = (
+  # Numbers
+  '0004',
+  '-123',
+  '1234.5678',
+  '-3.14',
+  # Not numbers
+  '1.2.3',
+  '.8',
+  '-5.',
+  '๓๓๓',
+  '௫๓௫๓',
+  '១๑໑',
+);
+
+for @examples -&gt; $n {
+  say $n, ($n ~~ $number_regexp) ?? " is a number" !! " is NOT a number";
+}
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./classes.raku
+0004 is a number
+-123 is a number
+1234.5678 is a number
+-3.14 is a number
+1.2.3 is NOT a number
+.8 is NOT a number
+-5. is NOT a number
+๓๓๓ is NOT a number
+௫๓௫๓ is NOT a number
+១๑໑ is NOT a number
+</code></pre>
+
+</div>
+
+
+
+<h3>
+  <a href="#character-class-operations">
+  </a>
+  Character class operations
+</h3>
+
+<p>This makes it possible to do some operations on character classes, like <code>+</code> (already possible with traditional regexp with just concatenation) and <code>-</code> (not directly doable).<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+# Some letters are too easy to confuse with numbers, filter them out
+my $nice_letter_rx = rx/ ^ &lt;[A..Z] + [a..z] - [lIO] &gt; $/;
+
+my @examples = ('a'..'z', 'A'..'Z', '0'..'9').flat;
+
+for @examples -&gt; $c {
+  say $c, " is not a nice letter" unless $c ~~ $nice_letter_rx;
+}
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>./classes_math.raku
+l is not a nice letter
+I is not a nice letter
+O is not a nice letter
+0 is not a nice letter
+1 is not a nice letter
+2 is not a nice letter
+3 is not a nice letter
+4 is not a nice letter
+5 is not a nice letter
+6 is not a nice letter
+7 is not a nice letter
+8 is not a nice letter
+9 is not a nice letter
+</code></pre>
+
+</div>
+
+
+
+<h3>
+  <a href="#repetition">
+  </a>
+  Repetition
+</h3>
+
+<p>Traditionally repetition of A to B times used <code>{A,B}</code> syntax. Raku syntax is more verbose but it has more features. Let's start with the basic case. Also notice how special characters generally need to be quoted if you want to use them literally.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+my $rx = rx/
+  ^
+  &lt;[0..9]&gt; ** {1..3}
+  '.'
+  &lt;[0..9]&gt; ** {1..3}
+  '.'
+  &lt;[0..9]&gt; ** {1..3}
+  '.'
+  &lt;[0..9]&gt; ** {1..3}
+  $
+/;
+
+my @examples = (
+  '127.0.1',
+  '8.8.8.8',
+  '127.0.0.420',
+  '127.0.0.9001',
+);
+
+for @examples -&gt; $n {
+  say $n, ($n ~~ $rx) ?? " looks like IP address" !! " does NOT look like IP address";
+}
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./repetition.raku
+127.0.1 does NOT look like IP address
+8.8.8.8 looks like IP address
+127.0.0.420 looks like IP address
+127.0.0.9001 does NOT look like IP address
+</code></pre>
+
+</div>
+
+
+
+<p>Raku supports "repetition with separator" syntax <code>X ** {2,4} % Y</code> means 2-4 <code>X</code>s, with <code>Y</code>s in between them:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+my $rx = rx/
+  ^
+  [ &lt;[0..9]&gt; ** {1..3} ] ** 4 % '.'
+  $
+/;
+
+my @examples = (
+  '127.0.1',
+  '8.8.8.8',
+  '127.0.0.420',
+  '127.0.0.9001',
+);
+
+for @examples -&gt; $n {
+  say $n, ($n ~~ $rx) ?? " looks like IP address" !! " does NOT look like IP address";
+}
+</code></pre>
+
+</div>
+
+
+
+<p>This is especially useful if the thing matched is more complex. How many times you wished you were able to do something like this?<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+my $rx = rx/
+  ^
+  [
+  | &lt;[0..9]&gt;            # 0-9
+  | &lt;[1..9]&gt; &lt;[0..9]&gt;   # 10-99
+  | 1 &lt;[0..9]&gt; ** 2     # 100-199
+  | 2 &lt;[0..4]&gt; &lt;[0..9]&gt; # 200-249
+  | 25 &lt;[0..5]&gt;         # 250-255
+  ] ** 4 % '.'
+  $
+/;
+
+my @examples = (
+  '127.0.1',
+  '8.8.8.8',
+  '127.0.0.420',
+  '127.0.0.9001',
+);
+
+for @examples -&gt; $n {
+  say $n, ($n ~~ $rx) ?? " looks like IP address" !! " does NOT look like IP address";
+}
+</code></pre>
+
+</div>
+
+
+
+<p>Notice extra validation:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./ipv4.raku
+127.0.1 does NOT look like IP address
+8.8.8.8 looks like IP address
+127.0.0.420 does NOT look like IP address
+127.0.0.9001 does NOT look like IP address
+</code></pre>
+
+</div>
+
+
+
+<p>There's also <code>%%</code> which allows for an optional trailing delimiter.</p>
+
+<p>In <code>( a | b | c )</code> or <code>[ a | b | c ]</code> alternation you can put an extra initial <code>|</code> for formatting and it is ignored (it does not match empty).</p>
+
+<h3>
+  <a href="#divides-by-3">
+  </a>
+  Divides by 3
+</h3>
+
+<p>Regular expressions can be recursive with <code>&lt;~~&gt;</code>.</p>
+
+<p>Let's do something that's a lot more difficult with traditional regexps, checking if a number divides by 3:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+my $divides_by_three_rx_part = rx/
+  [
+  | &lt;[0369]&gt;                              # 0
+  | &lt;[147]&gt; &lt;~~&gt;? &lt;[258]&gt;                 # 1+2
+  | &lt;[147]&gt; &lt;~~&gt;? &lt;[147]&gt; &lt;~~&gt;? &lt;[147]&gt;   # 1+1+1
+  | &lt;[258]&gt; &lt;~~&gt;? &lt;[147]&gt;                 # 2+1
+  | &lt;[258]&gt; &lt;~~&gt;? &lt;[258]&gt; &lt;~~&gt;? &lt;[258]&gt;   # 2+2+2
+  ]
+  &lt;~~&gt;?
+/;
+my $divides_by_three_rx = /^ $divides_by_three_rx_part $/;
+
+for 1234560..1234579  {
+  say $_, ($_ ~~ $divides_by_three_rx) ?? " divides by 3" !! " does NOT divide by 3";
+}
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./divisible_by_three.raku
+1234560 divides by 3
+1234561 does NOT divide by 3
+1234562 does NOT divide by 3
+1234563 divides by 3
+1234564 does NOT divide by 3
+1234565 does NOT divide by 3
+1234566 divides by 3
+1234567 does NOT divide by 3
+1234568 does NOT divide by 3
+1234569 divides by 3
+1234570 does NOT divide by 3
+1234571 does NOT divide by 3
+1234572 divides by 3
+1234573 does NOT divide by 3
+1234574 does NOT divide by 3
+1234575 divides by 3
+1234576 does NOT divide by 3
+1234577 does NOT divide by 3
+1234578 divides by 3
+1234579 does NOT divide by 3
+</code></pre>
+
+</div>
+
+
+
+<p>We still needed to do that in two parts as anchors are not part of the recurssion. I'm not sure if it's possible to do it with some <code>:</code> modifier, none of them seem to match.</p>
+
+<h3>
+  <a href="#fizzbuzz">
+  </a>
+  FizzBuzz
+</h3>
+
+<p>This lets us do the holy grail of regular expressions, the FizzBuzz regexp! For comparison, <a href="https://dev.to/taw/100-languages-speedrun-episode-07-sed-and-regular-expression-fizzbuzz-23l9">we did it with traditional regexp back in the Sed episode</a>(<a href="https://taw.hashnode.dev/100-languages-speedrun-episode-07-sed-and-regular-expression-fizzbuzz">https://taw.hashnode.dev/100-languages-speedrun-episode-07-sed-and-regular-expression-fizzbuzz</a>), and it was far more complex and completely unreadable. This one makes a lot of sense.</p>
+
+<p>We just need one really useful feature - a regexp that two regexps match. <code>/ A &amp;&amp; B /</code> matches if both <code>A</code> and <code>B</code> match. In this case we have regexps for divisible by 3 and a very simple one for divisible by 5. Thanks to <code>&amp;&amp;</code> it's really easy to get divisibility by 15 from it.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+my $rx3_part = rx/
+  [
+  | &lt;[0369]&gt;                              # 0
+  | &lt;[147]&gt; &lt;~~&gt;? &lt;[258]&gt;                 # 1+2
+  | &lt;[147]&gt; &lt;~~&gt;? &lt;[147]&gt; &lt;~~&gt;? &lt;[147]&gt;   # 1+1+1
+  | &lt;[258]&gt; &lt;~~&gt;? &lt;[147]&gt;                 # 2+1
+  | &lt;[258]&gt; &lt;~~&gt;? &lt;[258]&gt; &lt;~~&gt;? &lt;[258]&gt;   # 2+2+2
+  ]
+  &lt;~~&gt;?
+/;
+my $rx3 = /^ $rx3_part $/;
+my $rx5 = /^ &lt;[0..9]&gt;* &lt;[05]&gt; $/;
+my $rx15 = / $rx3 &amp;&amp; $rx5 /;
+
+for 1..100 -&gt; $n {
+  # In Raku we need to convert Int to Str, otherwise can't s/// it
+  # In Perl it would magically change type for us
+  $_ = "$n";
+  s/^ $rx15 $/FizzBuzz/;
+  s/^ $rx5 $/Buzz/;
+  s/^ $rx3 $/Fizz/;
+  say $_;
+}
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./fizzbuzz.raku
+1
+2
+Fizz
+4
+Buzz
+Fizz
+7
+8
+Fizz
+Buzz
+11
+Fizz
+13
+14
+FizzBuzz
+16
+17
+Fizz
+19
+Buzz
+...
+Fizz
+97
+98
+Fizz
+Buzz
+</code></pre>
+
+</div>
+
+
+
+<h3>
+  <a href="#should-you-use-raku-regular-expressions">
+  </a>
+  Should you use Raku Regular Expressions?
+</h3>
+
+<p>Regular expressions have a lot of features, so I could keep going, but these are likely the features you'd use the most.</p>
+
+<p>I think most of the changes are sensible. Allowing free spacing and comments by default was much needed (most languages have some kind of support for it with <code>//x</code> etc., but because <code>x</code> goes on the end this causes a lot of parser confusion). Changing <code>^$</code> to be just the start and the end of the string with no special logic was a great change. <code>&amp;&amp;</code> was much needed, <code>** %</code> and <code>** %%</code> are very clever shortcuts for something very common, recursion can simplify a lot of regexps, <code>[]</code> for non-matching grouping is quite nice, and so on.</p>
+
+<p>Of course all this needs to be balanced by <code>\d</code> being completely broken, and <code>\d</code> is about the most commonly used regex feature. The good thing is that it can be fixed in 100% compatible way! Just make <code>\d</code> match <code>0</code> to <code>9</code> and nothing else. Not only it will not break any software, as nobody in history ever relied on this broken <code>\d</code> behavior, but it will likely fix a lot of bug, and likely many security vulnerabilities as well.</p>
+
+<p>It either gets fixed, or you'd need to keep telling people to never ever use <code>\d</code>, and good luck with that.</p>
+
+<p>So if you're designing a new language and its regular expression system, you should definitely consider doing changes similar to what Raku did. But keep <code>\d</code> correct please.</p>
+
+<p>Also, this is likely not going to be the final Raku episode, as Raku Grammars are another sublanguage I want to cover in this series.</p>
+
+<h3>
+  <a href="#code">
+  </a>
+  Code
+</h3>
+
+<p><a href="https://github.com/taw/100-languages-speedrun">All code examples for the series will be in this repository</a>.</p>
+
+<p><a href="https://github.com/taw/100-languages-speedrun/tree/master/episode-47-raku-regular-expressions">Code for the Raku Regular Expressions episode is available here</a>.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/2-fractions-and-a-prime-4fik">2 Fractions and a Prime</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -183,7 +882,7 @@ parent = '1/1' and grandparent is None
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-warnings-and-the-warn-function-777">Perl warnings and the warn function</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -275,7 +974,7 @@ parent = '1/1' and grandparent is None
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/545.html">#545 - Happy, Healthy, and Prosperous New Year!</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -290,7 +989,7 @@ parent = '1/1' and grandparent is None
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/12/perl-weekly-challenge-145-palindromes.html">Perl Weekly Challenge 145: Palindromes</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -684,7 +1383,7 @@ challenge : c h a l ll l e n g
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2021/12/perl-weekly-challenge-145-dot-product.html">Perl Weekly Challenge 145: Dot Product</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1105,7 +1804,7 @@ func dot_product a1, a2
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-145-4kho">Weekly Challenge 145</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1226,7 +1925,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/ccclxxiv-5-great-cpan-modules-released.html">(ccclxxiv) 5 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1238,7 +1937,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/20-best-perl-questions-at-stackoverflow.html">20 best Perl questions at stackoverflow in 2021</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1250,7 +1949,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/metacpan-most-voted-distributions-in.html">metacpan most voted distributions in 2021</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1262,7 +1961,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/10-best-perl-distributions-created-at.html">10 best perl distributions created at 2021 (metacpan rating)</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1274,7 +1973,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/dxv-stackoverflow-perl-report.html">(dxv) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1286,7 +1985,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/01/01/list-of-new-cpan-distributions-dec-2021/">List of new CPAN distributions – Dec 2021</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1808,7 +2507,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_15_to_24_with_gaps.html">Advent of Code Day 15 to 24, with some gaps</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -1952,7 +2651,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2021/12/do-it-yourself-lexical-pragmas.html">Do-It-Yourself Lexical Pragmas</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1987,7 +2686,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/leon_timmermans/2021/12/my-new-modules-in-2021.html">My new modules in 2021</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2034,7 +2733,7 @@ c h r i s t m a
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/jason_a_crome/2021/12/draft-dancer2-deprecation-policy.html">Draft: Dancer2 Deprecation Policy</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2057,79 +2756,7 @@ https://github.com/PerlDancer/Dancer2/issues/1635</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/mjgardner/avoid-yoda-conditions-in-perl-you-should-o0j">Avoid Yoda conditions in Perl you should</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Mark Gardner
- on Tuesday 28 December 2021 15:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>I remember a brief time in the mid-2000s insisting on so-called <a href="https://en.wikipedia.org/wiki/Yoda_conditions">“Yoda conditions”</a> in my Perl. I would place constants to the left of <a href="https://perldoc.perl.org/perlop#Equality-Operators">equality comparisons</a>. In case I accidentally typed a single <code>=</code> instead of <code>==</code>, the compiler would catch it instead of blithely <a href="https://perldoc.perl.org/perlop#Assignment-Operators">assigning</a> a variable. E.g.:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">if</span> <span class="p">(</span> <span class="nv">$foo</span> <span class="o">==</span> <span class="mi">42</span> <span class="p">)</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span> <span class="c1"># don’t do this</span>
-<span class="k">if</span> <span class="p">(</span> <span class="mi">42</span> <span class="o">==</span> <span class="nv">$foo</span> <span class="p">)</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span> <span class="c1"># do this</span>
-<span class="k">if</span> <span class="p">(</span> <span class="nv">$foo</span> <span class="o">=</span> <span class="mi">42</span>  <span class="p">)</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span> <span class="c1"># to prevent this</span>
-</code></pre>
-
-</div>
-
-
-
-<p>And because <a href="https://www.goodreads.com/quotes/353571">a foolish consistency is the hobgoblin of little minds</a>, I would even extend this to string and relational comparisons.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">if</span> <span class="p">(</span> <span class="p">'</span><span class="s1">bar</span><span class="p">'</span> <span class="ow">eq</span> <span class="nv">$foo</span> <span class="p">)</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span> <span class="c1"># weirdo</span>
-<span class="k">if</span> <span class="p">(</span> <span class="mi">42</span> <span class="o">&gt;</span> <span class="nv">$foo</span> <span class="p">)</span>     <span class="p">{</span> <span class="o">...</span> <span class="p">}</span> <span class="c1"># make it stop</span>
-</code></pre>
-
-</div>
-
-
-
-<p>It looks weird, and it turns out it’s unnecessary as long as you precede your code with <code>use warnings;</code>. Perl will then <a href="https://perldoc.perl.org/perldiag#Found-=-in-conditional,-should-be-==">warn you</a>: “<code>Found = in conditional, should be ==</code>“. (Sidenote: Perl v5.36, due in mid-2022, is <a href="https://metacpan.org/release/ETHER/perl-5.35.3/view/pod/perldelta.pod#Core-Enhancements">slated to enable warnings by default</a> if you do <code>use v5.35;</code> or above, in addition to the strictness that <a href="https://perldoc.perl.org/perl5120delta#Implicit-strictures">was enabled with <code>use v5.11;</code></a>. Yay for less boilerplate!)</p>
-
-<p>If you want to fatally catch this and many other warnings, use the <a href="https://metacpan.org/pod/strictures">strictures module from CPAN</a> in your code like this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">strictures</span> <span class="mi">2</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>This will cause your code to throw an <a href="https://phoenixtrap.com/2021/02/22/exceptional-perl-failure-is-an-option/">exception</a> if it commits many <a href="https://perldoc.perl.org/warnings#Category-Hierarchy">categories</a> of mistakes. If you’re running in a version control system’s working directory (specifically <a href="https://git-scm.com/">Git</a>, <a href="https://subversion.apache.org/">Subversion</a>, <a href="https://www.mercurial-scm.org/">Mercurial</a>, or <a href="https://bazaar.canonical.com/">Bazaar</a>), the module also prevents you from using <a href="https://perldoc.perl.org/perlobj#Indirect-Object-Syntax">indirect object syntax</a>, <a href="https://perldoc.perl.org/variables/%24;">Perl 4‑style multidimensional arrays</a>, and <a href="https://perldoc.perl.org/functions/open#Assigning-a-filehandle-to-a-bareword">bareword filehandles</a>.</p>
-
-<p>Getting back to assignments vs. conditionals, there is one case where I’ve found it to be acceptable to use an assignment inside an if statement, and that’s when I need to use the result of a check inside the condition. For example:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">if</span> <span class="p">(</span> <span class="k">my</span> <span class="nv">$foo</span> <span class="o">=</span> <span class="nv">some_truthy_function</span><span class="p">()</span> <span class="p">)</span> <span class="p">{</span>
-    <span class="o">...</span> <span class="c1"># do something further with $foo</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>This keeps the scope of <code>some_truthy_function()</code>‘s result inside the block so that I don’t pollute the outer scope with a temporary variable. Fortunately, Perl doesn’t warn on this syntax.</p>
-
-
-
-
-<p><em>Cover image: <a href="https://commons.wikimedia.org/wiki/File:Yoda_(29065553886).jpg">Paul VanDerWerf from Brunswick, Maine, USA</a>, <a href="https://creativecommons.org/licenses/by/2.0">CC BY 2.0</a>, via Wikimedia Commons</em></p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/544.html">#544 - Merry Christmas</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2148,7 +2775,7 @@ https://github.com/PerlDancer/Dancer2/issues/1635</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/capture-stdout-stderr-of-external-program">Capture STDOUT and STDERR of external program using Capture::Tiny</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2160,87 +2787,6 @@ https://github.com/PerlDancer/Dancer2/issues/1635</p>
 In Perl there are many ways to run external programs. Some of the ways will allow you to capture the output of the external program
 and some will even make it easy and fun. We are now looking at <a href="https://metacpan.org/pod/Capture::Tiny">Capture::Tiny</a>.
 <p>
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_20">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-customize-makefile-created-by-extutilsmakemaker-3dln">How to customize Makefile created by ExtUtils::MakeMaker</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Yuki Kimoto
- on Sunday 26 December 2021 23:35</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>How to customize Makefile created by <a href="https://metacpan.org/pod/ExtUtils::MakeMaker">ExtUtils::MakeMaker</a>?</p>
-
-<p>The answer is to define a "My::postamble" subroutine that return added the content of the Makefile.</p>
-
-<p>See current SPVM <a href="https://github.com/yuki-kimoto/SPVM/blob/master/Makefile.PL">Makefile.PL</a>.</p>
-
-<p><b>dynamic</b> section is used if you want to do something just after the default process of "make"<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>sub MY::postamble {
-
-  # The content of Makefile
-  my $make_rule = '';
-
-  # Compile native and precompile codes of standard modules
-  unless (grep { $_ eq '-DSPVM_DONT_COMPILE_CORE_MODULES' } @defines) {
-    # Native compile make rule
-    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Fn');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Hash');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Time');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_native('Unicode');
-
-    # Precompile make rule
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Fn');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('List');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('ByteList');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('ShortList');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('IntList');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('LongList');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('FloatList');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('DoubleList');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('StringList');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('StringBuffer');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Hash');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Unicode');
-    $make_rule .= SPVM::Builder::Util::create_make_rule_precompile('Regex');
-  }
-
-  # Create precompile tests
-  my @test_files;
-  find(
-    sub {
-      if (-f $File::Find::name) {
-        my $rel_path = $File::Find::name;
-        $rel_path =~ s|^\Q$FindBin::Bin/||;
-        if ($rel_path =~ /(\.t|\.pm|\.spvm|\.c|\.cpp|\.h)$/) {
-          push @test_files, $rel_path;
-        }
-      }
-    },
-    "$FindBin::Bin/t/default"
-  );
-  my $test_files_str = join(' ', @test_files);
-  $make_rule .= "dynamic :: $test_files_str\n";
-  $make_rule .= "\tperl t/copy_default_to_precompile.pl\n";
-
-  return $make_rule;
-}
-
-1;
-</code></pre>
-
-</div>
-
-
-
-<p>In case of other useful modules such as <a href="https://metacpan.org/pod/Dist::Zilla">Dist::Zilla</a>, I don't know the way. If you know it, write the comments.</p>
-
        </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
@@ -3758,7 +4304,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 05 January 2022 04:48 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 05 January 2022 08:44 UTC</address>
             </div>
           </div>
         </div><!-- container -->
