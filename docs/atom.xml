@@ -7,9 +7,204 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-01-11T20:42:52Z</updated>
+  <updated>2022-01-12T00:58:44Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 147: Truncatable Primes and Pentagon Numbers</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/01/perl-weekly-challenge-147-truncatable-primes-and-pentagon-numbers.html"/>
+    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10624</id>
+    <published>2022-01-12T04:11:59Z</published>
+    <updated>2022-01-12T04:13:34Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 147 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-147/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on January 16, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Truncatable Prime</h2>
+
+<p><em>Write a script to generate first 20 left-truncatable prime numbers in base 10.</em></p>
+
+<blockquote>
+  <p><em>In number theory, a left-truncatable prime is a prime number which, in a given base, contains no 0, and if the leading left digit is successively removed, then all resulting numbers are primes.</em></p>
+</blockquote>
+
+<p><em>Example:</em></p>
+
+<pre><code>9137 is one such left-truncatable prime since 9137, 137, 37 and 7 are all prime numbers.
+</code></pre>
+
+<h3>Truncatable Prime in Raku</h3>
+
+<p>We first build an infinite lazy list (<code>@el-primes</code>) of primes with no 0 digit. For each integer in the list, we then try to truncate the left-most digit and check whether the truncated number is prime, and so one until we get to the last digit. The process stops when  20 such primes have been generated.</p>
+
+<pre><code>my @truncatables;
+my $count = 0;
+my @el-primes = grep {.is-prime and not /0/}, 2..Inf;
+for @el-primes -&gt; $candidate {
+    my $length = $candidate.chars;
+    my $is-truncatable = True; 
+    for 1..$length -&gt; $i {
+        my $truncated = substr $candidate, $length - $i;
+        $is-truncatable = False, last unless $truncated.is-prime;
+    }
+    if $is-truncatable {
+        push @truncatables, $candidate;
+        $count++;
+    }
+    last if $count &gt;= 20;
+}
+say @truncatables;
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>raku ./truncatable.raku
+[2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197]
+</code></pre>
+
+<h3>Truncatable Prime in Perl</h3>
+
+<p>This Perl program is based on essentially the same idea as the Raku implementation, except that we build a hash of primes along the way. We need to check primality only when we meet a new number the first time: for the truncated numbers, we simply check their primality by looking up into the hash.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use constant MAX =&gt; 20;
+
+my @primes = (2, 3, 5);
+my %primes_h = map {$_ =&gt; 1} @primes;
+my @truncatables = @primes;;
+my $candidate = $primes[-1];
+my $count = scalar @truncatables;;
+while ($count &lt; MAX) {
+    $candidate += 2;
+    my $not_prime = 0;
+    next if $candidate =~ /0/;
+    my $sq_cand = sqrt $candidate;
+    for my $i (@primes) {
+        $not_prime = 1, last unless $candidate % $i;
+        last if $i &gt; $sq_cand;
+    }
+    next if $not_prime;
+    push @primes, $candidate;
+    $primes_h{$candidate} = 1;
+    # now check if truncatable prime
+    my $length = length $candidate;
+    my $is_truncatable = 1; 
+    for my $i (1..$length) {
+        my $truncated = substr $candidate, $length - $i;
+        $is_truncatable = 0, last unless exists $primes_h{$truncated};
+    }
+    if ($is_truncatable) {
+        push @truncatables, $candidate;
+        $count++;
+    }
+}
+say "@truncatables";
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl  ./truncatable.pl
+2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
+</code></pre>
+
+<h2>Task 2: Pentagon Numbers</h2>
+
+<p><em>Write a script to find the first pair of Pentagon Numbers whose sum and difference are also a Pentagon Number.</em></p>
+
+<blockquote>
+  <p><em>Pentagon numbers can be defined as P(n) = n(3n - 1)/2.</em></p>
+</blockquote>
+
+<p><em>Example:</em></p>
+
+<p><em>The first 10 Pentagon Numbers are: 1, 5, 12, 22, 35, 51, 70, 92, 117 and 145.</em></p>
+
+<pre><code>P(4) + P(7) = 22 + 70 = 92 = P(8)
+but
+P(4) - P(7) = |22 - 70| = 48 is not a Pentagon Number.
+</code></pre>
+
+<h3>Pentagon Numbers in Raku</h3>
+
+<p>We&#8217;ve decided to use the built-in <a href="https://docs.raku.org/routine/combinations">combinations</a> method to generate the pairs of pentagon numbers. Note that we cannot use an infinite list of pentagon numbers because the <code>combinations</code> routine cannot operate on an infinite list. So I just tried various increasing values for the <code>$max</code> variable until I obtained a result satisfying the criteria. Note that I use a <code>%penta</code> hash to store the pentagon values, so the verifying whether and sum and the difference values are pentagon number is just a matter of a fast hash lookup.</p>
+
+<pre><code>my $max = 4000;
+my @pentanums = map { (3 * $_² - $_)/2 }, 1..$max;
+my %penta = map {@pentanums[$_] =&gt; $_+1}, 0..$max-1;
+for @pentanums.combinations(2) -&gt; $comb {
+    next unless %penta{$comb.sum}:exists;
+    next unless %penta{$comb[1]-$comb[0]}:exists;
+    say $comb, " = Pentagon numbers N° %penta{$comb[0]} and %penta{$comb[1]}";
+    say "Sum is ", $comb.sum, " (Pentagon number ", %penta{$comb.sum}, ")";
+    say "Difference is ", $comb[1]-$comb[0], " (Pentagon number ", %penta{$comb[1]-$comb[0]}, ")";
+    last;
+}
+say now - INIT now, " seconds";
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>raku ./pentanums.raku
+(1560090 7042750) = Pentagon numbers N° 1020 and 2167
+Sum is 8602840 (Pentagon number 2395)
+Difference is 5482660 (Pentagon number 1912)
+101.7166579 seconds
+</code></pre>
+
+<p>This program is relatively slow (101 seconds execution time). I found that using two nested loops (as in the Perl program below) rather than the <code>combinations</code> routine make the program at least 20 times faster (only a few seconds). So it seems that the <code>combinations</code> routine is quite slow. This is a bit unfortunate as <code>combinations</code> is really useful and makes the code simpler and cleaner. I still prefer to present this version, but if you need better performance, then use two nested loops as in the Perl implementation below.</p>
+
+<h3>Pentagon Numbers in Perl</h3>
+
+<p>This is essentially the same idea as the Raku program above. However, as mentioned above, we don&#8217;t have <code>combinations</code> routine in Perl, so we use two nested loops to generate all the combinations. The advantage is that this runs much faster.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use constant MAX =&gt; 4000;
+
+my @pentanums = map { $_ * (3 * $_ - 1)/2 } 1..MAX;
+my %penta_h = map {$pentanums[$_] =&gt; $_+1 } 0..MAX-1;
+# say Dumper \%penta_h;
+
+OUTER: for my $i (0..MAX-1) {
+    for my $j ($i+1..MAX-1) {
+        my $sum = $pentanums[$i] + $pentanums[$j];
+        next unless exists $penta_h{$sum};
+        my $diff = $pentanums[$j] - $pentanums[$i];
+        next unless exists $penta_h{$diff};
+        say "First pair of pentagon numbers is $pentanums[$i] (rank ", $i+1, ") and $pentanums[$j] (rank ", $j+1, ")";
+        say "Sum is $sum (rank $penta_h{$sum}) and difference is $diff (rank $penta_h{$diff})";
+        last OUTER;
+    }
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ time perl  ./pentanums.pl
+First pair of pentagon numbers is 1560090 (rank 1020) and 7042750 (rank 2167)
+Sum is 8602840 (rank 2395) and difference is 5482660 (rank 1912)
+
+real    0m2,043s
+user    0m1,703s
+sys     0m0,108s
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on January 23, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>Highlighting members of the Perl family</title>
     <link rel="alternate" href="https://dev.to/mjgardner/highlighting-members-of-the-perl-family-1kgi" type="text/html"/>
@@ -1561,67 +1756,6 @@ int main (void) {
 ]]>
         
 
-    </content>
-</entry>
-  <entry>
-    <title>Eertree: Palindromic Tree</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/e_choroba/2022/01/eertree-palindromic-tree.html"/>
-    <id>tag:blogs.perl.org,2022:/users/e_choroba//1749.10618</id>
-    <published>2022-01-07T18:26:16Z</published>
-    <updated>2022-01-09T22:46:16Z</updated>
-    <author>
-        <name>E. Choroba</name>
-        <uri>http://www.perlmonks.org/?node_id=832495</uri>
-    </author>
-    <category term="perl-weekly-challenge" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="challenge" label="challenge" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="optimisation" label="optimisation" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="palindrome" label="palindrome" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="perlweeklychallenge" label="perl weekly challenge" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/e_choroba/">
-        <![CDATA[        <h2>The Weekly Challenge 145</h2>
-
-        <p>The <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-145/#TASK2">Task 2 of the Weekly Challenge #145</a> asked us to build a Palindromic Tree. It also linked to a <a href="https://medium.com/@alessiopiergiacomi/eertree-or-palindromic-tree-82453e75025b">blog post</a> explaining the "Eertree" data structure.</p>
-
-        <p>Maybe it was just me, but I found the blog post confusing. Fortunately, it further linked to a <a href="https://arxiv.org/pdf/1506.04862.pdf">scientific paper</a> that introduced the structure around 2014.</p>
-]]>
-        <![CDATA[        <p>I spent several evenings of the Christmas holidays wrapping my head around the description of the algorithm to efficiently build the graph. Most of it is described in the proof of Proposition 2, but some parts are rather laconic. I wasn’t able to implement the creation of a suffix link from <code>P</code> where <code>|P| &gt; 1</code>. The article says:</p>
-
-        <blockquote><i>&hellip;just continue traversing suffix-palindromes of <code>T</code> starting with the suffix link of <code>Q</code>.</i></blockquote>
-
-        <p>My implementation passed all the test cases from the Challenge, but I was able to find counter examples (e.g. the string “xabcxc”) for which the implementation didn’t work correctly. I clearly had no idea what “continue traversing” meant, even though I had implemented the traversing up to the moment correctly.</p>
-
-        <p>In the end, I noticed the blog post had a reply (kind of hidden in the UI) which (when clicked to reveal the full text) showed a link to a <a href="https://github.com/shubham2508/custom_datastructures/blob/master/palindromic_tree.py">Python implementation</a>. From that I was able to understand the logic and finish my implementation.</p>
-
-        <h2>Rosetta Code</h2>
-
-        <p>Once finished, I checked fellow challengers’ solutions. To my surprise, someone just copied the solution from <a href="https://rosettacode.org/wiki/Eertree#Perl">Rosetta Code</a>:</p>
-
-        <pre><code>for $n (1 .. length($str)) {
-   for $m (1 .. length($str)) {
-      $strrev = "";
-      $strpal = substr($str, $n-1, $m);
-      if ($strpal ne "") {
-         for $p (reverse 1 .. length($strpal)) {
-            $strrev .= substr($strpal, $p-1, 1);
-         }
-         ($strpal eq $strrev) and push @pal, $strpal;
-      }
-   }
-}
- 
-print join ' ', grep {not $seen{$_}++} @pal, "\n";</code></pre>
-
-      <p>My solution had about 100 lines. I’d spent hours working on it, to only discover this short and easy implementation!</p>
-
-      <p>“Wait,” thought I to myself, “this is cheating. The Rosetta Code solution just lists all the palindromes, it doesn’t really construct the structure. And the structure was interesting because it was efficient. Maybe my solution is at least faster when it’s not shorter.”</p>
-
-      <p>And that’s actually true. For longer strings (more than 12 characters) my solution starts beating the Rosetta Code one, and for 25 characters it’s already 3.5&times; faster.</p>
-
-      <p>You can find my solution on <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-145/e-choroba/perl/ch-2.pl">GitHub</a>. As there’s no Eertree module on CPAN (at least the search doesn’t return anything) I might end up uploading it there, but it needs some polishing before it’s ready.</p>
-
-    <p><b>Update:</b> <a href="https://metacpan.org/pod/String::Eertree">String::Eertree</a>.
-]]>
     </content>
 </entry>
   <entry>
