@@ -57,6 +57,202 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/01/16#pwc147">Primes and Pentagonals</a></h2>
+<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
+
+              <p class="text-right"><small>Published
+ on Sunday 16 January 2022 13:29</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+<p><em>The examples used here are from The Weekly Challenge problem statement and demonstrate 
+the working solution.</em></p>
+
+<h2>Part 1</h2>
+
+<p><em>Write a script to generate first 20 left-truncatable prime numbers in base 10.</em> </p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+
+use boolean;
+use constant N => 10_000; 
+
+sub sieve_atkin{
+    my($n) = @_;
+    my @primes = (2, 3, 5);
+    my $upper_bound = int($n * log($n) + $n * log(log($n)));
+    my @atkin = (false) x $upper_bound;    
+    my @sieve = (1, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 49, 53, 59);
+    for my $x (1 .. sqrt($upper_bound)){
+        for(my $y = 1; $y <= sqrt($upper_bound); $y+=2){
+            my $m = (4 * $x ** 2) + ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (1, 13, 17, 29, 37, 41, 49, 53) if $m <= $upper_bound; 
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    } 
+    for(my $x = 1; $x <= sqrt($upper_bound); $x += 2){
+        for(my $y = 2; $y <= sqrt($upper_bound); $y += 2){
+            my $m = (3 * $x ** 2) + ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (7, 19, 31, 43) if $m <= $upper_bound; 
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    }   
+    for(my $x = 2; $x <= sqrt($upper_bound); $x++){
+        for(my $y = $x - 1; $y >= 1; $y -= 2){
+            my $m = (3 * $x ** 2) - ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (11, 23, 47, 59) if $m <= $upper_bound;
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    } 
+    my @m;
+    for my $w (0 .. ($upper_bound / 60)){
+        for my $s (@sieve){
+            push @m, 60 * $w + $s;  
+        }
+    }
+    for my $m (@m){
+        last if $upper_bound < ($m ** 2);
+        my $mm = $m ** 2;
+        if($atkin[$m]){
+            for my $m2 (@m){
+                my $c = $mm * $m2;
+                last if $c > $upper_bound;
+                $atkin[$c] = false;
+            }
+        }
+    }
+    map{ push @primes, $_ if $atkin[$_] } 0 .. @atkin - 1;
+    return @primes; 
+}
+
+sub truncatable{
+    my($prime, $primes) = @_;
+    return false if $prime =~ m/0/;
+    my @truncatable = map { my $p = substr($prime, -1 * $_, $_); grep {$p == $_} @{$primes}} 1 .. length($prime);
+    return @truncatable == length($prime);
+}
+
+sub first_n_truncatable_primes{
+    my($n) = @_;
+    my @primes = sieve_atkin(N);
+    my @truncatable;
+    for my $prime (@primes){
+        push @truncatable, $prime if truncatable($prime, \@primes);
+        last if @truncatable == $n;
+    }
+    return @truncatable;
+}
+
+MAIN:{
+    print join(", ", first_n_truncatable_primes(20)) . "\n";
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-1.pl
+2, 3, 5, 7, 13, 17, 23, 37, 43, 47, 53, 67, 73, 83, 97, 113, 137, 167, 173, 197
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>First off, I am re-using the Sieve of Atkin code I wrote for a previous challenge. These
+challenges somewhat frequently have a prime number component so, if I get a chance, I'll
+compose that code into it's own module. If it weren't for the copy/paste of the Sieve of 
+Atkin code then this solution would be very short! This sort of string manipulation is 
+where Perl excels and the determination of whether a number is left truncatable takes
+only a few lines.</p>
+
+<h2>Part 2</h2>
+
+<p><em>Write a script to find the first pair of Pentagon Numbers whose sum and difference are 
+also a Pentagon Number.</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+
+use constant N => 10_000;
+
+sub n_pentagon_numbers{
+    my($n) = @_;
+    my @pentagon_numbers;
+    my $x = 1;
+    my %h;
+    do{
+        my $pentagon = $x * (3 * $x - 1) / 2;
+        push @pentagon_numbers, $pentagon;
+        $h{"$pentagon"} = $x;
+        $x++;
+    }while(@pentagon_numbers < $n);
+    return (\@pentagon_numbers, \%h);
+}
+
+sub pairs_pentagon{
+    my($n) = @_;
+    my($pentagons, $lookup) = n_pentagon_numbers(N);
+    my @pairs;
+    for my $x (0 .. @{$pentagons} - 1){
+        for my $y (0 .. @{$pentagons} - 1){
+            unless($x == $y){
+                my($sum, $difference) = ($pentagons->[$x] + $pentagons->[$y], abs($pentagons->[$x] - $pentagons->[$y]));
+                 if($lookup->{$sum} && $lookup->{$difference}){
+                     my($s, $t) = ($x + 1, $y + 1);
+                     push @pairs, ["P($s)", "P($t)"]
+                 }
+            }
+            last if @pairs == $n;
+        }
+        last if @pairs == $n;
+    }
+    return @pairs;
+}
+
+sub first_pair_pentagon{
+    return [pairs_pentagon(1)];
+}
+
+MAIN:{
+    print join(", ", @{first_pair_pentagon()->[0]}) . "\n";
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-2.pl
+P(1020), P(2167)
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>This second part of the challenge proceeds in mostly the same way as the first. We 
+generate a large list of candidates and then search for those exhibiting the property in 
+question. It is somewhat unexpected that the first pair of Pentagonal Numbers that have 
+this property are so deeply located. Many times in these challenges the solution is 
+emitted without quite as much searching! </p>
+
+<h2>References</h2>
+
+<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-147/">Challenge 147</a></p>
+
+<p><a href="https://primes.utm.edu/glossary/page.php?sort=LeftTruncatablePrime">Left Truncatable Primes</a></p>
+
+<p><a href="https://mathworld.wolfram.com/PentagonalNumber.html">Pentagonal Numbers</a></p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/ccclxxv-9-great-cpan-modules-released.html">(ccclxxv) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
 
@@ -67,7 +263,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/cdxcv-metacpan-weekly-report.html">(cdxcv) metacpan weekly report - Crypt::Passphrase</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -79,7 +275,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/dxvii-stackoverflow-perl-report.html">(dxvii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -91,7 +287,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/marketing-support-2022">New year, new impetus for Perl Foundation Marketing Committee</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -144,7 +340,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/dragostrif/perl-roles-54ff">Perl Roles</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -386,7 +582,7 @@ In this example when $self-&gt;data is called the around block executes and you 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/look-mum-no-inputs-3lon">Look mum, no inputs 😛</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -516,7 +712,7 @@ P(2167) - P(1020) = 7042750 - 1560090 = 5482660  = P(1912)
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/01/do-it-yourself-warnings-categories.html">Do-It-Yourself warnings categories</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -607,7 +803,7 @@ use warnings::register;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/01/perl-weekly-challenge-147-truncatable-primes-and-pentagon-numbers.html">Perl Weekly Challenge 147: Truncatable Primes and Pentagon Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -802,7 +998,7 @@ sys     0m0,108s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/highlighting-members-of-the-perl-family-1kgi">Highlighting members of the Perl family</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -845,7 +1041,7 @@ sys     0m0,108s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/taw/100-languages-speedrun-episode-52-perl-pn7">100 Languages Speedrun: Episode 52: Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1472,7 +1668,7 @@ https://en.wikipedia.org/wiki/Perl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/randal_l_schwartz/2022/01/perl-is-not-dead.html">Perl is not dead</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1487,7 +1683,7 @@ https://en.wikipedia.org/wiki/Perl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/aristotle/2022/01/utf8mb4-default.html">To whom this MySQL UTF-8 news may concern</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1510,7 +1706,7 @@ https://en.wikipedia.org/wiki/Perl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/book-review-advanced-perl-programming-5ceo">Book review &quot;Advanced Perl programming&quot;</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1594,7 +1790,7 @@ https://en.wikipedia.org/wiki/Perl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/546.html">#546 - Perl Books</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1612,7 +1808,7 @@ https://en.wikipedia.org/wiki/Perl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-install-perl-on-linux">Dancer2: Install Perl on Linux and Mac OSX</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1627,7 +1823,7 @@ Part of the Dancer2 video course.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/bruce_gray/2022/01/twc-146-10k-prime-and-cw-trees.html">TWC 146: 10K Prime and CW Trees</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1775,7 +1971,7 @@ Claire: Oh, we got both kinds. We got Country <em>and</em> Western.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/01/09#pwc146">Sieve of Atkin / Curious Fraction Tree</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2035,7 +2231,7 @@ to get the parent and grandparent vertices.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/ccclxxvi-9-great-cpan-modules-released.html">(ccclxxvi) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2047,7 +2243,7 @@ to get the parent and grandparent vertices.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/dxvi-stackoverflow-perl-report.html">(dxvi) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2059,7 +2255,7 @@ to get the parent and grandparent vertices.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/545.html">#545 - Happy, Healthy, and Prosperous New Year!</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2074,7 +2270,7 @@ to get the parent and grandparent vertices.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/01/01/list-of-new-cpan-distributions-dec-2021/">List of new CPAN distributions – Dec 2021</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -2596,7 +2792,7 @@ to get the parent and grandparent vertices.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2021_aoc_day_15_to_24_with_gaps.html">Advent of Code Day 15 to 24, with some gaps</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -2740,7 +2936,7 @@ to get the parent and grandparent vertices.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/544.html">#544 - Merry Christmas</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2759,7 +2955,7 @@ to get the parent and grandparent vertices.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/capture-stdout-stderr-of-external-program">Capture STDOUT and STDERR of external program using Capture::Tiny</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2775,7 +2971,7 @@ and some will even make it easy and fun. We are now looking at <a href="https://
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/26#pwc144">A Stocking Full of Numbers: Semiprimes and the Ulam Sequence</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2970,7 +3166,7 @@ are kept in a hash.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/season-of-docs-2021-complete">Season of Docs successful completion</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -3002,7 +3198,7 @@ are kept in a hash.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/support-tpf-in-2022">Supporting TPF – potential tax savings</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -3044,7 +3240,7 @@ are kept in a hash.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprc-houston-newsletter-1">TPRCHouston - Newsletter #1</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -3132,7 +3328,7 @@ are kept in a hash.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/543.html">#543 - Happy Birthday!</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -3149,7 +3345,7 @@ are kept in a hash.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/variable-will-not-stay-shared">Variable &quot;...&quot; will not stay shared ...</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -3165,7 +3361,7 @@ and the parent process in (separate) functions.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/19#pwc143">Stealthy Calculations</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -3394,7 +3590,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 16 January 2022 16:51 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 16 January 2022 20:43 UTC</address>
             </div>
           </div>
         </div><!-- container -->

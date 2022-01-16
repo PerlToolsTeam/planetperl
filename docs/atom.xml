@@ -7,9 +7,202 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-01-16T16:51:53Z</updated>
+  <updated>2022-01-16T20:43:25Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Primes and Pentagonals</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/01/16#pwc147" type="text/html"/>
+    <content type="html">
+&lt;p&gt;&lt;em&gt;The examples used here are from The Weekly Challenge problem statement and demonstrate 
+the working solution.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Write a script to generate first 20 left-truncatable prime numbers in base 10.&lt;/em&gt; &lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+
+use boolean;
+use constant N =&gt; 10_000; 
+
+sub sieve_atkin{
+    my($n) = @_;
+    my @primes = (2, 3, 5);
+    my $upper_bound = int($n * log($n) + $n * log(log($n)));
+    my @atkin = (false) x $upper_bound;    
+    my @sieve = (1, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 49, 53, 59);
+    for my $x (1 .. sqrt($upper_bound)){
+        for(my $y = 1; $y &lt;= sqrt($upper_bound); $y+=2){
+            my $m = (4 * $x ** 2) + ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (1, 13, 17, 29, 37, 41, 49, 53) if $m &lt;= $upper_bound; 
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    } 
+    for(my $x = 1; $x &lt;= sqrt($upper_bound); $x += 2){
+        for(my $y = 2; $y &lt;= sqrt($upper_bound); $y += 2){
+            my $m = (3 * $x ** 2) + ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (7, 19, 31, 43) if $m &lt;= $upper_bound; 
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    }   
+    for(my $x = 2; $x &lt;= sqrt($upper_bound); $x++){
+        for(my $y = $x - 1; $y &gt;= 1; $y -= 2){
+            my $m = (3 * $x ** 2) - ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (11, 23, 47, 59) if $m &lt;= $upper_bound;
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    } 
+    my @m;
+    for my $w (0 .. ($upper_bound / 60)){
+        for my $s (@sieve){
+            push @m, 60 * $w + $s;  
+        }
+    }
+    for my $m (@m){
+        last if $upper_bound &lt; ($m ** 2);
+        my $mm = $m ** 2;
+        if($atkin[$m]){
+            for my $m2 (@m){
+                my $c = $mm * $m2;
+                last if $c &gt; $upper_bound;
+                $atkin[$c] = false;
+            }
+        }
+    }
+    map{ push @primes, $_ if $atkin[$_] } 0 .. @atkin - 1;
+    return @primes; 
+}
+
+sub truncatable{
+    my($prime, $primes) = @_;
+    return false if $prime =~ m/0/;
+    my @truncatable = map { my $p = substr($prime, -1 * $_, $_); grep {$p == $_} @{$primes}} 1 .. length($prime);
+    return @truncatable == length($prime);
+}
+
+sub first_n_truncatable_primes{
+    my($n) = @_;
+    my @primes = sieve_atkin(N);
+    my @truncatable;
+    for my $prime (@primes){
+        push @truncatable, $prime if truncatable($prime, \@primes);
+        last if @truncatable == $n;
+    }
+    return @truncatable;
+}
+
+MAIN:{
+    print join(", ", first_n_truncatable_primes(20)) . "\n";
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-1.pl
+2, 3, 5, 7, 13, 17, 23, 37, 43, 47, 53, 67, 73, 83, 97, 113, 137, 167, 173, 197
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;First off, I am re-using the Sieve of Atkin code I wrote for a previous challenge. These
+challenges somewhat frequently have a prime number component so, if I get a chance, I'll
+compose that code into it's own module. If it weren't for the copy/paste of the Sieve of 
+Atkin code then this solution would be very short! This sort of string manipulation is 
+where Perl excels and the determination of whether a number is left truncatable takes
+only a few lines.&lt;/p&gt;
+
+&lt;h2&gt;Part 2&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Write a script to find the first pair of Pentagon Numbers whose sum and difference are 
+also a Pentagon Number.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+
+use constant N =&gt; 10_000;
+
+sub n_pentagon_numbers{
+    my($n) = @_;
+    my @pentagon_numbers;
+    my $x = 1;
+    my %h;
+    do{
+        my $pentagon = $x * (3 * $x - 1) / 2;
+        push @pentagon_numbers, $pentagon;
+        $h{"$pentagon"} = $x;
+        $x++;
+    }while(@pentagon_numbers &lt; $n);
+    return (\@pentagon_numbers, \%h);
+}
+
+sub pairs_pentagon{
+    my($n) = @_;
+    my($pentagons, $lookup) = n_pentagon_numbers(N);
+    my @pairs;
+    for my $x (0 .. @{$pentagons} - 1){
+        for my $y (0 .. @{$pentagons} - 1){
+            unless($x == $y){
+                my($sum, $difference) = ($pentagons-&gt;[$x] + $pentagons-&gt;[$y], abs($pentagons-&gt;[$x] - $pentagons-&gt;[$y]));
+                 if($lookup-&gt;{$sum} &amp;&amp; $lookup-&gt;{$difference}){
+                     my($s, $t) = ($x + 1, $y + 1);
+                     push @pairs, ["P($s)", "P($t)"]
+                 }
+            }
+            last if @pairs == $n;
+        }
+        last if @pairs == $n;
+    }
+    return @pairs;
+}
+
+sub first_pair_pentagon{
+    return [pairs_pentagon(1)];
+}
+
+MAIN:{
+    print join(", ", @{first_pair_pentagon()-&gt;[0]}) . "\n";
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+P(1020), P(2167)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;This second part of the challenge proceeds in mostly the same way as the first. We 
+generate a large list of candidates and then search for those exhibiting the property in 
+question. It is somewhat unexpected that the first pair of Pentagonal Numbers that have 
+this property are so deeply located. Many times in these challenges the solution is 
+emitted without quite as much searching! &lt;/p&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-147/"&gt;Challenge 147&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://primes.utm.edu/glossary/page.php?sort=LeftTruncatablePrime"&gt;Left Truncatable Primes&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://mathworld.wolfram.com/PentagonalNumber.html"&gt;Pentagonal Numbers&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc147</id>
+    <published>2022-01-16T13:29:00-05:00</published>
+    <updated>2022-01-16T13:29:00-05:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-6360004389402147567</id>
     <published>2022-01-15T21:48:00.000+01:00</published>
