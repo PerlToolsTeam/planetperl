@@ -7,9 +7,204 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-01-17T04:49:05Z</updated>
+  <updated>2022-01-17T08:45:47Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>TWC 147: Prime without Left, and Pent without Quad</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/bruce_gray/2022/01/twc-147-prime-without-left-and-pent-without-quad.html"/>
+    <id>tag:blogs.perl.org,2022:/users/bruce_gray//532.10639</id>
+    <published>2022-01-17T03:25:55Z</published>
+    <updated>2022-01-17T10:48:31Z</updated>
+    <author>
+        <name>Bruce Gray</name>
+        <uri>https://github.com/Util/</uri>
+    </author>
+    <category term="Perl" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="Raku" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="TheWeeklyChallenge" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="perl" label="Perl" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="raku" label="Raku" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="twc" label="TWC" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/bruce_gray/">
+        <![CDATA[<p>In which we bravely overcome ambiguity, and dodge two approaches in the face of (O³).</p>
+]]>
+        <![CDATA[<h1><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-147/#TASK1">TWC Task #1, Truncatable Prime</a></h1>
+
+<h2>Observations:</h2>
+
+<p>"Left-truncatable prime" is not fully defined by the task; are leading zeros valid? <br />
+e.g. 103 -> 03 -> 3 ; all are prime, but is <code>03</code> considered a "number"?  </p>
+
+<p><strong>UPDATE</strong>: <a href="https://www.meetup.com/San-Francisco-Perl/">SF.pm's Raku Study Group</a> just pointed out that task description <em>does</em> <em>say</em> "contains no 0", so the task <em>was</em> fully defined, and I had no need for the "filter" half of the solutions below. Mea culpa!</p>
+
+<p><a href="http://oeis.org/">OEIS</a> has separate pages for each definition, but both start with: <br />
+(2, 3, 5, 7, 13, 17, 23, 37, 43, 47):  </p>
+
+<p><a href="http://oeis.org/A033664">A033664</a> …, 53, 67, 73, 83, 97, 103, 107, 113, … <br />
+<a href="http://oeis.org/A024785">A024785</a> …, 53, 67, 73, 83, 97,           113, …  </p>
+
+<p>Since one definition is more easily written as a filter, and the other definition is best written as a generator, I wrote both.</p>
+
+<h2>Raku</h2>
+
+<p>My <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-147/bruce-gray/raku/ch-1.raku">Raku program</a> starts with the "filter" approach:</p>
+
+<pre><code>sub is-left-truncatable-prime ( UInt \N --&gt; Bool ) {
+    return (0 ..^ N.chars)          # Start of each substring
+        .map(  { N.substr($_) })    # All left-truncated substrings
+        .first({ .is-prime.not })   # Find the first non-prime
+        .defined.not;               # If no non-primes, then True
+}
+constant @LTP_A033664 = grep &amp;is-left-truncatable-prime, ^Inf;
+</code></pre>
+
+<p>The <code>.first</code> method, combined with the laziness of the <code>.map</code> method, allows an early <code>return</code> without <code>.substr</code> having to generate every single substring.
+Rephrasing to use <code>.all</code> is only <em>slightly</em> clearer, so I used <code>.first</code>.</p>
+
+<p>The "generator" approach starts with the single digit primes as the first "generation", and pre-pends 1..9 to each element of gen#1 (and filters out non-primes) to create all-double-digit gen#2. Gen#3 will all be triple-digits, and so on.</p>
+
+<pre><code>my @LTP_A024785 = lazy gather loop {
+    state @current_gen = grep &amp;is-prime, ^10;
+    .take for @current_gen;
+    @current_gen = grep &amp;is-prime, ((1..9) X~ @current_gen);
+}
+</code></pre>
+
+<p>Since each number in a generation has the same number digits, and the first generation is in numeric order, each subsequent <code>(1..9) X~ @current_gen</code> generation will also be in order.</p>
+
+<p>Both arrays are lazy, so they get their elements populated on demand. Final output is just:</p>
+
+<pre><code>put @LTP_A033664.head(20);
+put @LTP_A024785.head(20);
+
+2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 103 107 113 137 167
+2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
+</code></pre>
+
+<h2>Perl</h2>
+
+<p>My <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-147/bruce-gray/perl/ch-1.pl">Perl program</a> is just a conversion of the Raku, with adaptations to loosely replace the laziness that Perl lacks.</p>
+
+<p>The <a href="https://metacpan.org/pod/ntheory">ntheory</a> (Number Theory) module has <code>is_prime</code>, which saves me much code.</p>
+
+<h1><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-147/#TASK2">TWC Task #2, Pentagon Numbers</a></h1>
+
+<h2>Observations:</h2>
+
+<p>Some obvious problems:</p>
+
+<ul>
+<li>Not only do we need to scan all 2-combinations (O²) of a list, we also have to scan the list of pents to find the difference and the sum (O³ and bigger, unless we binary search and/or hash).</li>
+<li>Unless we pre-build the list to a pre-known limit (which we could only do if we already knew the answer), then at the time that we want to check <code>A+B</code> for presence in the list of pents, the value will not <em>exist</em> in the list yet.</li>
+<li>We need all 2-combinations, and Raku has a <code>.combinations</code> method that we can invoke with <code>(2)</code>, but it will not work with the lazy infinite list that idiomatic for <code>@pents</code>.</li>
+</ul>
+
+<p>If we <em>did</em> already know how big to pre-build the pents, then the solution would be simple:</p>
+
+<pre><code>constant @pents = map { $_ * (3 * $_  -  1) div 2 }, 1..*;
+my %p = @pents.head(2400).Set;
+say @pents.head(2400).combinations(2).first: {
+    %p{  [+] .list } and
+    %p{ [R-] .list }
+};
+</code></pre>
+
+<p>I don't want to do that.</p>
+
+<p>If we "solve" the pent equation of <code>n(3n-1)/2 = P</code> via quadratic formula (a=3,b=-1,c=-2P), we can write a <code>is_pentagon_number</code> sub, which would solve the first two problems!</p>
+
+<pre><code>sub is-pentagon-number ( \p ) {
+    my \inner = 24 * p + 1;
+    my \near_root = inner.sqrt.round;
+
+    return near_root ** 2 == inner
+        &amp;&amp; near_root %  6 == 5
+}
+</code></pre>
+
+<p>This would work perfectly. <br />
+I chose not to do that, either.</p>
+
+<p>Instead, let's call the sum of the two pents "A", and the difference "D". Then re-arrange like so:</p>
+
+<pre><code># Where A,B,C,D are all pentagonal numbers:
+# B + C == A      ,  B - C == D     Original problem statement
+#     C == A - B  ,  B - C == D     Rearranged as two differences
+#     C == A - B  ,  B-(A-B)==D     (C,D), expressed only in A and B
+</code></pre>
+
+<p>So, if we find any two pentagonal numbers A,B where A-B is pentagonal and B-(A-B) is pentagonal, then we have a solution. The desired numbers will be the inner two: (B,C).</p>
+
+<p>With this reorganization, we will always be "looking backwards" into parts of <code>@pent</code> that have already been generated. The cost will be in generating all the way to A; a solution using <code>is-pentagon-number</code> would only need to generate to B.</p>
+
+<h2>Raku</h2>
+
+<p>My <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-147/bruce-gray/raku/ch-2.raku">Raku program</a> uses <code>for @pents.kv</code> as a outer loop, and <code>for @pents.head(i)</code> as the inner loop, to replicate the disallowed <code>.combinations(2)</code>.</p>
+
+<pre><code>sub find-first-plus-and-minus-pentagon_numbers ( ) {
+    constant @pents = map -&gt;\n { n *(3*n - 1) div 2 }, 1..*;
+
+    my %p;
+    for @pents.kv -&gt; \i, \A {
+        %p{A} = 1;
+
+        for @pents.head(i) -&gt; \B {
+            my \D = A - B;
+            my \C = B - D;
+            return B, C if %p{C} and %p{D};
+        }
+    }
+}
+put find-first-plus-and-minus-pentagon_numbers();
+</code></pre>
+
+<p>The three body lines of the inner loop could be replace with one line (<code>return B, C if %p{A - B} and %p{B - (A - B)}</code>), and then the whole inner loop could become a <code>return … with first {…}</code> statement, but then I suspect it would "spark joy" in no one.</p>
+
+<p>Aside: <a href="https://www.meetup.com/San-Francisco-Perl/">SF.pm's Raku Study Group</a> just pointed out that the <code>constant</code> line uses a sigil-less <code>n</code>, which means it gets defined as <code>-&gt; \n</code>, which confusingly looks like a <em>newline</em> character. Good point!</p>
+
+<h2>Perl</h2>
+
+<p>My <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-147/bruce-gray/perl/ch-2.pl">Perl solution</a> needed almost no structural changes from the Raku, because the lazy generation of the pents can just be appended at the same pace as the outer loop.</p>
+
+<pre><code>sub find_first_plus_and_minus_pentagon_numbers ( ) {
+    my @pents;
+    my %p;
+    for ( my $i = 1 ; ; $i++ ) {
+        my $A = $i * (3*$i - 1) / 2; # Pentagon number
+
+        for my $B (@pents) {
+            my $D = $A - $B;
+            my $C = $B - $D;
+            return $B, $C if $p{$C} and $p{$D};
+        }
+
+        $p{$A} = 1; 
+        push @pents, $A;
+    }
+}
+say join ' ', find_first_plus_and_minus_pentagon_numbers();
+</code></pre>
+
+<p><em>Five is right out.</em> -- Monty Python and the Holy Grail</p>
+]]>
+    </content>
+</entry>
+  <entry>
+    <title>#547 - Learning a human language vs. a programming language</title>
+    <link rel="alternate" href="https://perlweekly.com/archive/547.html" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml"><p>Hi,</p>
+<p>Learning a programming language is not easy, but have you tried learning a human language? You don't have a compiler to tell you when you make a syntax error. You have a lot more words and rules and a lot more exceptions than in a programming language. Mostly however, the lack of quick feedback is what makes it hard. However, after a few months work you start to be able to speak to people in their native language.</p>
+<p>As you might have read I've started to learn Ladino - the language spoken by the Jews who were expelled from the Iberian peninsula more than 500 years ago. It is a mix of medieval Spanish, Portuguese, Italian, French, Turkish, Serb, Arabic, and Hebrew. It is a fantastic exercise and it involves programming as well. Join me!</p>
+<p>Something else: In Israel every Saturday evening, once the Shabbat ends, and throughout Sunday people say 'have a good week'. Referring to the week that starts on Sunday, the first day of our work-week. I don't recall ever hearing that or anything similar in Hungary. Not even on Sunday or Monday. I wonder, do you use any similar expression in whatever country and language environment you live in? Let me know and...</p>
+<p>Have a good week!</p></div>
+    </content>
+    <id>https://perlweekly.com/archive/547.html</id>
+    <published>2022-01-17T10:00:00Z</published>
+    <updated>2022-01-17T10:00:00Z</updated>
+    <category term="list of tags?"/>
+  </entry>
   <entry>
     <title>TWC 146: 10K Prime and CW Trees (redirect)</title>
     <link rel="alternate" href="http://blogs.perl.org/users/bruce_gray/2022/01/twc-146-10k-prime-and-cw-trees-redirect.html"/>
@@ -1779,30 +1974,6 @@ https://en.wikipedia.org/wiki/Perl
     </content>
 </entry>
   <entry>
-    <title>To whom this MySQL UTF-8 news may concern</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/aristotle/2022/01/utf8mb4-default.html"/>
-    <id>tag:blogs.perl.org,2022:/users/aristotle//15.10619</id>
-    <published>2022-01-09T00:38:43Z</published>
-    <updated>2022-01-10T17:41:57Z</updated>
-    <author>
-        <name>Aristotle</name>
-        <uri>http://plasmasturm.org/</uri>
-    </author>
-    <category term="Reaction" scheme="http://www.sixapart.com/ns/types#category"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/aristotle/">
-        <![CDATA[<p>Strictly speaking not news exactly, given that it dates from early 2018, but it was news to me, and since I haven’t seen it make the rounds I still find it worth disseminating. <a href="https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-11.html#mysqld-8-0-11-charset">From the MySQL 8.0.11 release notes</a>:</p>
-
-<blockquote cite="https://dev.mysql.com/doc/relnotes/mysql/8.0/en/news-8-0-11.html#mysqld-8-0-11-charset"><p> The <code>utf8mb3</code> character set will be replaced by <code>utf8mb4</code> in a future MySQL version. The <code>utf8</code> character set is currently an alias for <code>utf8mb3</code>, but will at that point become a reference to <code>utf8mb4</code>. To avoid ambiguity about the meaning of <code>utf8</code>, consider specifying <code>utf8mb4</code> explicitly for character set references instead of <code>utf8</code>.</p></blockquote>
-
-<p>This a declaration of intent rather than a change that has happened… but still. <a href="https://github.com/mysql/mysql-server/commit/43a506c0ced0e6ea101d3ab8b4b423ce3fa327d0">It’s been a very long September</a>…</p>
-
-<p>(To prepare for this you’ll want to note <a href="http://mysql.rjweb.org/doc.php/limits#767_limit_in_innodb_indexes">what you need to take into account regarding the way <code>utf8mb4</code> and indexes interact</a>.)</p>
-]]>
-        
-
-    </content>
-</entry>
-  <entry>
     <title>Book review "Advanced Perl programming"</title>
     <link rel="alternate" href="https://dev.to/thibaultduponchelle/book-review-advanced-perl-programming-5ceo" type="text/html"/>
     <content type="html">&lt;p&gt;&lt;a href="https://res.cloudinary.com/practicaldev/image/fetch/s--weL8IK2b--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fbiqenfto5d5vh6g43o6.jpg" class="article-body-image-wrapper"&gt;&lt;img src="https://res.cloudinary.com/practicaldev/image/fetch/s--weL8IK2b--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/fbiqenfto5d5vh6g43o6.jpg" alt="Advanced Perl Programming" width="880" height="1173"&gt;&lt;/a&gt;&lt;/p&gt;
@@ -1813,7 +1984,7 @@ https://en.wikipedia.org/wiki/Perl
 
 &lt;p&gt;There is a &lt;a href="https://www.oreilly.com/library/view/advanced-perl-programming/0596004567/"&gt;second edition&lt;/a&gt; of this book but it seems a totally different book (different author). Also the &lt;a href="https://www.oreilly.com/library/view/advanced-perl-programming/9781484258637/"&gt;Advanced Perl Programming: From Advanced to Expert&lt;/a&gt; from &lt;strong&gt;William Bo Rothwell&lt;/strong&gt; seems a completely different book.&lt;/p&gt;
 
-&lt;p&gt;&lt;strong&gt;Advanced Perl Programming&lt;/strong&gt; is old but interesting... but I have to admit that it is no consistent in quality.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Advanced Perl Programming&lt;/strong&gt; is old but interesting... but I have to admit that it is not consistent in quality.&lt;/p&gt;
 
 &lt;p&gt;I think this book is for "hardcore Perl programmers" 😀&lt;/p&gt;
 
