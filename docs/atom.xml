@@ -7,9 +7,319 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-01-20T20:42:36Z</updated>
+  <updated>2022-01-21T00:57:25Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 147: Truncatable Primes and Pentagon Numbers</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/01/perl-weekly-challenge-147-truncatable-primes-and-pentagon-numbers.html"/>
+    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10624</id>
+    <published>2022-01-12T04:11:59Z</published>
+    <updated>2022-01-21T04:57:33Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 147 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-147/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on January 16, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Truncatable Prime</h2>
+
+<p><em>Write a script to generate first 20 left-truncatable prime numbers in base 10.</em></p>
+
+<blockquote>
+  <p><em>In number theory, a left-truncatable prime is a prime number which, in a given base, contains no 0, and if the leading left digit is successively removed, then all resulting numbers are primes.</em></p>
+</blockquote>
+
+<p><em>Example:</em></p>
+
+<pre><code>9137 is one such left-truncatable prime since 9137, 137, 37 and 7 are all prime numbers.
+</code></pre>
+
+<h3>Truncatable Prime in Raku</h3>
+
+<p>We first build an infinite lazy list (<code>@el-primes</code>) of primes with no 0 digit. For each integer in the list, we then try to truncate the left-most digit and check whether the truncated number is prime, and so one until we get to the last digit. The process stops when  20 such primes have been generated.</p>
+
+<pre><code>my @truncatables;
+my $count = 0;
+my @el-primes = grep {.is-prime and not /0/}, 2..Inf;
+for @el-primes -&gt; $candidate {
+    my $length = $candidate.chars;
+    my $is-truncatable = True; 
+    for 1..$length -&gt; $i {
+        my $truncated = substr $candidate, $length - $i;
+        $is-truncatable = False, last unless $truncated.is-prime;
+    }
+    if $is-truncatable {
+        push @truncatables, $candidate;
+        $count++;
+    }
+    last if $count &gt;= 20;
+}
+say @truncatables;
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>raku ./truncatable.raku
+[2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197]
+</code></pre>
+
+<h3>Truncatable Prime in Perl</h3>
+
+<p>This Perl program is based on essentially the same idea as the Raku implementation, except that we build a hash of primes along the way. We need to check primality only when we meet a new number the first time: for the truncated numbers, we simply check their primality by looking up into the hash.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use constant MAX =&gt; 20;
+
+my @primes = (2, 3, 5);
+my %primes_h = map {$_ =&gt; 1} @primes;
+my @truncatables = @primes;;
+my $candidate = $primes[-1];
+my $count = scalar @truncatables;;
+while ($count &lt; MAX) {
+    $candidate += 2;
+    my $not_prime = 0;
+    next if $candidate =~ /0/;
+    my $sq_cand = sqrt $candidate;
+    for my $i (@primes) {
+        $not_prime = 1, last unless $candidate % $i;
+        last if $i &gt; $sq_cand;
+    }
+    next if $not_prime;
+    push @primes, $candidate;
+    $primes_h{$candidate} = 1;
+    # now check if truncatable prime
+    my $length = length $candidate;
+    my $is_truncatable = 1; 
+    for my $i (1..$length) {
+        my $truncated = substr $candidate, $length - $i;
+        $is_truncatable = 0, last unless exists $primes_h{$truncated};
+    }
+    if ($is_truncatable) {
+        push @truncatables, $candidate;
+        $count++;
+    }
+}
+say "@truncatables";
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl  ./truncatable.pl
+2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
+</code></pre>
+
+<h3>Truncatable Prime in Ring</h3>
+
+<p>I continue here my exploration of <a href="https://ring-lang.sourceforge.io/">Ring</a>, a quite recent programming language. The program below is a port to Ring of the Perl program above.</p>
+
+<pre><code>max = 20
+primes = [2, 3, 5]
+primes_h = []
+count = len(primes)
+for i = 1 to count
+    primes_h[string(primes[i])] = i
+next
+truncatables = primes
+candidate = primes[count]
+while count &lt; max
+    candidate += 2
+    not_prime = false
+    pos = substr(string(candidate), "0")
+    if pos &gt; 0 loop ok
+    sq_cand = floor(sqrt(candidate))
+    for i in primes
+        if candidate % i = 0
+            not_prime = true
+            exit
+        ok
+        if i &gt; sq_cand exit ok
+    next
+    if not_prime loop ok
+    add (primes, candidate)
+    primes_h[string(candidate)] = 1
+    // We've found a prime, now check if truncatable prime
+    length = len(string(candidate))
+    is_truncatable = true
+    for i = 1 to length
+        truncated = right(string(candidate), i)
+        if isnull(primes_h[truncated])
+            is_truncatable = false
+            exit
+        ok
+    next
+    if is_truncatable
+        add(truncatables, candidate);
+        count += 1
+    ok
+
+end
+for val in truncatables see "" + val + " " next
+see " " + nl
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ ring ./truncatable.ring
+2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
+</code></pre>
+
+<h2>Task 2: Pentagon Numbers</h2>
+
+<p><em>Write a script to find the first pair of Pentagon Numbers whose sum and difference are also a Pentagon Number.</em></p>
+
+<blockquote>
+  <p><em>Pentagon numbers can be defined as P(n) = n(3n - 1)/2.</em></p>
+</blockquote>
+
+<p><em>Example:</em></p>
+
+<p><em>The first 10 Pentagon Numbers are: 1, 5, 12, 22, 35, 51, 70, 92, 117 and 145.</em></p>
+
+<pre><code>P(4) + P(7) = 22 + 70 = 92 = P(8)
+but
+P(4) - P(7) = |22 - 70| = 48 is not a Pentagon Number.
+</code></pre>
+
+<h3>Pentagon Numbers in Raku</h3>
+
+<p>We&#8217;ve decided to use the built-in <a href="https://docs.raku.org/routine/combinations">combinations</a> method to generate the pairs of pentagon numbers. Note that we cannot use an infinite list of pentagon numbers because the <code>combinations</code> routine cannot operate on an infinite list. So I just tried various increasing values for the <code>$max</code> variable until I obtained a result satisfying the criteria. Note that I use a <code>%penta</code> hash to store the pentagon values, so the verifying whether and sum and the difference values are pentagon number is just a matter of a fast hash lookup.</p>
+
+<pre><code>my $max = 4000;
+my @pentanums = map { (3 * $_² - $_)/2 }, 1..$max;
+my %penta = map {@pentanums[$_] =&gt; $_+1}, 0..$max-1;
+for @pentanums.combinations(2) -&gt; $comb {
+    next unless %penta{$comb.sum}:exists;
+    next unless %penta{$comb[1]-$comb[0]}:exists;
+    say $comb, " = Pentagon numbers N° %penta{$comb[0]} and %penta{$comb[1]}";
+    say "Sum is ", $comb.sum, " (Pentagon number ", %penta{$comb.sum}, ")";
+    say "Difference is ", $comb[1]-$comb[0], " (Pentagon number ", %penta{$comb[1]-$comb[0]}, ")";
+    last;
+}
+say now - INIT now, " seconds";
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>raku ./pentanums.raku
+(1560090 7042750) = Pentagon numbers N° 1020 and 2167
+Sum is 8602840 (Pentagon number 2395)
+Difference is 5482660 (Pentagon number 1912)
+101.7166579 seconds
+</code></pre>
+
+<p>This program is relatively slow (101 seconds execution time). I found that using two nested loops (as in the Perl program below) rather than the <code>combinations</code> routine make the program at least 20 times faster (only a few seconds). So it seems that the <code>combinations</code> routine is quite slow. This is a bit unfortunate as <code>combinations</code> is really useful and makes the code simpler and cleaner. I still prefer to present this version, but if you need better performance, then use two nested loops as in the Perl implementation below.</p>
+
+<h3>Pentagon Numbers in Perl</h3>
+
+<p>This is essentially the same idea as the Raku program above. However, as mentioned above, we don&#8217;t have <code>combinations</code> routine in Perl, so we use two nested loops to generate all the combinations. The advantage is that this runs much faster.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use constant MAX =&gt; 4000;
+
+my @pentanums = map { $_ * (3 * $_ - 1)/2 } 1..MAX;
+my %penta_h = map {$pentanums[$_] =&gt; $_+1 } 0..MAX-1;
+# say Dumper \%penta_h;
+
+OUTER: for my $i (0..MAX-1) {
+    for my $j ($i+1..MAX-1) {
+        my $sum = $pentanums[$i] + $pentanums[$j];
+        next unless exists $penta_h{$sum};
+        my $diff = $pentanums[$j] - $pentanums[$i];
+        next unless exists $penta_h{$diff};
+        say "First pair of pentagon numbers is $pentanums[$i] (rank ", $i+1, ") and $pentanums[$j] (rank ", $j+1, ")";
+        say "Sum is $sum (rank $penta_h{$sum}) and difference is $diff (rank $penta_h{$diff})";
+        last OUTER;
+    }
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ time perl  ./pentanums.pl
+First pair of pentagon numbers is 1560090 (rank 1020) and 7042750 (rank 2167)
+Sum is 8602840 (rank 2395) and difference is 5482660 (rank 1912)
+
+real    0m2,043s
+user    0m1,703s
+sys     0m0,108s
+</code></pre>
+
+<h3>Pentagon Numbers in Ring</h3>
+
+<p>Again a port to Ring of the Perl implementation:</p>
+
+<pre><code>max = 3000
+pentanums = []
+for i = 1 to max 
+    add (pentanums,  i * (3 * i - 1) / 2)
+next
+// see pentanums + nl
+penta_h = []
+for i = 1 to max
+    penta_h[ string(pentanums[i])] = i
+next
+for i = 1 to max
+    for j = i+1 to max
+        diff = pentanums[j] - pentanums[i]
+        diff_s = string(diff)
+        if isnull(penta_h[diff_s]) loop ok
+        sum = pentanums[i] + pentanums[j]
+        sum_s = string(sum)
+        if isnull(penta_h[sum_s]) loop ok
+        see "" + diff + " " + sum + " " + pentanums[i] + " " + pentanums[j] + nl
+    next
+next
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ ring ./pentanums.ring
+5482660 8602840 1560090 7042750
+</code></pre>
+
+<h3>Pentagon Numbers in Julia</h3>
+
+<pre><code>max = 4000
+pentanums = map((x) -&gt; Int(x * (3 * x -1)/2), 1:max)
+penta_h = Dict(map((x) -&gt; Int(x * (3 * x -1)/2) =&gt; x, 1:max))
+for i in 1:4000-1
+    for j in (i + 1):4000-1
+        sum = pentanums[i] + pentanums[j]
+        if (haskey(penta_h, Int(sum)) == 0)
+            continue
+        end
+        diff = pentanums[i] - pentanums[j]
+        # if (haskey(penta_h, Int(diff)) == 0)
+        #    continue
+        # end
+        println(i, " ", j, " ", pentanums[i], " ", pentanums[j], " ", sum)
+    end
+end
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ julia pentanums.jl
+Indices 1020 and 2167 ; Pentanums: 1560090 7042750; Sum: 8602840; Diff: 5482660
+1020 2167
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on January 23, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>Rother OSS GmbH / OTOBO unterstützt den Deutschen Perl/Raku-Workshop 12/01/22</title>
     <link rel="alternate" href="http://blogs.perl.org/users/max_maischein/2022/01/rother-oss-gmbh-otobo-unterstutzt-den-deutschen-perlraku-workshop-120122.html"/>
@@ -32,6 +342,142 @@ Als Reaktion auf deren geänderte Release-Strategie haben wir Anfang 2020 unsere
 
 <p>Wir wachsen und freuen uns über <a href="https://otobo.de/jobs/">Mitstreiter</a> für unser OS-Projekt!</p>]]>
     </content>
+</entry>
+  <entry>
+  <title>Grant Proposal: Optree Optimsiations for Performance Gains</title>
+  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/grant_proposal_optree_optimisation_paul_evans"/>
+  <id>tag:news.perlfoundation.org,2022-01-20:/post/grant_proposal_optree_optimisation_paul_evans</id>
+  <published>2022-01-20T19:20:01</published>
+  <updated>2022-01-20T19:20:01</updated>
+  <summary>
+  <![CDATA[
+     Synopsis Apply some efficiency optimisations to generated optrees in order to gain faster runtime performance. There are three ideas covered by this proposal; any or all of them can be created independently. In each case, it is hard to estimate upfront whether it would actually provide a measurable benefit to programs in practice, so part of the project involves attempting to measure the impact it creates. Project Details Inside a 
+   ]]>
+  </summary>
+  <author>
+    <name>Jason A. Crome</name>
+  </author>
+  <category term="Grants" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
+   <![CDATA[
+     
+     <h2>Synopsis</h2>
+
+<p>Apply some efficiency optimisations to generated optrees in order to gain faster runtime performance. There are three ideas covered by this proposal; any or all of them can be created independently. In each case, it is hard to estimate upfront whether it would actually provide a measurable benefit to programs in practice, so part of the project involves attempting to measure the impact it creates.</p>
+
+<h2>Project Details</h2>
+
+<p>Inside a running <code>perl</code> interpreter, source code is compiled into a more direct representation of its behaviour, called an optree. This is comprised of individual elements called ops. Each is executed in sequence, and performs a small specific part of work involved in executing the program as a whole.</p>
+
+<p>Due to the small nature of the specific ops, there are several optimisations that are performed by the interpreter before it starts executing a program; mostly on a theme of combining the effects of several small ops into fewer, larger ones. This allows them to overall work more efficiently as they can either share intermediate results, or can avoid the various data-passing overheads between them.</p>
+
+<p>This project aims to look at three new ideas on this theme of skipping certain elements of the optree by combining their effects together. A full description of each is given in the appendix section below. Each of the three ideas were first mentioned on the <a href="https://www.nntp.perl.org/group/perl.perl5.porters/2021/12/msg262094.html">Perl5-Porters mailing list</a>.</p>
+
+<h2>Timeline</h2>
+
+<p>Each of the three optimisations would process through the following stages: </p>
+
+<p><em>*1. Create an "ideal-case" benchmark test *</em></p>
+
+<p>Begin by creating a benchmark containing some simple code that is entirely composed of one particular kind of operation, which is the target of the 
+optimisation. Measure this benchmark case in order to obtain a baseline performance measurement.  </p>
+
+<p><em>*2. Implement the optimisation *</em></p>
+
+<p>Apply code to the Perl interpreter by defining new opcode flags, adjusting the peephole optimiser, or whatever other techniques may be required to achieve it. </p>
+
+<p>Take a second measurement of performance with the optimisation applied. This should give an indication of the maximal possible gain that could be achieved.</p>
+
+<p><strong>3. Analyse large programs to estimate extent of application</strong></p>
+
+<p>While the figure gained in the above step gives a best-case value, it is unlikely that real-world programs would be able to gain as much benefit. It would be useful to analyse the generated optree of real-world programs to get an estimate of how likely these optimisations are to be hit, and a guess at what proportion of the potential benefit could actually be achieve in a real case.</p>
+
+<p>Actually this step could be performed first, for each of the three optimisations, to get a suggestion on which of them are likely to be the most useful, and thus how to assign the remaining project time to each of them.</p>
+
+<h2>Author Information</h2>
+
+<p>I am Paul Evans, PEVANS on <a href="https://metacpan.org/author/PEVANS">CPAN</a> and current member of the Perl Steering Committee.</p>
+
+<p>I have been a CPAN maintainer for over 12 years, and currently have over 200 distributions under my name. Recently I have been working on a variety of perl core features; adding the <code>isa</code> operator to Perl 5.32, <code>try/catch</code> syntax to 5.34, and the <code>builtin::</code> namespace of additional core functions expected to be part of the upcoming 5.36 release.</p>
+
+<p>I have successfully completed two TPF projects before, to improve the implementation of the <code>Future::AsyncAwait</code> module; and to create bindings for the <code>libuv</code> event system. </p>
+
+<h2>Amount Requested</h2>
+
+<p>$3,980 USD</p>
+
+<h2>Appendix</h2>
+
+<p>The three optimisations described in more detail:</p>
+
+<h3><code>OA_TARGLEX</code> on <code>OP_CONST</code></h3>
+
+<p>Give the <code>OP_CONST</code> opcode the <code>OA_TARGLE</code> flag, meaning that code such as
+<code>
+    $var = 123;
+</code>
+gains a performance optimisation, discarding the <code>OP_PADSV</code> and <code>OP_SASSIGN</code> which is normally used to implement scalar lexical variable assignment from a constant, leaving just a single <code>OP_CONST</code> in its place.</p>
+
+<h3><code>OA_TARGLEX</code> with <code>OPpLVAL_INTRO</code></h3>
+
+<p>Create a new <code>OA_...</code> constant, or adjust the semantics of the existing <code>OA_TARGLEX</code>, such that it can also apply in <code>OPpLVAL_INTRO</code> situations. This would allow the (currently fairly-rare) <code>OA_TARGLEX</code> optimisation to
+also apply on variables introduced in <code>my</code> expressions, such as
+<code>
+    my $zero = 0;
+</code>
+by once again discarding the <code>OP_PADSV</code> and <code>OP_SASSIGN</code> ops.</p>
+
+<h3>Fold away <code>OP_PADSV</code> arguments to <code>UNOP</code>s</h3>
+
+<p>Create a similar optimisation to the <code>-&amp;gt;op_targ</code> opcode field, applicable to <code>UNOP</code>s to contain the pad offset of a lexical variable argument for arguments being passed into <code>UNOP</code>s. Thus for example a statement like
+<code>
+    sleep $time;
+</code>
+could discard the <code>OP_PADSV</code> of its incoming argument, and similarly avoid using the stack for the lexical variable.</p>
+
+    ]]>
+  </content>
+</entry>
+  <entry>
+  <title>Call for Grants: January 2022 Round</title>
+  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/call_for_grants_jan_2022"/>
+  <id>tag:news.perlfoundation.org,2022-01-20:/post/call_for_grants_jan_2022</id>
+  <published>2022-01-20T19:14:01</published>
+  <updated>2022-01-20T19:14:01</updated>
+  <summary>
+  <![CDATA[
+     The Grants Committee is accepting grant proposals all the time. We evaluate them every two months and another round is starting. If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 Jan 31, 2022, UTC. We will publish the received applications, get community feedback through February 7th, and we 
+   ]]>
+  </summary>
+  <author>
+    <name>Jason A. Crome</name>
+  </author>
+  <category term="Grants" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
+   <![CDATA[
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>The Grants Committee is accepting grant proposals all the time. We evaluate them every two months and another round is starting.</p>
+
+<p>If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 Jan 31, 2022, UTC. We will publish the received applications, get community feedback through February 7th, and we will conclude the process shortly thereafter.</p>
+
+<p>We now accept grant requests for core Perl and Raku development. There are some eligibility requirements that must be met for each language when submitting a grant. For Perl:
+* The applicant must be a contributor to the Perl core.
+* The application must be endorsed by one or more people with commit rights to the Perl core.</p>
+
+<p>For Raku:
+* The applicant must be a contributor to the Raku language specification or one of its implementations.
+* The application must be endorsed by one or more people in Raku Steering Council.</p>
+
+<p>For more information, see <a href="https://news.perlfoundation.org/post/grants_committee_expanded_role">this blog post</a>.</p>
+
+<p>To apply, please read <a href="https://www.perlfoundation.org/how-to-write-a-proposal.html">How to Write a Proposal</a>, <a href="https://www.perlfoundation.org/grants-committee.html">GC Charter, Rules of Operation</a> and <a href="https://www.perlfoundation.org/running-grants.html">Running Grants List</a> will also help you understand how the grant process works. We also got some <a href="https://grants.perlfoundation.org/">grant ideas</a> from the community. Grant applications may be submitted via <a href="https://docs.google.com/forms/d/16seYhrMjz8rgsau9e1MtwYY0fHB81mVKm-0SD6Ynty0/viewform">this Google Form</a>.</p>
+
+<p>We will confirm the receipt of application by no later than February 1st.</p>
+
+<p>If you have further questions, please contact me at tpf-grants-secretary at perl-foundation.org.</p>
+
+    ]]>
+  </content>
 </entry>
   <entry>
     <title>Get out early with Perl statement modifiers</title>
@@ -452,289 +898,6 @@ say join ' ', find_first_plus_and_minus_pentagon_numbers();
     </author>
     <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/bruce_gray/">
         <![CDATA[<p>Please go <a href="http://blogs.perl.org/users/bruce_gray/2022/01/twc-146-10k-prime-and-cw-trees.html">here</a> instead.</p>
-]]>
-        
-
-    </content>
-</entry>
-  <entry>
-    <title>Perl Weekly Challenge 147: Truncatable Primes and Pentagon Numbers</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/01/perl-weekly-challenge-147-truncatable-primes-and-pentagon-numbers.html"/>
-    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10624</id>
-    <published>2022-01-12T04:11:59Z</published>
-    <updated>2022-01-17T02:59:46Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 147 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-147/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on January 16, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Truncatable Prime</h2>
-
-<p><em>Write a script to generate first 20 left-truncatable prime numbers in base 10.</em></p>
-
-<blockquote>
-  <p><em>In number theory, a left-truncatable prime is a prime number which, in a given base, contains no 0, and if the leading left digit is successively removed, then all resulting numbers are primes.</em></p>
-</blockquote>
-
-<p><em>Example:</em></p>
-
-<pre><code>9137 is one such left-truncatable prime since 9137, 137, 37 and 7 are all prime numbers.
-</code></pre>
-
-<h3>Truncatable Prime in Raku</h3>
-
-<p>We first build an infinite lazy list (<code>@el-primes</code>) of primes with no 0 digit. For each integer in the list, we then try to truncate the left-most digit and check whether the truncated number is prime, and so one until we get to the last digit. The process stops when  20 such primes have been generated.</p>
-
-<pre><code>my @truncatables;
-my $count = 0;
-my @el-primes = grep {.is-prime and not /0/}, 2..Inf;
-for @el-primes -&gt; $candidate {
-    my $length = $candidate.chars;
-    my $is-truncatable = True; 
-    for 1..$length -&gt; $i {
-        my $truncated = substr $candidate, $length - $i;
-        $is-truncatable = False, last unless $truncated.is-prime;
-    }
-    if $is-truncatable {
-        push @truncatables, $candidate;
-        $count++;
-    }
-    last if $count &gt;= 20;
-}
-say @truncatables;
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>raku ./truncatable.raku
-[2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197]
-</code></pre>
-
-<h3>Truncatable Prime in Perl</h3>
-
-<p>This Perl program is based on essentially the same idea as the Raku implementation, except that we build a hash of primes along the way. We need to check primality only when we meet a new number the first time: for the truncated numbers, we simply check their primality by looking up into the hash.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use constant MAX =&gt; 20;
-
-my @primes = (2, 3, 5);
-my %primes_h = map {$_ =&gt; 1} @primes;
-my @truncatables = @primes;;
-my $candidate = $primes[-1];
-my $count = scalar @truncatables;;
-while ($count &lt; MAX) {
-    $candidate += 2;
-    my $not_prime = 0;
-    next if $candidate =~ /0/;
-    my $sq_cand = sqrt $candidate;
-    for my $i (@primes) {
-        $not_prime = 1, last unless $candidate % $i;
-        last if $i &gt; $sq_cand;
-    }
-    next if $not_prime;
-    push @primes, $candidate;
-    $primes_h{$candidate} = 1;
-    # now check if truncatable prime
-    my $length = length $candidate;
-    my $is_truncatable = 1; 
-    for my $i (1..$length) {
-        my $truncated = substr $candidate, $length - $i;
-        $is_truncatable = 0, last unless exists $primes_h{$truncated};
-    }
-    if ($is_truncatable) {
-        push @truncatables, $candidate;
-        $count++;
-    }
-}
-say "@truncatables";
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./truncatable.pl
-2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
-</code></pre>
-
-<h3>Truncatable Prime in Ring</h3>
-
-<p>I continue here my exploration of <a href="https://ring-lang.sourceforge.io/">Ring</a>, a quite recent programming language. The program below is a port to Ring of the Perl program above.</p>
-
-<pre><code>max = 20
-primes = [2, 3, 5]
-primes_h = []
-count = len(primes)
-for i = 1 to count
-    primes_h[string(primes[i])] = i
-next
-truncatables = primes
-candidate = primes[count]
-while count &lt; max
-    candidate += 2
-    not_prime = false
-    pos = substr(string(candidate), "0")
-    if pos &gt; 0 loop ok
-    sq_cand = floor(sqrt(candidate))
-    for i in primes
-        if candidate % i = 0
-            not_prime = true
-            exit
-        ok
-        if i &gt; sq_cand exit ok
-    next
-    if not_prime loop ok
-    add (primes, candidate)
-    primes_h[string(candidate)] = 1
-    // We've found a prime, now check if truncatable prime
-    length = len(string(candidate))
-    is_truncatable = true
-    for i = 1 to length
-        truncated = right(string(candidate), i)
-        if isnull(primes_h[truncated])
-            is_truncatable = false
-            exit
-        ok
-    next
-    if is_truncatable
-        add(truncatables, candidate);
-        count += 1
-    ok
-
-end
-for val in truncatables see "" + val + " " next
-see " " + nl
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./truncatable.ring
-2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
-</code></pre>
-
-<h2>Task 2: Pentagon Numbers</h2>
-
-<p><em>Write a script to find the first pair of Pentagon Numbers whose sum and difference are also a Pentagon Number.</em></p>
-
-<blockquote>
-  <p><em>Pentagon numbers can be defined as P(n) = n(3n - 1)/2.</em></p>
-</blockquote>
-
-<p><em>Example:</em></p>
-
-<p><em>The first 10 Pentagon Numbers are: 1, 5, 12, 22, 35, 51, 70, 92, 117 and 145.</em></p>
-
-<pre><code>P(4) + P(7) = 22 + 70 = 92 = P(8)
-but
-P(4) - P(7) = |22 - 70| = 48 is not a Pentagon Number.
-</code></pre>
-
-<h3>Pentagon Numbers in Raku</h3>
-
-<p>We&#8217;ve decided to use the built-in <a href="https://docs.raku.org/routine/combinations">combinations</a> method to generate the pairs of pentagon numbers. Note that we cannot use an infinite list of pentagon numbers because the <code>combinations</code> routine cannot operate on an infinite list. So I just tried various increasing values for the <code>$max</code> variable until I obtained a result satisfying the criteria. Note that I use a <code>%penta</code> hash to store the pentagon values, so the verifying whether and sum and the difference values are pentagon number is just a matter of a fast hash lookup.</p>
-
-<pre><code>my $max = 4000;
-my @pentanums = map { (3 * $_² - $_)/2 }, 1..$max;
-my %penta = map {@pentanums[$_] =&gt; $_+1}, 0..$max-1;
-for @pentanums.combinations(2) -&gt; $comb {
-    next unless %penta{$comb.sum}:exists;
-    next unless %penta{$comb[1]-$comb[0]}:exists;
-    say $comb, " = Pentagon numbers N° %penta{$comb[0]} and %penta{$comb[1]}";
-    say "Sum is ", $comb.sum, " (Pentagon number ", %penta{$comb.sum}, ")";
-    say "Difference is ", $comb[1]-$comb[0], " (Pentagon number ", %penta{$comb[1]-$comb[0]}, ")";
-    last;
-}
-say now - INIT now, " seconds";
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>raku ./pentanums.raku
-(1560090 7042750) = Pentagon numbers N° 1020 and 2167
-Sum is 8602840 (Pentagon number 2395)
-Difference is 5482660 (Pentagon number 1912)
-101.7166579 seconds
-</code></pre>
-
-<p>This program is relatively slow (101 seconds execution time). I found that using two nested loops (as in the Perl program below) rather than the <code>combinations</code> routine make the program at least 20 times faster (only a few seconds). So it seems that the <code>combinations</code> routine is quite slow. This is a bit unfortunate as <code>combinations</code> is really useful and makes the code simpler and cleaner. I still prefer to present this version, but if you need better performance, then use two nested loops as in the Perl implementation below.</p>
-
-<h3>Pentagon Numbers in Perl</h3>
-
-<p>This is essentially the same idea as the Raku program above. However, as mentioned above, we don&#8217;t have <code>combinations</code> routine in Perl, so we use two nested loops to generate all the combinations. The advantage is that this runs much faster.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use constant MAX =&gt; 4000;
-
-my @pentanums = map { $_ * (3 * $_ - 1)/2 } 1..MAX;
-my %penta_h = map {$pentanums[$_] =&gt; $_+1 } 0..MAX-1;
-# say Dumper \%penta_h;
-
-OUTER: for my $i (0..MAX-1) {
-    for my $j ($i+1..MAX-1) {
-        my $sum = $pentanums[$i] + $pentanums[$j];
-        next unless exists $penta_h{$sum};
-        my $diff = $pentanums[$j] - $pentanums[$i];
-        next unless exists $penta_h{$diff};
-        say "First pair of pentagon numbers is $pentanums[$i] (rank ", $i+1, ") and $pentanums[$j] (rank ", $j+1, ")";
-        say "Sum is $sum (rank $penta_h{$sum}) and difference is $diff (rank $penta_h{$diff})";
-        last OUTER;
-    }
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ time perl  ./pentanums.pl
-First pair of pentagon numbers is 1560090 (rank 1020) and 7042750 (rank 2167)
-Sum is 8602840 (rank 2395) and difference is 5482660 (rank 1912)
-
-real    0m2,043s
-user    0m1,703s
-sys     0m0,108s
-</code></pre>
-
-<h3>Pentagon Numbers in Ring</h3>
-
-<p>Again a port to Ring of the Perl implementation:</p>
-
-<pre><code>max = 3000
-pentanums = []
-for i = 1 to max 
-    add (pentanums,  i * (3 * i - 1) / 2)
-next
-// see pentanums + nl
-penta_h = []
-for i = 1 to max
-    penta_h[ string(pentanums[i])] = i
-next
-for i = 1 to max
-    for j = i+1 to max
-        diff = pentanums[j] - pentanums[i]
-        diff_s = string(diff)
-        if isnull(penta_h[diff_s]) loop ok
-        sum = pentanums[i] + pentanums[j]
-        sum_s = string(sum)
-        if isnull(penta_h[sum_s]) loop ok
-        see "" + diff + " " + sum + " " + pentanums[i] + " " + pentanums[j] + nl
-    next
-next
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./pentanums.ring
-5482660 8602840 1560090 7042750
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on January 23, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
 ]]>
         
 
@@ -3515,98 +3678,6 @@ are kept in a hash.&lt;/p&gt;
 <p>Speak to your accountant to learn more about theses two options.</p>
 
 <p>Thank you for being such an important part of our work at The Perl Foundation. Your support makes it possible for us to do the daily work growing Perl and Raku.</p>
-
-    ]]>
-  </content>
-</entry>
-  <entry>
-  <title>TPRCHouston - Newsletter #1</title>
-  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/tprc-houston-newsletter-1"/>
-  <id>tag:news.perlfoundation.org,2021-12-22:/post/tprc-houston-newsletter-1</id>
-  <published>2021-12-22T12:45:20</published>
-  <updated>2021-12-22T12:45:20</updated>
-  <summary>
-  <![CDATA[
-     About The Perl and Raku Conference in Houston. Call for Presenters and Master Class. Talk ideas? Volunteers wanted! Call for Sponsors. How to reach us.
-   ]]>
-  </summary>
-  <author>
-    <name>Todd Rinaldo</name>
-  </author>
-  <category term="Conferences" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
-   <![CDATA[
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/9a4a6e97147efd362fac15da697159b6b49db039/icon-1024x1024.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>In this issue:
-* About The Perl and Raku Conference in Houston
-* Call for Presenters
-* Call for Teachers/Master-Class
-* Call for talk ideas
-* Volunteer-Organizer positions open
-* Call for sponsors
-* Contact us</p>
-
-<h2>Come to the Perl and Raku Conference in Houston!</h2>
-
-<p>We can't wait to see everyone in person at the 2022 Perl and Raku Conference June 21-25 2022! </p>
-
-<p>You can expect to see a lot of presentations on Perl, Raku, and supporting languages. Core presentation topics in the past have included Perl 5 and Raku. Organizers are hopeful to continue with a core of Perl 5 and Raku moving forward. It’s worth noting that this event is run by volunteers and talks are also given by volunteers. The presentations at the conference are being submitted now during our Call For Presenters (CFP) and will be selected by organizers who volunteer to be on our talks-committee. Generally, there are sets of 3 to 4 simultaneous presentations (20-50 minutes long) on a variety of topics throughout each main event day. Surrounding the main conference days, master-class tutorial sessions (half day and full day format) are offered for an additional fee.</p>
-
-<p>If you see <strong>#TPRCHouston</strong> around on social media, that’s our tag for The Perl Conference in Houston.</p>
-
-<p>The website is live! There are still a few details we're filling in like how to book a room and of course the schedule, but there's still a bunch of information you can get by visiting https://perlconference.us</p>
-
-<h2>Call for Presenters</h2>
-
-<p>The call for presentations is open now! We will have an early submission deadline of 12 noon UTC, Tuesday February 1st. The final deadline for speaker submissions is 12 noon, Tuesday March 1st. Submit your talk ideas here: https://perlconference.us/speakers</p>
-
-<p>Whether this is your first time submitting a talk proposal or one of many you’ve proposed and presented, consider submitting your talk idea to us. Making a presentation at a national event is great for networking and experience! </p>
-
-<p>The presentations at the conference are selected by organizers who volunteer to be on our Talks Committee. Generally, there are sets of 3 to 4 simultaneous presentations (20 or 50 minutes long, including Q&amp;A) on a variety of technical topics throughout each main event day. </p>
-
-<p>Not sure you are up for giving a talk but have a topic you’d like to learn more about at our event? Tweet <a href="https://twitter.com/PerlConferences">@PerlConferences</a> using <strong>#TPRCHouston</strong> or email <a href="mailto:admin@perlconference.us">admin@perlconference.us</a>.</p>
-
-<h2>Call for Teachers/Master-Class</h2>
-
-<p>We need to fill out our master-class/tutorial schedule. All tutorial ideas will be considered. You can submit your class idea to https://perlconference.us/speakers. We will get back to you quickly.</p>
-
-<p>Keep in mind, the event schedule differs from some of the past events. Master-class tutorial sessions surrounding the main event and will be held on Jun 21 (Tuesday) and Jun 25 (Saturday).</p>
-
-<h2>What presentations are you hoping to see?</h2>
-
-<p>We’d love to hear your tech talk ideas for TPRCHouston! We’ve already received some interest in the following topics:</p>
-
-<ul>
-<li>Perl and Raku / Internet / History game show</li>
-<li>Security</li>
-<li>Fun side projects with Perl and Raku</li>
-<li>Integrating Perl and Raku with other tools</li>
-</ul>
-
-<p>Got some more talk suggestions? Tweet <a href="https://twitter.com/PerlConferences">@PerlConferences</a> using <strong>#TPRCHouston</strong> or email <a href="mailto:admin@perlconference.us">admin@perlconference.us</a>.</p>
-
-<h2>Be part of it all - Organizer spots open!</h2>
-
-<p>Planning for The Perl Conference in Houston is underway and we need a few more hands! It’s not too late to join us in planning this event! Openings are web design/content editor, speaking coordinator, outreach assistant, and more... Email <a href="mailto:admin@perlconference.us">admin@perlconference.us</a> to volunteer. You can help frame the conference! </p>
-
-<h2>Call for Sponsors!</h2>
-
-<p>A donation to The Perl Foundation not only contributes to the Perl Conference in Houston, but also aids our other outreach programs. Perl Foundation Sponsors will get recognition for supporting The Perl Conference as well as our regional Perl Workshops, beginner training initiatives, and our grants programs for an entire year. Donating directly to The Perl Foundation provides the most value for your sponsorship money.</p>
-
-<p>However, sponsors can also donate directly to The Perl Conference. Often the organizers are able to link a sponsor directly to an event at the conference (wifi, coffee break, etc.)  where the cost of the event is in line with the donation amount.</p>
-
-<p>Sponsors of $500 or more will be provided a table at our sponsor expo and job fair. </p>
-
-<h2>How to reach our organizers</h2>
-
-<ul>
-<li>Visit our website:  https://perlconference.us</li>
-<li>Follow us on Twitter: <a href="https://twitter.com/PerlConferences">@PerlConferences</a></li>
-<li>Like us on Facebook: https://www.facebook.com/theperlconference</li>
-<li>Subscribe to the mailing list: https://perlconference.us/subscribe</li>
-<li>Send any questions about The Perl Conference to <a href="mailto:admin@perlconference.us">admin@perlconference.us</a>. An organizer will get back to you.</li>
-</ul>
 
     ]]>
   </content>
