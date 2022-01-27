@@ -57,6 +57,794 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/01/perl-weekly-challenge-149-fibonacci-digit-sum-and-largest-square.html">Perl Weekly Challenge 149: Fibonacci Digit Sum and Largest Square</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+ on Thursday 27 January 2022 03:45</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 149 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-149/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on January 30, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Fibonacci Digit Sum</h2>
+
+<p><em>Given an input <code>$N</code>, generate the first <code>$N</code> numbers for which the sum of their digits is a Fibonacci number.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>f(20)=[0, 1, 2, 3, 5, 8, 10, 11, 12, 14, 17, 20, 21, 23, 26, 30, 32, 35, 41, 44]
+</code></pre>
+
+<h3>Fibonacci Digit Sum in Raku</h3>
+
+<p>We first populate a <a href="https://docs.raku.org/type/Set">Set</a> (for fast look-up) with the Fibonacci numbers up to 1000. Note that we could choose a much smaller maximum value, but it doesn&#8217;t cost much and it will work with very large sequences.</p>
+
+<p>To generate the Fibonacci numbers, we use the <a href="https://docs.raku.org/language/operators#index-entry-sequence_operator">sequence operator</a>, in which we provide the first two numbers of the Fibonacci sequence and a formula (<code>* + *</code>) to compute a Fibonacci number from the two previous ones. The last part of the code line is the stopping condition. This idiomatic construction makes the code very concise and fast. This is an example in a Raku one-liner:</p>
+
+<pre><code>$ raku -e 'say 0, 1, * + * ...^  * &gt; 100'
+(0 1 1 2 3 5 8 13 21 34 55 89)
+</code></pre>
+
+<p>Then, we use the <a href="https://docs.raku.org/language/control#gather/take">gather / take</a> construct to loop over successive integers and store those satisfying the criteria, and we stop when we reach the limit.</p>
+
+<pre><code>sub MAIN (Int $max = 20) {       # 20: default input value
+    my $fibo = set(0, 1, * + * ...^  * &gt; 1000);
+    my $count = 0;
+    my @numbers = gather {
+        for 0 .. Inf -&gt; $num {
+            if $num.comb.sum (elem) $fibo {
+                take $num;
+                $count++;
+                last if $count &gt;= $max;
+            }
+        }
+    }
+    say @numbers;
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ raku ./fib_digit_sum.raku
+[0 1 2 3 5 8 10 11 12 14 17 20 21 23 26 30 32 35 41 44]
+
+$ raku ./fib_digit_sum.raku 25
+[0 1 2 3 5 8 10 11 12 14 17 20 21 23 26 30 32 35 41 44 49 50 53 58 62]
+</code></pre>
+
+<h3>Fibonacci Digit Sum in Perl</h3>
+
+<p>The Perl solution follows essentially the same ideas as the Raku implementation, except that we use a plain <code>while</code> loop (instead of a sequence) to generate the Fibonacci numbers and we store them in a hash instead of a set for fast look-up.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub fib_digit_sum {
+    my $max = shift;
+    my @fib = (0, 1);
+    my $count = 1;
+    while ($count &lt; 100) {
+        push @fib, $fib[-1] + $fib[-2];
+        $count ++;
+    }
+    my %fibo = map { $_ =&gt; 1 } @fib;
+    my @numbers;
+    my $count_result = 0;
+    my $i = 0;
+    while ($count_result &lt; $max) {
+        my $sum = 0;
+        $sum += $_ for split //, $i;
+        if (exists $fibo{$sum}) {
+            push @numbers, $i;
+            $count_result++;
+        }
+        $i++
+    }           
+     say "@numbers";
+}
+
+fib_digit_sum(shift);
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./fib_digit_sum.pl 20
+0 1 2 3 5 8 10 11 12 14 17 20 21 23 26 30 32 35 41 44
+
+$ perl ./fib_digit_sum.pl 50
+0 1 2 3 5 8 10 11 12 14 17 20 21 23 26 30 32 35 41 44 49 50 53 58 62 67 71 76 80 85 94 100 101 102 104 107 110 111 113 116 120 122 125 131 134 139 140 143 148 152
+</code></pre>
+
+<h2>Task 2: Largest Square</h2>
+
+<p><em>Given a number base, derive the largest perfect square with no repeated digits and return it as a string. (For base>10, use ‘A’..‘Z’.)</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>f(2)="1"
+f(4)="3201"
+f(10)="9814072356"
+f(12)="B8750A649321"
+</code></pre>
+
+<p>Note that any program that I can think of for solving this task is bound to become very slow for large bases (especially some of them such as 13  in the case of the programs below). </p>
+
+<h3>Largest Square in Raku</h3>
+
+<p>We start with the largest number that can be expressed in <code>$base</code> digits in the given <code>$base</code>. We compute <code>largest_root</code>, the integer part of the root of that number. Then we iterate down one by one from <code>largest_root</code> and check whether the square of each such number has no duplicate digit when expressed in the input base. </p>
+
+<pre><code>sub largest ($base) {
+    my $largest_num = $base ** $base - 1;
+    my $largest_root = $largest_num.sqrt.Int;
+    for (1..$largest_root).reverse -&gt; $i {
+        my $sq = $i².base($base);
+        next if $sq.chars != $sq.comb.Set;
+        say "f($base) = $sq" and last;
+    }
+}
+for 1..12 -&gt; $test { largest $test }
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./largest_sq.raku
+f(2) = 1
+f(3) = 1
+f(4) = 3201
+f(5) = 4301
+f(6) = 452013
+f(7) = 6250341
+f(8) = 47302651
+f(9) = 823146570
+f(10) = 9814072356
+f(11) = A8701245369
+f(12) = B8750A649321
+</code></pre>
+
+<h3>Largest Square in Perl</h3>
+
+<p>This is essentially the same idea in Perl. We use two helper subroutines: <code>has_unique_digits</code> to discard squares having duplicate digits (using a hash), and <code>base_to_b</code> to convert a number into a string representing that number in the given base.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub base_to_b {
+  my ($n, $b) = @_;
+  my $s = "";
+  while ($n) {
+    $s .= ('0'..'9','A'..'Z')[$n % $b];
+    $n = int($n / $b);
+  }
+  scalar(reverse($s));
+}
+
+sub has_unique_digits {
+    my $in = shift; 
+    my %seen = map { $_ =&gt; 1 } split //,  $in;
+    return length $in == scalar keys %seen;
+}
+
+sub largest {
+    my $base = shift;
+    my $largest_num = $base ** $base - 1;
+    my $largest_root = int sqrt $largest_num;
+    for my $i ( reverse 1..$largest_root) {
+        my $sq = base_to_b ($i*$i, $base);
+        next unless has_unique_digits $sq;
+        say "f($base) = $sq" and last;
+    }
+}
+
+largest $_ for 1..14;
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl ./largest_sq.pl
+f(2) = 1
+f(3) = 1
+f(4) = 3201
+f(5) = 4301
+f(6) = 452013
+f(7) = 6250341
+f(8) = 47302651
+f(9) = 823146570
+f(10) = 9814072356
+f(11) = A8701245369
+f(12) = B8750A649321
+f(13) = CBA504216873
+f(14) = DC71B30685A924
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on February 6, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/taw/100-languages-speedrun-episode-68-raku-perl-6-grammars-9f0">100 Languages Speedrun: Episode 68: Raku (Perl 6) Grammars</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Tomasz Wegrzanowski
+ on Thursday 27 January 2022 00:52</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>I covered <a href="https://dev.to/taw/languages-speedrun-episode-26-raku-perl-6-4emf">Raku</a> and <a href="https://dev.to/taw/100-languages-speedrun-episode-47-raku-perl-6-regular-expressions-4p8n">Raku regular expressions</a> before, now it's time to complete this with an episode about Raku grammars.</p>
+
+<p>Processing text is one of the most common tasks in programming, so most languages since Perl come with some kind of regular expression system. Generally the basic regexps are the same, but each language comes with some unique extensions. Raku notably does not keep the traditional regexp syntax even for the common things, but conceptually they're mostly the same.</p>
+
+<p>A regular expression can extract information from a string based on some pattern, but often we need something more advanced. So a lot of languages also have some way to define tokenizers, which chop the string into pieces based on multiple regular expressions. Notably Perl's <code>/gc</code> flag, and Ruby <a href="https://ruby-doc.org/stdlib-3.0.0/libdoc/strscan/rdoc/StringScanner.html"><code>StringScanner</code></a>.</p>
+
+<p>Raku takes it one step further, and supports defining grammars as part of the language. Pretty much every other language needs external tools like Yacc or ANTLR for that.</p>
+
+<h3>
+  <a href="#named-regular-expressions">
+  </a>
+  Named regular expressions
+</h3>
+
+<p>Before we get to grammars, let's take a tiny detour to regular expressions. In addition to defining them in one go, we can also define them in pieces:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env raku</span>
+
+<span class="k">my</span> <span class="nv">regex</span> <span class="nv">digit</span> <span class="p">{</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;</span> <span class="p">};</span>
+<span class="k">my</span> <span class="nv">regex</span> <span class="nv">nonzero_digit</span> <span class="p">{</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">1</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;</span> <span class="p">};</span>
+<span class="k">my</span> <span class="nv">regex</span> <span class="nv">byte</span> <span class="p">{</span>
+  <span class="p">[</span>
+  <span class="o">|</span> <span class="o">&lt;</span><span class="nv">digit</span><span class="o">&gt;</span>                 <span class="c1"># 0-9</span>
+  <span class="o">|</span> <span class="o">&lt;</span><span class="nv">nonzero_digit</span><span class="o">&gt;</span> <span class="o">&lt;</span><span class="nv">digit</span><span class="o">&gt;</span> <span class="c1"># 10-99</span>
+  <span class="o">|</span> <span class="mi">1</span> <span class="o">&lt;</span><span class="nv">digit</span><span class="o">&gt;</span> <span class="o">&lt;</span><span class="nv">digit</span><span class="o">&gt;</span>       <span class="c1"># 100-199</span>
+  <span class="o">|</span> <span class="mi">2</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">4</span><span class="p">]</span><span class="o">&gt;</span> <span class="o">&lt;</span><span class="nv">digit</span><span class="o">&gt;</span>      <span class="c1"># 200-249</span>
+  <span class="o">|</span> <span class="mi">25</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">5</span><span class="p">]</span><span class="o">&gt;</span>             <span class="c1"># 250-255</span>
+  <span class="p">]</span>
+<span class="p">};</span>
+<span class="k">my</span> <span class="nv">regex</span> <span class="nv">ipv4</span> <span class="p">{</span> <span class="o">^</span> <span class="o">&lt;</span><span class="nv">byte</span><span class="o">&gt;</span> <span class="o">**</span> <span class="mi">4</span> <span class="o">%</span> <span class="p">"</span><span class="s2">.</span><span class="p">"</span> <span class="err">$</span> <span class="p">};</span>
+
+<span class="k">my</span> <span class="nv">@examples</span> <span class="o">=</span> <span class="p">(</span>
+  <span class="p">"</span><span class="s2">1.2.3.4</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">127.0.0.1</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">100.200.300.400</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">02.03.04.05</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">1.2.3.4.5</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">it's a kitty!</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">69.420.69.420</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">10.20.30.40 </span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">127.0.0.1.</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">๓.๓.๓.๓</span><span class="p">",</span> <span class="c1"># \d bug still there</span>
+<span class="p">);</span>
+<span class="k">for</span> <span class="nv">@examples</span> <span class="p">{</span>
+  <span class="nv">say</span> <span class="p">"</span><span class="s2">VALID: '</span><span class="si">$_</span><span class="s2">'</span><span class="p">"</span> <span class="k">if</span> <span class="vg">$_</span> <span class="o">~~</span> <span class="nv">&amp;ipv4</span><span class="p">;</span>
+  <span class="nv">say</span> <span class="p">"</span><span class="s2">NOT VALID: '</span><span class="si">$_</span><span class="s2">'</span><span class="p">"</span> <span class="k">if</span> <span class="vg">$_</span> <span class="o">!~~</span> <span class="nv">&amp;ipv4</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Initially I thought I could even define some mutually recursive regular expressions, and get simple parsers this way, but that is not actually supported.</p>
+
+<p>Notice unusual sigils we need to use in this case - <code>&lt;digit&gt;</code> inside regular expression, and <code>&amp;ipv4</code> outside it.</p>
+
+<h3>
+  <a href="#key-value-grammar">
+  </a>
+  Key Value Grammar
+</h3>
+
+<p>Let's start with extremely simple grammar, one that matches a single key value pair, with a single word on both sides:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env raku</span>
+
+<span class="nv">grammar</span> <span class="nv">KV</span> <span class="p">{</span>
+  <span class="nv">rule</span> <span class="nv">TOP</span> <span class="p">{</span> <span class="o">^</span> <span class="o">&lt;</span><span class="nv">key</span><span class="o">&gt;</span> <span class="p">"</span><span class="s2">=</span><span class="p">"</span> <span class="o">&lt;</span><span class="nv">value</span><span class="o">&gt;</span> <span class="err">$</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">id</span> <span class="p">{</span> <span class="o">&lt;</span><span class="p">[</span><span class="nv">a</span><span class="o">..</span><span class="nv">zA</span><span class="o">..</span><span class="nv">Z0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;</span> <span class="o">+</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">key</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">id</span><span class="o">&gt;</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">value</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">id</span><span class="o">&gt;</span> <span class="p">};</span>
+<span class="p">};</span>
+
+<span class="k">my</span> <span class="nv">@examples</span> <span class="o">=</span> <span class="p">(</span>
+  <span class="p">"</span><span class="s2">cat=cute</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">4=5</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">cat = fluffy</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">cat</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">cat=dog=ferret</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">c a t = d o g</span><span class="p">",</span>
+<span class="p">);</span>
+<span class="k">for</span> <span class="nv">@examples</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="nv">KV</span><span class="o">.</span><span class="nv">parse</span><span class="p">(</span><span class="vg">$_</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">PARSED: </span><span class="si">$_</span><span class="p">";</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">MATCH: $/</span><span class="p">";</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">KEY IS: $/.&lt;key&gt;</span><span class="p">";</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">VALUE IS: $/.&lt;value&gt;</span><span class="p">";</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">PARSE TREE:</span><span class="p">";</span>
+    <span class="nv">say</span> <span class="vg">$/</span><span class="p">;</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">FAILED: </span><span class="si">$_</span><span class="p">";</span>
+  <span class="p">}</span>
+  <span class="nv">say</span> <span class="p">"";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./kv.raku
+PARSED: cat=cute
+MATCH: cat=cute
+KEY IS: cat
+VALUE IS: cute
+PARSE TREE:
+｢cat=cute｣
+ key =&gt; ｢cat｣
+  id =&gt; ｢cat｣
+ value =&gt; ｢cute｣
+  id =&gt; ｢cute｣
+
+PARSED: 4=5
+MATCH: 4=5
+KEY IS: 4
+VALUE IS: 5
+PARSE TREE:
+｢4=5｣
+ key =&gt; ｢4｣
+  id =&gt; ｢4｣
+ value =&gt; ｢5｣
+  id =&gt; ｢5｣
+
+PARSED: cat = fluffy
+MATCH: cat = fluffy
+KEY IS: cat
+VALUE IS: fluffy
+PARSE TREE:
+｢cat = fluffy｣
+ key =&gt; ｢cat｣
+  id =&gt; ｢cat｣
+ value =&gt; ｢fluffy｣
+  id =&gt; ｢fluffy｣
+
+FAILED: cat
+
+FAILED: cat=dog=ferret
+
+FAILED: c a t = d o g
+</code></pre>
+
+</div>
+
+
+
+<p>Let's cover everything that's going on here, and it's a lot:</p>
+
+<ul>
+<li>we can define <code>grammar</code> sort of like we declare a <code>class</code>
+</li>
+<li>tokens are declared with <code>regex</code> (or <code>token</code>, which has slightly different rules)</li>
+<li>parse rules are defined with <code>rule</code>, and can refer to other rules, named regexps, or just plain strings</li>
+<li>parse rule <code>TOP</code> is the default rule for the whole grammar</li>
+<li>by default, whitespace is allowed between tokens, notice <code>cat = fluffy</code> parsed even though we didn't say anything about optional spaces</li>
+<li>this does not happen within the regex, notice how <code>c a t = d o g</code> failed to parse</li>
+<li>we can override this whitespace parsing by redefining <code>ws</code> regexp</li>
+<li>we can use <code>KV.parse($string)</code> or <code>KV.parsefile($filename)</code> to parse a string or a file</li>
+<li>parse result is returned from <code>KV.parse</code>, and also saved to <code>$/</code>, the same one used for regexp matching</li>
+<li>we can navigate the parse tree with <code>.&lt;name&gt;</code>, we can also stringify any part of it, it will return the matching part</li>
+</ul>
+
+<p>If we use grammars this way, we don't really gain much over just using regular expressions.</p>
+
+<h3>
+  <a href="#actions">
+  </a>
+  Actions
+</h3>
+
+<p>The second part of parsing is actions associated with each rule. In many parsing languages, grammars and their actions are defined together. In Raku they're defined separately, which makes it easy to have multiple sets actions for the same grammar.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env raku</span>
+
+<span class="nv">grammar</span> <span class="nv">KV</span> <span class="p">{</span>
+  <span class="nv">rule</span> <span class="nv">TOP</span> <span class="p">{</span> <span class="o">^</span> <span class="o">&lt;</span><span class="nv">key</span><span class="o">&gt;</span> <span class="p">"</span><span class="s2">=</span><span class="p">"</span> <span class="o">&lt;</span><span class="nv">value</span><span class="o">&gt;</span> <span class="err">$</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">id</span> <span class="p">{</span> <span class="o">&lt;</span><span class="p">[</span><span class="nv">a</span><span class="o">..</span><span class="nv">zA</span><span class="o">..</span><span class="nv">Z0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;</span> <span class="o">+</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">key</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">id</span><span class="o">&gt;</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">value</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">id</span><span class="o">&gt;</span> <span class="p">};</span>
+<span class="p">};</span>
+
+<span class="nv">class</span> <span class="nv">KVActions</span> <span class="p">{</span>
+  <span class="nv">method</span> <span class="nv">TOP</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">make</span> <span class="p">{</span> <span class="vg">$/</span><span class="o">.&lt;</span><span class="nv">key</span><span class="o">&gt;.</span><span class="s">made</span> <span class="o">=&gt;</span> <span class="vg">$/</span><span class="o">.&lt;</span><span class="nv">value</span><span class="o">&gt;.</span><span class="nv">made</span> <span class="p">}</span>
+  <span class="p">}</span>
+  <span class="nv">method</span> <span class="nv">key</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span> <span class="nv">make</span> <span class="vg">$/</span><span class="o">.&lt;</span><span class="nv">id</span><span class="o">&gt;.</span><span class="nv">made</span> <span class="p">}</span>
+  <span class="nv">method</span> <span class="nv">value</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span> <span class="nv">make</span> <span class="vg">$/</span><span class="o">.&lt;</span><span class="nv">id</span><span class="o">&gt;.</span><span class="nv">made</span> <span class="p">}</span>
+  <span class="nv">method</span> <span class="nv">id</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span> <span class="nv">make</span> <span class="vg">$/</span><span class="o">.</span><span class="nv">Str</span> <span class="p">}</span>
+<span class="p">};</span>
+
+<span class="k">my</span> <span class="nv">@examples</span> <span class="o">=</span> <span class="p">(</span>
+  <span class="p">"</span><span class="s2">cat=cute</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">4=5</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">cat = fluffy</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">cat</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">cat=dog=ferret</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">c a t = d o g</span><span class="p">",</span>
+<span class="p">);</span>
+<span class="k">for</span> <span class="nv">@examples</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="nv">KV</span><span class="o">.</span><span class="nv">parse</span><span class="p">(</span><span class="vg">$_</span><span class="p">,</span> <span class="s">actions</span> <span class="o">=&gt;</span> <span class="nv">KVActions</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">PARSED: </span><span class="si">$_</span><span class="p">";</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">RESULT: </span><span class="p">",</span> <span class="vg">$/</span><span class="o">.</span><span class="nv">made</span><span class="p">;</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="p">"</span><span class="s2">FAILED: </span><span class="si">$_</span><span class="p">";</span>
+  <span class="p">}</span>
+  <span class="nv">say</span> <span class="p">"";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./actions.raku
+PARSED: cat=cute
+RESULT: {cat =&gt; cute}
+
+PARSED: 4=5
+RESULT: {4 =&gt; 5}
+
+PARSED: cat = fluffy
+RESULT: {cat =&gt; fluffy}
+
+FAILED: cat
+
+FAILED: cat=dog=ferret
+
+FAILED: c a t = d o g
+</code></pre>
+
+</div>
+
+
+
+<p>What's going on:</p>
+
+<ul>
+<li>we define actions with <code>class KVActions { }</code> and each action with <code>method name($/) { ... }</code>, <code>name</code> corresponding to a rule in the grammar</li>
+<li>by the way this is regular class, so you can do regular OO stuff like inheriting from it, override specific actions, metaprogram etc.</li>
+<li>there are many ways to use it, but generally to create a token you do <code>make somedata</code>, and it will return match object with <code>somedata</code> associated with given rule</li>
+<li>you can access subtrees and their associated data with <code>$/.&lt;subrule&gt;.made</code>
+</li>
+<li>you can access text of what was matched by different subtrees with <code>$/.&lt;subrule&gt;.Str</code>
+</li>
+<li>once you parse the whole tree, you can do <code>$/.made</code> to access result of the whole parsing</li>
+<li>this is just the usual way of doing things, there are of course many other ways</li>
+</ul>
+
+<h3>
+  <a href="#rpn-calculator">
+  </a>
+  RPN Calculator
+</h3>
+
+<p>RPN Calculator grammar is very easy - it's just a list of tokens, with optional spaces between them ignored. We could just use a tokenizer for this, but let's use a Raku grammar.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env raku</span>
+
+<span class="nv">grammar</span> <span class="nv">RPN</span> <span class="p">{</span>
+  <span class="nv">rule</span> <span class="nv">TOP</span> <span class="p">{</span> <span class="o">^</span> <span class="o">&lt;</span><span class="nv">tok</span><span class="o">&gt;*</span> <span class="err">$</span> <span class="p">};</span>
+  <span class="nv">rule</span> <span class="nv">tok</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">number</span><span class="o">&gt;</span> <span class="o">|</span> <span class="o">&lt;</span><span class="nv">op</span><span class="o">&gt;</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">number</span> <span class="p">{</span> <span class="p">"</span><span class="s2">-</span><span class="p">"?</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;+</span> <span class="p">["</span><span class="s2">.</span><span class="p">"</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;*</span><span class="p">]?</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">op</span> <span class="p">{</span> <span class="p">"</span><span class="s2">+</span><span class="p">"</span> <span class="o">|</span> <span class="p">"</span><span class="s2">-</span><span class="p">"</span> <span class="o">|</span> <span class="p">"</span><span class="s2">*</span><span class="p">"</span> <span class="o">|</span> <span class="p">"</span><span class="s2">/</span><span class="p">"</span> <span class="o">|</span> <span class="p">"</span><span class="s2">in</span><span class="p">"</span> <span class="o">|</span> <span class="p">"</span><span class="s2">out</span><span class="p">"</span> <span class="p">};</span>
+<span class="p">}</span>
+
+<span class="nv">class</span> <span class="nv">RPNActions</span> <span class="p">{</span>
+  <span class="nv">method</span> <span class="nv">TOP</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span> <span class="nv">make</span> <span class="p">[</span><span class="err">$</span><span class="o">&lt;</span><span class="nv">tok</span><span class="o">&gt;.</span><span class="nb">map</span><span class="p">(</span><span class="o">*.</span><span class="nv">made</span><span class="p">)]</span> <span class="p">}</span>
+  <span class="nv">method</span> <span class="nv">tok</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span> <span class="nv">make</span> <span class="err">$</span><span class="o">&lt;</span><span class="nv">number</span><span class="o">&gt;</span> <span class="p">??</span> <span class="err">$</span><span class="o">&lt;</span><span class="nv">number</span><span class="o">&gt;.</span><span class="nv">made</span> <span class="o">!!</span> <span class="err">$</span><span class="o">&lt;</span><span class="nv">op</span><span class="o">&gt;.</span><span class="nv">made</span> <span class="p">}</span>
+  <span class="nv">method</span> <span class="nv">number</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span> <span class="nv">make</span> <span class="p">{</span><span class="s">type</span> <span class="o">=&gt;</span> <span class="p">"</span><span class="s2">number</span><span class="p">",</span> <span class="s">value</span> <span class="o">=&gt;</span> <span class="o">+</span><span class="vg">$/</span><span class="o">.</span><span class="nv">Str</span><span class="p">}</span> <span class="p">}</span>
+  <span class="nv">method</span> <span class="nv">op</span><span class="p">(</span><span class="vg">$/</span><span class="p">)</span> <span class="p">{</span> <span class="nv">make</span> <span class="p">{</span><span class="s">type</span> <span class="o">=&gt;</span> <span class="vg">$/</span><span class="o">.</span><span class="nv">Str</span><span class="p">}</span> <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">run</span><span class="p">($m) {</span>
+  <span class="k">my</span> <span class="nv">@stack</span> <span class="o">=</span> <span class="p">();</span>
+  <span class="k">for</span> <span class="nv">@$m</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$type</span> <span class="o">=</span> <span class="vg">$_</span><span class="p">{'</span><span class="s1">type</span><span class="p">'};</span>
+    <span class="k">my</span> <span class="nv">$value</span> <span class="o">=</span> <span class="vg">$_</span><span class="p">{'</span><span class="s1">value</span><span class="p">'};</span>
+    <span class="nv">given</span> <span class="nv">$type</span> <span class="p">{</span>
+      <span class="nv">when</span> <span class="p">"</span><span class="s2">number</span><span class="p">"</span> <span class="p">{</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">push</span><span class="p">(</span><span class="nv">$value</span><span class="p">)</span> <span class="p">}</span>
+      <span class="nv">when</span> <span class="p">"</span><span class="s2">in</span><span class="p">"</span> <span class="p">{</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">push</span><span class="p">(</span><span class="o">+</span><span class="nv">$*IN</span><span class="o">.</span><span class="nv">get</span><span class="p">)</span> <span class="p">}</span>
+      <span class="nv">when</span> <span class="p">"</span><span class="s2">/</span><span class="p">"</span> <span class="p">{</span> <span class="k">my</span> <span class="nv">$a</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="k">my</span> <span class="nv">$b</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">push</span><span class="p">(</span><span class="nv">$b</span> <span class="o">/</span> <span class="nv">$a</span><span class="p">)</span> <span class="p">}</span>
+      <span class="nv">when</span> <span class="p">"</span><span class="s2">*</span><span class="p">"</span> <span class="p">{</span> <span class="k">my</span> <span class="nv">$a</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="k">my</span> <span class="nv">$b</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">push</span><span class="p">(</span><span class="nv">$b</span> <span class="o">*</span> <span class="nv">$a</span><span class="p">)</span> <span class="p">}</span>
+      <span class="nv">when</span> <span class="p">"</span><span class="s2">+</span><span class="p">"</span> <span class="p">{</span> <span class="k">my</span> <span class="nv">$a</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="k">my</span> <span class="nv">$b</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">push</span><span class="p">(</span><span class="nv">$b</span> <span class="o">+</span> <span class="nv">$a</span><span class="p">)</span> <span class="p">}</span>
+      <span class="nv">when</span> <span class="p">"</span><span class="s2">-</span><span class="p">"</span> <span class="p">{</span> <span class="k">my</span> <span class="nv">$a</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="k">my</span> <span class="nv">$b</span> <span class="o">=</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span><span class="p">;</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">push</span><span class="p">(</span><span class="nv">$b</span> <span class="o">-</span> <span class="nv">$a</span><span class="p">)</span> <span class="p">}</span>
+      <span class="nv">when</span> <span class="p">"</span><span class="s2">out</span><span class="p">"</span> <span class="p">{</span> <span class="nv">say</span> <span class="nv">@stack</span><span class="o">.</span><span class="nb">pop</span> <span class="p">}</span>
+      <span class="nv">default</span> <span class="p">{</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">Unknown operator </span><span class="si">$type</span><span class="p">"</span> <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">unless</span> <span class="nv">@*ARGS</span> <span class="o">==</span> <span class="mi">1</span> <span class="p">{</span>
+  <span class="nv">note</span> <span class="p">"</span><span class="s2">Usage: $*PROGRAM-NAME &lt;file.rpn&gt;</span><span class="p">";</span>
+  <span class="nb">exit</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="k">my</span> <span class="nv">$path</span> <span class="o">=</span> <span class="nv">@*ARGS</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+
+<span class="k">if</span> <span class="nv">RPN</span><span class="o">.</span><span class="nv">parsefile</span><span class="p">(</span><span class="nv">$path</span><span class="p">,</span> <span class="s">actions</span> <span class="o">=&gt;</span> <span class="nv">RPNActions</span><span class="p">)</span> <span class="p">{</span>
+  <span class="nv">run</span> <span class="vg">$/</span><span class="o">.</span><span class="nv">made</span>
+<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+  <span class="nv">note</span> <span class="p">"</span><span class="s2">Parse error</span><span class="p">";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./rpn.raku rpn/temperature_c_to_f.rpn
+0
+32
+$ ./rpn.raku rpn/temperature_c_to_f.rpn
+100
+212
+$ ./rpn.raku rpn/temperature_c_to_f.rpn
+25.7
+78.26
+$ ./rpn.raku rpn/mile_to_km.rpn
+1000
+1609.34
+</code></pre>
+
+</div>
+
+
+
+<p>What's going on:</p>
+
+<ul>
+<li>grammar has very few simple rules - optional whitespaces between tokens are implied because we didn't turn them off. I don't think this should really be the default, as it makes grammar ambiguous (what is whitespace? just spaces and tabs? newlines? any exotic Unicode stuff?), but it's useful for these toy cases</li>
+<li>
+<code>$&lt;tok&gt;</code> is the same as <code>$/.&lt;tok&gt;</code>, for both normal regexps and grammars</li>
+<li>actions for <code>op</code> and <code>number</code> are simple enough, <code>+</code> operator in Raku converts to a number</li>
+<li>action for <code>tok</code> already looks bad with just two cases, and it would look awful if we listed every kind of op separately. Raku has better syntax to deal with this alternatives, because it absolutely needs it.</li>
+<li>action for <code>TOP</code> is interesting - as we had <code>&lt;tok&gt;*</code>, <code>$&lt;tok&gt;</code> is already an array - as we only care about tokens made, we just <code>.map(*.made)</code> it. Due to Raku having Perl-style scalar vs list context distinction, we need to wrap that in extra <code>[]</code>s.</li>
+<li>the whole process returns single <code>$/</code>, with array of tokens as that's what we constructed</li>
+<li>it's not really part of the grammar, but I added simple <code>run</code> function to run our RPN program</li>
+</ul>
+
+<h3>
+  <a href="#parser-feedback">
+  </a>
+  Parser Feedback
+</h3>
+
+<p>OK, let's do something more complicated, and also let's increase our expectations as to what we want the parser to do. Here's a simple grammar for sums expressions, and yes, it is ambiguous as <code>2+3+4</code> can be parsed as <code>2+(3+4)</code> or <code>(2+3)+4</code>. But we won't be feeding it any such input:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env raku</span>
+
+<span class="nv">grammar</span> <span class="nv">Math</span> <span class="p">{</span>
+  <span class="nv">rule</span> <span class="nv">TOP</span> <span class="p">{</span> <span class="o">^</span> <span class="o">&lt;</span><span class="nv">expr</span><span class="o">&gt;</span> <span class="err">$</span> <span class="p">};</span>
+  <span class="nv">rule</span> <span class="nv">expr</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">number</span><span class="o">&gt;</span> <span class="o">|</span> <span class="o">&lt;</span><span class="nv">parens</span><span class="o">&gt;</span> <span class="o">|</span> <span class="o">&lt;</span><span class="nv">operation</span><span class="o">&gt;</span> <span class="p">};</span>
+  <span class="nv">rule</span> <span class="nv">parens</span> <span class="p">{</span> <span class="p">"</span><span class="s2">(</span><span class="p">"</span> <span class="o">&lt;</span><span class="nv">expr</span><span class="o">&gt;</span> <span class="p">"</span><span class="s2">)</span><span class="p">"</span> <span class="p">};</span>
+  <span class="nv">rule</span> <span class="nv">operation</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">expr</span><span class="o">&gt;</span> <span class="o">&lt;</span><span class="nv">op</span><span class="o">&gt;</span> <span class="o">&lt;</span><span class="nv">expr</span><span class="o">&gt;</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">number</span> <span class="p">{</span> <span class="p">"</span><span class="s2">-</span><span class="p">"?</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;+</span> <span class="p">["</span><span class="s2">.</span><span class="p">"</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;*</span><span class="p">]?</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">op</span> <span class="p">{</span> <span class="p">"</span><span class="s2">+</span><span class="p">"</span> <span class="p">};</span>
+<span class="p">};</span>
+
+<span class="k">my</span> <span class="nv">@examples</span> <span class="o">=</span> <span class="p">(</span>
+  <span class="p">"</span><span class="s2">100</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">-4.20</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">((5))</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">2+3</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">(2+3)</span><span class="p">",</span>
+<span class="p">);</span>
+
+<span class="k">for</span> <span class="nv">@examples</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="nv">Math</span><span class="o">.</span><span class="nv">parse</span><span class="p">(</span><span class="vg">$_</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="vg">$/</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nv">note</span> <span class="p">"</span><span class="s2">Parse error: </span><span class="si">$_</span><span class="p">"</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Let's give it a try:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./math.raku
+｢100｣
+ expr =&gt; ｢100｣
+  number =&gt; ｢100｣
+｢-4.20｣
+ expr =&gt; ｢-4.20｣
+  number =&gt; ｢-4.20｣
+｢((5))｣
+ expr =&gt; ｢((5))｣
+  parens =&gt; ｢((5))｣
+   expr =&gt; ｢(5)｣
+    parens =&gt; ｢(5)｣
+     expr =&gt; ｢5｣
+      number =&gt; ｢5｣
+Parse error: 2+3
+^C
+</code></pre>
+
+</div>
+
+
+
+<p>It completely fails to parse <code>2+3</code>, and it just hangs there on <code>(2+3)</code>. What?</p>
+
+<h3>
+  <a href="#grammar-debugging">
+  </a>
+  Grammar Debugging
+</h3>
+
+<p>I was really baffled by what was going on. I could make the grammar completely unambiguous in a few ways, but that didn't solve the problem at all - different grammars I'd write would result in different baffling issues.</p>
+
+<p>Eventually it occurred to me that this is neither LL-style or LR-style parsing I was expecting, but PEG, which is highly sensitive to order of alternatives. It basically YOLOs any ambiguity by always picking the first matching alternative as soon as it can, even if it then can't match the rest. I only have experience with LR and LL parsing, not PEG, so I dropped my idea of writing any big grammars in Raku.</p>
+
+<p>Anyway, the problem isn't that I run into such issues, or that it's PEG parsing. The problem is that traditional parser generator tools normally come with tools to debug grammar issues; and if you write recursive descend parser by hand, it's just functions calling other functions which you can debug the usual ways. Raku just lacks such tools. If you have problems with your grammar, tough luck.</p>
+
+<p>And while this problem would apply to every kind of parsing, PEG grammars are far more sensitive to tiny changes than traditional LL and LR grammars, so you'll need debugging tools more.</p>
+
+<h3>
+  <a href="#working-sums-grammar">
+  </a>
+  Working Sums Grammar
+</h3>
+
+<p>I eventually figured out one way to make PEG grammars work for simple sums. The problem was that Raku was of no help and I had to figure it out from just the theory:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env raku</span>
+
+<span class="nv">grammar</span> <span class="nv">Math</span> <span class="p">{</span>
+  <span class="nv">rule</span> <span class="nv">TOP</span> <span class="p">{</span> <span class="o">^</span> <span class="o">&lt;</span><span class="nv">expr</span><span class="o">&gt;</span> <span class="err">$</span> <span class="p">};</span>
+  <span class="nv">rule</span> <span class="nv">expr</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">value</span><span class="o">&gt;</span> <span class="o">+</span> <span class="o">%</span> <span class="o">&lt;</span><span class="nv">op</span><span class="o">&gt;</span> <span class="p">};</span>
+  <span class="nv">rule</span> <span class="nv">value</span> <span class="p">{</span> <span class="o">&lt;</span><span class="nv">parens</span><span class="o">&gt;</span> <span class="o">|</span> <span class="o">&lt;</span><span class="nv">number</span><span class="o">&gt;</span> <span class="p">};</span>
+  <span class="nv">rule</span> <span class="nv">parens</span> <span class="p">{</span> <span class="p">"</span><span class="s2">(</span><span class="p">"</span> <span class="o">&lt;</span><span class="nv">expr</span><span class="o">&gt;</span> <span class="p">"</span><span class="s2">)</span><span class="p">"</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">number</span> <span class="p">{</span> <span class="p">"</span><span class="s2">-</span><span class="p">"?</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;+</span> <span class="p">["</span><span class="s2">.</span><span class="p">"</span> <span class="o">&lt;</span><span class="p">[</span><span class="mi">0</span><span class="o">..</span><span class="mi">9</span><span class="p">]</span><span class="o">&gt;*</span><span class="p">]?</span> <span class="p">};</span>
+  <span class="nv">regex</span> <span class="nv">op</span> <span class="p">{</span> <span class="p">"</span><span class="s2">+</span><span class="p">"</span> <span class="p">};</span>
+<span class="p">};</span>
+
+<span class="k">my</span> <span class="nv">@examples</span> <span class="o">=</span> <span class="p">(</span>
+  <span class="p">"</span><span class="s2">100</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">-4.20</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">((5))</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">2+3</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">(2+3)</span><span class="p">",</span>
+  <span class="p">"</span><span class="s2">2+3+4</span><span class="p">",</span>
+<span class="p">);</span>
+
+<span class="k">for</span> <span class="nv">@examples</span> <span class="p">{</span>
+  <span class="k">if</span> <span class="nv">Math</span><span class="o">.</span><span class="nv">parse</span><span class="p">(</span><span class="vg">$_</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">say</span> <span class="vg">$/</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nv">note</span> <span class="p">"</span><span class="s2">Parse error: </span><span class="si">$_</span><span class="p">"</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$  ./math2.raku
+｢100｣
+ expr =&gt; ｢100｣
+  value =&gt; ｢100｣
+   number =&gt; ｢100｣
+｢-4.20｣
+ expr =&gt; ｢-4.20｣
+  value =&gt; ｢-4.20｣
+   number =&gt; ｢-4.20｣
+｢((5))｣
+ expr =&gt; ｢((5))｣
+  value =&gt; ｢((5))｣
+   parens =&gt; ｢((5))｣
+    expr =&gt; ｢(5)｣
+     value =&gt; ｢(5)｣
+      parens =&gt; ｢(5)｣
+       expr =&gt; ｢5｣
+        value =&gt; ｢5｣
+         number =&gt; ｢5｣
+｢2+3｣
+ expr =&gt; ｢2+3｣
+  value =&gt; ｢2｣
+   number =&gt; ｢2｣
+  op =&gt; ｢+｣
+  value =&gt; ｢3｣
+   number =&gt; ｢3｣
+｢(2+3)｣
+ expr =&gt; ｢(2+3)｣
+  value =&gt; ｢(2+3)｣
+   parens =&gt; ｢(2+3)｣
+    expr =&gt; ｢2+3｣
+     value =&gt; ｢2｣
+      number =&gt; ｢2｣
+     op =&gt; ｢+｣
+     value =&gt; ｢3｣
+      number =&gt; ｢3｣
+｢2+3+4｣
+ expr =&gt; ｢2+3+4｣
+  value =&gt; ｢2｣
+   number =&gt; ｢2｣
+  op =&gt; ｢+｣
+  value =&gt; ｢3｣
+   number =&gt; ｢3｣
+  op =&gt; ｢+｣
+  value =&gt; ｢4｣
+   number =&gt; ｢4｣
+</code></pre>
+
+</div>
+
+
+
+<p>This could be extended to other operators, and in the end my solution is somewhat similar to what an LL grammar would look like.</p>
+
+<h3>
+  <a href="#should-you-use-raku-grammars">
+  </a>
+  Should you use Raku Grammars?
+</h3>
+
+<p>I definitely support the idea of adding grammars to the language, and it's already useful enough for libraries like <code>JSON::Tiny</code>, but right now I don't think this is good enough execution yet.</p>
+
+<p>You as grammar writer won't get any feedback about the issues. And users won't get any feedback about why their input isn't matching.</p>
+
+<p>For anyone interested in implementing grammar parsing in their own language, I'd recommend going the <code>LL(*)</code> route like ANTLR does it, not PEG route. PEG grammars can be good enough for some things, but they're so much harder to write and debug, and a lot more restrictive. But either way, you really need to work on your tooling a lot more than Raku did.</p>
+
+<h3>
+  <a href="#code">
+  </a>
+  Code
+</h3>
+
+<p><a href="https://github.com/taw/100-languages-speedrun">All code examples for the series will be in this repository</a>.</p>
+
+<p><a href="https://github.com/taw/100-languages-speedrun/tree/master/episode-68-raku-grammars">Code for the Raku (Perl 6) Grammars episode is available here</a>.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1911-of-perl-distribution-of-cryptopensslx509-followed-by-1912-5ei1">Release 1.9.11 of Perl distribution of Crypt::OpenSSL::X509, followed by 1.9.12</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -125,7 +913,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/548.html">#548 - Perl Books Collection</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -143,7 +931,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/book-review-perl-hacks-150f">Book review &quot;Perl Hacks&quot;</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -309,7 +1097,7 @@ Operator overload... 😵 ("Perl is a operator-oriented language" -&gt; behavior
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/ccclxxvi-9-great-cpan-modules-released_22.html">(ccclxxvi) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -321,7 +1109,7 @@ Operator overload... 😵 ("Perl is a operator-oriented language" -&gt; behavior
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/cdxcvi-metacpan-weekly-report.html">(cdxcvi) metacpan weekly report - Regex::Object</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -333,7 +1121,7 @@ Operator overload... 😵 ("Perl is a operator-oriented language" -&gt; behavior
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/dxviii-stackoverflow-perl-report.html">(dxviii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -345,7 +1133,7 @@ Operator overload... 😵 ("Perl is a operator-oriented language" -&gt; behavior
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/max_maischein/2022/01/united-domains-unterstutzt-den-deutschen-perl-workshop-2022.html">United Domains unterstützt den Deutschen Perl Workshop 2022</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -360,7 +1148,7 @@ Operator overload... 😵 ("Perl is a operator-oriented language" -&gt; behavior
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/01/perl-weekly-challenge-148-eban-numbers-and-cardano-triplets.html">Perl Weekly Challenge 148: Eban Numbers and Cardano Triplets</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -556,7 +1344,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dean/2022/01/call-for-papers-perl-raku-conference-in-houston-2022.html">Call for Papers, Perl &amp; Raku Conference in Houston 2022</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -578,7 +1366,7 @@ The Perl & Raku Conference 2022 will be held in Houston, TX from June 21-25, 202
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/01/my-favorite-warnings-qw.html">My Favorite Warnings: qw</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -645,317 +1433,7 @@ say for qw{
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/01/perl-weekly-challenge-147-truncatable-primes-and-pentagon-numbers.html">Perl Weekly Challenge 147: Truncatable Primes and Pentagon Numbers</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Wednesday 12 January 2022 04:11</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 147 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-147/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on January 16, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Truncatable Prime</h2>
-
-<p><em>Write a script to generate first 20 left-truncatable prime numbers in base 10.</em></p>
-
-<blockquote>
-  <p><em>In number theory, a left-truncatable prime is a prime number which, in a given base, contains no 0, and if the leading left digit is successively removed, then all resulting numbers are primes.</em></p>
-</blockquote>
-
-<p><em>Example:</em></p>
-
-<pre><code>9137 is one such left-truncatable prime since 9137, 137, 37 and 7 are all prime numbers.
-</code></pre>
-
-<h3>Truncatable Prime in Raku</h3>
-
-<p>We first build an infinite lazy list (<code>@el-primes</code>) of primes with no 0 digit. For each integer in the list, we then try to truncate the left-most digit and check whether the truncated number is prime, and so one until we get to the last digit. The process stops when  20 such primes have been generated.</p>
-
-<pre><code>my @truncatables;
-my $count = 0;
-my @el-primes = grep {.is-prime and not /0/}, 2..Inf;
-for @el-primes -&gt; $candidate {
-    my $length = $candidate.chars;
-    my $is-truncatable = True; 
-    for 1..$length -&gt; $i {
-        my $truncated = substr $candidate, $length - $i;
-        $is-truncatable = False, last unless $truncated.is-prime;
-    }
-    if $is-truncatable {
-        push @truncatables, $candidate;
-        $count++;
-    }
-    last if $count &gt;= 20;
-}
-say @truncatables;
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>raku ./truncatable.raku
-[2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197]
-</code></pre>
-
-<h3>Truncatable Prime in Perl</h3>
-
-<p>This Perl program is based on essentially the same idea as the Raku implementation, except that we build a hash of primes along the way. We need to check primality only when we meet a new number the first time: for the truncated numbers, we simply check their primality by looking up into the hash.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use constant MAX =&gt; 20;
-
-my @primes = (2, 3, 5);
-my %primes_h = map {$_ =&gt; 1} @primes;
-my @truncatables = @primes;;
-my $candidate = $primes[-1];
-my $count = scalar @truncatables;;
-while ($count &lt; MAX) {
-    $candidate += 2;
-    my $not_prime = 0;
-    next if $candidate =~ /0/;
-    my $sq_cand = sqrt $candidate;
-    for my $i (@primes) {
-        $not_prime = 1, last unless $candidate % $i;
-        last if $i &gt; $sq_cand;
-    }
-    next if $not_prime;
-    push @primes, $candidate;
-    $primes_h{$candidate} = 1;
-    # now check if truncatable prime
-    my $length = length $candidate;
-    my $is_truncatable = 1; 
-    for my $i (1..$length) {
-        my $truncated = substr $candidate, $length - $i;
-        $is_truncatable = 0, last unless exists $primes_h{$truncated};
-    }
-    if ($is_truncatable) {
-        push @truncatables, $candidate;
-        $count++;
-    }
-}
-say "@truncatables";
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./truncatable.pl
-2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
-</code></pre>
-
-<h3>Truncatable Prime in Ring</h3>
-
-<p>I continue here my exploration of <a href="https://ring-lang.sourceforge.io/">Ring</a>, a quite recent programming language. The program below is a port to Ring of the Perl program above.</p>
-
-<pre><code>max = 20
-primes = [2, 3, 5]
-primes_h = []
-count = len(primes)
-for i = 1 to count
-    primes_h[string(primes[i])] = i
-next
-truncatables = primes
-candidate = primes[count]
-while count &lt; max
-    candidate += 2
-    not_prime = false
-    pos = substr(string(candidate), "0")
-    if pos &gt; 0 loop ok
-    sq_cand = floor(sqrt(candidate))
-    for i in primes
-        if candidate % i = 0
-            not_prime = true
-            exit
-        ok
-        if i &gt; sq_cand exit ok
-    next
-    if not_prime loop ok
-    add (primes, candidate)
-    primes_h[string(candidate)] = 1
-    // We've found a prime, now check if truncatable prime
-    length = len(string(candidate))
-    is_truncatable = true
-    for i = 1 to length
-        truncated = right(string(candidate), i)
-        if isnull(primes_h[truncated])
-            is_truncatable = false
-            exit
-        ok
-    next
-    if is_truncatable
-        add(truncatables, candidate);
-        count += 1
-    ok
-
-end
-for val in truncatables see "" + val + " " next
-see " " + nl
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./truncatable.ring
-2 3 5 7 13 17 23 37 43 47 53 67 73 83 97 113 137 167 173 197
-</code></pre>
-
-<h2>Task 2: Pentagon Numbers</h2>
-
-<p><em>Write a script to find the first pair of Pentagon Numbers whose sum and difference are also a Pentagon Number.</em></p>
-
-<blockquote>
-  <p><em>Pentagon numbers can be defined as P(n) = n(3n - 1)/2.</em></p>
-</blockquote>
-
-<p><em>Example:</em></p>
-
-<p><em>The first 10 Pentagon Numbers are: 1, 5, 12, 22, 35, 51, 70, 92, 117 and 145.</em></p>
-
-<pre><code>P(4) + P(7) = 22 + 70 = 92 = P(8)
-but
-P(4) - P(7) = |22 - 70| = 48 is not a Pentagon Number.
-</code></pre>
-
-<h3>Pentagon Numbers in Raku</h3>
-
-<p>We&#8217;ve decided to use the built-in <a href="https://docs.raku.org/routine/combinations">combinations</a> method to generate the pairs of pentagon numbers. Note that we cannot use an infinite list of pentagon numbers because the <code>combinations</code> routine cannot operate on an infinite list. So I just tried various increasing values for the <code>$max</code> variable until I obtained a result satisfying the criteria. Note that I use a <code>%penta</code> hash to store the pentagon values, so the verifying whether and sum and the difference values are pentagon number is just a matter of a fast hash lookup.</p>
-
-<pre><code>my $max = 4000;
-my @pentanums = map { (3 * $_² - $_)/2 }, 1..$max;
-my %penta = map {@pentanums[$_] =&gt; $_+1}, 0..$max-1;
-for @pentanums.combinations(2) -&gt; $comb {
-    next unless %penta{$comb.sum}:exists;
-    next unless %penta{$comb[1]-$comb[0]}:exists;
-    say $comb, " = Pentagon numbers N° %penta{$comb[0]} and %penta{$comb[1]}";
-    say "Sum is ", $comb.sum, " (Pentagon number ", %penta{$comb.sum}, ")";
-    say "Difference is ", $comb[1]-$comb[0], " (Pentagon number ", %penta{$comb[1]-$comb[0]}, ")";
-    last;
-}
-say now - INIT now, " seconds";
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>raku ./pentanums.raku
-(1560090 7042750) = Pentagon numbers N° 1020 and 2167
-Sum is 8602840 (Pentagon number 2395)
-Difference is 5482660 (Pentagon number 1912)
-101.7166579 seconds
-</code></pre>
-
-<p>This program is relatively slow (101 seconds execution time). I found that using two nested loops (as in the Perl program below) rather than the <code>combinations</code> routine make the program at least 20 times faster (only a few seconds). So it seems that the <code>combinations</code> routine is quite slow. This is a bit unfortunate as <code>combinations</code> is really useful and makes the code simpler and cleaner. I still prefer to present this version, but if you need better performance, then use two nested loops as in the Perl implementation below.</p>
-
-<h3>Pentagon Numbers in Perl</h3>
-
-<p>This is essentially the same idea as the Raku program above. However, as mentioned above, we don&#8217;t have <code>combinations</code> routine in Perl, so we use two nested loops to generate all the combinations. The advantage is that this runs much faster.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use constant MAX =&gt; 4000;
-
-my @pentanums = map { $_ * (3 * $_ - 1)/2 } 1..MAX;
-my %penta_h = map {$pentanums[$_] =&gt; $_+1 } 0..MAX-1;
-# say Dumper \%penta_h;
-
-OUTER: for my $i (0..MAX-1) {
-    for my $j ($i+1..MAX-1) {
-        my $sum = $pentanums[$i] + $pentanums[$j];
-        next unless exists $penta_h{$sum};
-        my $diff = $pentanums[$j] - $pentanums[$i];
-        next unless exists $penta_h{$diff};
-        say "First pair of pentagon numbers is $pentanums[$i] (rank ", $i+1, ") and $pentanums[$j] (rank ", $j+1, ")";
-        say "Sum is $sum (rank $penta_h{$sum}) and difference is $diff (rank $penta_h{$diff})";
-        last OUTER;
-    }
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ time perl  ./pentanums.pl
-First pair of pentagon numbers is 1560090 (rank 1020) and 7042750 (rank 2167)
-Sum is 8602840 (rank 2395) and difference is 5482660 (rank 1912)
-
-real    0m2,043s
-user    0m1,703s
-sys     0m0,108s
-</code></pre>
-
-<h3>Pentagon Numbers in Ring</h3>
-
-<p>Again a port to Ring of the Perl implementation:</p>
-
-<pre><code>max = 3000
-pentanums = []
-for i = 1 to max 
-    add (pentanums,  i * (3 * i - 1) / 2)
-next
-// see pentanums + nl
-penta_h = []
-for i = 1 to max
-    penta_h[ string(pentanums[i])] = i
-next
-for i = 1 to max
-    for j = i+1 to max
-        diff = pentanums[j] - pentanums[i]
-        diff_s = string(diff)
-        if isnull(penta_h[diff_s]) loop ok
-        sum = pentanums[i] + pentanums[j]
-        sum_s = string(sum)
-        if isnull(penta_h[sum_s]) loop ok
-        see "" + diff + " " + sum + " " + pentanums[i] + " " + pentanums[j] + nl
-    next
-next
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./pentanums.ring
-5482660 8602840 1560090 7042750
-</code></pre>
-
-<h3>Pentagon Numbers in Julia</h3>
-
-<pre><code>max = 4000
-pentanums = map((x) -&gt; Int(x * (3 * x -1)/2), 1:max)
-penta_h = Dict(map((x) -&gt; Int(x * (3 * x -1)/2) =&gt; x, 1:max))
-for i in 1:4000-1
-    for j in (i + 1):4000-1
-        sum = pentanums[i] + pentanums[j]
-        if (haskey(penta_h, Int(sum)) == 0)
-            continue
-        end
-        diff = pentanums[i] - pentanums[j]
-        # if (haskey(penta_h, Int(diff)) == 0)
-        #    continue
-        # end
-        println(i, " ", j, " ", pentanums[i], " ", pentanums[j], " ", sum)
-    end
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ julia pentanums.jl
-Indices 1020 and 2167 ; Pentanums: 1560090 7042750; Sum: 8602840; Diff: 5482660
-1020 2167
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on January 23, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/01/21/cpan-vs-hackage-releases-part-2/">CPAN vs Hackage releases, Part 2</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1020,7 +1498,7 @@ Indices 1020 and 2167 ; Pentanums: 1560090 7042750; Sum: 8602840; Diff: 5482660
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_optree_optimisation_paul_evans">Grant Proposal: Optree Optimsiations for Performance Gains</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1110,7 +1588,7 @@ could discard the <code>OP_PADSV</code> of its incoming argument, and similarly 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_jan_2022">Call for Grants: January 2022 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1148,7 +1626,7 @@ could discard the <code>OP_PADSV</code> of its incoming argument, and similarly 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/get-out-early-with-perl-statement-modifiers-db1">Get out early with Perl statement modifiers</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1357,7 +1835,7 @@ could discard the <code>OP_PADSV</code> of its incoming argument, and similarly 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/547.html">#547 - Learning a human language vs. a programming language</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1373,7 +1851,7 @@ could discard the <code>OP_PADSV</code> of its incoming argument, and similarly 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/01/16#pwc147">Primes and Pentagonals</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1569,7 +2047,7 @@ emitted without quite as much searching! </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/ccclxxv-9-great-cpan-modules-released.html">(ccclxxv) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1581,7 +2059,7 @@ emitted without quite as much searching! </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/01/cdxcv-metacpan-weekly-report.html">(cdxcv) metacpan weekly report - Crypt::Passphrase</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1593,7 +2071,7 @@ emitted without quite as much searching! </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/marketing-support-2022">New year, new impetus for Perl Foundation Marketing Committee</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1646,7 +2124,7 @@ emitted without quite as much searching! </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/dragostrif/perl-roles-54ff">Perl Roles</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1883,136 +2361,6 @@ In this example when $self-&gt;data is called the around block executes and you 
 <li><a href="http://modernperlbooks.com/">Modern Perl by Chromatic</a></li>
 <li><a href="https://www.perl.com/article/47/2013/11/11/Use-roles-in-object-oriented-Perl-with-Role-Tiny/">Use roles in object oriented Perl with Role::Tiny by David Farrell</a></li>
 </ul>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_22">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/simongreennet/look-mum-no-inputs-3lon">Look mum, no inputs 😛</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Simon Green
- on Friday 14 January 2022 04:20</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><h2>
-  <a href="#weekly-challenge-147">
-  </a>
-  Weekly Challenge 147
-</h2>
-
-<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-147/">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-147/sgreen">My solutions</a></p>
-
-<p>Unless I'm mistaken, this is the first week where both challenges have had no inputs. It is always tempted to use a single print statement, but that defeats the purpose of why we do them, isn't it?</p>
-
-<h2>
-  <a href="#task-1-truncatable-prime">
-  </a>
-  TASK #1 › Truncatable Prime
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>Write a script to generate first 20 left-truncatable prime numbers in base 10.</p>
-
-<p>In number theory, a left-truncatable prime is a prime number which, in a given base, contains no 0, and if the leading left digit is successively removed, then all resulting numbers are primes.</p>
-
-<h3>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h3>
-
-<p>Let's start off with the straight forward task. I use the is_prime method that I've used in previous tasks, slightly tweaked because zero is not a prime.</p>
-
-<p>I then have a is_trunc_prime method that works out if every left truncated number of the number supplied is a prime, and it contains no zeros. To make things as quick as possible, I start with the most truncated number first. As Python treats integers and strings differently, I turn the input into a string to perform the truncation.</p>
-
-<p>The main method then has a loop that exits when the <code>solutions</code> list when there are 20 items. Each iteration of the loop increments the number we check by one.</p>
-
-<p>The Perl code is a transliteration of the Python code.</p>
-
-<h3>
-  <a href="#examples">
-  </a>
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-1.py
-2, 3, 5, 7, 13, 17, 23, 37, 43, 47, 53, 67, 73, 83, 97, 113, 137, 167, 173, 197
-
-$ ./ch-1.pl 
-2, 3, 5, 7, 13, 17, 23, 37, 43, 47, 53, 67, 73, 83, 97, 113, 137, 167, 173, 197
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  <a href="#task-2-pentagon-numbers">
-  </a>
-  TASK #2 › Pentagon Numbers
-</h2>
-
-<h3>
-  <a href="#task">
-  </a>
-  Task
-</h3>
-
-<p>Write a sript[sic] to find the first pair of Pentagon Numbers whose sum and difference are also a Pentagon Number.</p>
-
-<p>Pentagon numbers can be defined as P(n) = n(3n - 1)/2.</p>
-
-<h3>
-  <a href="#my-solution">
-  </a>
-  My solution
-</h3>
-
-<p>Let's clear one thing up first. The first solution is likely to be P(0) and P(0) as 0 + 0 and 0 - 0 is zero, which is also P(0). However, I don't think that is the solution we are actually looking for. For the same reason, I'm not comparing identical pentagonal numbers in my solution.</p>
-
-<p>Thanks to Wikipedia's page on <a href="https://en.wikipedia.org/wiki/Pentagonal_number">Pentagonal Numbers</a>, we learn out we can use the calculation below to find out if the number is Pentagonal, and what it's index is.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--pI74FFjZ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/99cz6lcmfsutvgqugv8g.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--pI74FFjZ--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/99cz6lcmfsutvgqugv8g.png" alt="Image description" width="157" height="47"></a></p>
-
-<p>Now I don't even believe how you get the opposite of (3n2 - n) ÷ 2 to be the above, but it does work. I can tell you after I've done my pull request, I'm straight over to Abigail's blog to see the number theory behind this one :-)</p>
-
-<p>For this task, I have two methods. The first is <code>pentagon_number</code>. This turns the index into a number, so 4 into 22 for example. The other method is <code>is_pentagon_number</code> and does the opposite using the calculation mentioned in the Wikipedia page, so 22 into 4 for example.</p>
-
-<p>It then becomes a task of finding the first pair. For this I have a counter <code>p1</code> that starts at two. I then have an inner loop <code>p2</code> that goes from one to p1 - 1. I work out if the sum and subtraction of the two numbers are also pentagonal values, and if so display the results and exit the loops.</p>
-
-<p>The Perl solution is also a transliteration of the Python one, with one caveat. In Perl <code>x % y</code> is always in integer even if x isn't. Therefore I needed to add an addition check to make sure x is an integer.</p>
-
-<h3>
-  <a href="#examples">
-  </a>
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code> ./ch-2.py 
-P(2167) + P(1020) = 7042750 + 1560090 = 8602840 = P(2395)
-P(2167) - P(1020) = 7042750 - 1560090 = 5482660 = P(1912)
-
-$ ./ch-2.pl 
-P(2167) + P(1020) = 7042750 + 1560090 = 8602840  = P(2395)
-P(2167) - P(1020) = 7042750 - 1560090 = 5482660  = P(1912)
-</code></pre>
-
-</div>
-
-
 
        </div><!-- card-text -->     </div>
             <div class="card-footer">
@@ -3027,201 +3375,6 @@ and some will even make it easy and fun. We are now looking at <a href="https://
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2021/12/26#pwc144">A Stocking Full of Numbers: Semiprimes and the Ulam Sequence</a></h2>
-<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
-
-              <p class="text-right"><small>Published
- on Sunday 26 December 2021 18:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-<h1>Merry Christmas and Happy New Year! May 2022 bring you less COVID and more Perl projects!</h1>
-
-<p><em>The examples used here are from The Weekly Challenge problem statement and demonstrate 
-the working solution.</em></p>
-
-<h2>Part 1</h2>
-
-<p><em>Write a script to generate all Semiprime numbers &lt;= 100.</em> </p>
-
-<h3>Solution</h3>
-
-<pre><code class="perl">
-use strict;
-use warnings;
-use boolean; 
-use LWP::UserAgent;
-use constant N => 100; 
-use constant PRIME_URL => "http://primes.utm.edu/lists/small/100000.txt";
-
-sub get_primes{
-    my @primes;
-    my $ua = new LWP::UserAgent(
-        ssl_opts => {verify_hostname => 0}
-    );
-    my $response = $ua->get(PRIME_URL);
-    my @lines = split(/\n/,$response->decoded_content);
-    foreach my $line (@lines){
-        my @p = split(/\s+/, $line);
-        unless(@p < 10){
-            push @primes, @p[1..(@p - 1)];
-        }
-    }
-    return @primes;
-}
-
-sub factor{
-    my($n) = @_;
-    my @factors = ();
-    for  my $j (2 .. sqrt($n)){
-        if($j**2 == $n){  
-            push @factors, [$j, $j] if $j**2 == $n;
-            next; 
-        }
-        push @factors, [$j, $n / $j] if $n % $j == 0;
-    }
-    return @factors;
-}
-
-sub semiprime{
-    my($n, $primes) = @_;
-    my @factors = factor($n);
-    return false if @factors != 1;  
-    my @prime_factors = grep {$factors[0]->[0] == $_ || $factors[0]->[1] == $_} @{$primes};     
-    return true if @prime_factors == 2 || $prime_factors[0]**2 == $n; 
-    return false; 
-}
-
-sub semiprime_n{
-    my @primes = get_primes; 
-    for my $n (1 .. N){
-        print "$n " if semiprime($n, \@primes);   
-    } 
-    print "\n"; 
-}
-
-MAIN:{
-    semiprime_n;
-}
-</code></pre>
-
-<h3>Sample Run</h3>
-
-<pre><code class="shell">
-$ perl ch-1.pl
-4 6 9 10 14 15 21 22 25 26 33 34 35 38 39 46 49 51 55 57 58 62 65 69 74 77 82 85 86 87 91 93 94 95
-</code></pre>
-
-<h3>Notes</h3>
-
-<p>I am sticking to the convention that I started a while back to not re-compute prime 
-numbers myself, but instead just grab them from one of several convenient online sources.
-The URL in the code above requires only a small amount of effort to scrape and parse. I 
-hope nobody minds the little bit of extra traffic to their site!</p>
-
-<p><em>Please do check out their main page listed below. It's a fun resource with interesting 
-facts and news on prime numbers and related research.</em></p>
-
-<p>Once the list of the first 100k primes is obtained (that's more than enough for any of 
-these challenges) we proceed to factor and test candidate numbers. Provided the number
-has only two factors (which may be equal) and both of them are prime then it passes the 
-semiprime test.</p>
-
-<h2>Part 2</h2>
-
-<p><em>You are given two positive numbers, $u and $v. Write a script to generate Ulam Sequence 
-having at least 10 Ulam numbers where $u and $v are the first 2 Ulam numbers.</em></p>
-
-<h3>Solution</h3>
-
-<pre><code class="perl">
-use strict;
-use warnings;
-use constant ULAM_LIMIT => 10;   
-
-sub ulam{
-    my($u, $v) = @_;    
-    my %pairs; 
-    my @ulam = ($u, $v); 
-    my $w = $u + $v;  
-    push @ulam, $w;  
-    $pairs{"$u,$v"} = $w; 
-    $pairs{"$u,$w"} = $u + $w; 
-    $pairs{"$v,$w"} = $v + $w; 
-    do{
-        my @sums = sort {$a <=> $b} grep{my $sum = $_; my @values = grep{$sum == $_} values %pairs; $sum if @values == 1 && $sum > $ulam[@ulam - 1]} values %pairs; 
-        my $u = $sums[0]; 
-        push @ulam, $u;
-        for my $pair (keys %pairs){
-            my($s, $t) = split(/,/, $pair);  
-            $pairs{"$s,$u"} = $s + $u;
-            $pairs{"$t,$u"} = $t + $u;
-        }   
-    }while(@ulam < ULAM_LIMIT);
-    return @ulam;  
-}
-
-MAIN:{
-    my @ulam;
-    @ulam = ulam(1, 2);   
-    {
-        print shift @ulam;
-        print ", ";
-        redo if @ulam > 1;
-    } 
-    print shift @ulam;
-    print "\n";
-
-    @ulam = ulam(2, 3);   
-    {
-        print shift @ulam;
-        print ", ";
-        redo if @ulam > 1;
-    } 
-    print shift @ulam;
-    print "\n";
-
-    @ulam = ulam(2, 5);   
-    {
-        print shift @ulam;
-        print ", ";
-        redo if @ulam > 1;
-    } 
-    print shift @ulam;
-    print "\n";
-}
-</code></pre>
-
-<h3>Sample Run</h3>
-
-<pre><code class="shell">
-$ perl perl/ch-2.pl
-1, 2, 3, 4, 6, 8, 11, 13, 16, 18
-2, 3, 5, 7, 8, 9, 13, 14, 18, 19
-2, 5, 7, 9, 11, 12, 13, 15, 19, 23
-</code></pre>
-
-<h3>Notes</h3>
-
-<p>The code here is a pretty direct translation of the definition: the next member of the
-sequence must be a sum of two previous members which is greater than the previous member
-and only be obtainable one way. Here that is done with a <code>grep</code> filter, with the sequence
-itself being stored in an array, but for convenience the sums of all unique previous pairs
-are kept in a hash.</p>
-
-<h2>References</h2>
-
-<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-144/">Challenge 144</a></p>
-
-<p><a href="https://mathworld.wolfram.com/Semiprime.html">Semiprime Number</a></p>
-
-<p><a href="https://primes.utm.edu/">Prime Pages</a></p>
-
-<p><a href="https://mathworld.wolfram.com/UlamSequence.html">Ulam Sequence</a></p>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
 
         </div><!-- col-md-8 -->
         <div class="col-md-2">
@@ -3242,7 +3395,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 26 January 2022 20:42 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 27 January 2022 00:58 UTC</address>
             </div>
           </div>
         </div><!-- container -->
