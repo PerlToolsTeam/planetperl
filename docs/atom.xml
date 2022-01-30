@@ -7,9 +7,142 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-01-29T20:43:20Z</updated>
+  <updated>2022-01-30T00:57:46Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Calling a Python Function From Perl</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/01/29#expect_perl_python" type="text/html"/>
+    <content type="html">
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Recently the question came up of how to call a Python function from Perl. Here is one
+way to do it.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;The method here is to use Expect.pm to create a subprocess containing the Python repl.
+Python code is then loaded and called interactively. In my experience this is good for
+calling, say, a BERT model on some text from Perl. This approach is minimalistic as 
+compared to other solutions such as standing up a Fast API instance to serve the model.
+Furthermore, this same pattern can be used for any arbitrary Python code you may need to 
+call from Perl.&lt;/p&gt;
+
+&lt;p&gt;While this works well it does introduce additional complexity to an application. If at all
+possible it is preferable to re-write the Python functionality in Perl. An ideal use case
+would be where it would be too laborious to re-implement the Python code in Perl. Imagine,
+say, we want to use KeyBERT to extract keywords from a given body of text. In this case we
+may be doing substantial data and text processing in Perl and merely need to call out to 
+Python for this single function. If at some point KeyBERT were to become available 
+natively to Perl, perhaps through the Apache MXNet bindings, then that interface should
+be preferred. If nothing else, the performance improvement would be dramatic.&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+##
+# A simple example of calling a Python function
+# from a Perl script using a Python repl started
+# as a subprocess.
+##
+use Expect;
+use boolean;
+use constant TIMEOUT =&gt; 0.25; 
+use constant PYTHON =&gt; q[/usr/bin/python];
+
+sub create_python{
+    my($io) = @_;
+    my $python = do{
+        local $/;
+        &lt;DATA&gt;;
+    };
+    $$io = new Expect();
+    $$io-&gt;log_stdout(false);
+    $$io-&gt;raw_pty(true);
+    $$io-&gt;spawn(PYTHON);
+    $$io-&gt;send("$python\n\n");
+    $$io-&gt;expect(TIMEOUT, q[-re] , q|m/[0-9]*/|);
+    $$io-&gt;clear_accum();
+}
+
+sub call_python_sample{
+    my($io, $arg) = @_;
+    print $$io-&gt;send("sample(" . $arg . ")\n");
+    $$io-&gt;expect(TIMEOUT, q[-re], qr[\d+]);
+    my $r = $$io-&gt;exp_match();
+    $$io-&gt;clear_accum();
+    return $r;
+}
+
+MAIN:{
+    my($io);
+    create_python(\$io);
+    print call_python_sample(\$io, 1) . "\n";
+    print call_python_sample(\$io, 9) . "\n";
+}
+
+__DATA__
+import os
+os.system("stty -echo")
+def sample(a):
+    print(str(a + 1))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;The results&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl call_python_.pl
+2
+10
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;The code here is a minimum working example. Well, fairly minimal in that I could have 
+avoided breaking things up into multiple subroutines. In terms of cleanliness and 
+explainability these divisions make sense, with only the added need to pass a reference to
+an Expect object back and forth as a parameter.&lt;/p&gt;
+
+&lt;p&gt;For a self-contained example the Python code we are going to run is contained in the DATA
+section. For more complex use cases it would make sense to have the Python code in 
+separate files which could be read in and loaded. They could also be specified directly as
+arguments to the Python interpreter.&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;&lt;code&gt;sub create_python&lt;/code&gt; instantiates a new Expect object, sets some parameters for the 
+object, and spawns the Python repl. We also clear the Expect buffers so that upon the next
+invocation we need not worry about the Python header messages.&lt;/p&gt;&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;&lt;code&gt;sub call_python_sample&lt;/code&gt; calls the function of interest. Here it is just &lt;code&gt;sample()&lt;/code&gt; 
+which takes a single argument, adds 1 to the argument, and prints out the result.&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Effectively what we are doing is interprocess communication using text passed between the
+two processes. Perl knows nothing of the state of the Python code, and vice versa. If you
+call a Python function which does not print a value to STDOUT then you will need to add
+your own print() call. This is not actually so bad a situation since Expect works by 
+pattern matching on the expected (pun intended!) output. To ensure you are collecting the 
+right values some massaging of what the Python code is doing is to be anticipated 
+(pun avoided!). For example, suppose we want to call the KeyBERT function to extract key 
+words from some given text. We might consider writing a wrapper function which takes
+the output from &lt;code&gt;KeyBERT.extract_keywords&lt;/code&gt; (a list of tuples, each tuple a pair: key 
+phrase and a distance) and concatenates and prints each of the pairs to STDOUT on a single
+line. In this way our Perl regex can most easily pick up the phrase/distance pairs.&lt;/p&gt;
+
+&lt;p&gt;Expect is a very mature tool, with a generous set of options and abilities. This sort of 
+use is really just the tip of the iceberg. In terms of Perl being a "Glue Language" 
+consider Expect to be a key ingredient that causes the glue to stick. Peruse the 
+documentation for further inspiration.&lt;/p&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/Expect"&gt;Expect.pm&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://maartengr.github.io/KeyBERT/index.html"&gt;KeyBERT&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/expect_perl_python</id>
+    <published>2022-01-29T16:30:00-05:00</published>
+    <updated>2022-01-29T16:30:00-05:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-7829319208382793807</id>
     <published>2022-01-29T21:39:00.000+01:00</published>
