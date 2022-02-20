@@ -7,9 +7,94 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-02-20T08:42:12Z</updated>
+  <updated>2022-02-20T12:48:36Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Some tricks for prettier xs</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/leon_timmermans/2022/02/some-tricks-for-prettier-xs.html"/>
+    <id>tag:blogs.perl.org,2022:/users/leon_timmermans//150.10705</id>
+    <published>2022-02-20T11:52:01Z</published>
+    <updated>2022-02-20T11:52:45Z</updated>
+    <author>
+        <name>Leon Timmermans</name>
+        <uri>http://codespeaks.blogspot.com/</uri>
+    </author>
+    <category term="xs" label="xs" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/leon_timmermans/">
+        <![CDATA[<p>XS has a reputation of being ugly and cumbersome, but in my experience, it doesn't have to be. Let's take for example this snippet from me <code>Thread::Csp::Promise</code> class:</p>
+
+<pre>
+MODULE = Thread::Csp PACKAGE = Thread::Csp::Promise PREFIX = promise_
+
+<p>SV* promise_get(Promise* promise)</p>
+
+<p>bool promise_is_finished(Promise* promise)</p>
+
+<p>SV* promise_get_notifier(Promise* promise)<br />
+</pre></p>]]>
+        <![CDATA[<p>How did I write XS with so little code/boilerplate? By using XS the way it was originally intended: to glue Perl and C together, not to implement any behavior.</p>
+
+<h2>No CODE</h2>
+A lot of people seem to think you need a <code>CODE</code> block in your XS functions, but often you don't. For example 
+<pre>
+SV* promise_get(Promise* promise)
+</pre>
+is actually equivalent to 
+<pre class=code>
+SV* promise_get(Promise* promise)
+CODE:
+    RETVAL = promise_get(promise);
+OUTPUT:
+    RETVAL
+</pre>
+By giving the `promise_get` function the right shape and name, I don't need to write any of that.
+
+<p>This doesn't only mean less code (which is always good), it also means that it's much easier to split a large amount of code into multiple files, as doing this in C is much easier than doing it in XS (e.g. DBI.xs is 5700 lines). This aids in making your project more maintainable.</p>
+
+<h2>No K&R</h2>
+The second thing you may notice is that I'm declaring the types of the arguments in ANSI style (within the parentheses), not the common K&R style like:
+<pre>
+SV*
+promise_get(promise)
+    Promise* promise;
+</pre>
+The author of perlxs and perlxstut was clearly fond of K&R style, and everyone seems to have copied it from the documentation, but ANSI style is far more familiar to most people, and less repetitive. While the K&R style can do a few things ANSI style can't (e.g. with regards to custom conversions), it's very uncommon to need any of that.
+
+<h2>Typemaps</h2>
+To convert from arguments from Perl values to C values, and vice-versa for the return values, I used type maps. 
+
+<pre>
+TYPEMAP
+Promise* T_PROMISE
+
+<p>INPUT<br />
+T_PROMISE<br />
+        $var = sv_to_promise($arg)</p>
+
+<p>OUTPUT<br />
+T_PROMISE<br />
+        $arg = promise_to_sv($var);<br />
+</pre></p>
+
+<p>Using these templates, you don't need the XS or the individual functions to worry about type conversions for the most common argument types.</p>
+
+<h2>Prefix</h2>
+All the XS packages in my module are defined with a prefix:
+<pre>
+MODULE = Thread::Csp PACKAGE = Thread::Csp::Promise PREFIX = promise_
+</pre>
+That way I can namespace my C functions to all start with `promise_`, but on the Perl side <code>promise_get</code> will be a sub called <code>get</code> (in the package <code>Thread::Csp::Promise</code>).
+
+<h2>C_ARGS</h2>
+I still had one function where the default glue code didn't quite cut it, because that had a slurpy argument so I couldn't map arguments 1-on-1. Instead of using a `CODE` block here, I used the <code>C_ARGS</code> to override only how the arguments are passed from Perl to C, without overriding any of the rest of the code generation. And then I defined a helper that turns the arguments on the stack into an array that is passed to the function.
+<pre class=code>
+Promise* thread_spawn(SV* class, SV* module, SV* function, ...)
+        C_ARGS:
+                slurp_arguments(1)
+</pre>]]>
+    </content>
+</entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-5146971702396319142</id>
     <published>2022-02-19T15:07:00.000+01:00</published>
@@ -1768,49 +1853,6 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
     <author>
       <name>Gabor Szabo</name>
     </author>
-</entry>
-  <entry>
-    <title>TWC 150: bAbAbbAb and a few Composites</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/bruce_gray/2022/02/twc-150-bababbab-and-a-few-composites.html"/>
-    <id>tag:blogs.perl.org,2022:/users/bruce_gray//532.10664</id>
-    <published>2022-02-07T03:26:35Z</published>
-    <updated>2022-02-07T04:45:48Z</updated>
-    <author>
-        <name>Bruce Gray</name>
-        <uri>https://github.com/Util/</uri>
-    </author>
-    <category term="Dart" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="Perl" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="Raku" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="TheWeeklyChallenge" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="dart" label="Dart" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="perl" label="Perl" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="raku" label="Raku" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <category term="twc" label="TWC" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/bruce_gray/">
-        <![CDATA[<p>In which we see Leonardo outside his native Nums, and that the World is not made of Ones.</p>
-
-<p>(Placeholder; still editing)</p>
-
-<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-150/#TASK1">Fibonacci Words</a></h1>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-150/bruce-gray/raku/ch-1.raku">Raku</a></h2>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-150/bruce-gray/perl/ch-1.pl">Perl</a></h2>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-150/bruce-gray/dart/ch-1.dart">Dart</a></h2>
-
-<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-150/#TASK2">Square-free Integer</a></h1>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-150/bruce-gray/raku/ch-2.raku">Raku</a></h2>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-150/bruce-gray/perl/ch-2.pl">Perl</a></h2>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-150/bruce-gray/dart/ch-2.dart">Dart</a></h2>
-]]>
-        
-
-    </content>
 </entry>
   <entry>
     <title>Fibonacci Words That Yearn to Be Squarefree</title>
