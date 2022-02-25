@@ -7,9 +7,54 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-02-24T20:42:10Z</updated>
+  <updated>2022-02-25T04:45:35Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>My Favorite Modules: Devel::NYTProf</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2022/02/my-favorite-modules-develnytprof.html"/>
+    <id>tag:blogs.perl.org,2022:/users/tom_wyant//506.10719</id>
+    <published>2022-02-25T03:37:22Z</published>
+    <updated>2022-02-25T03:40:52Z</updated>
+    <author>
+        <name>Tom Wyant</name>
+        
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/tom_wyant/">
+        <![CDATA[<p><cite>'It is a capital mistake to theorize before one has data.' -- Sherlock Holmes, "A Scandal in Bohemia"</cite></p>
+
+<p>The mental excursion that led to this blog post started with a report from Olaf Alders that my <a href="https://metacpan.org/pod/Perl::Critic::Policy::Variables::ProhibitUnusedVarsStricter">Perl::Critic::Policy::Variables::ProhibitUnusedVarsStricter</a> was generating a false positive on variables used only as defaults in subroutine signatures. After the first cut at fixing this I thought a regression test was in order. I did this by running both unpatched and patched versions of the policy against my <a href="https://metacpan.org/dist/CPAN-Mini">Mini CPAN</a>, and then <code>diff</code> on the outputs.</p>
+
+<p>This has always taken the better part of a day to run, and given that it had to expand all the distributions first and then run a fairly brute-force policy against anything it found, I accepted this as the price of conscientiousness.</p>
+
+<p>But then I noticed, quite by chance, that running the patched policy against the <a href="https://metacpan.org/dist/Number-Phone-FR">Number-Phone-FR</a> distribution appeared to hang. Investigation failed to turn up any reason for the modifications to do this, and when I ran the unpatched code against that distribution it also appeared to hang. I knew it eventually completed, though, since the full Mini CPAN scan using unpatched code eventually completed.</p>
+
+<p>I fairly quickly isolated the slowness to the analysis of one file: <code>lib/Number/Phone/FR/Full.pm</code>. This was only 46 lines long, but contained 182615 characters, most of them in one monster regular expression.</p>
+
+<p>This immediately made me suspect <a href="https://metacpan.org/pod/PPIx::Regexp">PPIx::Regexp</a>, since I have great faith in my own ability to write bugs. This finds siblings the same way PPI does, which involves traversing an array rather than holding weak links. So I started looking into an optimization that tracked the number of each kind of token in the parse, since the monster regular expression contained no interpolations. I was about to start implementing when I thought, "Maybe I should actually profile this code."</p>
+
+<p>It was a good thing I did, because <a href="https://metacpan.org/pod/Devel::NYTProf">Devel::NYTProf</a> told a very different story. According to it, the majority of the time was spent on one statement in <a href="https://metacpan.org/pod/Text::Tabs">Text::Tabs</a>' <code>expand()</code> method, which <code>PPIx::Regexp</code>'s tokenizer was using in its computation of logical column positions.</p>
+
+<p>For the curious, that statement was <code>$offs = () = /\PM/g;</code>. Now, I do not have huge amounts of Unicode-Fu, but I understand this to be counting all the characters in the topic variable which are not explicitly zero-width. The profiler said that statement consumed 2825 seconds for 161163 executions.</p>
+
+<p>Since <a href="https://metacpan.org/dist/PPI">PPI</a>, which underpins any Perl Critic policy, did not appear to have this problem, I looked at how it calculated column positions, and found a simple analysis of tab characters and their positions. This is technically less correct than <code>Text::Tabs</code>, but for the sake of expediency I chose consistency over strict correctness. Using the patched <code>PPIx::Regexp</code>, the patched Perl Critic policy analyzed the problem module in 500 seconds, as compared to 4000 seconds for the unpatched <code>PPIx::Regexp</code>.</p>
+
+<p>The moral: Because I took a couple seconds to actually think, and a couple minutes to install <a href="https://metacpan.org/pod/Devel::NYTProf">Devel::NYTProf</a>, I saved several hours developing an optimization that did not address the actual problem. I do not count the hour or so running the profiler (it was not significantly longer than the time to run the un-profiled code) because that did not require my actual attention.</p>
+
+<p><cite>The actual timings were done on a 2.3 GHz Dual-Core Intel i5 running macOS 12.2.1 Monterey. No effort was made to control other loads on the system, and the timings were not replicated enough to be statistically valid. But, hey, cutting execution time by 7/8 looks like a win to me.</cite></p>
+
+<p>Previous entries in this series:</p>
+
+<ol>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/09/my-favorite-modules-if.html"><code>if</code></a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-modules-diagnostics-one.html"><code>diagnostics</code></a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2021/11/my-favorite-modules-termreadlineperl.html"><code>Term::ReadLine::Perl</code></a></li>
+    <li><a href="http://blogs.perl.org/users/tom_wyant/2022/02/my-favorite-modules-re.html"><code>re</code></a></li>
+</ol>
+]]>
+        
+    </content>
+</entry>
   <entry>
     <title>Finding unused variables in your Perl code</title>
     <link rel="alternate" href="http://blogs.perl.org/users/olaf_alders/2022/02/finding-unused-variables-in-your-perl-code.html"/>
@@ -778,25 +823,6 @@ $ ./ch-2.py "(-3,-1), (1,3) (-1,-3), (2,2)"
     <category term="python"/>
     <category term="theweeklychallenge"/>
   </entry>
-  <entry>
-    <title>Please help test big pull request for DBD::Oracle</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/dean/2022/02/please-help-test-big-pull-request-for-dbdoracle.html"/>
-    <id>tag:blogs.perl.org,2022:/users/dean//558.10695</id>
-    <published>2022-02-17T08:18:32Z</published>
-    <updated>2022-02-17T08:20:35Z</updated>
-    <author>
-        <name>Dean</name>
-        <uri>http://perl.sydney</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/dean/">
-        <![CDATA[<p>This large pull request hopes to solve segfault at cleanup and problems with multiple charsets in multiple connections to Oracle.</p>
-
-<p>If you use DBD::Oracle please grab the PR and give it a try, then send your feedback.</p>
-
-<p><a href="https://github.com/perl5-dbi/DBD-Oracle/pull/147">https://github.com/perl5-dbi/DBD-Oracle/pull/147</a></p>]]>
-        
-    </content>
-</entry>
   <entry>
   <title>RakuAST Grant 2022-01 update</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/2022-02-raku-ast-grant"/>
