@@ -57,6 +57,53 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/03/xs-versus-clang-infinite-warnings.html">XS versus clang: Infinite warnings</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Saturday 12 March 2022 06:37</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Around the beginning of 2022 I started noticing a large number of warnings when compiling XS modules under macOS 12 Monterey. These looked like <code>warning: '(' and '{' tokens introducing statement expression appear in different macro expansion contexts [-Wcompound-token-split-by-macro]</code>, and appeared to originate fairly deeply in Perl's macro stack.</p>
+
+<p>This week I was moved to address them for my one lone XS distribution, <a href="https://metacpan.org/dist/Mac-Pasteboard"><code>Mac-Pasteboard</code></a>. Not only are they really annoying, but they would make it difficult or impossible to find anything more serious.</p>
+
+<p>A little web searching seemed to say that this warning was added in <code>clang</code> 12.0, and is enabled by default. Beyond that, I did not find much. A Ruby ticket turned up, but the patch involved rewriting the relevant macros so that the warning was not tickled. A desultory check of a few other XS modules that came to mind did not provide any help -- they all showed the same behavior.</p>
+
+<p>There is some work going on in the Perl core. A brief thread in the p5p mailing list, <a href="https://www.nntp.perl.org/group/perl.perl5.porters/2022/03/msg263187.html">Backport token-split-by-macro fix?</a> refers to <a href="https://github.com/Perl/perl5/issues/18780">GitHub issue 18780: clang12: Using as compiler generates 30K warnings of -Wcompound-token-split-by-macro</a>. As I read both the mail thread and the issue, it is fixed in blead, but back-porting may be problematic. This seems to mean that module authors who want to silence the warnings in currently-existing versions of Perl need to address the problem themselves.</p>
+
+<p>The question is how to turn off the warning. I considered a C pragma, since my copy of Kernighan and Ritchie's <cite>The C Programming Language</cite> says that unrecognized pragmas are ignored. But some experimentation showed that <code>gcc</code> complained, and some web searching showed that it was not the only C compiler that would do so. This means replacing a large number of warnings with a single warning per compilation from compilers that do not support the required pragma, unless the pragma can be properly conditionalized. But it appears at least one author has gone this route. My version of this implementation is:</p>
+
+<pre>
+#if defined(__clang__) &amp;&amp; defined(__clang_major__) &amp;&amp; __clang_major__ &gt; 11
+#pragma clang diagnostic ignored "-Wcompound-token-split-by-macro"
+#endif
+</pre>
+
+<p>This is to be inserted at the very beginning of the C or XS source, or at least before any Perl headers are included. Maybe the <code>defined(__clang__)</code> is not needed, but I am cautious.</p>
+
+<p>The other way to suppress the warning is to supply a command line option, <code>-Wno-compound-token-split-by-macro</code>. The problem here is how to know when the option should be applied. I know nothing about the arcane art of probing C compiler configuration, but the brute-force approach is to write a trivial C program (essentially the <code>true</code> command), finding a place for it to live in my distribution (the <code>inc/</code> directory), and then spawning the following command:</p>
+
+<pre>
+system "$Config{cc} -Werror -Wno-compound-token-split-by-macro -o /dev/null inc/true.c 2&gt;/dev/null";
+</pre>
+
+<p>If this succeeds, I know I can add <code>-Wno-compound-token-split-by-macro</code> option to the compiler command. Otherwise, I can not. The <code>-Werror</code> turns warnings into errors, so I do not have to parse <code>STDERR</code>. There are two problems with this:</p>
+
+<ul>
+    <li>It is not portable. That is not a problem for my specific case, which only runs under macOS anyway. But a general solution will need to take care of environments like MSWin32 and VMS.</li>
+    <li>It uses a single-argument <code>system()</code> call with shell meta-characters, and so requires spawning a shell and is a potential security risk -- though maybe no more of a risk than including any Perl module, since if the <code>@INC</code> directories (or <code>@INC</code> itself) can be hacked the bad actor probably has better ways to attack a system than waiting for someone to spawn <code>$Config{cc}</code>. But again VMS DCL will be a problem.</li>
+</ul>
+
+<p>I have been back and forth on the proper way to handle this. Currently I like the pragma approach, but the limited number of C compilers in my stable makes it hard to choose definitively between them. Linux favors <code>gcc</code>, BSD favors <code>clang</code> -- at least, macOS, FreeBSD, and OpenBSD do. But I have been personally unable to test under a wider range of compilers. <cite>Caveat coder.</cite></p>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/03/perl-weekly-challenge-155-fortunate-numbers-and-pisano-periods.html">Perl Weekly Challenge 155: Fortunate Numbers and Pisano Periods</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -175,7 +222,7 @@ sub find_fortunate {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dimitrios_kechagias/2022/03/cloud-provider-performance-comparison-gcp-aws-azure-perl.html">Cloud Provider Performance Comparison - Perl &amp; more</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -291,7 +338,7 @@ I do not know what this actually means though, or how could it could be happenin
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/saif/2022/03/the-benefits-of-change-from-an-amateurs-objective-perspective.html">The benefits of change, from an amateur's objective perspective.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -354,7 +401,7 @@ enjoy the waters, or just stick to shore where it is safe.   </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-130-of-dateholidays-more-holiday-for-the-french-36o7">Release 1.30 of Date::Holidays - more holiday for the French</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -450,7 +497,7 @@ D::H release 1.29   D::H::FR release 0.04   D::H release 1.29
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/perl-abc-perl-introduction-h6p">Perl ABC - Perl Introduction </a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -668,7 +715,7 @@ D::H release 1.29   D::H::FR release 0.04   D::H release 1.29
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/554.html">#554 - Exceptions in Perl?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -684,7 +731,7 @@ D::H release 1.29   D::H::FR release 0.04   D::H release 1.29
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/bruce_gray/2022/03/twc-episode-154---padawan-missing.html">TWC Episode 154 - Padawan Missing</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -854,7 +901,7 @@ Can't you see its Prime? <br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/03/06#pwc154">Padovan Prime Directive: Find the Missing Permutations</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1004,248 +1051,6 @@ candidate.</p>
 <p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-154/">Challenge 154</a></p>
 
 <p><a href="https://mathworld.wolfram.com/PadovanSequence.html">Padovan Sequence</a></p>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_9">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/03/perl-weekly-challenge-154-missing-permutations-and-padovan-primes.html">Perl Weekly Challenge 154: Missing Permutations and Padovan Primes</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Saturday 05 March 2022 01:27</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 154 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-154/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on March 6, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Missing Permutations</h2>
-
-<p><em>You are given possible permutations of the string &#8216;PERL&#8217;.</em></p>
-
-<pre><code>PELR, PREL, PERL, PRLE, PLER, PLRE, EPRL, EPLR, ERPL,
-ERLP, ELPR, ELRP, RPEL, RPLE, REPL, RELP, RLPE, RLEP,
-LPER, LPRE, LEPR, LRPE, LREP
-</code></pre>
-
-<p><em>Write a script to find any permutations missing from the list.</em></p>
-
-<p>We&#8217;ll assume that the permutations provided are correct, but that at least one is missing. In fact, if one of the permutation is wrong, this would not alter the result. For this task, we&#8217;ll generate all permutations and compare the result with the given list of permutations.</p>
-
-<h3>Missing Permutations in Raku</h3>
-
-<p>First, we store the given permutations in a <a href="https://docs.raku.org/type/Set">set</a> for fast lookup. Then, we use the <a href="https://docs.raku.org/routine/permutations">permutations</a> built-in routine to generate all permutations and loop through them to find those that are missing from the given list.</p>
-
-<pre><code>my $given_perm = set(qw/
-    PELR PREL PERL PRLE PLER PLRE EPRL EPLR ERPL
-    ERLP ELPR ELRP RPEL RPLE REPL RELP RLPE RLEP
-    LPER LPRE LEPR LRPE LREP /);
-for "PERL".comb.permutations&gt;&gt;.join("") -&gt; $perm {
-    say "$perm is missing" if $perm ∉ $given_perm;
-}
-</code></pre>
-
-<p>This script produces the following output:</p>
-
-<pre><code>$ raku ./missing_permutations.raku
-LERP is missing
-</code></pre>
-
-<p>Here, we have hard-coded the &#8220;PERL&#8221; word used to generate all permutations, but, assuming the given list has only correct permutations, we can just  pick any permutation from the list as the starting point. We&#8217;ll do that in the implementation below, using the <code>$given_perm.keys[0]</code> syntax. Another possible variation is that, since we&#8217;re using <em>sets</em>, we could store the full list of permutations in another set and use the built-in <a href="https://docs.raku.org/language/setbagmix">set difference</a> operator (<code>(-)</code> or <code>∖</code>) to find the missing permutations. Here, I won&#8217;t use the <code>∖</code> operator because I find it a bit confusing (it looks too much like the <code>\</code> backslash operator).</p>
-
-<pre><code>my $given_perm = set(qw/
-    PELR PREL PERL EPRL EPLR ERPL
-    ERLP ELPR ELRP RPEL RLPE RLEP
-    LPER LPRE LEPR LRPE LREP /);
-my $perms = set($given_perm.keys[0].comb.permutations&gt;&gt;.join(""));
-say "Missing: ", ~($perms (-) $given_perm);
-</code></pre>
-
-<p>Notice that I have also removed some permutations from the given list, in order to show what happens when there is more than one permutation missing.</p>
-
-<p>This script produces the following output:</p>
-
-<pre><code>$ raku ./missing_permutations2.raku
-Missing: PRLE REPL RPLE RELP PLER PLRE LERP
-</code></pre>
-
-<h3>Missing Permutations in Perl</h3>
-
-<p>Perl doesn&#8217;t have <em>sets</em>, but we can achieve the same result (fast lookup) with hashes. Since there is also no built-in <em>permutation</em> function, we implement our own recursive <code>permute</code> subroutine.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-my @permutations;
-my %given_perm = map { $_ =&gt; 1 } qw/
-    PELR PREL PERL PRLE PLER PLRE EPRL EPLR ERPL
-    ERLP ELPR ELRP RPEL RPLE REPL RELP RLPE RLEP
-    LPER LPRE LEPR LRPE LREP /;
-
-sub permute { 
-    my ($str, @vals) = @_;
-    if (scalar @vals == 0) {
-        push @permutations, $str;
-        return;
-    }
-    permute("$str" . $vals[$_], @vals[0..$_-1], 
-        @vals[$_+1..$#vals]) for 0..$#vals;
-}
-permute "", split //, (keys %given_perm)[0];
-for my $perm (@permutations) {
-    say "$perm is missing" unless exists $given_perm{$perm};
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./missing_permutations.pl
-LERP is missing
-</code></pre>
-
-<h2>Task 2: Padovan Primes</h2>
-
-<p><em>A Padovan Prime is a Padovan Number that’s also prime.</em></p>
-
-<p><em>In number theory, the Padovan sequence is the sequence of integers P(n) defined by the initial values.</em></p>
-
-<pre><code>P(0) = P(1) = P(2) = 1
-</code></pre>
-
-<p><em>and then followed by</em></p>
-
-<pre><code>P(n) = P(n-2) + P(n-3)
-</code></pre>
-
-<p><em>First few Padovan Numbers are as below:</em></p>
-
-<pre><code>1, 1, 1, 2, 2, 3, 4, 5, 7, 9, 12, 16, 21, 28, 37, ...
-</code></pre>
-
-<p><em>Write a script to compute first 10 distinct Padovan Primes.</em></p>
-
-<p><em>Expected Output:</em></p>
-
-<pre><code>2, 3, 5, 7, 37, 151, 3329, 23833, 13091204281, 3093215881333057
-</code></pre>
-
-<p>So, the Padovan sequence is built in a way very similar to the Fibonacci sequence, except that instead of using Fibonacci&#8217;s <code>P(n-1) + P(n-2)</code>, the Padovan sequence uses the following recurrence relation: <code>P(n-2) + P(n-3)</code>. The terms quickly come close to a geometric progression with a common ratio of approximately 1.3247 (known as the plastic number). So it is growing very rapidly (but less rapidly than the Fibonacci sequence, whose common ratio is the golden mean, 1,618).</p>
-
-<p>To give an idea of the growth, these are the first 140 Padovan numbers:</p>
-
-<pre><code>1 1 1 2 2 3 4 5 7 9 12 16 21 28 37 49 65 86 114 151 200 265 351 465 616 816 1081 1432 1897 2513 3329 4410 5842 7739 10252 13581 17991 23833 31572 41824 55405 73396 97229 128801 170625 226030 299426 396655 525456 696081 922111 1221537 1618192 2143648 2839729 3761840 4983377 6601569 8745217 11584946 15346786 20330163 26931732 35676949 47261895 62608681 82938844 109870576 145547525 192809420 255418101 338356945 448227521 593775046 786584466 1042002567 1380359512 1828587033 2422362079 3208946545 4250949112 5631308624 7459895657 9882257736 13091204281 17342153393 22973462017 30433357674 40315615410 53406819691 70748973084 93722435101 124155792775 164471408185 217878227876 288627200960 382349636061 506505428836 670976837021 888855064897 1177482265857 1559831901918 2066337330754 2737314167775 3626169232672 4803651498529 6363483400447 8429820731201 11167134898976 14793304131648 19596955630177 25960439030624 34390259761825 45557394660801 60350698792449 79947654422626 105908093453250 140298353215075 185855747875876 246206446668325 326154101090951 432062194544201 572360547759276 758216295635152 1004422742303477 1330576843394428 1762639037938629 2334999585697905 3093215881333057 4097638623636534 5428215467030962 7190854504969591 9525854090667496 12619069972000553 16716708595637087 22144924062668049 29335778567637640 38861632658305136 51480702630305689 68197411225942776
-</code></pre>
-
-<h3>Padovan Primes in Raku</h3>
-
-<p>We first build an infinite (lazy) list of Padovan numbers using the infix <code>...</code> <a href="https://docs.raku.org/language/operators#index-entry-sequence_operator">sequence operator</a>. We then loop over these numbers and, for each of hem, check whether it is prime using the <a href="https://docs.raku.org/routine/is-prime">is-prime</a> built-in routine.</p>
-
-<pre><code>my @padovans = 1, 1, 1, -&gt; $a, $b, $c { $a + $b } ... *;
-# say @padovans[0..10];  # (1 1 1 2 2 3 4 5 7 9 12)
-my $max = 10;
-my $prev_pad = 1;
-for @padovans -&gt; $pad {
-    next if $prev_pad == $pad;
-    if $pad.is-prime {
-        print "$pad ";
-        $max--;
-    }
-    $prev_pad = $pad;
-    last if $max &lt;= 0;
-}
-say "";
-say now - INIT now;
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./padovan_prime.raku
-2 3 5 7 37 151 3329 23833 13091204281 3093215881333057 
-0.2039814
-</code></pre>
-
-<p>Note that I timed the execution and found the duration (0.2 sec.) to be much less than I feared for computations on such large numbers. I suppose that the Miller-Rabin primality test used by the <code>is-prime</code> built-in routine is so fast that you can use it more than 100 times in a split second (the tenth Padovan prime, 3,093,215,881,333,057, is the 129th Padovan number).</p>
-
-<h3>Padovan Primes in Perl</h3>
-
-<p>Here again, I was afraid about numerous primality tests on very large integers, and decided to first build a list of prime numbers so that I would have to test each Padovan numbers against only prime numbers (up to a certain limit), rather than, say, all odd numbers, in order to speed up the process. It turns out that it wasn&#8217;t really necessary as the process runs in about only 6 seconds without this optimization. Worse yet, the performance optimization improves the execution duration only by a very marginal factor (perhaps by at most 20%). Clearly, it wasn&#8217;t worth the effort. I know very well Donald Knuth&#8217;s famous quote about &#8220;premature optimization (being) the source of all evil.&#8221; I thought I knew better in this specific case, but that was a mistake.  </p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use constant MAX =&gt; 10000; # MAX must be an even number
-
-my @primes = prime_list(MAX);
-# say "@primes"; # 2 3 5 7 11 13 17 19 23 29 31 37 41 ...
-
-my @padovans = (1, 1, 1);
-for my $i (3..140) {
-    $padovans[$i] = $padovans[$i-2] + $padovans[$i-3]
-} 
-# say "@padovans"; # 1 1 1 2 2 3 4 5 7 9 12 16 21 28 37 ...
-
-my $count = 0;
-my $last_pad = 0;
-for my $pad (@padovans) {
-    next if $pad == $last_pad;
-    $last_pad = $pad;
-    next unless is_prime($pad);
-    say $pad;
-    $count++;
-    last if $count &gt; 9;
-}
-
-sub prime_list {
-    my $max = shift;
-    my @prime_list = (2, 3, 5);
-    PRIMES: for my $c (7..$max) {
-            for my $i (2..$c/2) {
-                next PRIMES unless $c % $i;
-            }
-            push @prime_list, $c;
-    }
-    return @prime_list;
-}
-sub is_prime {
-    my $num = shift;
-    for my $prime (@primes) {
-        return 1 if $num == $prime;
-        return 0 if $prime &gt; $num;
-        return 0 unless $num % $prime;
-    }
-    my $test = MAX+1;
-    while ($test &lt; int(sqrt($num))) {
-        return 0 unless $num % $test;
-        $test += 2;
-    }
-    return 1;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./padovan_prime.pl
-2
-3
-5
-7
-37
-151
-3329
-23833
-13091204281
-3093215881333057
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on March 13, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2008,7 +1813,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 12 March 2022 00:58 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 12 March 2022 04:45 UTC</address>
             </div>
           </div>
         </div><!-- container -->
