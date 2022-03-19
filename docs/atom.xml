@@ -7,9 +7,140 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-03-18T20:43:26Z</updated>
+  <updated>2022-03-19T00:57:59Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Access the Tesla API with Perl!</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/steve_bertrand/2022/03/access-the-tesla-api-with-perl.html"/>
+    <id>tag:blogs.perl.org,2022:/users/steve_bertrand//2771.10739</id>
+    <published>2022-03-19T03:30:07Z</published>
+    <updated>2022-03-19T03:42:20Z</updated>
+    <author>
+        <name>Steve Bertrand</name>
+        
+    </author>
+    <category term="perlperl5teslaapi" label="perl perl5 tesla api" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/steve_bertrand/">
+        <![CDATA[<p>For several years, I spent much time writing code for the Raspberry Pi, including hardware level register C code so that we can use various Integrated Circuit chips and sensors with Perl.</p>
+
+<p>A couple of years ago, I acquired much larger and much more expensive toy, an all-wheel drive, full auto-pilot Tesla Model-X SUV, so of course, I want to write Perl code to access and manipulate it.</p>
+
+<p>In the ensuing two years, I developed several microcontroller-based devices for the car, including one that knows where the car is, and its battery charge and state, and dispslays this information via an LED light strip and an OLED screen inside of my garage, along with an audible alarm that sounds for 1/8th of a second every three seconds if the battery is below a certain threshold so I don't forget to plug the charger in.</p>
+
+<p>The microcontroller speaks to a Raspberry Pi who's job it is to fetch data from the Tesla API for my car, and to present that data to the microconroller, over Wifi. The software on the Pi is of course written in Perl, but because I couldn't figure out how to write the Tesla API authentication mechanism in Perl, I used Tim Dorssers TeslaPy Python library, and wrapped it for those calls.</p>
+
+<p>Not anymore! We can now talk to the Tesla API via Perl!</p>
+
+<p>I've officially released <a href="https://metacpan.org/release/STEVEB/Tesla-Vehicle-0.01/view/lib/Tesla/Vehicle.pm">Tesla::Vehicle</a>, which inherits from my other new related distribution, <a href="https://metacpan.org/pod/Tesla::API">Tesla::API</a>.</p>
+
+<p>Upon first attempt to fetch data from Tesla, we will generate a URL that you must browse through to in a browser, authenticate into your Tesla account, and then paste back the ensuing URL you are redirected to into the console. After that, all access tokens are automatically used and updated when needed. My software never has any access or knowledge of your Tesla account credentials, which is the way I wanted this designed.</p>
+
+<p>Thereafter, it's clear sailing!</p>
+
+<p>The documentation is pretty elaborate about what the software can do so please check it out. For <a href="https://metacpan.org/release/STEVEB/Tesla-Vehicle-0.01/view/lib/Tesla/Vehicle.pm">Tesla::Vehicle</a>, there are methods to access aggregate data, sections of the aggregate data, and for several specific attributes that I use myself, I've added methods for them directly. More will be added as time goes on.</p>
+
+<p>Features:</p>
+
+<ul>
+<li>Built-in initial access token generation code with prompts of instructions</li>
+<li>Automatic access token renewal</li>
+<li>Single method (<code>api()</code>) to access data from endpoints that don't yet have a direct method</li>
+<li>Built in modifiable data cache (set to 2 second timeout by default) to reduce calls to Tesla for data already retrieved (cache can be disabled)</li>
+<li>Consistent data return values... for data aggregate methods, all data is returned as a hash reference</li></li>
+<li>Near feature complete; most data has at least an aggregate fetch method, many individual attributes have accessor methods</li>
+<li>Ability to wake the car from sleep (<code>wake()</code>). For calls that require the car to be awake, you can set <code>auto_wake</code> and we'll wake the car ourselves (disabled by default)</li>
+<li>Many Tesla API calls require a vehicle ID sent in. We do our best to get this ourselves, otherwise it can be sent into <code>new()</code> or <code>id()</code></li>
+</ul>
+
+<p>Todo: The main one is adding methods that allow control of the functionality of the car. The only one implemented thus far is <code>wake()</code>. I'll also be adding more direct attribute retrieval methods. For now, use the aggregate methods and pull the data out of the return values yourself. There are also a few minor issues, primarily related to the handling of Tesla API timeouts.</p>
+
+<p>How 'bout some code and output:</p>
+
+<pre><code>use warnings;
+use strict;
+
+use Tesla::Vehicle;
+
+my $car = Tesla::Vehicle-&gt;new(auto_wake =&gt; 1);
+
+printf(
+    "My Tesla account has my car registered with the name '%s'.\n",
+    $car-&gt;name
+);
+
+printf(
+    "My car is in gear %s and is currently going %d MPH and my odometer is %d\n",
+    $car-&gt;gear,
+    $car-&gt;speed,
+    $car-&gt;odometer
+);
+
+printf(
+    "My latitude is %f, longitide is %f, my heading is %d degrees and its using %.2f kWh/mile\n",
+    $car-&gt;latitude,
+    $car-&gt;longitude,
+    $car-&gt;heading,
+    $car-&gt;power
+);
+
+printf(
+    "My dashcam is %s, sentry mode is %s and I %s currently near my vehicle\n",
+    $car-&gt;dashcam,
+    $car-&gt;sentry_mode ? 'enabled' : 'disabled',
+    $car-&gt;user_present ? 'am' : 'am not'
+);
+
+printf(
+    "My battery is at %d%%, and is %s charging at %.2f volts pulling %.2f Amps\n",
+    $car-&gt;battery_level,
+    $car-&gt;charging_state ? 'currently' : 'not',
+    $car-&gt;charger_voltage,
+    $car-&gt;charge_actual_current
+);
+
+if ($car-&gt;battery_level &gt;= $car-&gt;charge_limit_soc) {
+    print "The charger is connected but disabled due to set maximum charge level reached\n";
+}
+
+printf(
+    "My steering wheel warmer is %s, passenger seat warmer is %s, and Bio Weapon mode is %s\n",
+    $car-&gt;heater_steering_wheel ? 'on' : 'off',
+    $car-&gt;heater_seat_passenger ? 'on' : 'off',
+    $car-&gt;bioweapon_mode ? 'on' : 'off'
+);
+
+printf(
+    "The temperature inside the car is %dC and outside it's %dC, and climate control is %s\n",
+    $car-&gt;temperature_inside,
+    $car-&gt;temperature_outside,
+    $car-&gt;is_climate_on ? 'on' : 'off'
+);
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>My Tesla account has my car registered with the name 'Dream machine'.
+
+My car is in gear P and is currently going 0 MPH and my odometer is 49066
+
+My latitude is XX.XXXXXX, longitide is -XXX.XXXXXX, my heading is 229 degrees and its using 0.00 kWh/mile
+
+My dashcam is Unavailable, sentry mode is disabled and I am not currently near my vehicle
+
+My battery is at 94%, and is currently charging at 0.00 volts pulling 0.00 Amps
+
+The charger is connected but disabled due to set maximum charge level reached
+
+My steering wheel warmer is off, passenger seat warmer is off, and Bio Weapon mode is off
+
+The temperature inside the car is 17C and outside it's 13C, and climate control is off
+</code></pre>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>5 cool Programming links</title>
     <link rel="alternate" href="https://dev.to/thibaultduponchelle/5-cool-programming-links-aid" type="text/html"/>
@@ -2638,53 +2769,6 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
     </author>
     <thr:total>0</thr:total>
   </entry>
-  <entry>
-    <title>XS versus clang: Infinite warnings</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2022/03/xs-versus-clang-infinite-warnings.html"/>
-    <id>tag:blogs.perl.org,2022:/users/tom_wyant//506.10733</id>
-    <published>2022-03-12T06:37:05Z</published>
-    <updated>2022-03-12T06:38:01Z</updated>
-    <author>
-        <name>Tom Wyant</name>
-        
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/tom_wyant/">
-        <![CDATA[<p>Around the beginning of 2022 I started noticing a large number of warnings when compiling XS modules under macOS 12 Monterey. These looked like <code>warning: '(' and '{' tokens introducing statement expression appear in different macro expansion contexts [-Wcompound-token-split-by-macro]</code>, and appeared to originate fairly deeply in Perl's macro stack.</p>
-
-<p>This week I was moved to address them for my one lone XS distribution, <a href="https://metacpan.org/dist/Mac-Pasteboard"><code>Mac-Pasteboard</code></a>. Not only are they really annoying, but they would make it difficult or impossible to find anything more serious.</p>
-
-<p>A little web searching seemed to say that this warning was added in <code>clang</code> 12.0, and is enabled by default. Beyond that, I did not find much. A Ruby ticket turned up, but the patch involved rewriting the relevant macros so that the warning was not tickled. A desultory check of a few other XS modules that came to mind did not provide any help -- they all showed the same behavior.</p>
-
-<p>There is some work going on in the Perl core. A brief thread in the p5p mailing list, <a href="https://www.nntp.perl.org/group/perl.perl5.porters/2022/03/msg263187.html">Backport token-split-by-macro fix?</a> refers to <a href="https://github.com/Perl/perl5/issues/18780">GitHub issue 18780: clang12: Using as compiler generates 30K warnings of -Wcompound-token-split-by-macro</a>. As I read both the mail thread and the issue, it is fixed in blead, but back-porting may be problematic. This seems to mean that module authors who want to silence the warnings in currently-existing versions of Perl need to address the problem themselves.</p>
-
-<p>The question is how to turn off the warning. I considered a C pragma, since my copy of Kernighan and Ritchie's <cite>The C Programming Language</cite> says that unrecognized pragmas are ignored. But some experimentation showed that <code>gcc</code> complained, and some web searching showed that it was not the only C compiler that would do so. This means replacing a large number of warnings with a single warning per compilation from compilers that do not support the required pragma, unless the pragma can be properly conditionalized. But it appears at least one author has gone this route. My version of this implementation is:</p>
-
-<pre>
-#if defined(__clang__) &amp;&amp; defined(__clang_major__) &amp;&amp; __clang_major__ &gt; 11
-#pragma clang diagnostic ignored "-Wcompound-token-split-by-macro"
-#endif
-</pre>
-
-<p>This is to be inserted at the very beginning of the C or XS source, or at least before any Perl headers are included. Maybe the <code>defined(__clang__)</code> is not needed, but I am cautious.</p>
-
-<p>The other way to suppress the warning is to supply a command line option, <code>-Wno-compound-token-split-by-macro</code>. The problem here is how to know when the option should be applied. I know nothing about the arcane art of probing C compiler configuration, but the brute-force approach is to write a trivial C program (essentially the <code>true</code> command), finding a place for it to live in my distribution (the <code>inc/</code> directory), and then spawning the following command:</p>
-
-<pre>
-system "$Config{cc} -Werror -Wno-compound-token-split-by-macro -o /dev/null inc/true.c 2&gt;/dev/null";
-</pre>
-
-<p>If this succeeds, I know I can add <code>-Wno-compound-token-split-by-macro</code> option to the compiler command. Otherwise, I can not. The <code>-Werror</code> turns warnings into errors, so I do not have to parse <code>STDERR</code>. There are two problems with this:</p>
-
-<ul>
-    <li>It is not portable. That is not a problem for my specific case, which only runs under macOS anyway. But a general solution will need to take care of environments like MSWin32 and VMS.</li>
-    <li>It uses a single-argument <code>system()</code> call with shell meta-characters, and so requires spawning a shell and is a potential security risk -- though maybe no more of a risk than including any Perl module, since if the <code>@INC</code> directories (or <code>@INC</code> itself) can be hacked the bad actor probably has better ways to attack a system than waiting for someone to spawn <code>$Config{cc}</code>. But again VMS DCL will be a problem.</li>
-</ul>
-
-<p>I have been back and forth on the proper way to handle this. Currently I like the pragma approach, but the limited number of C compilers in my stable makes it hard to choose definitively between them. Linux favors <code>gcc</code>, BSD favors <code>clang</code> -- at least, macOS, FreeBSD, and OpenBSD do. But I have been personally unable to test under a wider range of compilers. <cite>Caveat coder.</cite></p>
-]]>
-        
-    </content>
-</entry>
   <entry>
     <title>Release 1.30 of Date::Holidays - more holiday for the French</title>
     <link rel="alternate" href="https://dev.to/jonasbn/release-130-of-dateholidays-more-holiday-for-the-french-36o7" type="text/html"/>
