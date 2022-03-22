@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-03-22T16:55:11Z</updated>
+  <updated>2022-03-22T20:43:16Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -3431,72 +3431,4 @@ On this page you'll find some of the most common cases and their solutions.
       <name>Gabor Szabo</name>
     </author>
 </entry>
-  <entry>
-    <title>and or AND and ElasticSearch, or: Case matters</title>
-    <link href="http://domm.plix.at/perl/2022_02_and_or_and.html"/>
-    <id>http://domm.plix.at/perl/2022_02_and_or_and.html</id>
-    <updated>2022-02-22T18:58:47+00:00</updated>
-    <category term="perl"/>
-    <summary type="html">Today I spend a few hours hunting a weird bug. I got a report that people entering data for the Steiermärkische Landesbibliothek where not able to find duplicate entries when adding new books. In ...</summary>
-    <content type="html">&lt;p&gt;Today I spend a few hours hunting a weird bug. I got a report that people entering data for the &lt;a href="https://katalog.landesbibliothek.steiermark.at/"&gt;Steiermärkische Landesbibliothek&lt;/a&gt; where not able to find duplicate entries when adding new books. In theory, &lt;a href="https://koha-community.org/"&gt;Koha&lt;/a&gt; should search through all the already existing data and present the user with a dialog if they maybe want to reuse the existing entry, if one is found:&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="../perl/2022_02_and_or_and_images/and_or_and_001.jpg"&gt;&lt;img src="../perl/2022_02_and_or_and_images/and_or_and_001.jpg" alt="" /&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;This works when an &lt;span class="caps"&gt;ISBN &lt;/span&gt;was entered, but not when "only" title, author and some other data was available. To make things a bit more complicated, we're using the not-default ElasticSearch backend, as opposed to the old-school Zebra&lt;sup class="footnote"&gt;&lt;a href="#fn0"&gt;0&lt;/a&gt;&lt;/sup&gt; index for searching.&lt;/p&gt;
-
-&lt;p&gt;So I dug through the source code, adds some strategic &lt;code&gt;Data::Dumper&lt;/code&gt; statements to get the actual query sent to ElasticSearch, and then played a bit with that query, sending it directly to ElasticSearch via &lt;code&gt;curl&lt;/code&gt;. The best way to do this (IMO) is to store the query into a file, and use &lt;code&gt;-d filename&lt;/code&gt;:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;curl http://localhost:9200/biblios/_search?pretty -X GET -H 'Content-Type: application/json' -d query.json&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Here's the &lt;code&gt;query.json&lt;/code&gt; (that was not returning any results)&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;{
-  &amp;quot;query&amp;quot;: {
-    &amp;quot;query_string&amp;quot;: {
-      &amp;quot;query&amp;quot;: &amp;quot;(author:'Schwartz, Randal J' and title:'Einführung in Perl')&amp;quot;,
-      &amp;quot;default_operator&amp;quot;:&amp;quot;AND&amp;quot;,
-      &amp;quot;type&amp;quot;: &amp;quot;cross_fields&amp;quot;,
-      &amp;quot;analyze_wildcard&amp;quot;: true, &amp;quot;fuzziness&amp;quot;: &amp;quot;auto&amp;quot;, &amp;quot;lenient&amp;quot;: true
-    }
-  }
-}&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Note that this search is using the simple &lt;code&gt;query_string&lt;/code&gt; search, where you pass a semi-complex query as a string instead of composing a very deeply nested data structure&lt;sup class="footnote"&gt;&lt;a href="#fn1"&gt;1&lt;/a&gt;&lt;/sup&gt;:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;(author:'Schwartz, Randal J' and title:'Einführung in Perl')&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;After some fiddling and testing I found that removing &lt;code&gt;&amp;quot;default_operator&amp;quot;:&amp;quot;AND&amp;quot;&lt;/code&gt; yields results (but not very good results..)&lt;/p&gt;
-
-&lt;p&gt;So I took my problem to the Koha &lt;span class="caps"&gt;IRC &lt;/span&gt;channel, where kidclamp provided the needed clue after some back and forth:&lt;/p&gt;
-
-&lt;h4&gt;Case matters&lt;/h4&gt;
-
-&lt;p&gt;When using the &lt;code&gt;simple_query&lt;/code&gt;, ElasticSearch interprets the string &lt;code&gt;&amp;quot;AND&amp;quot;&lt;/code&gt; as a boolean operator linking the literal values in the query. But it interprets the string &lt;code&gt;&amp;quot;and&amp;quot;&lt;/code&gt; as a literal value!&lt;/p&gt;
-
-&lt;p&gt;So:&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;code&gt;&amp;quot;foo AND bar&amp;quot;&lt;/code&gt; finds documents that contain &lt;code&gt;foo&lt;/code&gt; and &lt;code&gt;bar&lt;/code&gt;.&lt;/li&gt;
-&lt;li&gt;&lt;code&gt;&amp;quot;foo and bar&amp;quot;&lt;/code&gt; finds documents that contain &lt;code&gt;foo&lt;/code&gt;, &lt;code&gt;bar&lt;/code&gt; and &lt;code&gt;and&lt;/code&gt;!&lt;/li&gt;
-&lt;li&gt;In the latter case, ElasticSearch checks &lt;code&gt;default_operator&lt;/code&gt;, which in our case was set to &lt;code&gt;AND&lt;/code&gt;, thus only finding documents that contained the string &lt;code&gt;&amp;quot;and&amp;quot;&lt;/code&gt; in addition to what we're actually searching for&lt;/li&gt;
-&lt;li&gt;Removing &lt;code&gt;default_operator&lt;/code&gt; let ElasticSearch fall back to the default, &lt;code&gt;OR&lt;/code&gt;, so we now found stuff, but very crappy stuff (anything with &lt;code&gt;&amp;quot;and&amp;quot;&lt;/code&gt; in &lt;strong&gt;any&lt;/strong&gt; field, not only in title or author)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;None of these results were really usable!&lt;/p&gt;
-
-&lt;p&gt;So the real fix was to patch Koha to use an uppercase &lt;code&gt;AND&lt;/code&gt; to construct this query. See &lt;a href="https://bugs.koha-community.org/bugzilla3/show_bug.cgi?id=30153"&gt;Koha Bug #30153&lt;/a&gt; for the gory details&lt;sup class="footnote"&gt;&lt;a href="#fn2"&gt;2&lt;/a&gt;&lt;/sup&gt;. Thanks to kidclamp for helping my locate the problem and to the Koha devs for quickly applying and testing my patch!&lt;/p&gt;
-
-&lt;h4&gt;Footnotes&lt;/h4&gt;
-
-&lt;p class="footnote" id="fn0"&gt;&lt;sup&gt;0&lt;/sup&gt; Don't ask!&lt;/p&gt;
-
-&lt;p class="footnote" id="fn1"&gt;&lt;sup&gt;1&lt;/sup&gt; I used to joke that ElasticSearch devs get paid by the tab indentation needed to express a search query&lt;/p&gt;
-
-&lt;p class="footnote" id="fn2"&gt;&lt;sup&gt;2&lt;/sup&gt; Or not so gory:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;-        my $op = 'and';
-+        my $op = 'AND';&lt;/code&gt;&lt;/pre&gt;</content>
-    <category term="Koha"/>
-    <category term="ElasticSearch"/>
-  </entry>
 </feed>

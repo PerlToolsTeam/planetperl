@@ -3434,75 +3434,6 @@ On this page you'll find some of the most common cases and their solutions.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://domm.plix.at/perl/2022_02_and_or_and.html">and or AND and ElasticSearch, or: Case matters</a></h2>
-<a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
-
-              <p class="text-right"><small>Published
- on Tuesday 22 February 2022 18:58</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Today I spend a few hours hunting a weird bug. I got a report that people entering data for the <a href="https://katalog.landesbibliothek.steiermark.at/">Steiermärkische Landesbibliothek</a> where not able to find duplicate entries when adding new books. In theory, <a href="https://koha-community.org/">Koha</a> should search through all the already existing data and present the user with a dialog if they maybe want to reuse the existing entry, if one is found:</p>
-
-<p><a href="../perl/2022_02_and_or_and_images/and_or_and_001.jpg"><img src="../perl/2022_02_and_or_and_images/and_or_and_001.jpg" alt="" /></a></p>
-
-<p>This works when an <span class="caps">ISBN </span>was entered, but not when "only" title, author and some other data was available. To make things a bit more complicated, we're using the not-default ElasticSearch backend, as opposed to the old-school Zebra<sup class="footnote"><a href="#fn0">0</a></sup> index for searching.</p>
-
-<p>So I dug through the source code, adds some strategic <code>Data::Dumper</code> statements to get the actual query sent to ElasticSearch, and then played a bit with that query, sending it directly to ElasticSearch via <code>curl</code>. The best way to do this (IMO) is to store the query into a file, and use <code>-d filename</code>:</p>
-
-<pre><code>curl http://localhost:9200/biblios/_search?pretty -X GET -H 'Content-Type: application/json' -d query.json</code></pre>
-
-<p>Here's the <code>query.json</code> (that was not returning any results)</p>
-
-<pre><code>{
-  &quot;query&quot;: {
-    &quot;query_string&quot;: {
-      &quot;query&quot;: &quot;(author:'Schwartz, Randal J' and title:'Einführung in Perl')&quot;,
-      &quot;default_operator&quot;:&quot;AND&quot;,
-      &quot;type&quot;: &quot;cross_fields&quot;,
-      &quot;analyze_wildcard&quot;: true, &quot;fuzziness&quot;: &quot;auto&quot;, &quot;lenient&quot;: true
-    }
-  }
-}</code></pre>
-
-<p>Note that this search is using the simple <code>query_string</code> search, where you pass a semi-complex query as a string instead of composing a very deeply nested data structure<sup class="footnote"><a href="#fn1">1</a></sup>:</p>
-
-<pre><code>(author:'Schwartz, Randal J' and title:'Einführung in Perl')</code></pre>
-
-<p>After some fiddling and testing I found that removing <code>&quot;default_operator&quot;:&quot;AND&quot;</code> yields results (but not very good results..)</p>
-
-<p>So I took my problem to the Koha <span class="caps">IRC </span>channel, where kidclamp provided the needed clue after some back and forth:</p>
-
-<h4>Case matters</h4>
-
-<p>When using the <code>simple_query</code>, ElasticSearch interprets the string <code>&quot;AND&quot;</code> as a boolean operator linking the literal values in the query. But it interprets the string <code>&quot;and&quot;</code> as a literal value!</p>
-
-<p>So:</p>
-
-<ul>
-<li><code>&quot;foo AND bar&quot;</code> finds documents that contain <code>foo</code> and <code>bar</code>.</li>
-<li><code>&quot;foo and bar&quot;</code> finds documents that contain <code>foo</code>, <code>bar</code> and <code>and</code>!</li>
-<li>In the latter case, ElasticSearch checks <code>default_operator</code>, which in our case was set to <code>AND</code>, thus only finding documents that contained the string <code>&quot;and&quot;</code> in addition to what we're actually searching for</li>
-<li>Removing <code>default_operator</code> let ElasticSearch fall back to the default, <code>OR</code>, so we now found stuff, but very crappy stuff (anything with <code>&quot;and&quot;</code> in <strong>any</strong> field, not only in title or author)</li>
-</ul>
-
-<p>None of these results were really usable!</p>
-
-<p>So the real fix was to patch Koha to use an uppercase <code>AND</code> to construct this query. See <a href="https://bugs.koha-community.org/bugzilla3/show_bug.cgi?id=30153">Koha Bug #30153</a> for the gory details<sup class="footnote"><a href="#fn2">2</a></sup>. Thanks to kidclamp for helping my locate the problem and to the Koha devs for quickly applying and testing my patch!</p>
-
-<h4>Footnotes</h4>
-
-<p class="footnote" id="fn0"><sup>0</sup> Don't ask!</p>
-
-<p class="footnote" id="fn1"><sup>1</sup> I used to joke that ElasticSearch devs get paid by the tab indentation needed to express a search query</p>
-
-<p class="footnote" id="fn2"><sup>2</sup> Or not so gory:</p>
-
-<pre><code>-        my $op = 'and';
-+        my $op = 'AND';</code></pre>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
 
         </div><!-- col-md-8 -->
         <div class="col-md-2">
@@ -3523,7 +3454,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 22 March 2022 16:55 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Tuesday 22 March 2022 20:43 UTC</address>
             </div>
           </div>
         </div><!-- container -->
