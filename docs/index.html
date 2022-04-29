@@ -58,6 +58,397 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/arslonga/likedislike-system-with-mojolicious-42ph">Like/Dislike system with Mojolicious</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by arslonga
+ on Friday 29 April 2022 07:38</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>This post describes the actual Like/Dislike mechanism in the program based on Mojolicious. Web pages style is created using the Bootstrap framework. The full version of the Mojolicious <code>like-dislike</code> demo can be downloaded at: <a href="https://github.com/arslonga/like-dislike">https://github.com/arslonga/like-dislike</a></p>
+
+<p>So, in the start package <strong>Vote.pm</strong> we create routers for the post with a certain ID in the section named <code>'first-section'</code> (for example), and also for <code>like</code> and <code>dislike</code>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub startup {
+my $self = shift;
+
+my $r = $self-&gt;routes;
+...
+$r-&gt;any('/first-section/:id' =&gt; [ id =&gt; qr/[0-9]+/ ] )-&gt;to('post#article');
+...
+$r-&gt;any('/likeartcl')-&gt;to('voting#like');
+$r-&gt;any('/dislikeartcl')-&gt;to('voting#dislike');
+...
+}
+</code></pre>
+
+</div>
+
+
+
+<p>A snippet of code in the <strong>Post.pm</strong> package that describes the <code>'article'</code> method:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>package Vote::Controller::Post;
+use Mojo::Base 'Mojolicious::Controller';
+use Session;
+use SessCheck;
+...
+#---------------------------------
+sub article {
+#---------------------------------
+my $self = shift;
+my $id = $self-&gt;stash('id');
+my($nickname, $status, $client_check, $user_id, $title_alias);
+
+
+eval{
+$nickname = $self-&gt;session('client')-&gt;[0];
+$user_id = $self-&gt;session('client')-&gt;[2]; 
+};
+$client_check = SessCheck-&gt;client( $self, $nickname );
+if( !$client_check ){
+    $status = ' disabled';
+}
+$title_alias = (split(/\//, $self-&gt;req-&gt;url))[1];
+my $data = $self-&gt;db-&gt;select( 'posts', ['*'], {id =&gt; $id} )-&gt;hash;
+
+$self-&gt;render( 
+dat             =&gt; $data,
+section_ident   =&gt; $title_alias,
+id              =&gt; $id,
+like_id         =&gt; 'like_'.$title_alias.'_'.$id,
+unlike_id       =&gt; 'unlike_'.$title_alias.'_'.$id,
+client_id       =&gt; $user_id,
+unlike_btn_name =&gt; 'unlike'.$title_alias.'_'.$id,
+like_btn_name   =&gt; 'like'.$title_alias.'_'.$id,
+status          =&gt; $status,
+liked_cnt       =&gt; $data-&gt;{liked} || 0,
+unliked_cnt     =&gt; $data-&gt;{unliked} || 0
+);
+}#---------------
+...
+1;
+</code></pre>
+
+</div>
+
+
+
+<p>Template <strong>article.html.ep</strong> in <strong>/templates/post</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>% layout 'vote';
+
+&lt;hr&gt;
+&lt;a class="btn btn-info" href="/first-section" role="button"&gt;
+&lt;span class="glyphicon glyphicon-arrow-left"&gt;&lt;/span&gt;
+&lt;/a&gt;
+&lt;hr&gt;
+&lt;div&gt;
+    &lt;h2&gt;&lt;%= $dat-&gt;{title} %&gt;&lt;/h2&gt;
+    &lt;%= $dat-&gt;{body} %&gt;
+&lt;/div&gt;
+&lt;hr&gt;
+&lt;div class="ld-box text-right"&gt;
+
+%# Rendering a template that describes a block of code
+%# that contains two buttons:
+%# 'like' and 'dislike'
+
+&lt;%= include 'voting/vote' %&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+//---------- Like/Dislike block ---
+async function LikeArtcl(titleAlias, articleId, vote_span, user_id) {
+let likedislikeBox = document.querySelector('.ld-box');
+
+  let response = await fetch("/likeartcl?title_alias=" + 
+  titleAlias + 
+  '&amp;article_id=' + 
+  articleId + 
+  '&amp;vote_span=' + 
+  vote_span + 
+  '&amp;user_id=' + 
+  user_id);
+
+  if (response.ok) {
+    let respRendr = await response.text(); 
+    likedislikeBox.innerHTML = respRendr;
+  }else {
+    alert("Error HTTP: " + response.status);
+  }
+}
+
+async function UnlikeArtcl(titleAlias, articleId, vote_span, user_id) {
+let likedislikeBox = document.querySelector('.ld-box');
+
+  let response = await fetch("/dislikeartcl?title_alias=" + 
+  titleAlias + 
+  '&amp;article_id=' + 
+  articleId + 
+  '&amp;vote_span=' + 
+  vote_span + 
+  '&amp;user_id=' + 
+  user_id);
+
+  if (response.ok) {
+    let respRendr = await response.text(); 
+    likedislikeBox.innerHTML = respRendr;
+  }else {
+    alert("Error HTTP: " + response.status);
+  }
+}
+//---------- Like/Dislike block END ---
+&lt;/script&gt;
+</code></pre>
+
+</div>
+
+
+
+<p>Package <strong>Session.pm</strong>:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>package Session;
+use Mojo::Base -base;
+
+#---------------------------------
+sub user {
+#---------------------------------
+my($self, $c, $login, $password, $id) = @_;
+
+$c-&gt;session( client =&gt; [$login, $password, $id], expiration =&gt; 120);
+return 1;
+}#---------------
+
+# 'voting' method of Session called in 'Voting.pm' package (see code fragment below)
+#---------------------------------
+sub voting {
+#---------------------------------
+my($self, $c, $user_vote_id, $title_alias_and_id) = @_;
+$c-&gt;signed_cookie( $user_vote_id =&gt; $title_alias_and_id, {expires =&gt; time + 120});
+return 1;
+}#---------------
+
+#---------------------------------
+sub client_expire {
+#---------------------------------
+my($self, $c) = @_;
+delete $c-&gt;session-&gt;{'client'};
+return 1;
+}#---------------
+1;
+</code></pre>
+
+</div>
+
+
+
+<p>Package <strong>Vote/Voting.pm</strong><br>
+Here we render template <code>'voting/vote.html.ep'</code> that describes code block with <code>'like'</code> and <code>'dislike'</code> buttons and <code>'like'</code> and <code>'dislike'</code> counts<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>package Vote::Voting;
+use Mojo::Base 'Mojolicious::Controller';
+use Mojo::Util qw(trim encode decode);
+use Mojo::Cookie;
+use Session;
+
+#---------------------------------
+sub like {
+#---------------------------------
+my $self = shift;
+my($nickname, $status);
+eval{
+$nickname = $self-&gt;session('client')-&gt;[0];  
+};
+my $client_check = SessCheck-&gt;client( $self, $nickname );
+
+my $title_alias = $self-&gt;param('title_alias');
+my $article_id  = $self-&gt;param('article_id');
+my $user_id     = $self-&gt;param('user_id');
+
+$status = !$client_check ? ' disabled' : '';
+
+my $like_count = $self-&gt;db-&gt;select( 'posts', 
+                                  ['liked'], 
+                                  {id =&gt; $article_id} )
+                                  -&gt;hash-&gt;{liked};
+my $unlike_count = $self-&gt;db-&gt;select( 'posts', 
+                                    ['unliked'], 
+                                    {id =&gt; $article_id} )
+                                    -&gt;hash-&gt;{unliked};
+my $like_cookie_name = 'like_user'.$user_id.'_'.$title_alias.'_'.$article_id;
+my $unlike_cookie_name = 'unlike_user'.$user_id.'_'.$title_alias.'_'.$article_id;
+
+if( !$self-&gt;signed_cookie( $like_cookie_name ) &amp;&amp; $client_check ){
+    ++$like_count;
+    $self-&gt;db-&gt;update( 'posts', 
+                     {'liked' =&gt; $like_count}, 
+                     {'id' =&gt; $article_id} );
+}
+
+if( $self-&gt;signed_cookie( $unlike_cookie_name ) ){
+    --$unlike_count;
+    $self-&gt;db-&gt;update( 'posts', 
+                     {'unliked' =&gt; $unlike_count}, 
+                     {'id' =&gt; $article_id} );
+    $self-&gt;signed_cookie( $unlike_cookie_name =&gt; '', {expires =&gt; 1});
+}
+
+# Store session for 'like' action where key is 
+#'like_user'.$user_id.'_'.$title_alias.'_'.$article_id
+# and value is $title_alias.'_'.$article_id
+Session-&gt;voting( $self, 
+                 'like_user'.$user_id.'_'.$title_alias.'_'.$article_id, 
+                 $title_alias.'_'.$article_id 
+               );
+
+$self-&gt;render(
+template        =&gt; 'voting/vote',
+section_ident   =&gt; $title_alias,
+id              =&gt; $article_id,
+like_id         =&gt; 'like_'.$title_alias.'_'.$article_id,
+unlike_id       =&gt; 'unlike_'.$title_alias.'_'.$article_id,
+client_id       =&gt; $user_id,
+unlike_btn_name =&gt; 'unlike'.$title_alias.'_'.$article_id,
+like_btn_name   =&gt; 'like'.$title_alias.'_'.$article_id,
+status          =&gt; $status,
+liked_cnt       =&gt; $like_count,
+unliked_cnt     =&gt; $unlike_count
+);
+}#---------------
+
+#---------------------------------
+sub dislike {
+#---------------------------------
+my $self = shift;
+my($nickname, $status);
+eval{
+$nickname = $self-&gt;session('client')-&gt;[0];  
+};
+my $client_check = SessCheck-&gt;client( $self, $nickname );
+
+my $title_alias = $self-&gt;param('title_alias');
+my $article_id  = $self-&gt;param('article_id');
+my $user_id     = $self-&gt;param('user_id');
+
+$status = !$client_check ? ' disabled' : '';
+
+my $unlike_count = $self-&gt;db-&gt;select( 'posts', 
+                                    ['unliked'], 
+                                    {id =&gt; $article_id} )
+                                    -&gt;hash-&gt;{unliked};
+my $like_count = $self-&gt;db-&gt;select( 'posts', 
+                                  ['liked'], 
+                                  {id =&gt; $article_id} )
+                                  -&gt;hash-&gt;{liked};
+my $like_cookie_name = 'like_user'.$user_id.'_'.$title_alias.'_'.$article_id;
+my $unlike_cookie_name = 'unlike_user'.$user_id.'_'.$title_alias.'_'.$article_id;
+
+if( !$self-&gt;signed_cookie( $unlike_cookie_name ) &amp;&amp; $client_check ){
+    ++$unlike_count;
+    $self-&gt;db-&gt;update( 'posts', 
+                     {'unliked' =&gt; $unlike_count}, 
+                     {'id' =&gt; $article_id} );
+}
+
+if( $self-&gt;signed_cookie( $like_cookie_name ) ){
+    --$like_count;
+    $self-&gt;db-&gt;update( 'posts', 
+                     {'liked' =&gt; $like_count}, 
+                     {'id' =&gt; $article_id} );
+    $self-&gt;signed_cookie( $like_cookie_name =&gt; '', {expires =&gt; 1});
+}
+
+# Store session for 'dislike' action where key is 
+#'unlike_user'.$user_id.'_'.$title_alias.'_'.$article_id
+# and value is $title_alias.'_'.$article_id
+Session-&gt;voting( $self, 
+                 'unlike_user'.$user_id.'_'.$title_alias.'_'.$article_id, 
+                 $title_alias.'_'.$article_id );
+
+$self-&gt;render(
+template        =&gt; 'voting/vote',
+section_ident   =&gt; $title_alias,
+id              =&gt; $article_id,
+like_id         =&gt; 'like_'.$title_alias.'_'.$article_id,
+unlike_id       =&gt; 'unlike_'.$title_alias.'_'.$article_id,
+client_id       =&gt; $user_id,
+unlike_btn_name =&gt; 'unlike'.$title_alias.'_'.$article_id,
+like_btn_name   =&gt; 'like'.$title_alias.'_'.$article_id,
+status          =&gt; $status,
+unliked_cnt     =&gt; $unlike_count,
+liked_cnt       =&gt; $like_count
+);
+}#---------------
+1;
+
+</code></pre>
+
+</div>
+
+
+
+<p>Template <strong>voting/vote.html.ep</strong><br>
+Use it for both rendering <code>'like'</code> and <code>'dislike'</code> actions<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>%# voting/vote.html.ep
+
+&lt;button type="button" name="&lt;%= $like_btn_name %&gt;" 
+onclick="Voting('&lt;%= $section_ident %&gt;', 
+                   '&lt;%= $id %&gt;', 
+                   '&lt;%= $like_id %&gt;', 
+                   '&lt;%= $client_id %&gt;'); 
+                   this.disabled='disabled';" 
+                   id="chevron_stl"&lt;%= $status %&gt;&gt;
+&lt;span id="&lt;%= $section_ident.'_'.$client_id.'-up' %&gt;" 
+class="glyphicon glyphicon-chevron-up" aria-hidden="true"&gt;&lt;/span&gt;
+&lt;/button&gt;
+&lt;span id="&lt;%= $like_id %&gt;" class="like_unlike"&gt;&lt;%= $liked_cnt %&gt;&lt;/span&gt;
+
+&lt;button type="button" name="&lt;%= $unlike_btn_name %&gt;" 
+onclick="Voting('&lt;%= $section_ident %&gt;', 
+                     '&lt;%= $id %&gt;', 
+                     '&lt;%= $unlike_id %&gt;', 
+                     '&lt;%= $client_id %&gt;'); 
+                     this.disabled='disabled';" 
+                     id="chevron_stl"&lt;%= $status %&gt;&gt;
+&lt;span id="&lt;%= $section_ident.'_'.$client_id.'-down' %&gt;" 
+class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
+&lt;/button&gt;
+&lt;span id="&lt;%= $unlike_id %&gt;" class="like_unlike"&gt;&lt;%= $unliked_cnt %&gt;&lt;/span&gt;
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  Conclusion
+</h2>
+
+<p>Use the combination of article ID, user ID, and kind of action (like or dislike) to create a unique voting ID. This voting ID can be a key of signed cookie.</p>
+
+<p>A simplified like/dislike system implemented in my project <strong>MornCat CMS</strong> at <a href="https://github.com/arslonga/my_blog">https://github.com/arslonga/my_blog</a> </p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-04-28-auf-dem-weg-zu-perl-536-a-signaturen">Auf dem Weg zu Perl 5.36 – Signaturen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
 
@@ -68,7 +459,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/04/perl-weekly-challenge-162-isbn-13-and-wheatstone-playfair.html">Perl Weekly Challenge 162: ISBN-13 and Wheatstone-Playfair</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -376,7 +767,7 @@ siderwrdulfipaarkcrw -&gt; thewexeklychallengex
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/moo-orientacao-de-objeto-minimalista-6el">Moo - Orientação de objeto minimalista</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -629,7 +1020,7 @@ siderwrdulfipaarkcrw -&gt; thewexeklychallengex
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/561.html">#561 - Switching to Sendgrid</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -644,7 +1035,7 @@ siderwrdulfipaarkcrw -&gt; thewexeklychallengex
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-testing-404-and-500-responses">Dancer2: Testing 404 and 500 error responses</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -659,7 +1050,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/04/24#pwc161">Are Abecedarians from Abecedaria?</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -840,7 +1231,7 @@ are some decent verses amidst all the chaos! </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/perl-orientado-a-objeto-part-iii-4fe2">Perl Orientado a Objeto Part III</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -965,7 +1356,7 @@ Como nem tudo são flores o <em>Moose</em> também tem seus defeitos. Por ser t�
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/04/perl-weekly-challenge-161-abecedarian-words-and-pangrams.html">Perl Weekly Challenge 161: Abecedarian Words and Pangrams</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1136,7 +1527,7 @@ a aardvark aback abacus abacuses abandon abandoning abandonment abbey abdominal 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jeongoon/grep-with-head-line-5h6k">Grep with Head Line</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1741,7 +2132,7 @@ sh&gt; <span class="nb">cat </span>some.org | head-with retrieve-metadata <span 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/04/ccclxxxix-15-great-cpan-modules.html">(ccclxxxix) 15 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1753,7 +2144,7 @@ sh&gt; <span class="nb">cat </span>some.org | head-with retrieve-metadata <span 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/04/diii-metacpan-weekly-report-appsqitch.html">(diii) metacpan weekly report - App::Sqitch</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1765,7 +2156,7 @@ sh&gt; <span class="nb">cat </span>some.org | head-with retrieve-metadata <span 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/04/dxxxi-stackoverflow-perl-report.html">(dxxxi) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1777,7 +2168,7 @@ sh&gt; <span class="nb">cat </span>some.org | head-with retrieve-metadata <span 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/perl-orientado-a-objeto-part-ii-2o54">Perl Orientado a Objeto Part II</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1980,130 +2371,6 @@ sh&gt; <span class="nb">cat </span>some.org | head-with retrieve-metadata <span 
 </ul>
 
 <p>👋🏻 Então pessoal, esses foram os pilares da Programação Orientada a Objetos no perl. Continuem de olho que logo mais farei publicações sobre o Moose e o Moo, suas diferenças e outras aplicações voltadas a essa linguagem de programação tão abrangente. Até a próxima.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_14">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/victoriabispo/perl-orientado-a-objeto-1bd1">Perl Orientado a Objeto Part I</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Victoria Ricarte Bispo Beserra
- on Thursday 21 April 2022 20:49</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-
-<p>Como começar a programar em <strong>Perl</strong> da maneira correta. <del>(Diferente de mim)</del></p>
-
-<h1>
-  
-  
-  A linguagem de programação Perl
-</h1>
-
-<blockquote>
-<p><em>“A linguagem pretende ser prática (fácil de usar, eficiente, completa) ao invés de bonita (pequena, elegante, mínima).”<br><br>
-— Kirrily Robert</em></p>
-</blockquote>
-
-<p><a href="https://perldoc.perl.org/perlintro">perlintro - a brief introduction and overview of Perl - Perldoc Browser</a></p>
-
-<p>Vou inaugurar meu <a href="http://Dev.to">Dev.to</a> falando mal de mim. Mas eu não seria eu mesma se não usasse um pouco a autodepreciação para, além de render umas boas risadas para mim mesma, alertar vocês de como  começar a estudar uma nova linguagem de programação indicando qual o começo certo, caso você decida embarcar no <strong>Perl</strong> comigo.</p>
-
-<p>O Perl é uma linguagem de programação de uso geral, criada inicialmente pra manipulações de texto (e como ele cumpre muito bem esse papel viu), mas atualmente você pode criar até um universo com ela, se for bom. </p>
-
-<p>Também é uma linguagem antiga, foi criada em 1987. Por conta disso muitas pessoas me questionam “por que você escolheu Perl para trabalhar?” e o que mais costumo responder é: Eu não escolhi o Perl para trabalhar, foi ele quem me escolheu. Mas se fosse contar essa história ocuparia todo o post. Então vamos por a mão na massa.</p>
-
-<p>⚠️ Este post tem como objetivo definir orientação a objeto com Perl de maneira descontraída, por tanto ele leva em consideração que você, leitor, tenha conhecimento de lógica e linguagem e programação e saiba algumas definições de orientação a objeto.</p>
-
-<h1>
-  
-  
-  Programação Orientada a Objeto
-</h1>
-
-<p>A Programação Orientada a Objetos é um dos quatro paradigmas da programação, juntamente com: imperativa, funcional e lógica. Ela se baseia na composição (atributos) e e interação (métodos) de objetos.<br>
-Perl é uma linguagem multiplataforma, e apenas a partir da sua versão 5 que ela passou a dar suporte para orientação a objeto. </p>
-
-<p>Para aplicar a orientação a objeto em Perl é muito simples. Veja a seguir:</p>
-<h2>
-  
-  
-  Classes
-</h2>
-
-<p>As classes são os pacotes dos arquivos que tem construtores que retornam objetos;<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">model::</span><span class="nv">Performances</span><span class="p">;</span> <span class="c1"># General Class</span>
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  
-  
-  Objetos
-</h2>
-
-<p>Os objetos em Perl são estruturas de dados que agrupam atributos e métodos das nossas classes.</p>
-
-<h2>
-  
-  
-  Construtor
-</h2>
-
-<p>A criação de um construtor no perl pode ser feita de maneira simples, usando uma de suas sub-rotinas para retornar a estrutura de dados abençoada (objeto) com todos os atributos de sua classe. O nome da sub-rotina não importa muito, mas por convenção e boas práticas de programação usamos o  new(). A seguir podemos ver um exemplo.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">model::</span><span class="nv">Performances</span><span class="p">;</span> <span class="c1"># General Class</span>
-
-<span class="k">sub </span><span class="nf">new</span> <span class="p">{</span> <span class="c1"># Constructor</span>
-    <span class="k">my</span> <span class="nv">$this</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-    <span class="k">my</span> <span class="nv">$class</span> <span class="o">=</span> <span class="nb">ref</span> <span class="p">(</span><span class="nv">$this</span><span class="p">)</span> <span class="o">||</span> <span class="nv">$this</span><span class="p">;</span>
-    <span class="c1"># Attributes in classes</span>
-    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s">name</span> <span class="o">=&gt;</span> <span class="nb">shift</span><span class="p">,</span>
-        <span class="s">audience</span> <span class="o">=&gt;</span> <span class="nb">shift</span><span class="p">,</span>
-        <span class="s">type_play</span> <span class="o">=&gt;</span> <span class="nb">shift</span><span class="p">,</span>
-    <span class="p">};</span>
-
-    <span class="k">return</span> <span class="nb">bless</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$class</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  
-  
-  Métodos
-</h2>
-
-<p>O método simplesmente é uma sub-rotina regular dentro de uma classe.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">amount_for</span> <span class="p">{</span> <span class="c1"># Method</span>
-    <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span> 
-    <span class="k">return</span> <span class="p">(</span><span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">audience</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span> <span class="o">/</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">type_play</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>👋🏻 Então pessoal, esses foram os conceitos mais básicos de orientação a objeto no perl. Continuem de olho que logo mais farei publicações sobre Polimorfismo, Herança e Encapsulamento e outras aplicações voltadas a essa linguagem de programação tão abrangente. Até a próxima.</p>
 
        </div><!-- card-text -->     </div>
             <div class="card-footer">
@@ -4169,7 +4436,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 29 April 2022 04:51 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 29 April 2022 08:49 UTC</address>
             </div>
           </div>
         </div><!-- container -->
