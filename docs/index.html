@@ -58,6 +58,171 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-164-prime-palindromes-and-happy-numbers.html">Perl Weekly Challenge 164: Prime Palindromes and Happy Numbers</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+ on Thursday 12 May 2022 20:28</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 164 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-164/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on May 15, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Prime Palindromes</h2>
+
+<p><em>Write a script to find all prime numbers less than 1000, which are also palindromes in base 10. Palindromic numbers are numbers whose digits are the same in reverse. For example, 313 is a palindromic prime, but 337 is not, even though 733 (337 reversed) is also prime.</em></p>
+
+<h3>Prime Palindromes in Raku</h3>
+
+<p>We use a data pipeline (chained method invocations) with two <code>grep</code> statements, one to keep palindromes and one to keep prime numbers. This leads to a fairly concise one-line solution:</p>
+
+<pre><code>say (1..^1000).grep({ $_ == .flip }).grep({.is-prime});
+</code></pre>
+
+<p>This works because, with such chained method invocations, the output of the first <code>grep</code> is fed as input to the second <code>grep</code>. This script displays the following output:</p>
+
+<pre><code>$ raku ./prime-palindrome.raku
+(2 3 5 7 11 101 131 151 181 191 313 353 373 383 727 757 787 797 919 929)
+</code></pre>
+
+<p>We can also do it as a Raku one-liner:</p>
+
+<pre><code>$ raku -e 'say (1..^1000).grep({ $_ == .flip }).grep({.is-prime});'
+(2 3 5 7 11 101 131 151 181 191 313 353 373 383 727 757 787 797 919 929)
+</code></pre>
+
+<h3>Prime Palindromes in Perl</h3>
+
+<p>Perl doesn&#8217;t have a built-in function to determine whether an integer is prime, so we write our own <code>is_prime</code> subroutine. Since we&#8217;re eventually going to test only slightly more than 100 small integers, there is no need to aggressively optimize the performance of this subroutine. The program runs in significantly less than a tenth of a second.</p>
+
+<p>Once we have implemented the <code>is-prime</code> subroutine, we can use a data pipeline (piped function calls) as before to solve the problem in just one code line:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub is_prime {
+    my $num = shift;
+    return 1 if $num == 2;
+    return 0 unless $num % 2;
+    my $test = 3;
+    while ($test &lt; $num/2) {
+        return 0 if $num % $test == 0;
+        $test += 2;
+    }
+    return 1;
+}
+
+say map "$_ ", grep { is_prime $_} grep {$_ == reverse $_} 1..999;
+</code></pre>
+
+<p>This data pipeline should be read from right to left: we start with a range of integers between 1 and 999, apply a first filter (<code>grep {$_ == reverse $_}</code>) to keep only the palindromic integers, apply a second filter to retain only the primes, and finally a <code>map</code> to properly format the output (add a space between the values).</p>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./prime-palindrome.pl
+1 2 3 5 7 11 101 131 151 181 191 313 353 373 383 727 757 787 797 919 929
+</code></pre>
+
+<h2>Task 2: Happy Numbers</h2>
+
+<p><em>Write a script to find the first 8 Happy Numbers in base 10. For more information, please check out <a href="https://en.wikipedia.org/wiki/Happy_number">Wikipedia</a>.</em></p>
+
+<p><em>Starting with any positive integer, replace the number by the sum of the squares of its digits, and repeat the process until the number equals 1 (where it will stay), or it loops endlessly in a cycle which does not include 1.</em></p>
+
+<p><em>Those numbers for which this process end in 1 are happy numbers, while those numbers that do not end in 1 are unhappy numbers.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>19 is Happy Number in base 10, as shown:
+
+19 =&gt; 1^2 + 9^2
+   =&gt; 1   + 81
+   =&gt; 82 =&gt; 8^2 + 2^2
+         =&gt; 64  + 4
+         =&gt; 68 =&gt; 6^2 + 8^2
+               =&gt; 36  + 64
+               =&gt; 100 =&gt; 1^2 + 0^2 + 0^2
+                      =&gt; 1 + 0 + 0
+                      =&gt; 1
+</code></pre>
+
+<p>Basically, we need a subroutine to perform iteratively the process of replacing the current number with the sum of the squares of its digit. If we find 1, then we&#8217;ve found an happy number and can return a true value to break out of the process. If we find a number that we have already seen, then we have entered into an endless loop, which means that have found an unhappy (or sad) number, and we can return a false value to break out of the process.</p>
+
+<h3>Happy Numbers in Raku</h3>
+
+<p>The <code>is-happy</code> subroutine implements the algorithm described above. We use a <code>SetHash</code> to store the intermediate values and check whether we have entered into an endless loop. Note that we create an infinite lazy list of happy numbers, and then print out the number of happy numbers that we need.</p>
+
+<pre><code>sub is-happy(Int $n is copy) {
+    my $seen = SetHash.new;
+    loop {
+        return True if $n == 1;
+        return False if $n ∈ $seen;
+        $seen{$n} = True;
+        $n = $n.comb.map({$_ ** 2}).sum;
+    }
+}
+my @happy-numbers = grep {is-happy $_}, 1..Inf;
+say @happy-numbers[0..7];
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./happy-numbers.raku
+(1 7 10 13 19 23 28 31)
+</code></pre>
+
+<h3>Happy Numbers in Perl</h3>
+
+<p>In Perl, the <code>is_happy</code> subroutine implements again the algorithm outlined above. We use a plain hash to store the intermediate values and check whether we have entered into an endless loop.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub is_happy {
+    my $n = shift;
+    my %seen;
+    while (1) {
+        return 1 if $n == 1;
+        return 0 if exists $seen{$n};
+        $seen{$n} = 1;
+        my $sum = 0;
+        $sum += $_ for map $_ ** 2, split //, $n;
+        $n = $sum;
+    }
+}
+my $count = 0;
+my $i = 1;
+while ($count &lt; 8) {
+    if (is_happy $i) {
+        print "$i ";
+        $count++;
+    }
+    $i++;
+}
+say "";
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./happy-numbers.pl
+1 7 10 13 19 23 28 31
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on May 22, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-12-auf-dem-weg-zu-perl-536-trycatchfinally">Auf dem Weg zu Perl 5.36 - try/catch/finally</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
 
@@ -68,7 +233,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/05/my-favorite-modules-errno.html">My Favorite Modules: Errno</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -127,7 +292,7 @@ open my $foo, '&lt;:encoding(utf-8)', 'foo/bar'
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/563.html">#563 - Shall we continue the newsletter?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -143,7 +308,7 @@ open my $foo, '&lt;:encoding(utf-8)', 'foo/bar'
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-process-get-and-post-requests">Dancer2: Process GET and POST requests</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -158,7 +323,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/08#pwc163">Bitwise AndSums and Skip Summations: Somewhat Complicated Uses of Map</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -263,7 +428,7 @@ Each use of map here generates the next line and so we enclose the map in square
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/max_maischein/2022/05/save-the-date---deutscher-perlraku-workshop-2023-in-frankfurt-am-main---27022023-1032023.html">Save the date - Deutscher Perl/Raku Workshop 2023 in Frankfurt am Main - 27.02.2023-1.03.2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -304,7 +469,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/cccxci-14-great-cpan-modules-released.html">(cccxci) 14 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -316,7 +481,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dv-metacpan-weekly-report-carmel.html">(dv) metacpan weekly report - Carmel</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -328,7 +493,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dxxxiii-stackoverflow-perl-report.html">(dxxxiii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -340,7 +505,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-06-auf-dem-weg-zu-perl-536-a-anderungen-mit-use-v536">Auf dem Weg zu Perl 5.36 – Änderungen mit &quot;use v5.36&quot;</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -352,7 +517,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1914-of-perl-distribution-cryptopensslx509-296h">Release 1.9.14 of Perl distribution Crypt::OpenSSL::X509</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -422,7 +587,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-163-sum-bitwise-operator-and-summations.html">Perl Weekly Challenge 163: Sum Bitwise Operator and Summations</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -617,7 +782,7 @@ for my $test ([qw &lt;1 2 3 4 5&gt;], [qw &lt;1 3 5 7 9&gt;]) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/04/perl-weekly-challenge-162-isbn-13-and-wheatstone-playfair.html">Perl Weekly Challenge 162: ISBN-13 and Wheatstone-Playfair</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -929,7 +1094,7 @@ siderwrdulfipaarkcrw -&gt; thewexeklychallengex
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/562.html">#562 - Perl Conference</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -944,7 +1109,7 @@ siderwrdulfipaarkcrw -&gt; thewexeklychallengex
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/01#pwc162">The Weekly Challenge 162</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -995,7 +1160,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/05/01/list-of-new-cpan-distributions-apr-2022/">List of new CPAN distributions – Apr 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1570,7 +1735,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/04/cccxc-15-great-cpan-modules-released.html">(cccxc) 15 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1582,7 +1747,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/04/div-metacpan-weekly-report-emailsimple.html">(div) metacpan weekly report - Email::Simple </a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1594,7 +1759,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2022_04_more_mastodon_less_twitter.html">More Mastodon, less Twitter</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -1678,7 +1843,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/arslonga/likedislike-system-with-mojolicious-42ph">Like/Dislike system with Mojolicious</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2069,7 +2234,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-04-28-auf-dem-weg-zu-perl-536-a-signaturen">Auf dem Weg zu Perl 5.36 – Signaturen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2081,7 +2246,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/moo-orientacao-de-objeto-minimalista-6el">Moo - Orientação de objeto minimalista</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2334,7 +2499,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/561.html">#561 - Switching to Sendgrid</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2349,7 +2514,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-testing-404-and-500-responses">Dancer2: Testing 404 and 500 error responses</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2364,7 +2529,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/04/24#pwc161">Are Abecedarians from Abecedaria?</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2545,7 +2710,7 @@ are some decent verses amidst all the chaos! </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/perl-orientado-a-objeto-part-iii-4fe2">Perl Orientado a Objeto Part III</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2667,177 +2832,6 @@ Como nem tudo são flores o <em>Moose</em> também tem seus defeitos. Por ser t�
 <p>👋🏻 Então pessoal, essa foi a implementação básica do <em>Moose,</em> recomendo que olhem as demais aplicações na sua documentação. A seguir falaremos sobre o <em>MOO</em>. Até a próxima.</p>
 
        </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_27">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/04/perl-weekly-challenge-161-abecedarian-words-and-pangrams.html">Perl Weekly Challenge 161: Abecedarian Words and Pangrams</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Sunday 24 April 2022 02:50</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 161 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-161/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of days from now (on April 24, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Abecedarian Words</h2>
-
-<p><em>An abecedarian word is a word whose letters are arranged in alphabetical order. For example, “knotty” is an abecedarian word, but “knots” is not. Output or return a list of all abecedarian words in the <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/data/dictionary.txt">dictionary</a>, sorted in decreasing order of length.</em></p>
-
-<p><em>Optionally, using only abecedarian words, leave a short comment in your code to make your reviewer smile.</em></p>
-
-<h3>Abecedarian Words in Raku</h3>
-
-<p>Here, we use some nice features of Raku. The <code>'dictionary.txt'.IO.lines</code> construct returns all the lines of the input file one by one. Then we <code>grep</code> these lines and keep only those in which the letters are arranged in the lexicographic order using the <code>[]</code> meta-operator with the infix <a href="https://docs.raku.org/routine/le">le</a> less than or equal to operator. Since the comparison routine passed to <code>sort</code> (i.e. <code>.chars</code>) takes only one argument, this routine is automatically applied to both sides of the comparisons made for the purpose of sorting.</p>
-
-<pre><code>my @abecedarian =  'dictionary.txt'.IO.lines.grep({[le] .comb});
-say (reverse sort {.chars}, @abecedarian)[0..25];
-</code></pre>
-
-<p>My original implementation was a one-liner, but I decided to break it into two lines for better readability.</p>
-
-<p>This short program displays the following output:</p>
-
-<pre><code>$ raku ./abecedarian.raku
-(knotty glossy floppy floors effort choppy choosy chintz chimps chilly chills cellos billow bellow begins almost accost access accept accent abhors mossy moors lorry loops hoops)
-</code></pre>
-
-<h3>Abecedarian Words in Perl</h3>
-
-<p>This Perl program does essentially the same thing as the Raku program above, but we have to use two explicit nested loops.</p>
-
-<pre><code>my @abecedarian;
-my $dict = "./dictionary.txt";
-open my $IN, "&lt;", $dict or die "Cannot open $dict $!";
-WORD: while (my $word = &lt;$IN&gt;) {
-    chomp $word;
-    my $old = 'a';
-    for my $char (split //, $word) {
-        next WORD if $char lt $old;
-        $old = $char;
-    }
-    push @abecedarian, $word;
-}
-my @out = sort { length $b &lt;=&gt; length $a } @abecedarian;
-say $_ for @out[0..25];
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./abecedarian.pl
-abhors
-accent
-accept
-access
-accost
-almost
-begins
-bellow
-billow
-cellos
-chills
-chilly
-chimps
-chintz
-choosy
-choppy
-effort
-floors
-floppy
-glossy
-knotty
-abbey
-abbot
-abhor
-abort
-adept
-</code></pre>
-
-<h2>Task 2: Pangrams</h2>
-
-<p><em>A pangram is a sentence or phrase that uses every letter in the English alphabet at least once. For example, perhaps the most well known pangram is:</em></p>
-
-<blockquote>
-  <p><em>the quick brown fox jumps over the lazy dog</em></p>
-</blockquote>
-
-<p><em>Using the provided dictionary, so that you don’t need to include individual copy, generate at least one pangram.</em></p>
-
-<p><em>Your pangram does not have to be a syntactically valid English sentence (doing so would require far more work, and a dictionary of nouns, verbs, adjectives, adverbs, and conjunctions). Also note that repeated letters, and even repeated words, are permitted.</em></p>
-
-<p><em>BONUS: Constrain or optimize for something interesting (completely up to you), such as:</em></p>
-
-<pre><code>* Shortest possible pangram (difficult)
-* Pangram which contains only abecedarian words (see challenge 1)
-* Pangram such that each word "solves" exactly one new letter. For example, such a pangram might begin with (newly solved letters in bold):
-    a ah hi hid die ice tea ...
-    What is the longest possible pangram generated with this method? (All solutions will contain 26 words, so focus on the letter count.)
-* Pangrams that have the weirdest (PG-13) Google image search results
-* Anything interesting goes!
-</code></pre>
-
-<p>Well, as for the bonus, sorry, this coming Sunday is the presidential election here in France. As a city counselor in my home town, I&#8217;m heavily involved in the election process from early morning to very late evening, and I will have no time to deal with the bonus.</p>
-
-<h3>Pangrams in Raku</h3>
-
-<p>We use a <code>$seen</code> <a href="https://docs.raku.org/type/SetHash">SetHash</a> to store the letters that we&#8217;ve already met. Then, for each word in the dictionary, we add it to the <code>@pangram</code> array if it has at least one new letter not in <code>$seen</code>. We stop the process when the <code>$seen</code> SetHash has 26 letters (i.e. we’ve seen all letters of the alphabet).</p>
-
-<pre><code>my  $seen = SetHash.new;
-my @pangram;
-for 'dictionary.txt'.IO.lines -&gt; $word {
-    my @new_letters = grep {not $seen{$_}}, $word.comb;
-    next if @new_letters == 0;
-    $seen ∪= @new_letters;      # set union operator
-    push @pangram, $word;
-    last if $seen.elems == 26;
-}
-say @pangram;
-</code></pre>
-
-<p>This program dispays the following output:</p>
-
-<pre><code>$ raku ./pangram.raku
-[a aardvark aback abacus abacuses abandon abandoning abandonment abbey abdominal abhor abject ablaze abrupt acknowledge acquaint adrift affix]
-</code></pre>
-
-<h3>Pangram in Perl</h3>
-
-<p>This Perl implementation is a port of the Raku program above. In Perl, we use a regular <code>hash</code> to store the letters already seen. </p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-my  (%seen, @pangram);
-my $dict = "./dictionary.txt";
-open my $IN, "&lt;", $dict or die "Cannot open $dict $!";
-while (my $word = &lt;$IN&gt;) {
-    chomp $word;
-    my @new_letters = grep {not $seen{$_}} split //, $word;
-    next if @new_letters == 0;
-    $seen{$_} = 1 for @new_letters;
-    push @pangram, $word;
-    last if scalar keys %seen == 26;
-}
-say "@pangram";
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./pangram.pl
-a aardvark aback abacus abacuses abandon abandoning abandonment abbey abdominal abhor abject ablaze abrupt acknowledge acquaint adrift affix
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on May 1st, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3949,7 +3943,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 12 May 2022 12:55 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 12 May 2022 16:52 UTC</address>
             </div>
           </div>
         </div><!-- container -->
