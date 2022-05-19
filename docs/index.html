@@ -58,6 +58,112 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://domm.plix.at/perl/2022_05_use_multiple_gmail_accounts_via_mutt_and_offlineimap.html">Use multiple gmail accounts via mutt and (offline) IMAP</a></h2>
+<a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
+
+              <p class="text-right"><small>Published
+ on Thursday 19 May 2022 14:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>I started with a <a href="https://balloon-events.com/">new project</a> recently, which means I have to use yet another Google Workspace (i.e. gmail for businesses). While having the gmail webapp open in multiple <a href="https://support.mozilla.org/en-US/kb/containers">Firefox Multi-Account Containers</a> is an option, it's not something I like to do. And I don't really like the gmail web interface anyway. I prefer <a href="http://www.mutt.org/">mutt</a> (and use it since forever,,,). Some years ago I sort of managed to read gmail mails via <span class="caps">IMAP, </span>but couldn't get sending to work. So I decided to give this another try. And it worked!</p>
+
+<h4>Overview</h4>
+
+<ul>
+<li>I have multiple separate gmail accounts</li>
+<li>I use mutt to read and write email</li>
+<li>I use <a href="http://www.offlineimap.org/">offlineimap</a> to download mails via <span class="caps">IMAP </span>onto my laptop (so I can read my mails while offline, and search through them on my disk)</li>
+<li>To send mails, I drop them into an exim running on my laptop, which then sends them via the mail service I use<ul>
+<li>This did not work for gmail, but I found something that works (see below)</li>
+</ul></li>
+</ul>
+
+<h4>Syncing gmail via offlineimap and an "app password"</h4>
+
+<p>This seems rather easy, but google does not really like you to use your regular password in automated tools. One solution is to use OAuth2, as described <a href="https://hobo.house/2017/07/17/using-offlineimap-with-the-gmail-imap-api/">here</a>. But this seems a bit to much hassle, so I choose the other route, i.e. setting up an "app password". An "app password" is a password that google generates for you so you can use it in various apps (of dubious security).</p>
+
+<p>To get such an app password, you first have to secure your account with Two Factor Authentication (2FA) (if you haven't already done that):</p>
+
+<ul>
+<li>Go to https://myaccount.google.com</li>
+<li>Find "2-Step Verification" under the <strong>Security</strong> headline</li>
+<li>Go through the process. I use the "Google Authenticator" app on my mobile phone</li>
+<li>After you've set this up, you'll find the new option "App passwords" under "Security" / "Signing into Google"</li>
+<li>Select an app ("Mail") and give it a custom name (eg "offlineimap"), click on "generate" and copy the password (you'll never see it again!)</li>
+</ul>
+
+<p>Now you can add a new Account to your <code>.offlineimaprc</code>:</p>
+
+<pre><code>[Account FOO]
+localrepository = LocalFoo
+remoterepository = RemoteFoo
+synclabels = yes
+
+[Repository LocalFoo]
+type = Maildir
+localfolders = /path/to/mails/Foo
+
+[Repository RemoteFoo]
+type = IMAP
+remotehost = imap.gmail.com
+# if you have a custom domain set up:
+remoteuser = foo@example.com
+# if you use a plain gmail account:
+# remoteuser = foo@gmail.com
+remotepass = your-app-password
+ssl = yes
+sslcacertfile = /etc/ssl/certs/ca-certificates.crt</code></pre>
+
+<p>Before you run <code>offlineimap</code> you might want to consider configuring your gmail labels (i.e. what google uses for mail folders). Google sets up a bunch of (IMO stupid) default labels. It will also duplicate mails, because all mails stay in the Inbox and will be sort-of-copied into folders (if the label matches). So go to your gmail settings (click on the gear-wheel, then "See all settings"), go to "Labels" and uncheck the "Show in <span class="caps">IMAP</span>" box on all labels (except Inbox, which you cannot uncheck anyway..). If you have set up mail filters, make sure they have the "Skip Inbox" flag set, otherwise you'll get them twice.</p>
+
+<p>Now is also a good time to clean up your Inbox (or you'll wait a long time on the first sync..)</p>
+
+<h4>Configuring mutt</h4>
+
+<p>The first thing we need to do is to tell mutt about the new folder / labels / <code>mailboxes</code> (in mutt language..):</p>
+
+<pre><code>+mailboxes =Foo/INBOX +Foo/'[Gmail].Sent Mail' +Foo/some_label</code></pre>
+
+<p><code>Foo</code> here is the actual directory name of the maildir you specified in offlineimap: <code>localfolders = /path/to/mails/Foo</code>. You can list all the labels you enabled for <span class="caps">IMAP </span>here, and mutt will automatically jump to the mail folder if there is new mail after an offlineimap run.</p>
+
+<p>Another thing I like to do is to set up a separate "profile" for each account, using a different color and sender for each project. For this I set up a file like this in my <code>~/.mutt/</code>:</p>
+
+<pre><code># file: ~/.mutt/profile_foo
+set from=&quot;Thomas Klausner &lt;domm@example.net&gt;&quot;
+set use_from
+set envelope_from
+set signature=~/.foo_signature
+color indicator black brightgreen</code></pre>
+
+<p>This will make sure I use the right sender, and will also alert me as who I am currently writing by setting the indicator to a specific color.</p>
+
+<p>But how do we enable this profile? Via a <code>folder-hook</code>:</p>
+
+<pre><code>folder-hook =Foo &quot;source ~/.mutt/profile_foo\n&quot;</code></pre>
+
+<p>Anytime we enter a folder under <code>Foo</code>, we source this profile. Nice!</p>
+
+<h4>Sending mail</h4>
+
+<p>But how can we now actually send mail using the gmail sender? Thanks to spammers, you cannot just use any sender address with any <span class="caps">SMTP </span>server anymore, they are much stricter now (and gmail even more so). So we need to send mails via gmail, using the correct set of credentials. I assume that exim has some setting to do this, but I found an easier way:</p>
+
+<p>Mutt can send mail not only via localhost, but also directly via <span class="caps">SMTP</span>!</p>
+
+<p>All we have to do is add something like this to our <code>~/.mutt/profile_foo</code></p>
+
+<pre><code>set smtp_url = &quot;smtps://foo@example.com:your-app-password@smtp.gmail.com:465&quot;</code></pre>
+
+<p>And we also need to unset <code>smtp_url</code> for the default account (which uses the local exim). So in the <code>default_profile</code> just add <code>unset smtp_url</code>. And load the default profile via another folder hook:</p>
+
+<pre><code>folder-hook . &quot;source ~/.mutt/profile_default\n&quot;</code></pre>
+
+<p>And that's how I prevented going crazy having to juggle multiple gmail accounts!</p>
+
+<p>One downside of this approach is that the app passwords are now lying around on my disk, so anybody with access to my disk can read/send mails. In case I know my disk has been compromised, I could disable the app passwords in my google account settings. But a nicer approach would be to store them in some password store (I use <a href="https://github.com/gopasspw/gopass">gopass</a>) and somehow inject them after unlocking them. This will have to wait for another time...</p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/mojolicious-12j">Mojolicious</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -235,7 +341,7 @@ Hello Word!
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/564.html">#564 - Issues with OOP?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -254,7 +360,7 @@ Hello Word!
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-exercise-1">Dancer2: Exercise 1 - Calculator, Counter</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -269,7 +375,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/15#pwc164">Happily Computing Prime Palindrome Numbers</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -389,7 +495,7 @@ subroutine is in a different scope and does not effect the outer <code>$n</code>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/cccxcii-7-great-cpan-modules-released.html">(cccxcii) 7 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -401,7 +507,7 @@ subroutine is in a different scope and does not effect the outer <code>$n</code>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dvi-metacpan-weekly-report-carmel.html">(dvi) metacpan weekly report - Carmel</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -413,7 +519,7 @@ subroutine is in a different scope and does not effect the outer <code>$n</code>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dxxxiv-stackoverflow-perl-report.html">(dxxxiv) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -425,7 +531,7 @@ subroutine is in a different scope and does not effect the outer <code>$n</code>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-164-prime-palindromes-and-happy-numbers.html">Perl Weekly Challenge 164: Prime Palindromes and Happy Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -590,7 +696,7 @@ say "";
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-12-auf-dem-weg-zu-perl-536-trycatchfinally">Auf dem Weg zu Perl 5.36 - try/catch/finally</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -602,7 +708,7 @@ say "";
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/05/my-favorite-modules-errno.html">My Favorite Modules: Errno</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -661,7 +767,7 @@ open my $foo, '&lt;:encoding(utf-8)', 'foo/bar'
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/563.html">#563 - Shall we continue the newsletter?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -677,7 +783,7 @@ open my $foo, '&lt;:encoding(utf-8)', 'foo/bar'
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-process-get-and-post-requests">Dancer2: Process GET and POST requests</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -692,7 +798,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/08#pwc163">Bitwise AndSums and Skip Summations: Somewhat Complicated Uses of Map</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -797,7 +903,7 @@ Each use of map here generates the next line and so we enclose the map in square
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/max_maischein/2022/05/save-the-date---deutscher-perlraku-workshop-2023-in-frankfurt-am-main---27022023-1032023.html">Save the date - Deutscher Perl/Raku Workshop 2023 in Frankfurt am Main - 27.02.2023-1.03.2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -838,7 +944,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/cccxci-14-great-cpan-modules-released.html">(cccxci) 14 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -850,7 +956,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dv-metacpan-weekly-report-carmel.html">(dv) metacpan weekly report - Carmel</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -862,7 +968,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-06-auf-dem-weg-zu-perl-536-a-anderungen-mit-use-v536">Auf dem Weg zu Perl 5.36 – Änderungen mit &quot;use v5.36&quot;</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -874,7 +980,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-1914-of-perl-distribution-cryptopensslx509-296h">Release 1.9.14 of Perl distribution Crypt::OpenSSL::X509</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -944,7 +1050,7 @@ Max Maischein for the organizers and Frankfurt.pm</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-163-sum-bitwise-operator-and-summations.html">Perl Weekly Challenge 163: Sum Bitwise Operator and Summations</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1139,7 +1245,7 @@ for my $test ([qw &lt;1 2 3 4 5&gt;], [qw &lt;1 3 5 7 9&gt;]) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/04/perl-weekly-challenge-162-isbn-13-and-wheatstone-playfair.html">Perl Weekly Challenge 162: ISBN-13 and Wheatstone-Playfair</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1451,7 +1557,7 @@ siderwrdulfipaarkcrw -&gt; thewexeklychallengex
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/562.html">#562 - Perl Conference</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1466,7 +1572,7 @@ siderwrdulfipaarkcrw -&gt; thewexeklychallengex
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/01#pwc162">The Weekly Challenge 162</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1517,7 +1623,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/05/01/list-of-new-cpan-distributions-apr-2022/">List of new CPAN distributions – Apr 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -2092,7 +2198,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2022_04_more_mastodon_less_twitter.html">More Mastodon, less Twitter</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -2176,7 +2282,7 @@ $ perl perl/ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/arslonga/likedislike-system-with-mojolicious-42ph">Like/Dislike system with Mojolicious</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2567,7 +2673,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-04-28-auf-dem-weg-zu-perl-536-a-signaturen">Auf dem Weg zu Perl 5.36 – Signaturen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2579,7 +2685,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/moo-orientacao-de-objeto-minimalista-6el">Moo - Orientação de objeto minimalista</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2840,7 +2946,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/561.html">#561 - Switching to Sendgrid</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2855,7 +2961,7 @@ class="glyphicon glyphicon-chevron-down" aria-hidden="true"&gt;&lt;/span&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-testing-404-and-500-responses">Dancer2: Testing 404 and 500 error responses</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2870,7 +2976,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/04/24#pwc161">Are Abecedarians from Abecedaria?</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -3051,7 +3157,7 @@ are some decent verses amidst all the chaos! </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/perl-orientado-a-objeto-part-iii-4fe2">Perl Orientado a Objeto Part III</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -3204,7 +3310,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 19 May 2022 12:55 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 19 May 2022 16:57 UTC</address>
             </div>
           </div>
         </div><!-- container -->
