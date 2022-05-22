@@ -7,9 +7,564 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-05-22T16:49:51Z</updated>
+  <updated>2022-05-22T20:42:48Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 165: Scalable Vector Graphics</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-165-scalable-vestor-graphics.html"/>
+    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10791</id>
+    <published>2022-05-22T03:42:27Z</published>
+    <updated>2022-05-22T22:36:01Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 165 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-165/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p>This week, Task 1 and part of Task 2 relate to Scalable Vector Graphics (SVG). I&#8217;d been using SVG a very long time ago and certainly didn&#8217;t remember any of the details. So, in my <a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-165-line-of-best-fit.html">first blog relating to PWC 165</a>, I stated that I didn&#8217;t have time for that and covered only the part of the challenge not related to SVG. I also said that, in the event that I find some time over the weekend, I might come back and fulfill the SVG part. I thought at the time that this was rather unlikely, but I was finally able to cover the SVG part, at least in Raku.</p>
+
+<h2>Task 1: Scalable Vector Graphics (SVG)</h2>
+
+<p><em>Scalable Vector Graphics (SVG) are not made of pixels, but lines, ellipses, and curves, that can be scaled to any size without any loss of quality. If you have ever tried to resize a small JPG or PNG, you know what I mean by “loss of quality”! What many people do not know about SVG files is, they are simply XML files, so they can easily be generated programmatically.</em></p>
+
+<p><em>For this task, you may use external library, such as Perl’s <a href="https://metacpan.org/pod/SVG">SVG</a> library, maintained in recent years by our very own Mohammad S Anwar. You can instead generate the XML yourself; it’s actually quite simple. The source for the example image for Task #2 might be instructive.</em></p>
+
+<p><em>Your task is to accept a series of points and lines in the following format, one per line, in arbitrary order:</em></p>
+
+<p><em>Point: x,y</em></p>
+
+<p><em>Line: x1,y1,x2,y2</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>53,10
+53,10,23,30
+23,30
+</code></pre>
+
+<p><em>Then, generate an SVG file plotting all points, and all lines. If done correctly, you can view the output .svg file in your browser.</em></p>
+
+<h3>Scalable Vector Graphics (SVG) in Raku</h3>
+
+<p>I created two subroutines, <code>make-point</code> and <code>make-line</code>, to create the necessary data structures. The last item of the <code>@input</code> has three parts and should generate a warning, since input items should have either 2 or 4 parts. </p>
+
+<p>Note that SVG probably includes a scaling factor, but I couldn&#8217;t find any information about it. So I rolled out my own <code>\SCALE</code> scaling factor to make the output larger and more readable.</p>
+
+<pre><code>use SVG;
+my \SCALE = 5;
+
+my ( @points, @lines);
+my @input = &lt;53,10  53,10,23,30  23,30  34,35,36&gt;;
+for @input -&gt; $val {
+    my @items = split /','/, $val;
+    if @items.elems == 2 {
+        make-point(@items)
+    } elsif @items.elems == 4 {
+        make-line(@items);
+    } else { 
+        note "Error on item ", @items;
+    }
+}
+
+say ( SVG.serialize(svg =&gt; [ width =&gt; 500, height =&gt; 500, |@points, |@lines ] ));
+
+sub make-point (@dots) {
+    @dots = map { $_ * SCALE }, @dots;
+    my $point = circle =&gt;  
+        [ cx =&gt; @dots[0],
+          cy =&gt; @dots[1],
+          r =&gt; 3,
+          fill =&gt; 'forestgreen' ];
+    push @points, $point;
+}
+
+sub make-line (@dots) {
+    @dots = map { $_ * SCALE }, @dots;
+    my $line = line =&gt; 
+        [ x1 =&gt; @dots[0],
+          y1 =&gt; @dots[1],
+          x2 =&gt; @dots[2],
+          y2 =&gt; @dots[3],
+          stroke =&gt; 'navy' ];
+    push @lines, $line;
+}
+</code></pre>
+
+<p>The SVG output, slightly reformatted for better readability, is as follows:</p>
+
+<pre><code>&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
+xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
+&lt;circle cx="265" cy="50" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="115" cy="150" r="3" fill="forestgreen" /&gt;
+&lt;line x1="265" y1="50" x2="115" y2="150" stroke="navy" /&gt;&lt;/svg&gt;
+</code></pre>
+
+<p>And this is a graphical rendering of it:</p>
+
+<p><img alt="svg1bis.png" src="http://blogs.perl.org/users/laurent_r/svg1bis.png" width="322" height="155" class="mt-image-none" style="" /></p>
+
+<h3>Scalable Vector Graphics (SVG) in Perl</h3>
+
+<p>In Perl, for a change, we will write directly the SVG data.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+use constant SCALE =&gt; 5;
+
+my ( @points, @lines);
+my $out = qq{&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
+xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;\n};
+my @input = qw&lt;53,10 53,10,23,30  23,30  34,35,36&gt;;
+for my $val (@input) {
+    my @items = split /,/, $val;
+    # say "@items";
+    if (@items == 2) {
+        make_point(@items)
+    } elsif (@items == 4) {
+        make_line(@items);
+    } else { 
+        warn "Error on item ", @items;
+    }
+}
+$out .= "&lt;/svg&gt;";
+say $out;
+
+sub make_point {
+    my @dots = map $_ * SCALE, @_;
+    my $point = qq{&lt;circle cx= "$dots[0]" cy="$dots[1]" r="3" fill="forestgreen"/&gt;\n};
+    $out .= $point;
+}
+
+sub make_line {
+    my @dots = map $_ * SCALE, @_;
+    my $line = qq{&lt;line x1="$dots[0]" y1="$dots[1]" x2="$dots[2]" y2="$dots[3]" };
+    $line .= qq{stroke="navy" /&gt;\n};
+    $out .= $line
+}
+</code></pre>
+
+<p>This program displays the following SVG output:</p>
+
+<pre><code>&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
+xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
+&lt;circle cx= "265" cy="50" r="3" fill="forestgreen"/&gt;
+&lt;line x1="265" y1="50" x2="115" y2="150" stroke="navy" /&gt;
+&lt;circle cx= "115" cy="150" r="3" fill="forestgreen"/&gt;
+&lt;/svg&gt;
+</code></pre>
+
+<p>And this is the graphgical rendering:</p>
+
+<p><img alt="svg1bis.png" src="http://blogs.perl.org/users/laurent_r/svg1bis.png" width="322" height="155" class="mt-image-none" style="" /></p>
+
+<h3>Task 2: Line of Best Fit</h3>
+
+<p><em>When you have a scatter plot of points, a line of best fit is the line that best describes the relationship between the points, and is very useful in statistics. Otherwise known as linear regression, here is an example of what such a line might look like:</em></p>
+
+<p><img alt="line_of_best_fit.jpg" src="http://blogs.perl.org/users/laurent_r/line_of_best_fit.jpg" width="422" height="319" class="mt-image-none" style="" /></p>
+
+<p><em>The method most often used is known as the <a href="https://www.mathsisfun.com/data/least-squares-regression.html">least squares method</a>, as it is straightforward and efficient, but you may use any method that generates the correct result.</em></p>
+
+<p><em>Calculate the line of best fit for the following 48 points:</em></p>
+
+<pre><code>333,129  39,189 140,156 292,134 393,52  160,166 362,122  13,193
+341,104 320,113 109,177 203,152 343,100 225,110  23,186 282,102
+284,98  205,133 297,114 292,126 339,112 327,79  253,136  61,169
+128,176 346,72  316,103 124,162  65,181 159,137 212,116 337,86
+215,136 153,137 390,104 100,180  76,188  77,181  69,195  92,186
+275,96  250,147  34,174 213,134 186,129 189,154 361,82  363,89
+</code></pre>
+
+<p><em>Using your rudimentary graphing engine from Task #1, graph all points, as well as the line of best fit.</em></p>
+
+<p>So, Task 2 is about line of best fit or linear regression.</p>
+
+<p>If we consider a cloud of <code>n</code> points with coordinates <code>(x, y)</code>, the line of best fit is defined as follows:</p>
+
+<p>The equation for the <em>slope</em> <code>m</code> is:</p>
+
+<pre><code>    n * sum(xy) - sum(x) * sum(y)
+m = -----------------------------
+    n * sum(x²) - sum(x) * sum(x)
+</code></pre>
+
+<p>The <em>y-intercept</em> (i.e. value of <code>y</code> on the vertical axis, when <code>x</code> = 0) <code>b</code> is:</p>
+
+<pre><code>    sum(y) - m * sum(x)
+b = -------------------
+           n
+</code></pre>
+
+<p>The equation of the line is:</p>
+
+<pre><code>y = mx + b
+</code></pre>
+
+<h3>Line of Best Fit in Raku</h3>
+
+<p>The following program is an application of the explanations above. We split the input string on spaces and on commas, to get an array of <code>(x, y)</code> values. The <code>lsm</code> subroutine applies the above least square method formulas to find the slope and intercept. Note that for displaying line of best fit equation, we had to handle two different cases, depending on whether the intercept is positive or negative. Otherwise, for a negative intercept, we would display the line equation as follows:</p>
+
+<pre><code>The equation of the line of best fit is: y = 1.00 x + -1.00
+</code></pre>
+
+<p>which is not satisfactory. </p>
+
+<p>Also note the use of the <code>»</code> <a href="https://docs.raku.org/syntax/%3C%3C">hyper operator</a> when reading the input data to apply the second <code>split</code> to each of the values returned by the first <code>split</code>.</p>
+
+<p>Besides, we reuse the <code>make-point</code> and <code>make-line</code> subroutines created above (slightly modified) for preparing the SVG output.</p>
+
+<pre><code>use SVG;
+my \SCALE = 1;
+
+my $input =
+   '333,129  39,189 140,156 292,134 393,52  160,166 362,122  13,193
+    341,104 320,113 109,177 203,152 343,100 225,110  23,186 282,102
+    284,98  205,133 297,114 292,126 339,112 327,79  253,136  61,169
+    128,176 346,72  316,103 124,162  65,181 159,137 212,116 337,86
+    215,136 153,137 390,104 100,180  76,188  77,181  69,195  92,186
+    275,96  250,147  34,174 213,134 186,129 189,154 361,82  363,89';
+
+my @points = $input.split(/\s+/)&gt;&gt;.split(/','/);
+my (@dots, @lines);
+make-point($_) for @points;
+my ($slope, $intercept) = lsm(@points);
+say "Slope: $slope, intercept = $intercept";
+my $sign = $intercept &lt; 0 ?? '-' !! '+';
+printf "The equation of the line of best fit is: y = %.2f x %s %.2f \n\n", $slope, $sign, $intercept.abs;
+# compute some arbitrary values for the line - say for x = 400
+my $x = 400;
+my $y = $slope * $x + $intercept;
+make-line([0, $intercept, $x, $y]);
+say ( SVG.serialize(svg =&gt; [ width =&gt; 500, height =&gt; 500, |@dots, |@lines ]));
+
+sub lsm (@points) {
+    my ($s-x, $s-y, $s-xy, $s-x2) = 0 xx 4;
+    for @points -&gt; $point {
+        my ($x, $y) = $point[0, 1];
+        # say "$x $y";
+        $s-x += $x;
+        $s-y += $y;
+        $s-xy += $x * $y;
+        $s-x2 += $x ** 2;
+    }
+    my $n = @points.elems;
+    my $slope = ($n * $s-xy - $s-x * $s-y) / ($n * $s-x2 - $s-x ** 2);
+    my $intercept = ($s-y - $slope * $s-x) / $n;
+    return $slope, $intercept;
+}
+
+sub make-point (@points is copy) {
+    @points = map { $_ * SCALE }, @points;
+    my $point = circle =&gt;  
+        [ cx =&gt; @points[0],
+          cy =&gt; @points[1],
+          r =&gt; 3,
+          fill =&gt; 'forestgreen' ];
+    push @dots, $point;
+}
+
+sub make-line (@dots) {
+    @dots = map { $_ * SCALE }, @dots;
+    my $line = line =&gt; 
+        [ x1 =&gt; @dots[0],
+          y1 =&gt; @dots[1],
+          x2 =&gt; @dots[2],
+          y2 =&gt; @dots[3],
+          stroke =&gt; 'navy' ];
+    push @lines, $line;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ ./raku lsm2.raku
+Slope: -0.2999565, intercept = 200.132272536
+The equation of the line of best fit is: y = -0.30 x + 200.13
+
+&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
+xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
+&lt;circle cx="333" cy="129" r="3" fill="forestgreen" /&gt;&lt;circle cx="39" cy="189" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="140" cy="156" r="3" fill="forestgreen" /&gt;&lt;circle cx="292" cy="134" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="393" cy="52" r="3" fill="forestgreen" /&gt;&lt;circle cx="160" cy="166" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="362" cy="122" r="3" fill="forestgreen" /&gt;&lt;circle cx="13" cy="193" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="341" cy="104" r="3" fill="forestgreen" /&gt;&lt;circle cx="320" cy="113" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="109" cy="177" r="3" fill="forestgreen" /&gt;&lt;circle cx="203" cy="152" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="343" cy="100" r="3" fill="forestgreen" /&gt;&lt;circle cx="225" cy="110" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="23" cy="186" r="3" fill="forestgreen" /&gt;&lt;circle cx="282" cy="102" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="284" cy="98" r="3" fill="forestgreen" /&gt;&lt;circle cx="205" cy="133" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="297" cy="114" r="3" fill="forestgreen" /&gt;&lt;circle cx="292" cy="126" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="339" cy="112" r="3" fill="forestgreen" /&gt;&lt;circle cx="327" cy="79" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="253" cy="136" r="3" fill="forestgreen" /&gt;&lt;circle cx="61" cy="169" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="128" cy="176" r="3" fill="forestgreen" /&gt;&lt;circle cx="346" cy="72" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="316" cy="103" r="3" fill="forestgreen" /&gt;&lt;circle cx="124" cy="162" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="65" cy="181" r="3" fill="forestgreen" /&gt;&lt;circle cx="159" cy="137" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="212" cy="116" r="3" fill="forestgreen" /&gt;&lt;circle cx="337" cy="86" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="215" cy="136" r="3" fill="forestgreen" /&gt;&lt;circle cx="153" cy="137" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="390" cy="104" r="3" fill="forestgreen" /&gt;&lt;circle cx="100" cy="180" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="76" cy="188" r="3" fill="forestgreen" /&gt;&lt;circle cx="77" cy="181" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="69" cy="195" r="3" fill="forestgreen" /&gt;&lt;circle cx="92" cy="186" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="275" cy="96" r="3" fill="forestgreen" /&gt;&lt;circle cx="250" cy="147" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="34" cy="174" r="3" fill="forestgreen" /&gt;&lt;circle cx="213" cy="134" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="186" cy="129" r="3" fill="forestgreen" /&gt;&lt;circle cx="189" cy="154" r="3" fill="forestgreen" /&gt;
+&lt;circle cx="361" cy="82" r="3" fill="forestgreen" /&gt;&lt;circle cx="363" cy="89" r="3" fill="forestgreen" /&gt;
+&lt;line x1="0" y1="200.132272536" x2="400" y2="80.149672431" stroke="navy" /&gt;
+&lt;/svg&gt;
+</code></pre>
+
+<p>And this is a graphiical rendering of it:</p>
+
+<p><img alt="svg2.png" src="http://blogs.perl.org/users/laurent_r/svg2.png" width="411" height="186" class="mt-image-none" style="" /></p>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on May 29, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
+  <entry>
+    <title>SVG Plots of Points and Lines</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/22#pwc165" type="text/html"/>
+    <content type="html">
+&lt;p&gt;&lt;em&gt;The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Plot lines and points in SVG format.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+sub svg_begin{
+    return &lt;&lt;BEGIN;
+        &lt;?xml version="1.0" encoding="UTF-8" standalone="yes"?&gt;                                   &lt;!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd"&gt;                                                                          &lt;svg height="100%" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"&gt;
+BEGIN
+}
+
+sub svg_end{
+    return "&lt;/svg&gt;";
+}
+
+sub svg_point{
+    my($x, $y) = @_;
+    return "&lt;circle cx=\"$x\" cy=\"$y\" r=\"1\" /&gt;";
+}
+
+sub svg_line{
+    my($x0, $y0, $x1, $y1) = @_;
+    return "&lt;line x1=\"$x0\" x2=\"$x1\" y1=\"$y0\" y2=\"$y1\" /&gt;";          
+}
+
+sub svg{
+    my @lines = @_;
+    my $svg = svg_begin;
+    for my $line (@_){
+        $svg .= svg_point(@{$line}) if @{$line} == 2;
+        $svg .= svg_line(@{$line})  if @{$line} == 4;
+    }
+    return $svg . svg_end;
+}
+
+
+MAIN:{
+    my @lines;
+    while(&lt;DATA&gt;){
+        chomp;
+        push @lines, [split(/,/, $_)];
+    }
+    print svg(@lines);
+}
+
+
+__DATA__
+53,10
+53,10,23,30
+23,30
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-1.pl
+&lt;?xml version="1.0" encoding="UTF-8" standalone="yes"?&gt;                                   &lt;!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd"&gt;                                                                          &lt;svg height="100%" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"&gt;
+&lt;circle cx="53" cy="10" r="1" /&gt;&lt;line x1="53" x2="23" y1="10" y2="30" /&gt;&lt;circle cx="23" cy="30" r="1" /&gt;&lt;/svg&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;Doing the SVG formatting from scratch is not so bad, especially when sticking only
+to points and lines. The boiler plate XML is taken from a known good SVG example
+and used as a template. &lt;/p&gt;
+
+&lt;h2&gt;Part 2&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Compute a linear regression and output an SVG plot of the points and regression line.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+sub svg_begin{
+    return &lt;&lt;BEGIN;
+           &lt;?xml version="1.0" encoding="UTF-8" standalone="yes"?&gt;
+           &lt;!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd"&gt;
+           &lt;svg height="100%" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"&gt;
+BEGIN
+}
+
+sub svg_end{
+    return "&lt;/svg&gt;";
+}
+
+sub svg_point{
+    my($x, $y) = @_;
+    return "&lt;circle cx=\"$x\" cy=\"$y\" r=\"1\" /&gt;";
+}
+
+sub svg_line{
+    my($x0, $y0, $x1, $y1) = @_;
+    return "&lt;line x1=\"$x0\" x2=\"$x1\" y1=\"$y0\" y2=\"$y1\" /&gt;";
+}
+
+sub svg{
+    my @lines = @_;
+    my $svg = svg_begin;
+    for my $line (@_){
+        $svg .= svg_point(@{$line}) if @{$line} == 2;
+        $svg .= svg_line(@{$line})  if @{$line} == 4;
+    }
+    return $svg . svg_end;
+}
+
+sub linear_regression{
+    my(@points) = @_;
+    # 1. Calculate average of your X variable.
+    my $sum = 0;
+    my $x_avg;
+    map{$sum += $_-&gt;[0]} @points;
+    $x_avg = $sum / @points;
+    # 2. Calculate the difference between each X and the average X.
+    my @x_differences = map{$_-&gt;[0] - $x_avg} @points;
+    # 3. Square the differences and add it all up. This is Sx.
+    my $sx = 0;
+    my @squares = map{$_ * $_} @x_differences;
+    map{$sx += $_} @squares;
+    # 4. Calculate average of your Y variable.
+    $sum = 0;
+    my $y_avg;
+    map{$sum += $_-&gt;[1]} @points;
+    $y_avg = $sum / @points;
+    my @y_differences = map{$_-&gt;[1] - $y_avg} @points;
+    # 5. Multiply the differences (of X and Y from their respective averages) and add them all together.  This is Sxy.
+    my $sxy = 0;
+    @squares = map {$y_differences[$_] * $x_differences[$_]} 0 .. @points - 1;
+    map {$sxy += $_} @squares;
+    # 6. Using Sx and Sxy, you calculate the intercept by subtracting Sx / Sxy * AVG(X) from AVG(Y).
+    my $m = $sxy / $sx;
+    my $y_intercept = $y_avg - ($sxy / $sx * $x_avg);
+    my @sorted = sort {$a-&gt;[0] &lt;=&gt; $b-&gt;[0]} @points;
+    my $max_x = $sorted[@points - 1]-&gt;[0];
+    return [0, $y_intercept, $max_x + 10, $m * ($max_x + 10) + $y_intercept];
+}
+
+MAIN:{
+    my @points;
+    while(&lt;DATA&gt;){
+        chomp;
+        push @points, [split(/,/, $_)];
+    }
+    push @points, linear_regression(@points);
+    print svg(@points);    
+}
+
+
+__DATA__
+333,129
+39,189
+140,156
+292,134
+393,52
+160,166
+362,122
+13,193
+341,104
+320,113
+109,177
+203,152
+343,100
+225,110
+23,186
+282,102
+284,98
+205,133
+297,114
+292,126
+339,112
+327,79
+253,136
+61,169
+128,176
+346,72
+316,103
+124,162
+65,181
+159,137
+212,116
+337,86
+215,136
+153,137
+390,104
+100,180
+76,188
+77,181
+69,195
+92,186
+275,96
+250,147
+34,174
+213,134
+186,129
+189,154
+361,82
+363,89
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+&lt;?xml version="1.0" encoding="UTF-8" standalone="yes"?&gt;
+           &lt;!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd"&gt;
+           &lt;svg height="100%" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"&gt;
+&lt;circle cx="333" cy="129" r="1" /&gt;&lt;circle cx="39" cy="189" r="1" /&gt;&lt;circle cx="140" cy="156" r="1" /&gt;&lt;circle cx="292" cy="134" r="1" /&gt;&lt;circle cx="393" cy="52" r="1" /&gt;&lt;circle cx="160" cy="166" r="1" /&gt;&lt;circle cx="362" cy="122" r="1" /&gt;&lt;circle cx="13" cy="193" r="1" /&gt;&lt;circle cx="341" cy="104" r="1" /&gt;&lt;circle cx="320" cy="113" r="1" /&gt;&lt;circle cx="109" cy="177" r="1" /&gt;&lt;circle cx="203" cy="152" r="1" /&gt;&lt;circle cx="343" cy="100" r="1" /&gt;&lt;circle cx="225" cy="110" r="1" /&gt;&lt;circle cx="23" cy="186" r="1" /&gt;&lt;circle cx="282" cy="102" r="1" /&gt;&lt;circle cx="284" cy="98" r="1" /&gt;&lt;circle cx="205" cy="133" r="1" /&gt;&lt;circle cx="297" cy="114" r="1" /&gt;&lt;circle cx="292" cy="126" r="1" /&gt;&lt;circle cx="339" cy="112" r="1" /&gt;&lt;circle cx="327" cy="79" r="1" /&gt;&lt;circle cx="253" cy="136" r="1" /&gt;&lt;circle cx="61" cy="169" r="1" /&gt;&lt;circle cx="128" cy="176" r="1" /&gt;&lt;circle cx="346" cy="72" r="1" /&gt;&lt;circle cx="316" cy="103" r="1" /&gt;&lt;circle cx="124" cy="162" r="1" /&gt;&lt;circle cx="65" cy="181" r="1" /&gt;&lt;circle cx="159" cy="137" r="1" /&gt;&lt;circle cx="212" cy="116" r="1" /&gt;&lt;circle cx="337" cy="86" r="1" /&gt;&lt;circle cx="215" cy="136" r="1" /&gt;&lt;circle cx="153" cy="137" r="1" /&gt;&lt;circle cx="390" cy="104" r="1" /&gt;&lt;circle cx="100" cy="180" r="1" /&gt;&lt;circle cx="76" cy="188" r="1" /&gt;&lt;circle cx="77" cy="181" r="1" /&gt;&lt;circle cx="69" cy="195" r="1" /&gt;&lt;circle cx="92" cy="186" r="1" /&gt;&lt;circle cx="275" cy="96" r="1" /&gt;&lt;circle cx="250" cy="147" r="1" /&gt;&lt;circle cx="34" cy="174" r="1" /&gt;&lt;circle cx="213" cy="134" r="1" /&gt;&lt;circle cx="186" cy="129" r="1" /&gt;&lt;circle cx="189" cy="154" r="1" /&gt;&lt;circle cx="361" cy="82" r="1" /&gt;&lt;circle cx="363" cy="89" r="1" /&gt;&lt;line x1="0" x2="403" y1="200.132272535582" y2="79.2498029303056" /&gt;&lt;/svg&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;I re-use the SVG code from Part 1 and add in the linear regression calculation. Continuing
+a small habit from the past few weeks of these challenges I am making much use of &lt;code&gt;map&lt;/code&gt; to
+keep the code as small, and yet still readable, as possible. The linear regression 
+calculation is fairly straightforward, as much as I hate having a terse writeup on this
+I am not sure I have much more to say!&lt;/p&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-165/"&gt;Challenge 165&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://www.learnbymarketing.com/tutorials/linear-regression-by-hand-in-excel/#:~:text=To%20calculate%20our%20regression%20coefficient%20we%20divide%20the,needs%20to%20make%20up%20for%20the%20average%20case."&gt;Linear Regression Calculation&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc165</id>
+    <published>2022-05-22T16:05:00-04:00</published>
+    <updated>2022-05-22T16:05:00-04:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry>
     <title>MooseX::Extreme Needs a New Name</title>
     <link rel="alternate" href="http://blogs.perl.org/users/ovid/2022/05/moosexextreme-needs-a-new-name.html"/>
@@ -289,265 +844,6 @@ The equation of the line of best fit is: y = -0.30 x + 200.13
 Slope: 1, intercept = -1
 The equation of the line of best fit is: y = 1.00 x - 1.00
 </code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on May 29, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
-    </content>
-</entry>
-  <entry>
-    <title>Perl Weekly Challenge 165: Scalable Vector Graphics</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-165-scalable-vestor-graphics.html"/>
-    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10791</id>
-    <published>2022-05-22T03:42:27Z</published>
-    <updated>2022-05-22T03:51:06Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 165 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-165/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p>This week, Task 1 and part of Task 2 relate to Scalable Vector Graphics (SVG). I&#8217;d been using SVG a very long time ago and certainly didn&#8217;t remember any of the details. So, in my <a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-165-line-of-best-fit.html">first blog relating to PWC 165</a>, I stated that I didn&#8217;t have time for that and covered only the part of the challenge not related to SVG. I also said that, in the event that I find some time over the weekend, I might come back and fulfill the SVG part. I thought at the time that this was rather unlikely, but I was finally able to cover the SVG part, at least in Raku.</p>
-
-<h2>Task 1: Scalable Vector Graphics (SVG) in Raku</h2>
-
-<p><em>Scalable Vector Graphics (SVG) are not made of pixels, but lines, ellipses, and curves, that can be scaled to any size without any loss of quality. If you have ever tried to resize a small JPG or PNG, you know what I mean by “loss of quality”! What many people do not know about SVG files is, they are simply XML files, so they can easily be generated programmatically.</em></p>
-
-<p><em>For this task, you may use external library, such as Perl’s <a href="https://metacpan.org/pod/SVG">SVG</a> library, maintained in recent years by our very own Mohammad S Anwar. You can instead generate the XML yourself; it’s actually quite simple. The source for the example image for Task #2 might be instructive.</em></p>
-
-<p><em>Your task is to accept a series of points and lines in the following format, one per line, in arbitrary order:</em></p>
-
-<p><em>Point: x,y</em></p>
-
-<p><em>Line: x1,y1,x2,y2</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>53,10
-53,10,23,30
-23,30
-</code></pre>
-
-<p><em>Then, generate an SVG file plotting all points, and all lines. If done correctly, you can view the output .svg file in your browser.</em></p>
-
-<p>I created two subroutines, <code>make-point</code> and <code>make-line</code>, to create the necessary data structures. The last item of the <code>@input</code> has three parts and should generate a warning, since input items should have either 2 or 4 parts. </p>
-
-<p>Note that SVG probably includes a scaling factor, but I couldn&#8217;t find any information about it. So I rolled out my own <code>\SCALE</code> scaling factor to make the output larger and more readable.</p>
-
-<pre><code>use SVG;
-my \SCALE = 5;
-
-my ( @points, @lines);
-my @input = &lt;53,10  53,10,23,30  23,30  34,35,36&gt;;
-for @input -&gt; $val {
-    my @items = split /','/, $val;
-    if @items.elems == 2 {
-        make-point(@items)
-    } elsif @items.elems == 4 {
-        make-line(@items);
-    } else { 
-        note "Error on item ", @items;
-    }
-}
-
-say ( SVG.serialize(svg =&gt; [ width =&gt; 500, height =&gt; 500, |@points, |@lines ] ));
-
-sub make-point (@dots) {
-    @dots = map { $_ * SCALE }, @dots;
-    my $point = circle =&gt;  
-        [ cx =&gt; @dots[0],
-          cy =&gt; @dots[1],
-          r =&gt; 3,
-          fill =&gt; 'forestgreen' ];
-    push @points, $point;
-}
-
-sub make-line (@dots) {
-    @dots = map { $_ * SCALE }, @dots;
-    my $line = line =&gt; 
-        [ x1 =&gt; @dots[0],
-          y1 =&gt; @dots[1],
-          x2 =&gt; @dots[2],
-          y2 =&gt; @dots[3],
-          stroke =&gt; 'navy' ];
-    push @lines, $line;
-}
-</code></pre>
-
-<p>The SVG output, slightly reformatted for better readability, is as follows:</p>
-
-<pre><code>&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
-xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
-&lt;circle cx="265" cy="50" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="115" cy="150" r="3" fill="forestgreen" /&gt;
-&lt;line x1="265" y1="50" x2="150" y2="150" stroke="navy" /&gt;&lt;/svg&gt;
-</code></pre>
-
-<p>And this is a graphical rendering of it:</p>
-
-<p><img alt="svg1.png" src="http://blogs.perl.org/users/laurent_r/svg1.png" width="314" height="154" class="mt-image-none" style="" /></p>
-
-<h3>Task 2: Line of Best Fit</h3>
-
-<p><em>When you have a scatter plot of points, a line of best fit is the line that best describes the relationship between the points, and is very useful in statistics. Otherwise known as linear regression, here is an example of what such a line might look like:</em></p>
-
-<p><img alt="line_of_best_fit.jpg" src="http://blogs.perl.org/users/laurent_r/line_of_best_fit.jpg" width="422" height="319" class="mt-image-none" style="" /></p>
-
-<p><em>The method most often used is known as the <a href="https://www.mathsisfun.com/data/least-squares-regression.html">least squares method</a>, as it is straightforward and efficient, but you may use any method that generates the correct result.</em></p>
-
-<p><em>Calculate the line of best fit for the following 48 points:</em></p>
-
-<pre><code>333,129  39,189 140,156 292,134 393,52  160,166 362,122  13,193
-341,104 320,113 109,177 203,152 343,100 225,110  23,186 282,102
-284,98  205,133 297,114 292,126 339,112 327,79  253,136  61,169
-128,176 346,72  316,103 124,162  65,181 159,137 212,116 337,86
-215,136 153,137 390,104 100,180  76,188  77,181  69,195  92,186
-275,96  250,147  34,174 213,134 186,129 189,154 361,82  363,89
-</code></pre>
-
-<p><em>Using your rudimentary graphing engine from Task #1, graph all points, as well as the line of best fit.</em></p>
-
-<p>So, Task 2 is about line of best fit or linear regression.</p>
-
-<p>If we consider a cloud of <code>n</code> points with coordinates <code>(x, y)</code>, the line of best fit is defined as follows:</p>
-
-<p>The equation for the <em>slope</em> <code>m</code> is:</p>
-
-<pre><code>    n * sum(xy) - sum(x) * sum(y)
-m = -----------------------------
-    n * sum(x²) - sum(x) * sum(x)
-</code></pre>
-
-<p>The <em>y-intercept</em> (i.e. value of <code>y</code> on the vertical axis, when <code>x</code> = 0) <code>b</code> is:</p>
-
-<pre><code>    sum(y) - m * sum(x)
-b = -------------------
-           n
-</code></pre>
-
-<p>The equation of the line is:</p>
-
-<pre><code>y = mx + b
-</code></pre>
-
-<h3>Line of Best Fit in Raku</h3>
-
-<p>The following program is an application of the explanations above. We split the input string on spaces and on commas, to get an array of <code>(x, y)</code> values. The <code>lsm</code> subroutine applies the above least square method formulas to find the slope and intercept. Note that for displaying line of best fit equation, we had to handle two different cases, depending on whether the intercept is positive or negative. Otherwise, for a negative intercept, we would display the line equation as follows:</p>
-
-<pre><code>The equation of the line of best fit is: y = 1.00 x + -1.00
-</code></pre>
-
-<p>which is not satisfactory. </p>
-
-<p>Also note the use of the <code>»</code> <a href="https://docs.raku.org/syntax/%3C%3C">hyper operator</a> when reading the input data to apply the second <code>split</code> to each of the values returned by the first <code>split</code>.</p>
-
-<p>Besides, we reuse the <code>make-point</code> and <code>make-line</code> subroutines created above (slightly modified) for preparing the SVG output.</p>
-
-<pre><code>use SVG;
-my \SCALE = 1;
-
-my $input =
-   '333,129  39,189 140,156 292,134 393,52  160,166 362,122  13,193
-    341,104 320,113 109,177 203,152 343,100 225,110  23,186 282,102
-    284,98  205,133 297,114 292,126 339,112 327,79  253,136  61,169
-    128,176 346,72  316,103 124,162  65,181 159,137 212,116 337,86
-    215,136 153,137 390,104 100,180  76,188  77,181  69,195  92,186
-    275,96  250,147  34,174 213,134 186,129 189,154 361,82  363,89';
-
-my @points = $input.split(/\s+/)&gt;&gt;.split(/','/);
-my (@dots, @lines);
-make-point($_) for @points;
-my ($slope, $intercept) = lsm(@points);
-say "Slope: $slope, intercept = $intercept";
-my $sign = $intercept &lt; 0 ?? '-' !! '+';
-printf "The equation of the line of best fit is: y = %.2f x %s %.2f \n\n", $slope, $sign, $intercept.abs;
-# compute some arbitrary values for the line - say for x = 400
-my $x = 400;
-my $y = $slope * $x + $intercept;
-make-line([0, $intercept, $x, $y]);
-say ( SVG.serialize(svg =&gt; [ width =&gt; 500, height =&gt; 500, |@dots, |@lines ]));
-
-sub lsm (@points) {
-    my ($s-x, $s-y, $s-xy, $s-x2) = 0 xx 4;
-    for @points -&gt; $point {
-        my ($x, $y) = $point[0, 1];
-        # say "$x $y";
-        $s-x += $x;
-        $s-y += $y;
-        $s-xy += $x * $y;
-        $s-x2 += $x ** 2;
-    }
-    my $n = @points.elems;
-    my $slope = ($n * $s-xy - $s-x * $s-y) / ($n * $s-x2 - $s-x ** 2);
-    my $intercept = ($s-y - $slope * $s-x) / $n;
-    return $slope, $intercept;
-}
-
-sub make-point (@points is copy) {
-    @points = map { $_ * SCALE }, @points;
-    my $point = circle =&gt;  
-        [ cx =&gt; @points[0],
-          cy =&gt; @points[1],
-          r =&gt; 3,
-          fill =&gt; 'forestgreen' ];
-    push @dots, $point;
-}
-
-sub make-line (@dots) {
-    @dots = map { $_ * SCALE }, @dots;
-    my $line = line =&gt; 
-        [ x1 =&gt; @dots[0],
-          y1 =&gt; @dots[1],
-          x2 =&gt; @dots[2],
-          y2 =&gt; @dots[3],
-          stroke =&gt; 'navy' ];
-    push @lines, $line;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ ./raku lsm2.raku
-Slope: -0.2999565, intercept = 200.132272536
-The equation of the line of best fit is: y = -0.30 x + 200.13
-
-&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
-xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
-&lt;circle cx="333" cy="129" r="3" fill="forestgreen" /&gt;&lt;circle cx="39" cy="189" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="140" cy="156" r="3" fill="forestgreen" /&gt;&lt;circle cx="292" cy="134" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="393" cy="52" r="3" fill="forestgreen" /&gt;&lt;circle cx="160" cy="166" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="362" cy="122" r="3" fill="forestgreen" /&gt;&lt;circle cx="13" cy="193" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="341" cy="104" r="3" fill="forestgreen" /&gt;&lt;circle cx="320" cy="113" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="109" cy="177" r="3" fill="forestgreen" /&gt;&lt;circle cx="203" cy="152" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="343" cy="100" r="3" fill="forestgreen" /&gt;&lt;circle cx="225" cy="110" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="23" cy="186" r="3" fill="forestgreen" /&gt;&lt;circle cx="282" cy="102" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="284" cy="98" r="3" fill="forestgreen" /&gt;&lt;circle cx="205" cy="133" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="297" cy="114" r="3" fill="forestgreen" /&gt;&lt;circle cx="292" cy="126" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="339" cy="112" r="3" fill="forestgreen" /&gt;&lt;circle cx="327" cy="79" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="253" cy="136" r="3" fill="forestgreen" /&gt;&lt;circle cx="61" cy="169" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="128" cy="176" r="3" fill="forestgreen" /&gt;&lt;circle cx="346" cy="72" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="316" cy="103" r="3" fill="forestgreen" /&gt;&lt;circle cx="124" cy="162" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="65" cy="181" r="3" fill="forestgreen" /&gt;&lt;circle cx="159" cy="137" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="212" cy="116" r="3" fill="forestgreen" /&gt;&lt;circle cx="337" cy="86" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="215" cy="136" r="3" fill="forestgreen" /&gt;&lt;circle cx="153" cy="137" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="390" cy="104" r="3" fill="forestgreen" /&gt;&lt;circle cx="100" cy="180" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="76" cy="188" r="3" fill="forestgreen" /&gt;&lt;circle cx="77" cy="181" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="69" cy="195" r="3" fill="forestgreen" /&gt;&lt;circle cx="92" cy="186" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="275" cy="96" r="3" fill="forestgreen" /&gt;&lt;circle cx="250" cy="147" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="34" cy="174" r="3" fill="forestgreen" /&gt;&lt;circle cx="213" cy="134" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="186" cy="129" r="3" fill="forestgreen" /&gt;&lt;circle cx="189" cy="154" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="361" cy="82" r="3" fill="forestgreen" /&gt;&lt;circle cx="363" cy="89" r="3" fill="forestgreen" /&gt;
-&lt;line x1="0" y1="200.132272536" x2="400" y2="80.149672431" stroke="navy" /&gt;
-&lt;/svg&gt;
-</code></pre>
-
-<p>And this is a graphiical rendering of it:</p>
-
-<p><img alt="svg2.png" src="http://blogs.perl.org/users/laurent_r/svg2.png" width="411" height="186" class="mt-image-none" style="" /></p>
 
 <h2>Wrapping up</h2>
 
