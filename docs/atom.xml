@@ -7,9 +7,154 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-05-25T12:55:45Z</updated>
+  <updated>2022-05-25T16:52:12Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title><![CDATA[What&apos;s In That String?]]></title>
+    <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2022/05/whats-in-that-string.html"/>
+    <id>tag:blogs.perl.org,2022:/users/tom_wyant//506.10796</id>
+    <published>2022-05-25T20:54:46Z</published>
+    <updated>2022-05-25T21:00:13Z</updated>
+    <author>
+        <name>Tom Wyant</name>
+        
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/tom_wyant/">
+        <![CDATA[<p>One of the steps of debugging Perl can be to find out what is actually in a string. There are a number of more-or-less informative ways to do this, and I thought I would compare them.</p>
+
+<p>For this I used two short strings. The first was just the concatenation of the characters whose ordinals are 24 through 39; that is, 16 ASCII characters straddling the divide between control characters and printable characters. The second was a small variation on the first, made by removing the last character and appending <code>"\N{U+100}"</code> (a.k.a. <code>"\N{LATIN CAPITAL A WITH MACRON}"</code>) to force the string's internal representation to be upgraded.</p>
+
+<p>The results given below include the version of the module used, the actual code snippet that generated the output, the output itself, and any comments I thought relevant. All subroutines used to dump strings are exportable except for those called as methods. The sample code makes fully-qualified calls because of duplication of subroutine names between different modules.</p>
+
+<h2><a href="https://metacpan.org/pod/Data::Dumper"><code>Data::Dumper</code></a> 2.183 (core since 5.005)</h2>
+
+<pre>local $Data::Dumper::Useqq = 1;
+print Data::Dumper::Dumper( $_ );
+
+<p>$VAR1 = &quot;\30\31\32\e\34\35\36\37 !\&quot;#\$%&amp;&#39;&quot;;<br />
+$VAR1 = &quot;\30\31\32\e\34\35\36\37 !\&quot;#\$%&amp;\x{100}&quot;;<br />
+</pre></p>
+
+<p><a href="https://metacpan.org/pod/Data::Dumper"><code>Data::Dumper</code></a> is probably the default debug output tool. One of its goals is the ability to recover the original data by <code>eval()</code>-ing the output of <code>Dumper()</code>. But <strong>note</strong> the need to set <code>$Data::Dumper::Useqq</code> true to actually see all characters in the dumped string. If this is not done, the control characters are not converted into escape sequences, so the only way to see them is to pipe your output through <code>hexdump -C</code>. For more general-purpose debugging you may also want to set <code>$Data::Dumper::Sortkeys</code> to <code>1</code> so that hash keys come out in non-random order.</p>
+
+<h2><a href="https://perldoc.perl.org/B.html"><code>B</code></a> 1.82 (core since 5.005)</h2>
+
+<pre>print B::perlstring( $_ ), &quot;\n&quot;;
+
+<p>&quot;\030\031\032\033\034\035\036\037 !\&quot;#\$%&amp;&#39;&quot;<br />
+&quot;\x{18}\x{19}\x{1a}\e\x{1c}\x{1d}\x{1e}\x{1f} !\&quot;#\$%&amp;\x{100}&quot;<br />
+</pre></p>
+
+<p>The primary purpose of the <a href="https://perldoc.perl.org/B.html"><code>B</code></a> module is to support rummaging around in Perl's internals. This use as a casual debugging tool is more a happy accident than the actual intent of the module. If you prefer the C language representation of a string, this module also provides <code>cstring()</code>.</p>
+
+<p><br />
+<h2><a href="https://metacpan.org/pod/Devel::Peek"><code>Devel::Peek</code></a> 1.3 (core since 5.006)</h2></p>
+
+<pre>Devel::Peek::Dump( $_ );
+
+<p>SV = PV(0x7f7c1222a2b0) at 0x7f7c1200fee0<br />
+  REFCNT = 2<br />
+  FLAGS = (POK,IsCOW,pPOK)<br />
+  PV = 0x600003e3d760 &quot;\30\31\32\33\34\35\36\37 !\&quot;#$%&amp;&#39;&quot;\0<br />
+  CUR = 16<br />
+  LEN = 18<br />
+  COW_REFCNT = 0<br />
+SV = PVMG(0x7f7c135c75e0) at 0x7f7c1100ac48<br />
+  REFCNT = 2<br />
+  FLAGS = (SMG,POK,pPOK,UTF8)<br />
+  IV = 0<br />
+  NV = 0<br />
+  PV = 0x600003e3d580 &quot;\30\31\32\33\34\35\36\37 !\&quot;#$%&amp;\304\200&quot;\0 [UTF8 &quot;\x{18}\x{19}\x{1a}\e\x{1c}\x{1d}\x{1e}\x{1f} !&quot;#$%&amp;\x{100}&quot;]<br />
+  CUR = 17<br />
+  LEN = 18<br />
+  MAGIC = 0x60000307e310<br />
+    MG_VIRTUAL = &amp;PL_vtbl_utf8<br />
+    MG_TYPE = PERL_MAGIC_utf8(w)<br />
+    MG_LEN = -1<br />
+</pre></p>
+
+<p><a href="https://metacpan.org/pod/Devel::Peek"><code>Devel::Peek</code></a> tells you much more than you probably need to know about a string for casual debugging. Unlike the other modules presented here, it does its output directly to <code>STDERR</code> instead of just returning another string.</p>
+
+<p><br />
+<h2><a href="https://metacpan.org/pod/Data::Dump"><code>Data::Dump</code></a> 1.25 (not in core)</h2></p>
+
+<pre>print Data::Dump::dump( $_ ), &quot;\n&quot;;
+
+<p>&quot;\30\31\32\e\34\35\36\37 !\&quot;#\$%&amp;&#39;&quot;<br />
+&quot;\30\31\32\e\34\35\36\37 !\&quot;#\$%&amp;\x{100}&quot;<br />
+</pre></p>
+
+<p><a href="https://metacpan.org/pod/Data::Dump"><code>Data::Dump</code></a> is a non-core module written as an alternative to <a href="https://metacpan.org/pod/Data::Dumper"><code>Data::Dumper</code></a>. Its focus is more on ease of configuration and readability of output.</p>
+
+<p><br />
+<h2><a href="https://metacpan.org/dist/JSON"><code>JSON</code></a> 4.05 (not in core)</h2></p>
+
+<pre>state $json = JSON-&gt;new-&gt;allow_nonref;
+print $json-&gt;encode( $_ ), &quot;\n&quot;;
+
+<p>&quot;\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f !\&quot;#$%&amp;&#39;&quot;<br />
+&quot;\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f !\&quot;#$%&amp;&#256;&quot;<br />
+</pre></p>
+
+<p><a href="https://metacpan.org/dist/JSON"><code>JSON</code></a> is a general-purpose serializer whose output can be made fairly readable. <p><strong>Note</strong> the need to turn on <code>allow_nonref</code> to dump a string, and to turn on <code>pretty</code> and <code>canonical</code> to get indented structures with hash keys in order. <strong>Note also</strong> that the <code>"\N{U+100}"</code> is represented literally; you will need to set your output encoding (say, by <code>binmode STDERR, ':encoding(utf-8)';</code>) to avoid the dreaded <code>Wide character in print</code> warning.</p>
+
+<p>There are a number of <code>JSON</code> modules available. Output of untried modules may differ from the output I have presented here.</p>
+
+<h2><a href="https://metacpan.org/dist/YAML"><code>YAML</code></a> 1.30 (not in core)</h2>
+
+<pre>print YAML::Dump( $_ );
+
+<p>--- &quot;\x18\x19\x1a\e\x1c\x1d\x1e\x1f !\&quot;#$%&amp;&#39;&quot;<br />
+--- &quot;\x18\x19\x1a\e\x1c\x1d\x1e\x1f !\&quot;#$%&amp;&#256;&quot;<br />
+</pre></p>
+
+<p><a href="https://metacpan.org/dist/YAML"><code>YAML</code></a> is a general-purpose serializer whose output is fairly readable with minimal to no configuration. <strong>Note</strong> that the <code>"\N{U+100}"</code> is represented literally; you will need to set your output encoding (say, by <code>binmode STDERR, ':encoding(utf-8)';</code>) to avoid the dreaded <code>Wide character in print</code> warning.</p>
+
+<p>There are a number of <code>YAML</code> modules available. Output of untried modules may differ from the output I have presented here.</p>
+
+<h2><a href=" https://perldoc.perl.org/perlfunc#unpack-TEMPLATE%2CEXPR"><code>unpack()</code></a> (Perl built-in)</h2>
+
+<pre>print unpack( &#39;H*&#39;, $_ ), &quot;\n&quot;;
+
+<p>18191a1b1c1d1e1f2021222324252627<br />
+Character in &#39;H&#39; format wrapped in unpack at (eval 28) line 1 (#1)<br />
+    (W unpack) You tried something like<br />
+    <br />
+       unpack(&quot;H&quot;, &quot;\x{2a1}&quot;)<br />
+    <br />
+    where the format expects to process a byte (a character with a value<br />
+    below 256), but a higher value was provided instead.  Perl uses the<br />
+    value modulus 256 instead, as if you had provided:<br />
+    <br />
+       unpack(&quot;H&quot;, &quot;\x{a1}&quot;)<br />
+    <br />
+18191a1b1c1d1e1f2021222324252600<br />
+</pre></p>
+
+<p>The <a href=" https://perldoc.perl.org/perlfunc#unpack-TEMPLATE%2CEXPR"><code>unpack()</code></a> built-in is included so I can say I think it is a bad idea unless you <strong>know</strong> your string is bytes, not characters. The big, fat warning (courtesy of the <a href="https://perldoc.perl.org/diagnostics.html"><code>diagnostics</code></a> module) makes this perfectly clear. In this specific case, the output of <code>"\N{U+100}"</code> is the same as the output of <code>"\N{U+00}"</code>, and suppressing the warning does not change this.</p>
+
+<p>It is possible to use the <a href="https://perldoc.perl.org/bytes.html"><code>bytes</code></a> pragma to force byte semantics on the unpack and get the whole string. But what you get is the internal representation, subject to change without notice.</p>
+
+<p>My best advice is to avoid this one unless you <strong>really, really</strong> know what you are doing.</p>
+
+<p>If you <strong>must</strong> use this method (and I <strong>did</strong> warn you) you can make it a little easier on yourself by using</p>
+
+<pre>
+say unpack( 'H*', $_ ) =~ s/..\K/ /gr;
+</pre>
+
+<p>which produces (for the ASCII string)</p>
+
+<pre>
+18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25 26 27
+</pre>
+
+<p>The <code>/r</code> causes the substitution to return the modified string rather than modifying it in-place, and requires Perl 5.14. Since I knew I was requiring 5.14 I replaced <code>print()</code> with <code>say()</code>.</p>
+]]>
+        
+    </content>
+</entry>
   <entry>
     <title>Auf dem Weg zu Perl 5.36 – gesammelte Werke</title>
     <link rel="alternate" href="https://blog.perl-academy.de/2022-05-25-auf-dem-weg-zu-perl-536-a-gesammelte-werke" type="text/html"/>
@@ -1563,171 +1708,6 @@ subroutine is in a different scope and does not effect the outer &lt;code&gt;$n&
     </author>
     <thr:total>0</thr:total>
   </entry>
-  <entry>
-    <title>Perl Weekly Challenge 164: Prime Palindromes and Happy Numbers</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-164-prime-palindromes-and-happy-numbers.html"/>
-    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10786</id>
-    <published>2022-05-12T20:28:15Z</published>
-    <updated>2022-05-12T20:31:51Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 164 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-164/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on May 15, 2022 at 24:00). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Prime Palindromes</h2>
-
-<p><em>Write a script to find all prime numbers less than 1000, which are also palindromes in base 10. Palindromic numbers are numbers whose digits are the same in reverse. For example, 313 is a palindromic prime, but 337 is not, even though 733 (337 reversed) is also prime.</em></p>
-
-<h3>Prime Palindromes in Raku</h3>
-
-<p>We use a data pipeline (chained method invocations) with two <code>grep</code> statements, one to keep palindromes and one to keep prime numbers. This leads to a fairly concise one-line solution:</p>
-
-<pre><code>say (1..^1000).grep({ $_ == .flip }).grep({.is-prime});
-</code></pre>
-
-<p>This works because, with such chained method invocations, the output of the first <code>grep</code> is fed as input to the second <code>grep</code>. This script displays the following output:</p>
-
-<pre><code>$ raku ./prime-palindrome.raku
-(2 3 5 7 11 101 131 151 181 191 313 353 373 383 727 757 787 797 919 929)
-</code></pre>
-
-<p>We can also do it as a Raku one-liner:</p>
-
-<pre><code>$ raku -e 'say (1..^1000).grep({ $_ == .flip }).grep({.is-prime});'
-(2 3 5 7 11 101 131 151 181 191 313 353 373 383 727 757 787 797 919 929)
-</code></pre>
-
-<h3>Prime Palindromes in Perl</h3>
-
-<p>Perl doesn&#8217;t have a built-in function to determine whether an integer is prime, so we write our own <code>is_prime</code> subroutine. Since we&#8217;re eventually going to test only slightly more than 100 small integers, there is no need to aggressively optimize the performance of this subroutine. The program runs in significantly less than a tenth of a second.</p>
-
-<p>Once we have implemented the <code>is-prime</code> subroutine, we can use a data pipeline (piped function calls) as before to solve the problem in just one code line:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub is_prime {
-    my $num = shift;
-    return 1 if $num == 2;
-    return 0 unless $num % 2;
-    my $test = 3;
-    while ($test &lt; $num/2) {
-        return 0 if $num % $test == 0;
-        $test += 2;
-    }
-    return 1;
-}
-
-say map "$_ ", grep { is_prime $_} grep {$_ == reverse $_} 1..999;
-</code></pre>
-
-<p>This data pipeline should be read from right to left: we start with a range of integers between 1 and 999, apply a first filter (<code>grep {$_ == reverse $_}</code>) to keep only the palindromic integers, apply a second filter to retain only the primes, and finally a <code>map</code> to properly format the output (add a space between the values).</p>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./prime-palindrome.pl
-1 2 3 5 7 11 101 131 151 181 191 313 353 373 383 727 757 787 797 919 929
-</code></pre>
-
-<h2>Task 2: Happy Numbers</h2>
-
-<p><em>Write a script to find the first 8 Happy Numbers in base 10. For more information, please check out <a href="https://en.wikipedia.org/wiki/Happy_number">Wikipedia</a>.</em></p>
-
-<p><em>Starting with any positive integer, replace the number by the sum of the squares of its digits, and repeat the process until the number equals 1 (where it will stay), or it loops endlessly in a cycle which does not include 1.</em></p>
-
-<p><em>Those numbers for which this process end in 1 are happy numbers, while those numbers that do not end in 1 are unhappy numbers.</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>19 is Happy Number in base 10, as shown:
-
-19 =&gt; 1^2 + 9^2
-   =&gt; 1   + 81
-   =&gt; 82 =&gt; 8^2 + 2^2
-         =&gt; 64  + 4
-         =&gt; 68 =&gt; 6^2 + 8^2
-               =&gt; 36  + 64
-               =&gt; 100 =&gt; 1^2 + 0^2 + 0^2
-                      =&gt; 1 + 0 + 0
-                      =&gt; 1
-</code></pre>
-
-<p>Basically, we need a subroutine to perform iteratively the process of replacing the current number with the sum of the squares of its digit. If we find 1, then we&#8217;ve found an happy number and can return a true value to break out of the process. If we find a number that we have already seen, then we have entered into an endless loop, which means that have found an unhappy (or sad) number, and we can return a false value to break out of the process.</p>
-
-<h3>Happy Numbers in Raku</h3>
-
-<p>The <code>is-happy</code> subroutine implements the algorithm described above. We use a <code>SetHash</code> to store the intermediate values and check whether we have entered into an endless loop. Note that we create an infinite lazy list of happy numbers, and then print out the number of happy numbers that we need.</p>
-
-<pre><code>sub is-happy(Int $n is copy) {
-    my $seen = SetHash.new;
-    loop {
-        return True if $n == 1;
-        return False if $n ∈ $seen;
-        $seen{$n} = True;
-        $n = $n.comb.map({$_ ** 2}).sum;
-    }
-}
-my @happy-numbers = grep {is-happy $_}, 1..Inf;
-say @happy-numbers[0..7];
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./happy-numbers.raku
-(1 7 10 13 19 23 28 31)
-</code></pre>
-
-<h3>Happy Numbers in Perl</h3>
-
-<p>In Perl, the <code>is_happy</code> subroutine implements again the algorithm outlined above. We use a plain hash to store the intermediate values and check whether we have entered into an endless loop.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub is_happy {
-    my $n = shift;
-    my %seen;
-    while (1) {
-        return 1 if $n == 1;
-        return 0 if exists $seen{$n};
-        $seen{$n} = 1;
-        my $sum = 0;
-        $sum += $_ for map $_ ** 2, split //, $n;
-        $n = $sum;
-    }
-}
-my $count = 0;
-my $i = 1;
-while ($count &lt; 8) {
-    if (is_happy $i) {
-        print "$i ";
-        $count++;
-    }
-    $i++;
-}
-say "";
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./happy-numbers.pl
-1 7 10 13 19 23 28 31
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on May 22, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
-    </content>
-</entry>
   <entry>
     <title>Auf dem Weg zu Perl 5.36 - try/catch/finally</title>
     <link rel="alternate" href="https://blog.perl-academy.de/2022-05-12-auf-dem-weg-zu-perl-536-trycatchfinally" type="text/html"/>
