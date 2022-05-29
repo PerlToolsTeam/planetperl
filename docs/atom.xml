@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-05-29T12:52:08Z</updated>
+  <updated>2022-05-29T16:49:38Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -2391,90 +2391,5 @@ $ perl perl/ch-1.pl
     <updated>2022-05-01T09:06:16Z</updated>
     <category term="cpan"/>
     <category term="perl"/>
-  </entry>
-  <entry>
-    <title>More Mastodon, less Twitter</title>
-    <link href="http://domm.plix.at/perl/2022_04_more_mastodon_less_twitter.html"/>
-    <id>http://domm.plix.at/perl/2022_04_more_mastodon_less_twitter.html</id>
-    <updated>2022-04-29T16:05:16+00:00</updated>
-    <category term="perl"/>
-    <summary type="html">I was getting more and more annoyed with twitter in the last few months (mostly because I had to click "See [some annoying feature] less often" several times a day) and the whole Musk-takeover ...</summary>
-    <content type="html">&lt;p&gt;I was getting more and more annoyed with twitter in the last few months (mostly because I had to click "See [some annoying feature] less often" several times a day) and the whole Musk-takeover finally pushed me over the edge. I've set up an account on &lt;a href="https://mastodon.technology/@domm"&gt;Mastodon Technology&lt;/a&gt; and plan to use this nice, open source, federated tool more and more, and leave twitter behind.&lt;/p&gt;
-
-&lt;p&gt;I never really used twitter as a primary platform, but used it to automatically "promote" some of the stuff that's happening on this website. So now I have to port this tools to use Mastodon. Which turned out to be quite easy:&lt;/p&gt;
-
-&lt;h4&gt;Mastodon &lt;span class="caps"&gt;API&lt;/span&gt;&lt;/h4&gt;
-
-&lt;p&gt;Mastodon obviously has an &lt;a href="https://docs.joinmastodon.org/client/intro/"&gt;&lt;span class="caps"&gt;API&lt;/span&gt;&lt;/a&gt; and a nice Perl client, &lt;a href="https://metacpan.org/dist/Mastodon-Client"&gt;Mastodon::Client&lt;/a&gt;. To access the &lt;span class="caps"&gt;API&lt;/span&gt; I had to set up an "app" and get an access token. Easy.&lt;/p&gt;
-
-&lt;h4&gt;Blio Integration&lt;/h4&gt;
-
-&lt;p&gt;This static website is generated using my static site generator, &lt;a href="https://github.com/domm/Blio"&gt;Blio&lt;/a&gt;. I run Blio via a &lt;code&gt;build.pl&lt;/code&gt; script, that does various things besides just building the &lt;span class="caps"&gt;HTML.&lt;/span&gt; Among those things is auto-posting new posts to Twitter:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;sub tweet_new_post {
-    my $node = shift;
-
-    my $status = $node-&amp;gt;stash-&amp;gt;{tweet};
-    if (!$status &amp;amp;&amp;amp; $node-&amp;gt;stash-&amp;gt;{autotweet}) {
-        $status = &amp;quot;New blog post: &amp;quot;.$node-&amp;gt;title;
-    }
-    return unless $status;
-    return if $tweeted{$node-&amp;gt;url};
-
-    my $link = ' '.$blio-&amp;gt;site_url.'/'.$node-&amp;gt;url;
-
-    my $tweet = length($status) &amp;gt; 250  ? substr($status,0,145) : $status;
-    $tweet.=$link;
-    _tweet($tweet);
-
-    my $fh = $index_file-&amp;gt;opena;
-    say $fh $node-&amp;gt;url;
-    close $fh;
-}&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;This checks if a node either contains an explicit &lt;code&gt;tweet&lt;/code&gt; or has the &lt;code&gt;autotweet&lt;/code&gt; flag set (in which case the status is generated from the node title). It checks in a very simple file-based database if this node (&lt;code&gt;$node-&amp;gt;url&lt;/code&gt;) has already been posted and aborts if it has (so I don't end up tweeting the same post multiple times).&lt;/p&gt;
-
-&lt;p&gt;Then I append the link to the new post to the tweet, after maybe shortening the status if it is too long. Now I call &lt;code&gt;_tweet($tweet)&lt;/code&gt;, which uses &lt;a href="https://metacpan.org/pod/Net::Twitter::Lite::WithAPIv1_1"&gt;Net::Twitter::Lite::WithAPIv1_1&lt;/a&gt; to post the message. Finally I add the current node url to the file &lt;span class="caps"&gt;DB.&lt;/span&gt;&lt;/p&gt;
-
-&lt;h4&gt;toot!&lt;/h4&gt;
-
-&lt;p&gt;Posting to Mastodon is called &lt;code&gt;tooting&lt;/code&gt;, so let's do that:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;   my $toot = length($status) &amp;gt; 450  ? substr($status,0,450) : $status;
-   $toot.=$link;
-   _toot($toot);&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Toots can be longer than tweets, so I've adapted the truncation a bit.&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;sub _toot {
-    my ( $status ) = @_;
-
-    eval {
-        my $conf = do $blio-&amp;gt;output_dir-&amp;gt;parent-&amp;gt;file('mastodon.conf')-&amp;gt;stringify;
-        my $client = Mastodon::Client-&amp;gt;new({
-            %$conf,
-            coerce_entities =&amp;gt; 1,
-        });
-
-        my $post = $client-&amp;gt;post_status( $status );
-        return $post;
-    };
-    if (!$post || $@) {
-        say &amp;quot;error while tooting: &amp;quot;.$@;
-        return;
-    }
-    else {
-        say &amp;quot;successfully tooted: &amp;quot;.$post-&amp;gt;content;
-        return 1;
-    }
-}&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;The file &lt;code&gt;mastodon.conf&lt;/code&gt; contains the instance &lt;span class="caps"&gt;URL, &lt;/span&gt;access token etc and is in fact a small Perl snippet which I just load using &lt;code&gt;do&lt;/code&gt;. Using this config, I initiate a new &lt;code&gt;Mastodon::Client&lt;/code&gt;, and call &lt;code&gt;post_status&lt;/code&gt;. Very easy!&lt;/p&gt;
-
-&lt;p&gt;Now I'm very curious if it will work when I publish this post...&lt;/p&gt;</content>
-    <category term="Blio"/>
-    <category term="automatization"/>
-    <category term="fun"/>
-    <category term="federation"/>
   </entry>
 </feed>
