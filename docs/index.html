@@ -58,6 +58,332 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-166-hexadecimal-words-and-k-directory-diff.html">Perl Weekly Challenge 166: Hexadecimal Words and K-Directory Diff</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+ on Monday 30 May 2022 03:06</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 166 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-166/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<h2>Task 1: Hexadecimal Words</h2>
+
+<p><em>As an old systems programmer, whenever I needed to come up with a 32-bit number, I would reach for the tired old examples like <code>0xDeadBeef</code> and <code>0xC0dedBad</code>. I want more!</em></p>
+
+<p><em>Write a program that will read from a dictionary and find 2- to 8-letter words that can be “spelled” in hexadecimal, with the addition of the following letter substitutions:</em></p>
+
+<ul>
+<li>o ⟶ 0 (e.g., 0xf00d = “food”)</li>
+<li>l ⟶ 1</li>
+<li>i ⟶ 1</li>
+<li>s ⟶ 5</li>
+<li>t ⟶ 7</li>
+</ul>
+
+<p><em>You can use your own dictionary or you can simply open ../../../data/dictionary.txt (relative to your script’s location in our GitHub repository) to access the dictionary of common words from Week #161.</em></p>
+
+<p><em>Optional Extras (for an <code>0xAddedFee</code>, of course!</em>
+* Limit the number of “special” letter substitutions in any one result to keep that result at least somewhat comprehensible. (0x51105010 is an actual example from my sample solution you may wish to avoid!)*</p>
+
+<ul>
+<li>Find phrases of words that total 8 characters in length (e.g., 0xFee1Face), rather than just individual words.*</li>
+</ul>
+
+<p>I will not try to fulfill the second optional extra, as I do not really understand what &#8220;phrases of words&#8221; is supposed to mean. If the idea is to find a list of 8-character words, it is really too easy; if the idea is to manufacture meaningful (and/or grammatically correct) phrases, then it is en entirely different venture.</p>
+
+<h3>Hexadecimal Words in Raku</h3>
+
+<h4>Initial Requirement</h4>
+
+<p>The initial task is quite easy: we just skip any word less than 2 characters or more than eitght character, and any word with letters not in the <code>a..f</code> range and not in the <code>olist</code> list of characters. We then use the <a href="https://docs.raku.org/language/operators#TR///_non-destructive_transliteration">TR///</a> non-destructive transliteration operator, which returns the modified string.</p>
+
+<pre><code>for "words.txt".IO.lines -&gt; $line {
+    next unless 2 &lt;= $line.chars &lt;= 8;
+    next if $line ~~ /&lt;-[a..f olist]&gt;/;
+    say "$_ -&gt; 0x", TR/olist/01157/ with $line;
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<p>$ raku ./hexawords.raku
+aa -> 0xaa
+aal -> 0xaa1
+aalii -> 0xaa111
+aaliis -> 0xaa1115
+aals -> 0xaa15
+aas -> 0xaa5
+aba -> 0xaba
+abaca -> 0xabaca
+abacas -> 0xabaca5
+abaci -> 0xabac1
+abaft -> 0xabaf7
+&#8230; (Lines omitted for brevity)
+decibels -> 0xdec1be15
+decide -> 0xdec1de
+decided -> 0xdec1ded
+decides -> 0xdec1de5
+decile -> 0xdec11e
+&#8230; (Lines omitted for brevity)
+tsade -> 0x75ade
+tsades -> 0x75ade5
+tsadi -> 0x75ad1
+tsadis -> 0x75ad15
+tsetse -> 0x75e75e
+tsetses -> 0x75e75e5</p>
+
+<h4>Optional extra: Limiting the Number of substitutions</h4>
+
+<p>This time, we use the <a href="https://docs.raku.org/language/operators#tr///_in-place_transliteration">tr///</a> in-place transliteration operator, which conveniently returns the edit distance between the original value and the resultant string (i.e., in this case, the number of substitutions performed). The maximum number of “special” letter substitutions is passed as an argument to the script (with a default value of 4):</p>
+
+<pre><code>sub MAIN (Int $limit = 4) {
+    for "words.txt".IO.lines -&gt; $line {
+        next unless 2 &lt;= $line.chars &lt;= 8;
+        next if $line ~~ /&lt;-[a..f olist]&gt;/;
+        my $word = $line;
+        my $dist =  +tr/olist/01157/ for $word;
+        say "$line -&gt; 0x", $word if $dist &lt;= $limit
+    }
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ raku ./hexawords.raku 3
+aa -&gt; 0xaa
+aal -&gt; 0xaa1
+aalii -&gt; 0xaa111
+aals -&gt; 0xaa15
+aas -&gt; 0xaa5
+aba -&gt; 0xaba
+...
+toted -&gt; 0x707ed
+tsade -&gt; 0x75ade
+tsades -&gt; 0x75ade5
+tsadi -&gt; 0x75ad1
+
+$ ./raku hexawords.raku 2 | wc
+   1291    3873   23250
+
+$ ./raku hexawords.raku 5 | wc
+   3490   10470   68618
+</code></pre>
+
+<h3>Hexadecimal Words in Perl</h3>
+
+<h4>Initial Requirement</h4>
+
+<p>Using the <code>tr//r</code> option, the operator returns the modified string.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my $file_in = "./words.txt";
+open my $IN, "&lt;", $file_in or die "unable to open $file_in";
+while (my $line = &lt;$IN&gt;) {
+    chomp $line;
+    next if length $line &lt; 2 or length $line &gt; 8;
+    next if $line =~ /[^a-folist]/;
+    say "$_ -&gt; 0x", tr/olist/01157/r for $line;
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl ./hexawords.pl
+aa -&gt; 0xaa
+aal -&gt; 0xaa1
+aalii -&gt; 0xaa111
+aaliis -&gt; 0xaa1115
+aals -&gt; 0xaa15
+aas -&gt; 0xaa5
+aba -&gt; 0xaba
+abaca -&gt; 0xabaca
+abacas -&gt; 0xabaca5
+abaci -&gt; 0xabac1
+abaft -&gt; 0xabaf7
+abas -&gt; 0xaba5
+abase -&gt; 0xaba5e
+abased -&gt; 0xaba5ed
+abases -&gt; 0xaba5e5
+abatable -&gt; 0xaba7ab1e
+abate -&gt; 0xaba7e
+... (Lines omitted for brevity)
+totted -&gt; 0x7077ed
+tsade -&gt; 0x75ade
+tsades -&gt; 0x75ade5
+tsadi -&gt; 0x75ad1
+tsadis -&gt; 0x75ad15
+tsetse -&gt; 0x75e75e
+tsetses -&gt; 0x75e75e5
+</code></pre>
+
+<h4>Optional extra: Limiting the Number of substitutions</h4>
+
+<p>Here, we don&#8217;t use the <code>tr//r</code> option, because we want the operator to return the number of substitutions performed.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my $max = shift;
+$max = 4 unless defined $max;
+my $file_in = "./words.txt";
+open my $IN, "&lt;", $file_in or die "unable to open $file_in";
+while (my $line = &lt;$IN&gt;) {
+    chomp $line;
+    next if length $line &lt; 2 or length $line &gt; 8;
+    next if $line =~ /[^a-folist]/;
+    my $word = $line;
+    next if ($word =~ tr/olist/01157/) &gt; $max;
+    say $line, " -&gt; 0x", $word;
+}
+</code></pre>
+
+<p>This script displays the following output with a parameter of 2:</p>
+
+<pre><code>$ perl hexawords.pl 2
+aa -&gt; 0xaa
+aal -&gt; 0xaa1
+aals -&gt; 0xaa15
+aas -&gt; 0xaa5
+aba -&gt; 0xaba
+abaca -&gt; 0xabaca
+abacas -&gt; 0xabaca5
+abaci -&gt; 0xabac1
+abaft -&gt; 0xabaf7
+...
+to -&gt; 0x70
+toad -&gt; 0x70ad
+tod -&gt; 0x70d
+toe -&gt; 0x70e
+toed -&gt; 0x70ed
+toff -&gt; 0x70ff
+toffee -&gt; 0x70ffee
+tsade -&gt; 0x75ade
+</code></pre>
+
+<h2>Task 2: K-Directory Diff</h2>
+
+<p><em>Given a few (three or more) directories (non-recursively), display a side-by-side difference of files that are missing from at least one of the directories. Do not display files that exist in every directory.</em></p>
+
+<p><em>Since the task is non-recursive, if you encounter a subdirectory, append a /, but otherwise treat it the same as a regular file.</em></p>
+
+<p><em>Example:</em></p>
+
+<p><em>Given the following directory structure:</em></p>
+
+<pre><code>dir_a:
+Arial.ttf  Comic_Sans.ttf  Georgia.ttf  Helvetica.ttf  Impact.otf  Verdana.ttf  Old_Fonts/
+
+dir_b:
+Arial.ttf  Comic_Sans.ttf  Courier_New.ttf  Helvetica.ttf  Impact.otf  Tahoma.ttf  Verdana.ttf
+
+dir_c:
+Arial.ttf  Courier_New.ttf  Helvetica.ttf  Impact.otf  Monaco.ttf  Verdana.ttf
+</code></pre>
+
+<p><em>The output should look similar to the following:</em></p>
+
+<pre><code>dir_a          | dir_b           | dir_c
+-------------- | --------------- | ---------------
+Comic_Sans.ttf | Comic_Sans.ttf  |
+               | Courier_New.ttf | Courier_New.ttf
+Georgia.ttf    |                 |
+               |                 | Monaco.ttf
+Old_Fonts/     |                 |
+               | Tahoma.ttf      |
+</code></pre>
+
+<p>I am very late on this and have very little time left, so I&#8217;ll do the work of finding the missing files, but will not try obtain the same display.</p>
+
+<h3>K-Directory Diff in Raku</h3>
+
+<p>Raku as a <code>Set</code> type with operators such as the <code>∩</code> intersection operator and the <code>∉</code> does not belong to operator, which make the solution fairly easy:</p>
+
+<pre><code>my @dirs = map {$_ ~~ /\w+$/}, dir("./rootdir");
+my %dircontent;
+for @dirs -&gt; $dir {
+    %dircontent{$dir} = map {~($_ ~~ /\w+$/)}, dir("./rootdir/$dir");
+}
+say "Content of the dirs: ", %dircontent;
+my $intersection = [∩] values %dircontent;
+say "Files common to all directories: ", $intersection.keys;
+for @dirs -&gt; $dir {
+    say "$dir -&gt; ", grep {$_ ∉ $intersection}, values %dircontent{$dir};
+}
+</code></pre>
+
+<p>This script displays the following output</p>
+
+<pre><code>$ raku ./dir_diff.raku
+Content of the dirs: {a =&gt; (bar bar_a foo foo_a), b =&gt; (bar bar_b foo foo_b), c =&gt; (bar bar_c foo foo_c)}
+Files common to all directories: (foo bar)
+a -&gt; (bar_a foo_a)
+b -&gt; (bar_b foo_b)
+c -&gt; (bar_c foo_c)
+</code></pre>
+
+<h3>K-Directory Diff in Perl</h3>
+
+<p>Perl doesn&#8217;t have Sets and associated operators, so we will use a hash to record the number of occurrences of various file names. If a file name has a value equal to the number of directories (3 in the example), then this file is present in all directories and should be dismissed from the output.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @dirs = glob("./rootdir/*");
+my $nb_dirs = scalar @dirs;
+my %dircontent;
+for my $dir (@dirs) {
+    $dircontent{$dir} = [ map {/(\w+$)/} glob "$dir/*" ];
+}
+say "Contents of the directories: ";
+for my $dir (@dirs) {
+    say "$dir: ", join " ", @{$dircontent{$dir}}
+}
+
+my %files;
+for my $dir (@dirs) {
+    $files{$_}++ for @{$dircontent{$dir}}
+}
+say "\nCommon files: ", join " ", grep { $files{$_} == $nb_dirs } keys %files; 
+say "\nFiles not common to all directories: ";
+for my $dir (@dirs) {
+    say "$dir: ", join " ", grep { $files{$_} &lt; $nb_dirs } @{$dircontent{$dir}};
+}
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl ./dir_diff.pl
+Contents of the directories:
+./rootdir/a: bar bar_a foo foo_a
+./rootdir/b: bar bar_b foo foo_b
+./rootdir/c: bar bar_c foo foo_c
+
+Common files: bar foo
+
+Files not common to all directories:
+./rootdir/a: bar_a foo_a
+./rootdir/b: bar_b foo_b
+./rootdir/c: bar_c foo_c
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on June 5, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/psc/2022/05/what-happened-to-perl-7.html">What happened to Perl 7?</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -191,7 +517,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/cccxciv-18-great-cpan-modules-released.html">(cccxciv) 18 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -203,7 +529,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dviii-metacpan-weekly-report.html">(dviii) metacpan weekly report - PerlPowerTools</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -215,7 +541,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dxxxvi-stackoverflow-perl-report.html">(dxxxvi) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -227,7 +553,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/alceu_rodrigues_de_freitas_junior/2022/05/translating-jenkins-with-perl.html">Translating Jenkins with Perl</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -267,7 +593,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/ovid/2022/05/introducing-moosexextended.html">Introducing MooseX::Extended</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -284,7 +610,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/05/whats-in-that-string.html">What's In That String?</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -429,7 +755,7 @@ say unpack( 'H*', $_ ) =~ s/..\K/ /gr;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-25-auf-dem-weg-zu-perl-536-a-gesammelte-werke">Auf dem Weg zu Perl 5.36 – gesammelte Werke</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -441,7 +767,7 @@ say unpack( 'H*', $_ ) =~ s/..\K/ /gr;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-solution-1-calculator">Dancer2: Solution: 1 - Calculator</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -456,7 +782,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/565.html">#565 - Supporting the Perl Weekly</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -475,7 +801,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/22#pwc165">SVG Plots of Points and Lines</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -712,322 +1038,6 @@ I am not sure I have much more to say!</p>
 <p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-165/">Challenge 165</a></p>
 
 <p><a href="https://www.learnbymarketing.com/tutorials/linear-regression-by-hand-in-excel/#:~:text=To%20calculate%20our%20regression%20coefficient%20we%20divide%20the,needs%20to%20make%20up%20for%20the%20average%20case.">Linear Regression Calculation</a></p>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_12">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-165-scalable-vestor-graphics.html">Perl Weekly Challenge 165: Scalable Vector Graphics</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Sunday 22 May 2022 03:42</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 165 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-165/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p>This week, Task 1 and part of Task 2 relate to Scalable Vector Graphics (SVG). I&#8217;d been using SVG a very long time ago and certainly didn&#8217;t remember any of the details. So, in my <a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-165-line-of-best-fit.html">first blog relating to PWC 165</a>, I stated that I didn&#8217;t have time for that and covered only the part of the challenge not related to SVG. I also said that, in the event that I find some time over the weekend, I might come back and fulfill the SVG part. I thought at the time that this was rather unlikely, but I was finally able to cover the SVG part, at least in Raku.</p>
-
-<h2>Task 1: Scalable Vector Graphics (SVG)</h2>
-
-<p><em>Scalable Vector Graphics (SVG) are not made of pixels, but lines, ellipses, and curves, that can be scaled to any size without any loss of quality. If you have ever tried to resize a small JPG or PNG, you know what I mean by “loss of quality”! What many people do not know about SVG files is, they are simply XML files, so they can easily be generated programmatically.</em></p>
-
-<p><em>For this task, you may use external library, such as Perl’s <a href="https://metacpan.org/pod/SVG">SVG</a> library, maintained in recent years by our very own Mohammad S Anwar. You can instead generate the XML yourself; it’s actually quite simple. The source for the example image for Task #2 might be instructive.</em></p>
-
-<p><em>Your task is to accept a series of points and lines in the following format, one per line, in arbitrary order:</em></p>
-
-<p><em>Point: x,y</em></p>
-
-<p><em>Line: x1,y1,x2,y2</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>53,10
-53,10,23,30
-23,30
-</code></pre>
-
-<p><em>Then, generate an SVG file plotting all points, and all lines. If done correctly, you can view the output .svg file in your browser.</em></p>
-
-<h3>Scalable Vector Graphics (SVG) in Raku</h3>
-
-<p>I created two subroutines, <code>make-point</code> and <code>make-line</code>, to create the necessary data structures. The last item of the <code>@input</code> has three parts and should generate a warning, since input items should have either 2 or 4 parts. </p>
-
-<p>Note that SVG probably includes a scaling factor, but I couldn&#8217;t find any information about it. So I rolled out my own <code>\SCALE</code> scaling factor to make the output larger and more readable.</p>
-
-<pre><code>use SVG;
-my \SCALE = 5;
-
-my ( @points, @lines);
-my @input = &lt;53,10  53,10,23,30  23,30  34,35,36&gt;;
-for @input -&gt; $val {
-    my @items = split /','/, $val;
-    if @items.elems == 2 {
-        make-point(@items)
-    } elsif @items.elems == 4 {
-        make-line(@items);
-    } else { 
-        note "Error on item ", @items;
-    }
-}
-
-say ( SVG.serialize(svg =&gt; [ width =&gt; 500, height =&gt; 500, |@points, |@lines ] ));
-
-sub make-point (@dots) {
-    @dots = map { $_ * SCALE }, @dots;
-    my $point = circle =&gt;  
-        [ cx =&gt; @dots[0],
-          cy =&gt; @dots[1],
-          r =&gt; 3,
-          fill =&gt; 'forestgreen' ];
-    push @points, $point;
-}
-
-sub make-line (@dots) {
-    @dots = map { $_ * SCALE }, @dots;
-    my $line = line =&gt; 
-        [ x1 =&gt; @dots[0],
-          y1 =&gt; @dots[1],
-          x2 =&gt; @dots[2],
-          y2 =&gt; @dots[3],
-          stroke =&gt; 'navy' ];
-    push @lines, $line;
-}
-</code></pre>
-
-<p>The SVG output, slightly reformatted for better readability, is as follows:</p>
-
-<pre><code>&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
-xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
-&lt;circle cx="265" cy="50" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="115" cy="150" r="3" fill="forestgreen" /&gt;
-&lt;line x1="265" y1="50" x2="115" y2="150" stroke="navy" /&gt;&lt;/svg&gt;
-</code></pre>
-
-<p>And this is a graphical rendering of it:</p>
-
-<p><img alt="svg1bis.png" src="http://blogs.perl.org/users/laurent_r/svg1bis.png" width="322" height="155" class="mt-image-none" style="" /></p>
-
-<h3>Scalable Vector Graphics (SVG) in Perl</h3>
-
-<p>In Perl, for a change, we will write directly the SVG data.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use constant SCALE =&gt; 5;
-
-my ( @points, @lines);
-my $out = qq{&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
-xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;\n};
-my @input = qw&lt;53,10 53,10,23,30  23,30  34,35,36&gt;;
-for my $val (@input) {
-    my @items = split /,/, $val;
-    # say "@items";
-    if (@items == 2) {
-        make_point(@items)
-    } elsif (@items == 4) {
-        make_line(@items);
-    } else { 
-        warn "Error on item ", @items;
-    }
-}
-$out .= "&lt;/svg&gt;";
-say $out;
-
-sub make_point {
-    my @dots = map $_ * SCALE, @_;
-    my $point = qq{&lt;circle cx= "$dots[0]" cy="$dots[1]" r="3" fill="forestgreen"/&gt;\n};
-    $out .= $point;
-}
-
-sub make_line {
-    my @dots = map $_ * SCALE, @_;
-    my $line = qq{&lt;line x1="$dots[0]" y1="$dots[1]" x2="$dots[2]" y2="$dots[3]" };
-    $line .= qq{stroke="navy" /&gt;\n};
-    $out .= $line
-}
-</code></pre>
-
-<p>This program displays the following SVG output:</p>
-
-<pre><code>&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
-xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
-&lt;circle cx= "265" cy="50" r="3" fill="forestgreen"/&gt;
-&lt;line x1="265" y1="50" x2="115" y2="150" stroke="navy" /&gt;
-&lt;circle cx= "115" cy="150" r="3" fill="forestgreen"/&gt;
-&lt;/svg&gt;
-</code></pre>
-
-<p>And this is the graphgical rendering:</p>
-
-<p><img alt="svg1bis.png" src="http://blogs.perl.org/users/laurent_r/svg1bis.png" width="322" height="155" class="mt-image-none" style="" /></p>
-
-<h3>Task 2: Line of Best Fit</h3>
-
-<p><em>When you have a scatter plot of points, a line of best fit is the line that best describes the relationship between the points, and is very useful in statistics. Otherwise known as linear regression, here is an example of what such a line might look like:</em></p>
-
-<p><img alt="line_of_best_fit.jpg" src="http://blogs.perl.org/users/laurent_r/line_of_best_fit.jpg" width="422" height="319" class="mt-image-none" style="" /></p>
-
-<p><em>The method most often used is known as the <a href="https://www.mathsisfun.com/data/least-squares-regression.html">least squares method</a>, as it is straightforward and efficient, but you may use any method that generates the correct result.</em></p>
-
-<p><em>Calculate the line of best fit for the following 48 points:</em></p>
-
-<pre><code>333,129  39,189 140,156 292,134 393,52  160,166 362,122  13,193
-341,104 320,113 109,177 203,152 343,100 225,110  23,186 282,102
-284,98  205,133 297,114 292,126 339,112 327,79  253,136  61,169
-128,176 346,72  316,103 124,162  65,181 159,137 212,116 337,86
-215,136 153,137 390,104 100,180  76,188  77,181  69,195  92,186
-275,96  250,147  34,174 213,134 186,129 189,154 361,82  363,89
-</code></pre>
-
-<p><em>Using your rudimentary graphing engine from Task #1, graph all points, as well as the line of best fit.</em></p>
-
-<p>So, Task 2 is about line of best fit or linear regression.</p>
-
-<p>If we consider a cloud of <code>n</code> points with coordinates <code>(x, y)</code>, the line of best fit is defined as follows:</p>
-
-<p>The equation for the <em>slope</em> <code>m</code> is:</p>
-
-<pre><code>    n * sum(xy) - sum(x) * sum(y)
-m = -----------------------------
-    n * sum(x²) - sum(x) * sum(x)
-</code></pre>
-
-<p>The <em>y-intercept</em> (i.e. value of <code>y</code> on the vertical axis, when <code>x</code> = 0) <code>b</code> is:</p>
-
-<pre><code>    sum(y) - m * sum(x)
-b = -------------------
-           n
-</code></pre>
-
-<p>The equation of the line is:</p>
-
-<pre><code>y = mx + b
-</code></pre>
-
-<h3>Line of Best Fit in Raku</h3>
-
-<p>The following program is an application of the explanations above. We split the input string on spaces and on commas, to get an array of <code>(x, y)</code> values. The <code>lsm</code> subroutine applies the above least square method formulas to find the slope and intercept. Note that for displaying line of best fit equation, we had to handle two different cases, depending on whether the intercept is positive or negative. Otherwise, for a negative intercept, we would display the line equation as follows:</p>
-
-<pre><code>The equation of the line of best fit is: y = 1.00 x + -1.00
-</code></pre>
-
-<p>which is not satisfactory. </p>
-
-<p>Also note the use of the <code>»</code> <a href="https://docs.raku.org/syntax/%3C%3C">hyper operator</a> when reading the input data to apply the second <code>split</code> to each of the values returned by the first <code>split</code>.</p>
-
-<p>Besides, we reuse the <code>make-point</code> and <code>make-line</code> subroutines created above (slightly modified) for preparing the SVG output.</p>
-
-<pre><code>use SVG;
-my \SCALE = 1;
-
-my $input =
-   '333,129  39,189 140,156 292,134 393,52  160,166 362,122  13,193
-    341,104 320,113 109,177 203,152 343,100 225,110  23,186 282,102
-    284,98  205,133 297,114 292,126 339,112 327,79  253,136  61,169
-    128,176 346,72  316,103 124,162  65,181 159,137 212,116 337,86
-    215,136 153,137 390,104 100,180  76,188  77,181  69,195  92,186
-    275,96  250,147  34,174 213,134 186,129 189,154 361,82  363,89';
-
-my @points = $input.split(/\s+/)&gt;&gt;.split(/','/);
-my (@dots, @lines);
-make-point($_) for @points;
-my ($slope, $intercept) = lsm(@points);
-say "Slope: $slope, intercept = $intercept";
-my $sign = $intercept &lt; 0 ?? '-' !! '+';
-printf "The equation of the line of best fit is: y = %.2f x %s %.2f \n\n", $slope, $sign, $intercept.abs;
-# compute some arbitrary values for the line - say for x = 400
-my $x = 400;
-my $y = $slope * $x + $intercept;
-make-line([0, $intercept, $x, $y]);
-say ( SVG.serialize(svg =&gt; [ width =&gt; 500, height =&gt; 500, |@dots, |@lines ]));
-
-sub lsm (@points) {
-    my ($s-x, $s-y, $s-xy, $s-x2) = 0 xx 4;
-    for @points -&gt; $point {
-        my ($x, $y) = $point[0, 1];
-        # say "$x $y";
-        $s-x += $x;
-        $s-y += $y;
-        $s-xy += $x * $y;
-        $s-x2 += $x ** 2;
-    }
-    my $n = @points.elems;
-    my $slope = ($n * $s-xy - $s-x * $s-y) / ($n * $s-x2 - $s-x ** 2);
-    my $intercept = ($s-y - $slope * $s-x) / $n;
-    return $slope, $intercept;
-}
-
-sub make-point (@points is copy) {
-    @points = map { $_ * SCALE }, @points;
-    my $point = circle =&gt;  
-        [ cx =&gt; @points[0],
-          cy =&gt; @points[1],
-          r =&gt; 3,
-          fill =&gt; 'forestgreen' ];
-    push @dots, $point;
-}
-
-sub make-line (@dots) {
-    @dots = map { $_ * SCALE }, @dots;
-    my $line = line =&gt; 
-        [ x1 =&gt; @dots[0],
-          y1 =&gt; @dots[1],
-          x2 =&gt; @dots[2],
-          y2 =&gt; @dots[3],
-          stroke =&gt; 'navy' ];
-    push @lines, $line;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ ./raku lsm2.raku
-Slope: -0.2999565, intercept = 200.132272536
-The equation of the line of best fit is: y = -0.30 x + 200.13
-
-&lt;svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" 
-xmlns:xlink="http://www.w3.org/1999/xlink" width="500" height="500"&gt;
-&lt;circle cx="333" cy="129" r="3" fill="forestgreen" /&gt;&lt;circle cx="39" cy="189" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="140" cy="156" r="3" fill="forestgreen" /&gt;&lt;circle cx="292" cy="134" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="393" cy="52" r="3" fill="forestgreen" /&gt;&lt;circle cx="160" cy="166" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="362" cy="122" r="3" fill="forestgreen" /&gt;&lt;circle cx="13" cy="193" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="341" cy="104" r="3" fill="forestgreen" /&gt;&lt;circle cx="320" cy="113" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="109" cy="177" r="3" fill="forestgreen" /&gt;&lt;circle cx="203" cy="152" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="343" cy="100" r="3" fill="forestgreen" /&gt;&lt;circle cx="225" cy="110" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="23" cy="186" r="3" fill="forestgreen" /&gt;&lt;circle cx="282" cy="102" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="284" cy="98" r="3" fill="forestgreen" /&gt;&lt;circle cx="205" cy="133" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="297" cy="114" r="3" fill="forestgreen" /&gt;&lt;circle cx="292" cy="126" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="339" cy="112" r="3" fill="forestgreen" /&gt;&lt;circle cx="327" cy="79" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="253" cy="136" r="3" fill="forestgreen" /&gt;&lt;circle cx="61" cy="169" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="128" cy="176" r="3" fill="forestgreen" /&gt;&lt;circle cx="346" cy="72" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="316" cy="103" r="3" fill="forestgreen" /&gt;&lt;circle cx="124" cy="162" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="65" cy="181" r="3" fill="forestgreen" /&gt;&lt;circle cx="159" cy="137" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="212" cy="116" r="3" fill="forestgreen" /&gt;&lt;circle cx="337" cy="86" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="215" cy="136" r="3" fill="forestgreen" /&gt;&lt;circle cx="153" cy="137" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="390" cy="104" r="3" fill="forestgreen" /&gt;&lt;circle cx="100" cy="180" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="76" cy="188" r="3" fill="forestgreen" /&gt;&lt;circle cx="77" cy="181" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="69" cy="195" r="3" fill="forestgreen" /&gt;&lt;circle cx="92" cy="186" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="275" cy="96" r="3" fill="forestgreen" /&gt;&lt;circle cx="250" cy="147" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="34" cy="174" r="3" fill="forestgreen" /&gt;&lt;circle cx="213" cy="134" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="186" cy="129" r="3" fill="forestgreen" /&gt;&lt;circle cx="189" cy="154" r="3" fill="forestgreen" /&gt;
-&lt;circle cx="361" cy="82" r="3" fill="forestgreen" /&gt;&lt;circle cx="363" cy="89" r="3" fill="forestgreen" /&gt;
-&lt;line x1="0" y1="200.132272536" x2="400" y2="80.149672431" stroke="navy" /&gt;
-&lt;/svg&gt;
-</code></pre>
-
-<p>And this is a graphiical rendering of it:</p>
-
-<p><img alt="svg2.png" src="http://blogs.perl.org/users/laurent_r/svg2.png" width="411" height="186" class="mt-image-none" style="" /></p>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on May 29, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2425,7 +2435,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 29 May 2022 20:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 30 May 2022 01:00 UTC</address>
             </div>
           </div>
         </div><!-- container -->
