@@ -7,9 +7,213 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-06-05T16:47:46Z</updated>
+  <updated>2022-06-05T20:41:58Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>A Dockerfile for Perl 5.36 / Alpine, with working SSL</title>
+    <link href="http://domm.plix.at/perl/2022_06_dockerfile_for_perl_5_36.html"/>
+    <id>http://domm.plix.at/perl/2022_06_dockerfile_for_perl_5_36.html</id>
+    <updated>2022-06-05T18:34:33+00:00</updated>
+    <category term="perl"/>
+    <summary type="html">A new and shiny version of Perl, 5.36 has been released last week. It contains a lot of very nice improvements and new features. As I'm also currently starting a fresh project, I decided it's a good ...</summary>
+    <content type="html">&lt;p&gt;A new and shiny version of Perl, &lt;a href="https://www.nntp.perl.org/group/perl.perl5.porters/2022/05/msg263783.html"&gt;5.36&lt;/a&gt; has been released last week. It contains a lot of &lt;a href="https://metacpan.org/pod/release/RJBS/perl-5.36.0/pod/perldelta.pod"&gt;very nice improvements and new features&lt;/a&gt;. As I'm also currently starting a fresh project, I decided it's a good time to build a new docker (in fact podman) base image to use for some new apps / scripts etc.&lt;/p&gt;
+
+&lt;p&gt;Spoiler: Here's my (current) final &lt;a href="https://github.com/domm/perl-docker/blob/main/Dockerfile.perl5.36-app-base"&gt;Dockerfile&lt;/a&gt;! Or read on for the long story...&lt;/p&gt;
+
+&lt;p&gt;There are of course &lt;a href="https://hub.docker.com/_/perl"&gt;official Perl Docker images&lt;/a&gt; available, in two variants: There is &lt;code&gt;perl:5.36.0&lt;/code&gt; and &lt;code&gt;perl:5.36.0-slim&lt;/code&gt;. The first one is nearly 900MB big, while &lt;code&gt;slim&lt;/code&gt; is slimmer with 144MB. I &lt;a href="https://domm.plix.at/talks/writing_a_good_dockerfile_for_perl_app.html"&gt;don't like big images&lt;/a&gt;, so I first tried &lt;code&gt;slim&lt;/code&gt;, but it is so slim because it's rather unusable.&lt;/p&gt;
+
+&lt;h4&gt;The curse of Net::SSLeay&lt;/h4&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/dist/Net-SSLeay"&gt;Net::SSLeay&lt;/a&gt; allows you to use openssl in your web clients, and as most &lt;span class="caps"&gt;API&lt;/span&gt;s run on &lt;code&gt;https&lt;/code&gt;, it is an absolute required module for all of my projects (a lot of which are web &lt;span class="caps"&gt;API &lt;/span&gt;clients). It is not that easy to install, because it needs some &lt;code&gt;openssl&lt;/code&gt; header files to compile. And those are missing in &lt;code&gt;perl:5.36.0-slim&lt;/code&gt; (to keep it slim..)&lt;/p&gt;
+
+&lt;p&gt;But let's give it a try and build an image based on a very simple &lt;a href="https://github.com/domm/perl-docker/blob/main/Dockerfile.5.36-slim"&gt;Dockerfile&lt;/a&gt;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;~/perl/perl-docker$ docker build -t perl_5_36-slim -f Dockerfile.5.36-slim .
+Step 1/1 : FROM perl:5.36-slim
+ ---&amp;gt; 0d52cf67797d
+Successfully built 0d52cf67797d
+Successfully tagged perl_5_36-slim:latest&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Take a look at the size:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker images --filter=reference='perl_5_36-slim' --format &amp;quot;{{.Repository}} {{.Size}} {{.ID}}&amp;quot;
+perl_5_36-slim 144MB 0d52cf67797d&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;144MB, ok, nice. Now let's check &lt;code&gt;Net::SSLeay&lt;/code&gt;:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run perl_5_36-slim  perl -MNet::SSLeay -E 'say Net::SSLeay-&amp;gt;VERSION'
+Can't locate Net/SSLeay.pm in @INC&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Can we install it?&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run --rm -ti perl_5_36-slim /bin/bash
+root@8e4ec3733b01:/# cpanm Net::SSLeay
+--&amp;gt; Working on Net::SSLeay
+Fetching https://www.cpan.org/authors/id/C/CH/CHRISN/Net-SSLeay-1.92.tar.gz ... OK
+Configuring Net-SSLeay-1.92 ... N/A
+! Configure failed for Net-SSLeay-1.92. See /root/.cpanm/work/1654449406.7/build.log for details.&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;No, why not?&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;root@8e4ec3733b01:/# cat  /root/.cpanm/work/1654449406.7/build.log
+******************************************************************************
+* COULD NOT FIND LIBSSL HEADERS                                              *
+*                                                                            *
+* The libssl header files are required to build Net-SSLeay, but they are     *
+* missing from /usr. They would typically reside in /usr/include/openssl.    *
+*                                                                            *
+* If you are using the version of OpenSSL/LibreSSL packaged by your Linux    *
+* distribution, you may need to install the corresponding &amp;quot;development&amp;quot;      *
+* package via your package manager (e.g. libssl-dev for OpenSSL on Debian    *
+* and Ubuntu, or openssl-devel for OpenSSL on Red Hat Enterprise Linux and   *
+* Fedora).                                                                   *
+******************************************************************************&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;But just installing &lt;code&gt;libssl-dev&lt;/code&gt; is not enough, because we need a whole build environment, and all of that stuff takes so much disk space (and installation time) that we might just as well got with the &lt;a href="https://github.com/domm/perl-docker/blob/main/Dockerfile.5.36-fat"&gt;non-slim version&lt;/a&gt;:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;~/perl/perl-docker$ docker build -t perl_5_36-fat -f Dockerfile.5.36-fat .
+Step 1/1 : FROM perl:5.36
+ ---&amp;gt; 9a373d352e6f
+Successfully built 9a373d352e6f
+Successfully tagged perl_5_36-fat:latest&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Take a look at the size:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker images --filter=reference='perl_5_36-fat' --format &amp;quot;{{.Repository}} {{.Size}} {{.ID}}&amp;quot;
+perl_5_36-fat 891MB 9a373d352e6f&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;891MB - fat indeed. But let's check &lt;code&gt;Net::SSLeay&lt;/code&gt; anyway:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run perl_5_36-fat  perl -MNet::SSLeay -E 'say Net::SSLeay-&amp;gt;VERSION'
+Can't locate Net/SSLeay.pm in @INC&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Can we install it?&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run --rm -ti perl_5_36-fat /bin/bash
+root@8e4ec3733b01:/# cpanm -n Net::SSLeay
+--&amp;gt; Working on Net::SSLeay
+Fetching https://www.cpan.org/authors/id/C/CH/CHRISN/Net-SSLeay-1.92.tar.gz ... OK
+Configuring Net-SSLeay-1.92 ... OK
+Building Net-SSLeay-1.92 ... OK
+Successfully installed Net-SSLeay-1.92
+1 distribution installed&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Yes! And it works (after also installing IO::Socket::SSL)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;root@92ef4d4f5cab:/# perl -MHTTP::Tiny -E 'say HTTP::Tiny-&amp;gt;new-&amp;gt;get(&amp;quot;https://domm.plix.at:&amp;quot;)-&amp;gt;{status}'
+200&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now I could build some custom images based on &lt;code&gt;perl:5.36&lt;/code&gt;. Or ..&lt;/p&gt;
+
+&lt;h4&gt;Build your own&lt;/h4&gt;
+
+&lt;p&gt;I want:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;a small-ish base image, &lt;/li&gt;
+&lt;li&gt;which should include a bunch of &lt;span class="caps"&gt;CPAN &lt;/span&gt;modules I'll use in all projects (this list will grow..)&lt;/li&gt;
+&lt;li&gt;I prefer &lt;a href="https://metacpan.org/pod/App::cpm"&gt;cpm&lt;/a&gt; to &lt;a href="https://metacpan.org/pod/App::cpanminus"&gt;cpanm&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Perl should be installed to &lt;code&gt;/opt&lt;/code&gt; so I can later easily copy the whole installation (in multi stage builds derived from the base image) &lt;/li&gt;
+&lt;/ul&gt;
+
+
+&lt;p&gt;We used &lt;code&gt;alpine&lt;/code&gt; in a few projects, it seems to work, so I'm sticking with it:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;FROM alpine&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Then I install a bunch of things we need, most notably &lt;code&gt;zlib&lt;/code&gt; and &lt;code&gt;openssl&lt;/code&gt; (and their &lt;code&gt;-dev&lt;/code&gt; packages)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;RUN apk update &amp;amp;&amp;amp; apk upgrade &amp;amp;&amp;amp; apk add --no-cache \
+    curl tar make gcc build-base wget gnupg vim tree bash \
+    zlib zlib-dev openssl openssl-dev&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The next few lines are lifted from &lt;a href="https://github.com/scottw/alpine-perl/blob/master/Dockerfile"&gt;https://github.com/scottw/alpine-perl/blob/master/Dockerfile&lt;/a&gt;, with a few adaptions (most relevant &lt;code&gt;-Dprefix='/opt/perl'&lt;/code&gt;). I removed the checksum test (and might add it again, now that I got the basic setup working); and I don't run the test suite (I don't have that many idle cycles to burn)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;RUN mkdir -p /usr/src/perl
+
+WORKDIR /usr/src/perl
+
+RUN curl -SLO https://www.cpan.org/src/5.0/perl-5.36.0.tar.gz \
+    &amp;amp;&amp;amp; tar --strip-components=1 -xaf perl-5.36.0.tar.gz -C /usr/src/perl \
+    &amp;amp;&amp;amp; rm perl-5.36.0.tar.gz \
+    &amp;amp;&amp;amp; ./Configure -des \
+        -Duse64bitall \
+        -Dcccdlflags='-fPIC' \
+        -Dcccdlflags='-fPIC' \
+        -Dccdlflags='-rdynamic' \
+        -Dlocincpth=' ' \
+        -Duselargefiles \
+        -Dusethreads \
+        -Duseshrplib \
+        -Dd_semctl_semun \
+        -Dusenm \
+        -Dprefix='/opt/perl' \
+    &amp;amp;&amp;amp; make -j$(nproc) \
+    &amp;amp;&amp;amp; make install \
+    &amp;amp;&amp;amp; rm -fr /usr/src/perl&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now I change the working directory to &lt;code&gt;/opt/perl&lt;/code&gt; and add it to the &lt;code&gt;PATH&lt;/code&gt;.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;WORKDIR /opt/perl
+ENV PATH=&amp;quot;/opt/perl/bin:${PATH}&amp;quot;
+RUN cd /opt/perl&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;And finally I download a copy &lt;code&gt;cpm&lt;/code&gt; into &lt;code&gt;/tmp/cmp&lt;/code&gt; and use it to properly install &lt;code&gt;App::cpm&lt;/code&gt;, &lt;code&gt;IO::Socket::SSL&lt;/code&gt; (which will pull in &lt;code&gt;Net::SSLeay&lt;/code&gt;), and other stuff I'm bound to need&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;RUN curl -o /tmp/cpm -sL --compressed https://git.io/cpm \
+    &amp;amp;&amp;amp; chmod 755 /tmp/cpm \
+    &amp;amp;&amp;amp; /tmp/cpm install -g App::cpm IO::Socket::SSL Cpanel::JSON::XS \
+    &amp;amp;&amp;amp; rm -fr /root/.perl-cpm&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;So, let's run it:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker build -t perl_5_36-custom -f Dockerfile.perl5.36-app-base .
+Step 1/9 : FROM alpine
+ ---&amp;gt; e66264b98777
+Step 2/9 : RUN apk update &amp;amp;&amp;amp; apk upgrade &amp;amp;&amp;amp; apk add --no-cache curl tar make gcc build-base wget gnupg vim t...
+ ---&amp;gt; ed8080081bc4
+Step 3/9 : RUN mkdir -p /usr/src/perl
+ ---&amp;gt; 7bab08167507
+Step 4/9 : WORKDIR /usr/src/perl
+ ---&amp;gt; f9ccbaa25578
+Step 5/9 : RUN curl -SLO https://www.cpan.org/src/5.0/perl-5.36.0.tar.gz     &amp;amp;&amp;amp; tar --strip-components=1 -xa...
+ ---&amp;gt; ccb8e8a97ad8
+Step 6/9 : WORKDIR /opt/perl
+ ---&amp;gt; 94356542d4ed
+Step 7/9 : ENV PATH=&amp;quot;/opt/perl/bin:${PATH}&amp;quot;
+ ---&amp;gt; f3c1c9451e40
+Step 8/9 : RUN cd /opt/perl
+ ---&amp;gt; bc651d01629c
+Step 9/9 : RUN curl -o /tmp/cpm -sL --compressed https://git.io/cpm     &amp;amp;&amp;amp; chmod 755 /tmp/cpm     &amp;amp;&amp;amp; /tmp/cp...
+ ---&amp;gt; f6d98e961143
+Successfully built f6d98e961143
+Successfully tagged perl_5_36-custom:latest&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;How big is it?&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;~/perl/perl-docker$ docker images --filter=reference='perl_5_36-custom' --format &amp;quot;{{.Repository}} {{.Size}} {{.ID}}&amp;quot;
+perl_5_36-custom 300MB f6d98e961143&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;300MB, not that bad (and could probably be improved later). Do we have &lt;code&gt;Net::SSLeay&lt;/code&gt;?&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run perl_5_36-custom  perl -MNet::SSLeay -E 'say Net::SSLeay-&amp;gt;VERSION'
+1.92&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Nice, Net::SSLeay is installed! But does it work?&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run perl_5_36-custom perl -MHTTP::Tiny -E 'say HTTP::Tiny-&amp;gt;new-&amp;gt;get(&amp;quot;https://domm.plix.at:&amp;quot;)-&amp;gt;{status}'
+200&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Yes!!&lt;/p&gt;
+
+&lt;p&gt;Now the next steps are to build a Dockerfile for an actual app that's based on this image.&lt;/p&gt;
+
+&lt;p&gt;You can find the whole Dockerfile &lt;a href="https://github.com/domm/perl-docker"&gt;here&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;And if you have any suggestions or questions, drop me a line!&lt;/p&gt;</content>
+    <category term="docker"/>
+  </entry>
   <entry>
   <title>Dancer2: Solution: 1 - Counter</title>
   <summary type="html"><![CDATA[<p>
