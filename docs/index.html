@@ -282,6 +282,171 @@ perl_5_36-custom 300MB f6d98e961143</code></pre>
           </div><!-- card -->
           <div class="card" id="card_3">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/06/05#pwc167">Circular Primes and Getting Complex</a></h2>
+<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
+
+              <p class="text-right"><small>Published
+ on Sunday 05 June 2022 10:46</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+<p><em>The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.</em></p>
+
+<h2>Part 1</h2>
+
+<p><em>Write a script to find out first 10 circular primes having at least 3 digits (base 10).</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+use boolean;
+use Math::Primality qw/is_prime/;
+
+sub is_circular_prime{
+    my($x, $circular) = @_;
+    my @digits = split(//, $x);
+    my @rotations;
+    for my $i (0 .. @digits - 1){
+        @digits = (@digits[1 .. @digits - 1], $digits[0]);
+        my $candidate = join("", @digits) + 0;
+        push @rotations, $candidate;
+        return false if !is_prime($candidate);
+    }
+    map{$circular->{$_} = -1} @rotations;
+    return true;
+}
+
+sub first_n_circular_primes{
+    my($n) = @_;
+    my $i = 100;
+    my %circular;
+    my @circular_primes;
+    {
+        if(!$circular{$i} && is_circular_prime($i, \%circular)){
+            push @circular_primes, $i; 
+        }
+        $i++;
+        redo if @circular_primes < $n;
+    }
+    return @circular_primes;
+}
+
+sub first_10_circular_primes{
+    return first_n_circular_primes(10);
+}
+
+MAIN:{
+    print join(", ", first_10_circular_primes()) . "\n";
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-1.pl
+113, 197, 199, 337, 1193, 3779, 11939, 19937, 193939, 199933
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>There is a bit of a trick here where we need to disallow repeated use of previous cycles.
+For example, 199 and 919 and considered to be the same circular prime (we count the first 
+occurrence only) since 919 is a rotation of 199. </p>
+
+<p>I don't ordinarily use a lot of references, especially hash references, in my Perl code 
+but here it seems appropriate. It makes sense to break the rotating and primality checking
+to it's own function but we also need to track all the unique rotations. Wishing to avoid
+a global variable, which in this case wouldn't be all that bad anyway, having a single
+hash owned by the caller and updated by the primality checking function makes the most
+sense to me. The code is arguably cleaner then if we had multiple return values, to 
+include the rotations. Another option, which would have avoided the use of a reference
+and multiple return values would have been to have <code>is_circular_prime</code> return either 
+<code>undef</code> or an array containing the rotations. This would have added a little extra 
+bookkeeping code to <code>first_n_circular_primes</code> in order to maintain the master list of all 
+seen rotations so I considered it, simply as a matter of style, to be just a little less
+elegant than the use of the reference.</p>
+
+<h2>Part 2</h2>
+
+<p><em>Implement a subroutine gamma() using the Lanczos approximation method.</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+use POSIX;
+use Math::Complex;
+
+use constant EPSILON => 1e-07;
+
+sub lanczos{
+    my($z) = @_;
+    my @p = (676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7);
+    my $y;
+    $z = new Math::Complex($z);
+    if(Re($z) < 0.5){
+        $y = M_PI / (sin(M_PI * $z) * lanczos(1 - $z));
+    }
+    else{
+        $z -= 1;
+        my $x = 0.99999999999980993;
+        for my $i (0 .. @p - 1){
+            $x += ($p[$i] / ($z + $i + 1));
+        }
+        my $t = $z + @p - 0.5;
+        $y = sqrt(2 * M_PI) * $t ** ($z + 0.5) * exp(-1 * $t) * $x;
+    }
+    return Re($y) if abs(Im($y)) <= EPSILON;
+    return $y;
+}
+
+sub gamma{
+    return lanczos(@_);
+}
+
+MAIN:{
+    printf("%.2f\n",gamma(3));
+    printf("%.2f\n",gamma(5));
+    printf("%.2f\n",gamma(7));
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-2.pl
+2.00
+24.00
+720.00
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>The code here is based on a Python sample code that accompanies the Wikipedia article and
+there really isn't much room for additional stylistic flourishes. Well, maybe that for 
+loop could have been a map. For this sort of numeric algorithm there really isn't much 
+variation in what is otherwise a fairly raw computation.</p>
+
+<p>The interesting thing here is that it is by all appearances a faithful representation of 
+the Lanczos Approximation and yet the answers seem to siffer from a slight floating point
+accuracy issue. That is the expected answers vary from what is computed here by a small
+decimal part, apparently anyway. Perl is generally quite good at these sorts of things so
+getting to the bottom of this may require a bit more investigation! I wonder if it has to
+do with how <code>Math::Complex</code> handles the real part of the number?</p>
+
+<h2>References</h2>
+
+<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-167/">Challenge 167</a></p>
+
+<p><a href="https://en.wikipedia.org/wiki/Lanczos_approximation">Lanczos Approximation</a></p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_4">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-solution-1-counter">Dancer2: Solution: 1 - Counter</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
 
@@ -295,7 +460,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/06/cccxcv-12-great-cpan-modules-released.html">(cccxcv) 12 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -307,7 +472,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/06/dix-metacpan-weekly-report-getoptapp.html">(dix) metacpan weekly report - Getopt::App</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -319,7 +484,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/06/dxxxvii-stackoverflow-perl-report.html">(dxxxvii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -331,7 +496,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/06/the-file-access-operators-to-use-or-not-to-use.html">The File Access Operators: To Use, or Not to Use</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -390,7 +555,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/06/04/list-of-new-cpan-distributions-may-2022/">List of new CPAN distributions – May 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1309,7 +1474,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/matthew_persico/2022/06/enlarging-the-perlosphere.html">Enlarging the Perlosphere</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1338,7 +1503,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-167-circular-primes.html">Perl Weekly Challenge 167: Circular Primes</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1632,7 +1797,7 @@ for 1, 3, 5, 6.2, 7, 0.4 -&gt; $i {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/lee_j/2022/06/replaydebugtest-cron-events-with-cronsequencer.html">Replay/Debug/Test Cron Events With Cron::Sequencer</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1647,7 +1812,7 @@ for 1, 3, 5, 6.2, 7, 0.4 -&gt; $i {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/perl-536-is-released-warnings-enabled-subroutine-signatures-try-catch-finally-statements-unicode-14-support-kaa">Perl 5.36 is released - warnings enabled, subroutine signatures, try-catch-finally statements, Unicode 14 support</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1663,7 +1828,7 @@ for 1, 3, 5, 6.2, 7, 0.4 -&gt; $i {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/566.html">#566 - v7 &amp; Corinna</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1683,7 +1848,7 @@ for 1, 3, 5, 6.2, 7, 0.4 -&gt; $i {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-solution-1-calculator-fixing">Dancer2: Solution: 1 - Calculator fixing</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1698,7 +1863,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/05/perl-weekly-challenge-166-hexadecimal-words-and-k-directory-diff.html">Perl Weekly Challenge 166: Hexadecimal Words and K-Directory Diff</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2024,7 +2189,7 @@ Files not common to all directories:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/cccxciv-18-great-cpan-modules-released.html">(cccxciv) 18 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2036,7 +2201,7 @@ Files not common to all directories:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/05/dviii-metacpan-weekly-report.html">(dviii) metacpan weekly report - PerlPowerTools</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2048,7 +2213,7 @@ Files not common to all directories:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-25-auf-dem-weg-zu-perl-536-a-gesammelte-werke">Auf dem Weg zu Perl 5.36 – gesammelte Werke</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2060,7 +2225,7 @@ Files not common to all directories:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-solution-1-calculator">Dancer2: Solution: 1 - Calculator</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2075,7 +2240,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/565.html">#565 - Supporting the Perl Weekly</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2094,7 +2259,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/22#pwc165">SVG Plots of Points and Lines</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2334,7 +2499,7 @@ I am not sure I have much more to say!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/davorg/cpan-module-tutorials-2be9">CPAN Module Tutorials</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2362,7 +2527,7 @@ I am not sure I have much more to say!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-20-auf-dem-weg-zu-perl-536-builtin">Auf dem Weg zu Perl 5.36 - builtin</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2374,7 +2539,7 @@ I am not sure I have much more to say!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2022_05_use_multiple_gmail_accounts_via_mutt_and_offlineimap.html">Use multiple gmail accounts via mutt and (offline) IMAP</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -2480,7 +2645,7 @@ color indicator black brightgreen</code></pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/victoriabispo/mojolicious-12j">Mojolicious</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2659,7 +2824,7 @@ Hello Word!
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/564.html">#564 - Issues with OOP?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2678,7 +2843,7 @@ Hello Word!
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-exercise-1">Dancer2: Exercise 1 - Calculator, Counter</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2693,7 +2858,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/15#pwc164">Happily Computing Prime Palindrome Numbers</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2813,7 +2978,7 @@ subroutine is in a different scope and does not effect the outer <code>$n</code>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-05-12-auf-dem-weg-zu-perl-536-trycatchfinally">Auf dem Weg zu Perl 5.36 - try/catch/finally</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2825,7 +2990,7 @@ subroutine is in a different scope and does not effect the outer <code>$n</code>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/563.html">#563 - Shall we continue the newsletter?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2841,7 +3006,7 @@ subroutine is in a different scope and does not effect the outer <code>$n</code>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-process-get-and-post-requests">Dancer2: Process GET and POST requests</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2856,7 +3021,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/05/08#pwc163">Bitwise AndSums and Skip Summations: Somewhat Complicated Uses of Map</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2981,7 +3146,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 06 June 2022 12:55 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 06 June 2022 16:50 UTC</address>
             </div>
           </div>
         </div><!-- container -->

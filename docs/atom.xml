@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-06-06T12:55:01Z</updated>
+  <updated>2022-06-06T16:50:56Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -230,6 +230,168 @@ perl_5_36-custom 300MB f6d98e961143&lt;/code&gt;&lt;/pre&gt;
 
 &lt;p&gt;And if you have any suggestions or questions, drop me a line!&lt;/p&gt;</content>
     <category term="docker"/>
+  </entry>
+  <entry>
+    <title>Circular Primes and Getting Complex</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/06/05#pwc167" type="text/html"/>
+    <content type="html">
+&lt;p&gt;&lt;em&gt;The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Write a script to find out first 10 circular primes having at least 3 digits (base 10).&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use boolean;
+use Math::Primality qw/is_prime/;
+
+sub is_circular_prime{
+    my($x, $circular) = @_;
+    my @digits = split(//, $x);
+    my @rotations;
+    for my $i (0 .. @digits - 1){
+        @digits = (@digits[1 .. @digits - 1], $digits[0]);
+        my $candidate = join("", @digits) + 0;
+        push @rotations, $candidate;
+        return false if !is_prime($candidate);
+    }
+    map{$circular-&gt;{$_} = -1} @rotations;
+    return true;
+}
+
+sub first_n_circular_primes{
+    my($n) = @_;
+    my $i = 100;
+    my %circular;
+    my @circular_primes;
+    {
+        if(!$circular{$i} &amp;&amp; is_circular_prime($i, \%circular)){
+            push @circular_primes, $i; 
+        }
+        $i++;
+        redo if @circular_primes &lt; $n;
+    }
+    return @circular_primes;
+}
+
+sub first_10_circular_primes{
+    return first_n_circular_primes(10);
+}
+
+MAIN:{
+    print join(", ", first_10_circular_primes()) . "\n";
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-1.pl
+113, 197, 199, 337, 1193, 3779, 11939, 19937, 193939, 199933
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;There is a bit of a trick here where we need to disallow repeated use of previous cycles.
+For example, 199 and 919 and considered to be the same circular prime (we count the first 
+occurrence only) since 919 is a rotation of 199. &lt;/p&gt;
+
+&lt;p&gt;I don't ordinarily use a lot of references, especially hash references, in my Perl code 
+but here it seems appropriate. It makes sense to break the rotating and primality checking
+to it's own function but we also need to track all the unique rotations. Wishing to avoid
+a global variable, which in this case wouldn't be all that bad anyway, having a single
+hash owned by the caller and updated by the primality checking function makes the most
+sense to me. The code is arguably cleaner then if we had multiple return values, to 
+include the rotations. Another option, which would have avoided the use of a reference
+and multiple return values would have been to have &lt;code&gt;is_circular_prime&lt;/code&gt; return either 
+&lt;code&gt;undef&lt;/code&gt; or an array containing the rotations. This would have added a little extra 
+bookkeeping code to &lt;code&gt;first_n_circular_primes&lt;/code&gt; in order to maintain the master list of all 
+seen rotations so I considered it, simply as a matter of style, to be just a little less
+elegant than the use of the reference.&lt;/p&gt;
+
+&lt;h2&gt;Part 2&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;Implement a subroutine gamma() using the Lanczos approximation method.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use strict;
+use warnings;
+use POSIX;
+use Math::Complex;
+
+use constant EPSILON =&gt; 1e-07;
+
+sub lanczos{
+    my($z) = @_;
+    my @p = (676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7);
+    my $y;
+    $z = new Math::Complex($z);
+    if(Re($z) &lt; 0.5){
+        $y = M_PI / (sin(M_PI * $z) * lanczos(1 - $z));
+    }
+    else{
+        $z -= 1;
+        my $x = 0.99999999999980993;
+        for my $i (0 .. @p - 1){
+            $x += ($p[$i] / ($z + $i + 1));
+        }
+        my $t = $z + @p - 0.5;
+        $y = sqrt(2 * M_PI) * $t ** ($z + 0.5) * exp(-1 * $t) * $x;
+    }
+    return Re($y) if abs(Im($y)) &lt;= EPSILON;
+    return $y;
+}
+
+sub gamma{
+    return lanczos(@_);
+}
+
+MAIN:{
+    printf("%.2f\n",gamma(3));
+    printf("%.2f\n",gamma(5));
+    printf("%.2f\n",gamma(7));
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+2.00
+24.00
+720.00
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;The code here is based on a Python sample code that accompanies the Wikipedia article and
+there really isn't much room for additional stylistic flourishes. Well, maybe that for 
+loop could have been a map. For this sort of numeric algorithm there really isn't much 
+variation in what is otherwise a fairly raw computation.&lt;/p&gt;
+
+&lt;p&gt;The interesting thing here is that it is by all appearances a faithful representation of 
+the Lanczos Approximation and yet the answers seem to siffer from a slight floating point
+accuracy issue. That is the expected answers vary from what is computed here by a small
+decimal part, apparently anyway. Perl is generally quite good at these sorts of things so
+getting to the bottom of this may require a bit more investigation! I wonder if it has to
+do with how &lt;code&gt;Math::Complex&lt;/code&gt; handles the real part of the number?&lt;/p&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-167/"&gt;Challenge 167&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://en.wikipedia.org/wiki/Lanczos_approximation"&gt;Lanczos Approximation&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc167</id>
+    <published>2022-06-05T10:46:00-04:00</published>
+    <updated>2022-06-05T10:46:00-04:00</updated>
+    <category term="/perl"/>
   </entry>
   <entry>
   <title>Dancer2: Solution: 1 - Counter</title>
