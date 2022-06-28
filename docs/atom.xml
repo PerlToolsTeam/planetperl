@@ -7,9 +7,213 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-06-28T08:46:56Z</updated>
+  <updated>2022-06-28T12:55:15Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title> Perl Weekly Challenge 171: Abundant Numbers and First-Class Functions</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/06/perl-weekly-challenge-171-abundant-numbers-and-first-class-functions.html"/>
+    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10831</id>
+    <published>2022-06-28T14:10:54Z</published>
+    <updated>2022-06-28T14:14:56Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 171 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-171/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on July 3, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Abundant Numbers</h2>
+
+<p><em>Write a script to generate first 20 Abundant Odd Numbers.</em></p>
+
+<p><em>According to <a href="https://en.wikipedia.org/wiki/Abundant_number">wikipedia</a>,</em></p>
+
+<blockquote>
+  <p><em>A number n for which the sum of divisors σ(n) > 2n, or, equivalently, the sum of proper divisors (or aliquot sum) s(n) > n.</em></p>
+</blockquote>
+
+<p><em>For example, 945 is the first Abundant Odd Number.</em></p>
+
+<pre><code>Sum of divisors:
+1 + 3 + 5 + 7 + 9 + 15 + 21 + 27 + 35 + 45 + 63 + 105 + 135 + 189 + 315 = 975
+</code></pre>
+
+<p>Reading that the first odd abundant number is 975, I was a bit afraid that we would have to dig into very large numbers to find the first 20 ones, but this turned out not to be the case.</p>
+
+<h3>Abundant Numbers in Raku</h3>
+
+<p>The <code>is-abundant</code> subroutine lists all the proper divisors of the input parameter and checks whether their sum is larger than the input integer. Then, we just loop over each odd integer (using the <code>1, 3 ... Inf</code> lazy <a href="https://docs.raku.org/language/operators#index-entry-sequence_operator">sequence operator</a>)  and display it if it in abundant. And we stop when we reach 20 of them.</p>
+
+<pre><code>sub is-abundant (Int $n where * &gt; 0) {
+    my @divisors = grep {$n %% $_}, 1..$n/2;
+    return @divisors.sum &gt; $n ?? True !! False;
+}
+my $count = 0;
+for 1, 3 ... Inf -&gt; $n {
+    if is-abundant $n {
+        say $n;
+        last if ++$count &gt;= 20;
+    }
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./abundant.raku
+945
+1575
+2205
+2835
+3465
+4095
+4725
+5355
+5775
+5985
+6435
+6615
+6825
+7245
+7425
+7875
+8085
+8415
+8505
+8925
+</code></pre>
+
+<h3>Abundant Numbers in Perl</h3>
+
+<p>This is essentially a port to Perl of the above Raku program. The only significant differences is that we implement our own <code>sum</code> subroutine and iterate manually over odd integers.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub sum {
+    my $sum = 0;
+    $sum += $_ for @_;
+    return $sum;
+}
+sub is_abundant {
+    my $n = shift;
+    my @divisors = grep {$n % $_ == 0} 1..$n/2;
+    return sum(@divisors) &gt; $n ? 1 : 0;
+}
+my $n = 1;
+my $count = 0;
+while ($count &lt; 20) {
+    if (is_abundant $n) {
+        say $n;
+        $count++;
+    }
+    $n += 2;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl  ./abundant.pl
+945
+1575
+2205
+2835
+3465
+4095
+4725
+5355
+5775
+5985
+6435
+6615
+6825
+7245
+7425
+7875
+8085
+8415
+8505
+8925
+</code></pre>
+
+<h2>Task 2: First-class Function</h2>
+
+<p><em>Create <code>sub compose($f, $g)</code> which takes in two parameters <code>$f</code> and <code>$g</code> as subroutine refs and returns subroutine ref i.e. <code>compose($f, $g)-&gt;($x) = $f-&gt;($g-&gt;($x))</code></em></p>
+
+<p><em>e.g.</em></p>
+
+<pre><code>$f = (one or more parameters function)
+$g = (one or more parameters function)
+
+$h = compose($f, $g)
+$f-&gt;($g-&gt;($x,$y, ..)) == $h-&gt;($x, $y, ..) for any $x, $y, ...
+</code></pre>
+
+<p>There are some problems with this task specification. First, it doesn&#8217;t say <em>what</em> we should do, but more or less <em>how</em> it should (probably) be done in Perl. I usually do my first implementation of a challenge task in Raku, and it would make little sense to implement the provided pseudo-code in Raku.</p>
+
+<p>The second problem is that, when composing functions, you can&#8217;t have just any random number of parameters. The arity (number of parameters) of the second function must usually match the number of values returned by the first one. I&#8217;ll deal with examples of functions taking one parameter.</p>
+
+<h3>First-Class Function in Raku</h3>
+
+<p>Raku has the <code>infix:&lt;∘&gt;</code> (ring) or <code>infix:&lt;o&gt;</code> <a href="https://docs.raku.org/routine/o,%20infix%20%E2%88%98">function composition operator</a>, which combines two functions, so that the left function is called with the return value of the right function.</p>
+
+<p>We could use this operator directly, but since we are asked to write a <code>compose</code> subroutine, we&#8217;ll carry out the extra step of creating such a subroutine.</p>
+
+<pre><code>sub f($n) { $n / 2 + 1}
+sub g($n) { $n * 2 }
+sub compose (&amp;h1, &amp;h2) {
+    &amp;h1 ∘ &amp;h2; # h1 will be called with the return value of h2
+    # could also be written: &amp;h1 o &amp;h2;
+}
+my &amp;composed = compose(&amp;f, &amp;g);
+say composed 2;
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ raku ./first-class.raku
+3
+</code></pre>
+
+<h3>First-Class Function in Perl</h3>
+
+<p>Here, the <code>compose</code> subroutine is a function factory that takes two subroutine references as input parameters and returns an anonymous subroutine reference combining the two input subroutines. </p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub f { shift() / 2 + 1}
+sub g { shift() * 2 }
+
+
+sub compose {
+    my ($f, $g) = @_;
+    sub {
+        $f -&gt; ($g -&gt; (@_))
+    };
+}
+my $composed = compose( \&amp;f, \&amp;g);
+say $composed-&gt;(2);
+</code></pre>
+
+<p>This script displays the following output:</p>
+
+<pre><code>$ perl ./first-class.pl
+3
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on July 10, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>How to Write Tests using Github Actions</title>
     <link rel="alternate" href="https://dev.to/yukikimoto/how-to-write-tests-using-github-actions-4jk8" type="text/html"/>
@@ -987,26 +1191,6 @@ ensure that, within a minuscule rounding error, &lt;code&gt;$x&lt;/code&gt; is a
     <updated>2022-06-19T12:39:00-04:00</updated>
     <category term="/perl"/>
   </entry>
-  <entry>
-    <title>Decode Hexdump</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/mohammad_s_anwar/2022/06/decode-hexdump.html"/>
-    <id>tag:blogs.perl.org,2022:/users/mohammad_s_anwar//990.10825</id>
-    <published>2022-06-18T20:21:18Z</published>
-    <updated>2022-06-18T20:23:48Z</updated>
-    <author>
-        <name>Mohammad S Anwar</name>
-        <uri>http://www.manwar.org/</uri>
-    </author>
-    <category term="perlhexdump" label="perl hexdump" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/mohammad_s_anwar/">
-        <![CDATA[<p><img src="http://blogs.perl.org/users/mohammad_s_anwar/decode-hexdump.jpg"></p>
-
-<p>Please checkout my experience decoding hexdump.</p>
-
-<p><a href="https://theweeklychallenge.org/blog/decode-hexdump">https://theweeklychallenge.org/blog/decode-hexdump</a></p>]]>
-        
-    </content>
-</entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-6383403044161670319</id>
     <published>2022-06-18T18:01:00.000+02:00</published>
