@@ -59,6 +59,423 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-172-prime-partition-and-five-number-summary.html">Perl Weekly Challenge 172: Prime Partition and Five-Number Summary </a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by laurent_r
+ on Tuesday 05 July 2022 20:49</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>These are some answers to the Week 172 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-172/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on July 10, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Prime Partition</h2>
+
+<p><em>You are given two positive integers, <code>$m</code> and <code>$n</code>.</em></p>
+
+<p><em>Write a script to find out the Prime Partition of the given number. No duplicates allowed.</em></p>
+
+<p><em>For example,</em></p>
+
+<pre><code>Input: $m = 18, $n = 2
+Output: 5, 13 or 7, 11
+
+Input: $m = 19, $n = 3
+Output: 3, 5, 11
+</code></pre>
+
+<p>The task description doesn&#8217;t say what a prime partition is. In mathematics, a partition of a positive integer <code>n</code> is usually a way of writing <code>n</code> as a sum of positive integers. We can assume that a <em>prime partition</em> is a partition made of only prime numbers. This is confirmed by the examples. From the examples, we can also infer that the second integer <code>$n</code> is the number of (prime) integers whose sum should be equal to <code>$m</code>. Also, the first example has two solutions (5, 13 <em>or</em> 7, 11). To me, this means that either solution is valid. So, I won&#8217;t bother to display all solutions when there is more than one, but will stop searching as soon as one solution has been found. Finally, since duplicates are not allowed, there will be some input values for which there is no solution. For example, for the input integers (17, 3): 17 could be considered as the sum of 3 primes, 13, 2, 2, but this isn&#8217;t a valid solution because of the duplicate 2 values. It is quite easy to check manually that there is no valid solution.</p>
+
+<h3>Prime Partition in Raku</h3>
+
+<p>We implement a recursive <code>partition</code> subroutine. If the second parameter (<code>$n</code>) is larger than 2, then <code>partition</code> subroutine loops through a list of prime number and calls itself recursively with a second parameter of <code>$n - 1</code>. If the second parameter is 2, then we stop recursion and find the solution (if any).</p>
+
+<pre><code>my @primes = grep { .is-prime }, 1..100;
+my %seen;
+
+sub partition (Int $m, Int $n) {
+    return if $n &lt; 2;
+    if $n == 2 {
+        for @primes -&gt; $i {
+            last if $i &gt;= $m;
+            my $j = $m - $i;
+            next if $j == $i;
+            next if %seen{$i} or %seen{$j};
+            return $i, $j if $j.is-prime;
+        }
+        return;
+    } else {
+        for @primes -&gt; $i {
+            last if $i &gt;= $m;
+            %seen = $i =&gt; True;
+            my @sub-partition = partition($m - $i, $n-1);
+            next if @sub-partition.elems &lt; 2;
+            return ($i, @sub-partition).flat;
+        }
+        return;
+    }
+}
+for &lt;18 2&gt;, &lt;19 3&gt;, &lt;17 3&gt;, &lt;25 2&gt; -&gt; $test {
+    my @partition = partition($test[0], $test[1]);
+    say @partition.elems &lt; 2 ?? "$test: No solution" !! "Solution for $test: @partition[]";
+}
+</code></pre>
+
+<p>With the four input tests provided, this program displays the following output:</p>
+
+<pre><code>$ raku ./prime-partition.raku
+Solution for 18 2: 5 13
+Solution for 19 3: 3 5 11
+17 3: No solution
+Solution for 25 2: 2 23
+</code></pre>
+
+<p><em>Update July 05, 2022:</em> Shortly after I published this post earlier today, it occurred to me that there is a simpler way to do it, using the Raku built-in <a href="https://docs.raku.org/routine/combinations">combinations</a> routine:</p>
+
+<pre><code>sub partition(Int $m, Int $n) {
+    my $found = False;
+    for (2..$m).grep({.is-prime}).combinations($n) -&gt; $comb {
+        say "$m $n: ", $comb and $found = True if $comb.sum == $m;
+    }
+    say "$m $n: no solution " unless $found;
+}
+for &lt;18 2&gt;, &lt;19 3&gt;, &lt;17 3&gt;, &lt;25 2&gt; -&gt; $test {
+    my @partition = partition($test[0], $test[1]);
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ ./raku prime-partition2.raku
+18 2: (5 13)
+18 2: (7 11)
+19 3: (3 5 11)
+17 3: no solution
+25 2: (2 23)
+</code></pre>
+
+<p>Note that we are now displaying all solutions, not just the first one.</p>
+
+<h3>Prime Partition in Perl</h3>
+
+<p>This is a port to Perl of the first Raku program above. The only significant difference is that we had to implement our own <code>is_prime</code> subroutine.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+my @primes = grep { is_prime($_) } 1..100;
+my %seen;
+
+sub is_prime {
+   my $n = shift;
+   return 1 if $n == 2;
+   return 0 if $n % 2 == 0;
+   return 0 if $n == 1;
+   my $p = 3;
+   my $sqrt = sqrt $n;
+   while ($p &lt;= $sqrt) {
+       return 0 if $n % $p == 0;
+       $p += 2;
+   }
+   return 1;
+}
+
+sub partition  {
+    my ($m, $n) = @_;
+    return if $n &lt; 2;
+    if ($n == 2) {
+        for my $i (@primes) {
+            last if $i &gt;= $m;
+            my $j = $m - $i;
+            next if $j == $i;
+            next if $seen{$i} or $seen{$j};
+            return $i, $j if is_prime($j);
+        }
+        return;
+    } else {
+        for my $i (@primes) {
+            last if $i &gt;= $m;
+            %seen = ($i =&gt; 1);
+            my @sub_partition = partition($m - $i, $n-1);
+            next if @sub_partition &lt; 2;
+            return ($i, @sub_partition);
+        }
+        return;
+    }
+}
+for my $test ([18, 2], [19, 3], [17, 3], [25, 2]) {
+    my @partition = partition(@$test);
+    say @partition &lt; 2 ? "@$test: No solution" : "Solution for @$test: @partition";
+}
+</code></pre>
+
+<p>This program displays the following results:</p>
+
+<pre><code>$ perl ./prime-partition.pl
+Solution for 18 2: 5 13
+Solution for 19 3: 3 5 11
+17 3: No solution
+Solution for 25 2: 2 23
+</code></pre>
+
+<h3>Prime Partition in Julia</h3>
+
+<p>In Julia, the <a href="http://juliamath.github.io/Primes.jl/v0.3/api.html#Primes.primes">Primes.primes</a> function returns an iterable collection of prime numbers. And the <a href="https://github.com/JuliaMath/Combinatorics.jl">Combinatoric</a> package provides the <code>combinations</code> function, which does exactly what its name implies. With thezse two functions, the solution is very simple:</p>
+
+<pre><code>using Primes
+using Combinatorics
+
+function partition(m, n)
+    for comb in combinations(primes(m),n)
+        sum(comb) == m &amp;&amp; println("$m $n: ", comb)
+    end
+end
+
+partition(18,2)
+partition(19, 3)
+partition(25, 2)
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ julia ./prime-partition.jl
+18 2: [5, 13]
+18 2: [7, 11]## Task 2: Five-number Summary
+19 3: [3, 5, 11]
+25 2: [2, 23]*You are given an array of integers.*
+</code></pre>
+
+<h3>Prime Partition in Python</h3>
+
+<p>Python also has <code>combinations</code> function, provided by the <code>itertools</code> package. We implement our own <code>is_prime</code> function.</p>
+
+<pre><code>import math
+from itertools import combinations
+
+def is_prime(n):
+  if n == 2:
+    return True
+  if n == 0 or n == 1 or n % 2 == 0:
+    return False
+  p = 3
+  sqrt_n = math.sqrt(n)
+  while (p &lt;= sqrt_n):
+    if ((n % p) == 0):
+      return False
+    p += 2
+  return True
+
+def partition(m, n):
+  primes = filter(is_prime, range (1, m))
+  for combination in combinations(primes, n):
+    if sum(combination) == m:
+      print(m, n, ": ", combination)
+
+partition(18, 2)
+partition(19, 3)
+partition(25, 2)
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ python3 prime-partition.py
+18 2 :  (5, 13)
+18 2 :  (7, 11)
+19 3 :  (3, 5, 11)
+25 2 :  (2, 23)
+</code></pre>
+
+<h2>Task 2: Five-number Summary</h2>
+
+<p><em>You are given an array of integers.</em></p>
+
+<p><em>Write a script to compute the five-number summary of the given set of integers.</em></p>
+
+<p><em>You can find the definition and example in the <a href="https://en.wikipedia.org/wiki/Five-number_summary">wikipedia page</a>.</em></p>
+
+<p>The five-number summary is a set of descriptive statistics that provides information about a dataset. It consists of the five most important sample percentiles:</p>
+
+<ul>
+<li>the sample minimum (smallest observation)</li>
+<li>the lower quartile or first quartile</li>
+<li>the median (the middle value)</li>
+<li>the upper quartile or third quartile</li>
+<li>the sample maximum (largest observation)</li>
+</ul>
+
+<p>Intuitively, with a sorted data set, the <em>median</em> is the middle value separating the greater and lesser halves of the set. If the input set has an odd number of items, the median is the middle value. With an even number of items, the median is usually computed as the arithmetic mean of the two middle values. </p>
+
+<p>The lower quartile or first quartile is the value such that one quarter (or 25%) of the items are smaller and three quarters (75%) are larger. It is the median of the lower half of the sorted dataset. And the upper or third quartile is the median of the upper half, i.e. a value such that three quarters are larger and one quarter larger. Having said that, I must add that, as often, the devil hides in the details. Depending on whether or not we include the median in the two halves, we might obtain different results, and there is no universal agreement on selecting the quartile values. This <a href="https://en.wikipedia.org/wiki/Quartile">Wikipedia page</a> lists four different methods for computing the quartiles (and, for some data sets, they will compute different results). So, it is sort of your draw, you may pick the method you prefer.</p>
+
+<h3>Five-number Summary in Raku</h3>
+
+<p>We implement a <code>median</code> subroutine to compute the median of a data set. As noted above, there are two formulas to compute the median, depending on whether the number of elements if even or odd. Note that our <code>median</code> subroutine relies on the fact that its input data has been previously sorted in ascending order (in the <code>summary</code> subroutine). Note that the <code>median</code> subroutine is used three times (to compute the median, or course, but also to compute the lower and upper quartiles).</p>
+
+<p>The test data set is the set of observations of the number of moons for each planet in the solar system: <code>0, 0, 1, 2, 63, 61, 27, 13</code>, as provided in the <a href="https://en.wikipedia.org/wiki/Five-number_summary">Wikipedia page on the five-number summary</a>.</p>
+
+<pre><code>sub median (@in) { # input values must have been sorted
+    my $count = @in.elems;
+    if $count %% 2 {
+        return (@in[$count/2 -1] + @in[$count/2])/2;
+    } else {
+        return @in[($count - 1) / 2];
+    }
+}
+sub summary (@input) {
+    my @in = sort @input;
+    my $min = @in[0];
+    my $max = @in[*-1];
+    my $median = median(@in);
+    my $first-quart = median( grep { $_ &lt; $median}, @in);
+    my $third-quart = median( grep { $_ &gt; $median}, @in);
+    return $min, $first-quart, $median, $third-quart, $max;
+}
+my @moons = 0, 0, 1, 2, 63, 61, 27, 13;
+say summary(@moons);
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./five-nums-summary.raku
+(0 0.5 7.5 44 63)
+</code></pre>
+
+<h3>Five-number Summary in Perl</h3>
+
+<p>This is a port to Perl of the Raku program just above. Please refer to the previous section for further explanations.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub median {
+    my @in = @_; # Input values have been sorted previously
+    my $count = scalar @in;
+    if ($count % 2) {
+        return $in[($count - 1) / 2];
+    } else {
+        return ($in[$count/2 -1] + $in[$count/2])/2;
+    }
+}
+sub summary {
+    my @in = sort { $a &lt;=&gt; $b } @_;
+    my $min = $in[0];
+    my $max = $in[-1];
+    my $median = median(@in);
+    my $first_quart = median( grep { $_ &lt; $median} @in);
+    my $third_quart = median( grep { $_ &gt; $median} @in);
+    return $min, $first_quart, $median, $third_quart, $max;
+}
+my @moons = (0, 0, 1, 2, 63, 61, 27, 13);
+say join " ", summary(@moons);
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./five-nums-summary.pl
+0 0.5 7.5 44 63
+</code></pre>
+
+<h3>Five-number Summary in Julia</h3>
+
+<p>The <code>Statistics</code> package provides a number of functions, including <code>quantile</code> that we are using here:</p>
+
+<pre><code>using Statistics
+
+moons = sort([0, 0, 1, 2, 63, 61, 27, 13])
+
+min = moons[1]  # Julia indices start at 1
+first_quart = quantile(moons, 0.25)
+median = quantile(moons, 0.5)
+third_quart = quantile(moons, 0.75)
+max = last(moons)
+
+println("Min: $min; First quartile = $first_quart; Median: $median; Third quartile: $third_quart; Max: $max")
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ julia ./five-nums-summary.jl
+Min: 0; First quartile = 0.75; Median: 7.5; Third quartile: 35.5; Max: 63
+</code></pre>
+
+<h3>Five-number Summary in Python</h3>
+
+<pre><code>def median(n):
+  c = len(n)
+  return n[int((c - 1) / 2)] if c % 2 != 0 else (n[int(c/2 -1)] + n[int(c/2)])/2
+
+
+def summary(input):
+  min = input[0]
+  max = input[-1]
+  med = median(input)
+  lower_half = list(filter(lambda p: p &lt; med, input))
+  # print(lower_half)
+  first_quart = median(lower_half)
+  third_quart = median(list(filter(lambda p: p &gt; med, input)))
+  return(min, first_quart, med, third_quart, max)
+
+moons = sorted([0, 0, 1, 2, 63, 61, 27, 13])
+print(summary(moons));
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ python3 ./five-nums-summary.py
+(0, 0.5, 7.5, 44.0, 63)
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on July 17, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cd-10-great-cpan-modules-released-last.html">(cd) 10 great CPAN modules released last week</a></h2>
+<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
+
+              <p class="text-right"><small>Published by Unknown
+ on Saturday 09 July 2022 20:49</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/TONYC/Imager-1.019' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Imager</span></b></a> - Perl extension for Generating 24 bit Images <ul>  <li>Version: <strong>1.019</strong> on 2022-07-09</li>  <li>Votes: 61</li>  <li>Previous version: 1.018 was 20 days before</li></ul></li><li><a href='https://metacpan.org/release/SYP/Net-Curl-0.51' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Net::Curl</span></b></a> - Perl interface for libcurl <ul>  <li>Version: <strong>0.51</strong> on 2022-07-08</li>  <li>Votes: 16</li>  <li>Previous version: 0.50 was 4 months, 21 days before</li></ul></li><li><a href='https://metacpan.org/release/PEVANS/Object-Pad-0.66' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Object::Pad</span></b></a> - a simple syntax for lexical field-based objects <ul>  <li>Version: <strong>0.66</strong> on 2022-07-06</li>  <li>Votes: 28</li>  <li>Previous version: 0.65 was 1 month, 27 days before</li></ul></li><li><a href='https://metacpan.org/release/RSCHUPP/PAR-Packer-1.055' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>PAR::Packer</span></b></a> - PAR Packager <ul>  <li>Version: <strong>1.055</strong> on 2022-07-03</li>  <li>Votes: 39</li>  <li>Previous version: 1.054 was 5 months, 7 days before</li></ul></li><li><a href='https://metacpan.org/release/KIMOTO/SPVM-0.9620' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>SPVM</span></b></a> - SPVM Language <ul>  <li>Version: <strong>0.9620</strong> on 2022-07-08</li>  <li>Votes: 27</li>  <li>Previous version: 0.9616 was 7 days before</li></ul></li><li><a href='https://metacpan.org/release/DANBERR/Sys-Virt-v8.5.0' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Sys::Virt</span></b></a> - libvirt Perl API <ul>  <li>Version: <strong>v8.5.0</strong> on 2022-07-04</li>  <li>Votes: 16</li>  <li>Previous version: v8.4.0 was 25 days before</li></ul></li><li><a href='https://metacpan.org/release/EXODIST/Test-Simple-1.302191' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Test::Simple</span></b></a> - Basic utilities for writing tests. <ul>  <li>Version: <strong>1.302191</strong> on 2022-07-09</li>  <li>Votes: 177</li>  <li>Previous version: 1.302190 was 4 months, 5 days before</li></ul></li><li><a href='https://metacpan.org/release/EXODIST/Test2-Harness-1.000125' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Test2::Harness</span></b></a> - A new and improved test harness with better Test2 integration. <ul>  <li>Version: <strong>1.000125</strong> on 2022-07-09</li>  <li>Votes: 13</li>  <li>Previous version: 1.000124 was 3 months, 1 day before</li></ul></li><li><a href='https://metacpan.org/release/OALDERS/URI-5.11' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>URI</span></b></a> - Uniform Resource Identifiers (absolute and relative) <ul>  <li>Version: <strong>5.11</strong> on 2022-07-04</li>  <li>Votes: 105</li>  <li>Previous version: 5.10 was 8 months, 10 days before</li></ul></li><li><a href='https://metacpan.org/release/OALDERS/WWW-Mechanize-2.10' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>WWW::Mechanize</span></b></a> - Handy web browsing in a Perl object <ul>  <li>Version: <strong>2.10</strong> on 2022-07-04</li>  <li>Votes: 93</li>  <li>Previous version: 2.09 was 20 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxiv-metacpan-weekly-report.html">(dxiv) metacpan weekly report </a></h2>
+<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
+
+              <p class="text-right"><small>Published by Unknown
+ on Saturday 09 July 2022 20:38</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>This is the weekly favourites list of CPAN distributions. Votes count: 41</p><p>This week there isn't any remarkable distribution<br/></p><p>Build date: 2022/07/09 18:38:35 GMT</p><br/><p>Clicked for <u>first time</u>:</p><ul><li><a href="https://metacpan.org/module/App::CGIThis" target="_blank">App::CGIThis</a> - Export the current directory like a cgi-bin</li><li><a href="https://metacpan.org/module/App::todoist" target="_blank">App::todoist</a> - command-line for manipulating your todoist.com todo list</li><li><a href="https://metacpan.org/module/DBIx::Class::TemporalRelations" target="_blank">DBIx::Class::TemporalRelations</a> - Establish and introspect time-based relationships between tables.</li><li><a href="https://metacpan.org/module/Docker::Client" target="_blank">Docker::Client</a> - Docker client</li><li><a href="https://metacpan.org/module/Lingua::Stem::Ru" target="_blank">Lingua::Stem::Ru</a> - Porter's stemming algorithm for Russian (KOI8-R only)</li><li><a href="https://metacpan.org/module/Net::Todoist" target="_blank">Net::Todoist</a> - interface to the API for Todoist (a to-do list service)</li><li><a href="https://metacpan.org/module/Term::TUI" target="_blank">Term::TUI</a> - simple tool for building text-based user interfaces</li></ul><br/><p><u>Increasing</u> its reputation:</p><ul><li><a href="https://metacpan.org/module/App::HTTPThis" target="_blank">App::HTTPThis</a> (+1=21)</li><li><a href="https://metacpan.org/module/Catalyst::Plugin::Cache::HTTP::Preempt" target="_blank">Catalyst::Plugin::Cache::HTTP::Preempt</a> (+1=3)</li><li><a href="https://metacpan.org/module/CHI::Driver::Redis" target="_blank">CHI::Driver::Redis</a> (+1=2)</li><li><a href="https://metacpan.org/module/Class::Tiny" target="_blank">Class::Tiny</a> (+1=33)</li><li><a href="https://metacpan.org/module/Config::INI" target="_blank">Config::INI</a> (+1=19)</li><li><a href="https://metacpan.org/module/DateTime" target="_blank">DateTime</a> (+1=205)</li><li><a href="https://metacpan.org/module/DBI" target="_blank">DBI</a> (+1=255)</li><li><a href="https://metacpan.org/module/Docker::Registry" target="_blank">Docker::Registry</a> (+1=3)</li><li><a href="https://metacpan.org/module/Firefox::Marionette" target="_blank">Firefox::Marionette</a> (+1=14)</li><li><a href="https://metacpan.org/module/GraphViz" target="_blank">GraphViz</a> (+1=14)</li><li><a href="https://metacpan.org/module/HTML::Tree" target="_blank">HTML::Tree</a> (+1=34)</li><li><a href="https://metacpan.org/module/Metabrik" target="_blank">Metabrik</a> (+1=3)</li><li><a href="https://metacpan.org/module/MooseX::Extended" target="_blank">MooseX::Extended</a> (+1=9)</li><li><a href="https://metacpan.org/module/Net::Google::Spreadsheets::V4" target="_blank">Net::Google::Spreadsheets::V4</a> (+1=2)</li><li><a href="https://metacpan.org/module/Number::Compare" target="_blank">Number::Compare</a> (+1=5)</li><li><a href="https://metacpan.org/module/Path::Tiny" target="_blank">Path::Tiny</a> (+1=171)</li><li><a href="https://metacpan.org/module/PDL" target="_blank">PDL</a> (+1=46)</li><li><a href="https://metacpan.org/module/PerlPowerTools" target="_blank">PerlPowerTools</a> (+1=35)</li><li><a href="https://metacpan.org/module/Plack::Middleware::ReverseProxy" target="_blank">Plack::Middleware::ReverseProxy</a> (+1=8)</li><li><a href="https://metacpan.org/module/Protocol::DBus" target="_blank">Protocol::DBus</a> (+1=4)</li><li><a href="https://metacpan.org/module/Redis" target="_blank">Redis</a> (+1=41)</li><li><a href="https://metacpan.org/module/Selenium::Remote::Driver" target="_blank">Selenium::Remote::Driver</a> (+1=45)</li><li><a href="https://metacpan.org/module/Sparrow" target="_blank">Sparrow</a> (+1=7)</li><li><a href="https://metacpan.org/module/String::CamelCase" target="_blank">String::CamelCase</a> (+1=10)</li><li><a href="https://metacpan.org/module/Sys::Binmode" target="_blank">Sys::Binmode</a> (+1=5)</li><li><a href="https://metacpan.org/module/Tangence" target="_blank">Tangence</a> (+1=3)</li><li><a href="https://metacpan.org/module/Term::ANSIColor" target="_blank">Term::ANSIColor</a> (+1=56)</li><li><a href="https://metacpan.org/module/Test::LWP::UserAgent" target="_blank">Test::LWP::UserAgent</a> (+1=14)</li><li><a href="https://metacpan.org/module/Test::Simple" target="_blank">Test::Simple</a> (+1=177)</li><li><a href="https://metacpan.org/module/URI" target="_blank">URI</a> (+1=105)</li><li><a href="https://metacpan.org/module/Util::H2O" target="_blank">Util::H2O</a> (+1=4)</li><li><a href="https://metacpan.org/module/WWW::Google::Cloud::Auth::ServiceAccount" target="_blank">WWW::Google::Cloud::Auth::ServiceAccount</a> (+1=2)</li><li><a href="https://metacpan.org/module/WWW::Mechanize::Chrome" target="_blank">WWW::Mechanize::Chrome</a> (+1=18)</li><li><a href="https://metacpan.org/module/XML::LibXML" target="_blank">XML::LibXML</a> (+1=95)</li></ul>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_4">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxlii-stackoverflow-perl-report.html">(dxlii) stackoverflow perl report</a></h2>
+<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
+
+              <p class="text-right"><small>Published by Unknown
+ on Saturday 09 July 2022 20:37</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>These are the five most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br />Between brackets: [<b>question score</b> / answers count]<br />Build date: 2022-07-09 18:37:22 GMT</p><hr /><ol><li><a href="http://stackoverflow.com/questions/72887296" target="_blank">How to rewrite uses of given/when so to eliminate "experimental" warnings for their use</a> - [<b>4</b>/2]</li><li><a href="http://stackoverflow.com/questions/72889876" target="_blank">`last` while reading file from external command crashes perl</a> - [<b>4</b>/1]</li><li><a href="http://stackoverflow.com/questions/72862648" target="_blank">Difference between PDL::Core and PDL::Core ':Internal'</a> - [<b>3</b>/2]</li><li><a href="http://stackoverflow.com/questions/72884509" target="_blank">Best practice for accessing data in PDL objects</a> - [<b>3</b>/2]</li><li><a href="http://stackoverflow.com/questions/72864450" target="_blank">Perl not subtituting strings with newline</a> - [<b>2</b>/1]</li></ol>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_5">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/taskdateholidays-bug-fix-release-012-15jj">Task::Date::Holidays bug fix release 0.12</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -85,7 +502,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -97,7 +514,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2022/07/mite-an-oo-compiler-for-perl.html">Mite: an OO compiler for Perl</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -218,7 +635,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/kavya/2022/07/error-flock-trapped-by-operation-mask-at-usrlib64perl5vendor-perlstorablepm.html"> ERROR: 'flock' trapped by operation mask at /usr/lib64/perl5/vendor_perl/Storable.pm </a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -241,269 +658,7 @@ Facing flock error when trying to execute the Automated unit testing .</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-172-prime-partition-and-five-number-summary.html">Perl Weekly Challenge 172: Prime Partition and Five-Number Summary </a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Tuesday 05 July 2022 20:49</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 172 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-172/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on July 10, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Prime Partition</h2>
-
-<p><em>You are given two positive integers, <code>$m</code> and <code>$n</code>.</em></p>
-
-<p><em>Write a script to find out the Prime Partition of the given number. No duplicates allowed.</em></p>
-
-<p><em>For example,</em></p>
-
-<pre><code>Input: $m = 18, $n = 2
-Output: 5, 13 or 7, 11
-
-Input: $m = 19, $n = 3
-Output: 3, 5, 11
-</code></pre>
-
-<p>The task description doesn&#8217;t say what a prime partition is. In mathematics, a partition of a positive integer <code>n</code> is usually a way of writing <code>n</code> as a sum of positive integers. We can assume that a <em>prime partition</em> is a partition made of only prime numbers. This is confirmed by the examples. From the examples, we can also infer that the second integer <code>$n</code> is the number of (prime) integers whose sum should be equal to <code>$m</code>. Also, the first example has two solutions (5, 13 <em>or</em> 7, 11). To me, this means that either solution is valid. So, I won&#8217;t bother to display all solutions when there is more than one, but will stop searching as soon as one solution has been found. Finally, since duplicates are not allowed, there will be some input values for which there is no solution. For example, for the input integers (17, 3): 17 could be considered as the sum of 3 primes, 13, 2, 2, but this isn&#8217;t a valid solution because of the duplicate 2 values. It is quite easy to check manually that there is no valid solution.</p>
-
-<h3>Prime Partition in Raku</h3>
-
-<p>We implement a recursive <code>partition</code> subroutine. If the second parameter (<code>$n</code>) is larger than 2, then <code>partition</code> subroutine loops through a list of prime number and calls itself recursively with a second parameter of <code>$n - 1</code>. If the second parameter is 2, then we stop recursion and find the solution (if any).</p>
-
-<pre><code>my @primes = grep { .is-prime }, 1..100;
-my %seen;
-
-sub partition (Int $m, Int $n) {
-    return if $n &lt; 2;
-    if $n == 2 {
-        for @primes -&gt; $i {
-            last if $i &gt;= $m;
-            my $j = $m - $i;
-            next if $j == $i;
-            next if %seen{$i} or %seen{$j};
-            return $i, $j if $j.is-prime;
-        }
-        return;
-    } else {
-        for @primes -&gt; $i {
-            last if $i &gt;= $m;
-            %seen = $i =&gt; True;
-            my @sub-partition = partition($m - $i, $n-1);
-            next if @sub-partition.elems &lt; 2;
-            return ($i, @sub-partition).flat;
-        }
-        return;
-    }
-}
-for &lt;18 2&gt;, &lt;19 3&gt;, &lt;17 3&gt;, &lt;25 2&gt; -&gt; $test {
-    my @partition = partition($test[0], $test[1]);
-    say @partition.elems &lt; 2 ?? "$test: No solution" !! "Solution for $test: @partition[]";
-}
-</code></pre>
-
-<p>With the four input tests provided, this program displays the following output:</p>
-
-<pre><code>$ raku ./prime-partition.raku
-Solution for 18 2: 5 13
-Solution for 19 3: 3 5 11
-17 3: No solution
-Solution for 25 2: 2 23
-</code></pre>
-
-<p><em>Update July 05, 2022:</em> Shortly after I published this post earlier today, it occurred to me that there is a simpler way to do it, using the Raku built-in <a href="https://docs.raku.org/routine/combinations">combinations</a> routine:</p>
-
-<pre><code>sub partition(Int $m, Int $n) {
-    my $found = False;
-    for (2..$m).grep({.is-prime}).combinations($n) -&gt; $comb {
-        say "$m $n: ", $comb and $found = True if $comb.sum == $m;
-    }
-    say "$m $n: no solution " unless $found;
-}
-for &lt;18 2&gt;, &lt;19 3&gt;, &lt;17 3&gt;, &lt;25 2&gt; -&gt; $test {
-    my @partition = partition($test[0], $test[1]);
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ ./raku prime-partition2.raku
-18 2: (5 13)
-18 2: (7 11)
-19 3: (3 5 11)
-17 3: no solution
-25 2: (2 23)
-</code></pre>
-
-<h3>Prime Partition in Perl</h3>
-
-<p>This is a port to Perl of the first Raku program above. The only significant difference is that we had to implement our own <code>is_prime</code> subroutine.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-my @primes = grep { is_prime($_) } 1..100;
-my %seen;
-
-sub is_prime {
-   my $n = shift;
-   return 1 if $n == 2;
-   return 0 if $n % 2 == 0;
-   return 0 if $n == 1;
-   my $p = 3;
-   my $sqrt = sqrt $n;
-   while ($p &lt;= $sqrt) {
-       return 0 if $n % $p == 0;
-       $p += 2;
-   }
-   return 1;
-}
-
-sub partition  {
-    my ($m, $n) = @_;
-    return if $n &lt; 2;
-    if ($n == 2) {
-        for my $i (@primes) {
-            last if $i &gt;= $m;
-            my $j = $m - $i;
-            next if $j == $i;
-            next if $seen{$i} or $seen{$j};
-            return $i, $j if is_prime($j);
-        }
-        return;
-    } else {
-        for my $i (@primes) {
-            last if $i &gt;= $m;
-            %seen = ($i =&gt; 1);
-            my @sub_partition = partition($m - $i, $n-1);
-            next if @sub_partition &lt; 2;
-            return ($i, @sub_partition);
-        }
-        return;
-    }
-}
-for my $test ([18, 2], [19, 3], [17, 3], [25, 2]) {
-    my @partition = partition(@$test);
-    say @partition &lt; 2 ? "@$test: No solution" : "Solution for @$test: @partition";
-}
-</code></pre>
-
-<p>This program displays the following results:</p>
-
-<pre><code>$ perl ./prime-partition.pl
-Solution for 18 2: 5 13
-Solution for 19 3: 3 5 11
-17 3: No solution
-Solution for 25 2: 2 23
-</code></pre>
-
-<h2>Task 2: Five-number Summary</h2>
-
-<p><em>You are given an array of integers.</em></p>
-
-<p><em>Write a script to compute the five-number summary of the given set of integers.</em></p>
-
-<p><em>You can find the definition and example in the <a href="https://en.wikipedia.org/wiki/Five-number_summary">wikipedia page</a>.</em></p>
-
-<p>The five-number summary is a set of descriptive statistics that provides information about a dataset. It consists of the five most important sample percentiles:</p>
-
-<ul>
-<li>the sample minimum (smallest observation)</li>
-<li>the lower quartile or first quartile</li>
-<li>the median (the middle value)</li>
-<li>the upper quartile or third quartile</li>
-<li>the sample maximum (largest observation)</li>
-</ul>
-
-<p>Intuitively, with a sorted data set, the <em>median</em> is the middle value separating the greater and lesser halves of the set. If the input set has an odd number of items, the median is the middle value. With an even number of items, the median is usually computed as the arithmetic mean of the two middle values. </p>
-
-<p>The lower quartile or first quartile is the value such that one quarter (or 25%) of the items are smaller and three quarters (75%) are larger. It is the median of the lower half of the sorted dataset. And the upper or third quartile is the median of the upper half, i.e. a value such that three quarters are larger and one quarter larger. Having said that, I must add that, as often, the devil hides in the details. Depending on whether or not we include the median in the two halves, we might obtain different results, and there is no universal agreement on selecting the quartile values. This <a href="https://en.wikipedia.org/wiki/Quartile">Wikipedia page</a> lists four different methods for computing the quartiles (and, for some data sets, they will compute different results). So, it is sort of your draw, you may pick the method you prefer.</p>
-
-<h3>Five-number Summary in Raku</h3>
-
-<p>We implement a <code>median</code> subroutine to compute the median of a data set. As noted above, there are two formulas to compute the median, depending on whether the number of elements if even or odd. Note that our <code>median</code> subroutine relies on the fact that its input data has been previously sorted in ascending order (in the <code>summary</code> subroutine). Note that the <code>median</code> subroutine is used three times (to compute the median, or course, but also to compute the lower and upper quartiles).</p>
-
-<p>The test data set is the set of observations of the number of moons for each planet in the solar system: <code>0, 0, 1, 2, 63, 61, 27, 13</code>, as provided in the <a href="https://en.wikipedia.org/wiki/Five-number_summary">Wikipedia page on the five-number summary</a>.</p>
-
-<pre><code>sub median (@in) { # input values must have been sorted
-    my $count = @in.elems;
-    if $count %% 2 {
-        return (@in[$count/2 -1] + @in[$count/2])/2;
-    } else {
-        return @in[($count - 1) / 2];
-    }
-}
-sub summary (@input) {
-    my @in = sort @input;
-    my $min = @in[0];
-    my $max = @in[*-1];
-    my $median = median(@in);
-    my $first-quart = median( grep { $_ &lt; $median}, @in);
-    my $third-quart = median( grep { $_ &gt; $median}, @in);
-    return $min, $first-quart, $median, $third-quart, $max;
-}
-my @moons = 0, 0, 1, 2, 63, 61, 27, 13;
-say summary(@moons);
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./five-nums-summary.raku
-(0 0.5 7.5 44 63)
-</code></pre>
-
-<h3>Five-number Summary in Perl</h3>
-
-<p>This is a port to Perl of the Raku program just above. Please refer to the previous section for further explanations.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub median {
-    my @in = @_; # Input values have been sorted previously
-    my $count = scalar @in;
-    if ($count % 2) {
-        return $in[($count - 1) / 2];
-    } else {
-        return ($in[$count/2 -1] + $in[$count/2])/2;
-    }
-}
-sub summary {
-    my @in = sort { $a &lt;=&gt; $b } @_;
-    my $min = $in[0];
-    my $max = $in[-1];
-    my $median = median(@in);
-    my $first_quart = median( grep { $_ &lt; $median} @in);
-    my $third_quart = median( grep { $_ &gt; $median} @in);
-    return $min, $first_quart, $median, $third_quart, $max;
-}
-my @moons = (0, 0, 1, 2, 63, 61, 27, 13);
-say join " ", summary(@moons);
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./five-nums-summary.pl
-0 0.5 7.5 44 63
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on July 17, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/hightowe/2022/07/totp-with-perl-and-authenoath.html">TOTP with Perl and Authen::OATH</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -633,7 +788,7 @@ programs.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/07/announcing-perlcritic-policy-valuesandexpressionsprohibitfiletest-rwxrwx.html">Announcing perlcritic Policy ValuesAndExpressions::ProhibitFiletest_rwxRWX</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -664,7 +819,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/volunteer-rt.cpan.org-admins-needed">Volunteer rt.cpan.org Admins Needed</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -684,7 +839,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/571.html">#571 - Sponsoring TPF or individuals</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -701,7 +856,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-route-parameters">Dancer2: Route parameters and sending 404 manually</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -716,7 +871,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-171/">RECAP - The Weekly Challenge - 171</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -729,7 +884,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-172/">The Weekly Challenge - 172</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -742,7 +897,122 @@ Today is the first Monday of the month and time to announce the champion. Proud 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_16">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/03#pwc171">Abundant Composition</a></h2>
+<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
+
+              <p class="text-right"><small>Published
+ on Sunday 03 July 2022 12:39</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+<p><em>The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.</em></p>
+
+<h2>Part 1</h2>
+
+<p><em>Write a script to generate the first twenty Abundant Odd Numbers.</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+sub proper_divisors{
+    my($n) = @_;
+    my @divisors;
+    for my $x (1 .. $n / 2){
+        push @divisors, $x if $n % $x == 0;
+    }
+    return @divisors;
+}
+
+sub n_abundant_odd{
+    my($n) = @_; 
+    my $x = 0;
+    my @odd_abundants;
+    {
+        push @odd_abundants, $x if $x % 2 == 1 && unpack("%32I*", pack("I*", proper_divisors($x))) > $x;
+        $x++;
+        redo if @odd_abundants < $n;
+    }
+    return @odd_abundants;
+}
+
+MAIN:{
+    print join(", ", n_abundant_odd(20)) . "\n";
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-1.pl
+945, 1575, 2205, 2835, 3465, 4095, 4725, 5355, 5775, 5985, 6435, 6615, 6825, 7245, 7425, 7875, 8085, 8415, 8505, 8925
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>The solution here incorporated a lot of elements from previous weekly challenges. That is 
+to say it is quite familiar, I continue to be a fan of <code>redo</code> as well as the <code>pack/unpack</code>
+method of summing the elements of an array.</p>
+
+<h2>Part 2</h2>
+
+<p><em>Create sub compose($f, $g) which takes in two parameters $f and $g as subroutine refs 
+and returns subroutine ref i.e. compose($f, $g)->($x) = $f->($g->($x)).</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+sub f{
+    my($x) = @_;
+    return $x + $x;
+}
+
+sub g{
+    my($x) = @_;
+    return $x * $x;
+}
+
+sub compose{
+    my($f, $g) = @_;
+    return sub{
+        my($x) = @_;
+        return $f->($g->($x));
+    };
+}
+
+MAIN:{
+    my $h = compose(\&f, \&g);
+    print $h->(7) . "\n";
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-2.pl
+98
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>This problem incorporates some interesting concepts, especially from functional 
+programming. Treating functions in a <em>first class way</em>, that is, passing them as 
+parameters, manipulating them, dynamically generating new ones are commonly performed in
+functional programming languages such as Lisp and ML. Here we can see that Perl can quite
+easily do these things as well!</p>
+
+<h2>References</h2>
+
+<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-171/">Challenge 171</a></p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-05/">Meet The Champion: May 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -758,7 +1028,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/test-excel/">Test::Excel</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -773,7 +1043,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/tobyink/mite-an-oo-compiler-for-perl-b70">Mite: an OO compiler for Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1012,7 +1282,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cccxcix-6-great-cpan-modules-released.html">(cccxcix) 6 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1024,7 +1294,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxiii-metacpan-weekly-report.html">(dxiii) metacpan weekly report - HTML::Tree</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1036,19 +1306,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxli-stackoverflow-perl-report.html">(dxli) stackoverflow perl report</a></h2>
-<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
-
-              <p class="text-right"><small>Published by Unknown
- on Saturday 02 July 2022 16:43</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>These are the five most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br />Between brackets: [<b>question score</b> / answers count]<br />Build date: 2022-07-02 14:42:01 GMT</p><hr /><ol><li><a href="http://stackoverflow.com/questions/72790345" target="_blank">Is Perl slower when compiled with DDEBUGGING?</a> - [<b>5</b>/1]</li><li><a href="http://stackoverflow.com/questions/72817790" target="_blank">Perl Moose, How to initialize a instance attribute that is Hash</a> - [<b>4</b>/1]</li><li><a href="http://stackoverflow.com/questions/72803774" target="_blank">How to debug DBIx::Class?</a> - [<b>3</b>/2]</li><li><a href="http://stackoverflow.com/questions/72822673" target="_blank">2D Array Printing as Reference</a> - [<b>3</b>/1]</li><li><a href="http://stackoverflow.com/questions/72804459" target="_blank">Can't use an array as a reference when installing perl module</a> - [<b>2</b>/1]</li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/easiest-way-to-get-started-with-perl-48pk">Easiest Way to Get Started with Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1066,7 +1324,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/07/01/list-of-new-cpan-distributions-jun-2022/">List of new CPAN distributions – Jun 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1680,7 +1938,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-06-29-cpanfile-a-teil-1">cpanfile – Teil 1</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -1692,7 +1950,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-write-tests-using-github-actions-4jk8">How to Write Tests using Github Actions</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1911,7 +2169,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/570.html">#570 - CPAN Weekly</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1931,7 +2189,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-logging">Dancer2: Logging</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1946,31 +2204,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/06/cccxcviii-12-great-cpan-modules.html">(cccxcviii) 12 great CPAN modules released last week</a></h2>
-<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
-
-              <p class="text-right"><small>Published by Unknown
- on Sunday 26 June 2022 00:39</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/PLICEASE/Alien-Build-2.50' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Alien::Build</span></b></a> - Build external dependencies for use in CPAN <ul>  <li>Version: <strong>2.50</strong> on 2022-06-23</li>  <li>Votes: 21</li>  <li>Previous version: 2.48 was 3 months, 10 days before</li></ul></li><li><a href='https://metacpan.org/release/DANKOGAI/Encode-3.18' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Encode</span></b></a> - character encodings in Perl <ul>  <li>Version: <strong>3.18</strong> on 2022-06-25</li>  <li>Votes: 56</li>  <li>Previous version: 3.17 was 2 months, 18 days before</li></ul></li><li><a href='https://metacpan.org/release/PLICEASE/FFI-Platypus-1.58' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>FFI::Platypus</span></b></a> - Write Perl bindings to non-Perl libraries with FFI. No XS required. <ul>  <li>Version: <strong>1.58</strong> on 2022-06-19</li>  <li>Votes: 56</li>  <li>Previous version: 1.57 was 8 days before</li></ul></li><li><a href='https://metacpan.org/release/TONYC/Imager-1.018' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Imager</span></b></a> - Perl extension for Generating 24 bit Images <ul>  <li>Version: <strong>1.018</strong> on 2022-06-19</li>  <li>Votes: 61</li>  <li>Previous version: 1.017 was 5 days before</li></ul></li><li><a href='https://metacpan.org/release/PMQS/IO-Compress-2.201' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Compress::Zlib</span></b></a> - IO Interface to compressed data files/buffers <ul>  <li>Version: <strong>2.201</strong> on 2022-06-25</li>  <li>Votes: 15</li>  <li>Previous version: 2.106 was 2 months, 13 days before</li></ul></li><li><a href='https://metacpan.org/release/ISHIGAKI/JSON-4.07' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>JSON</span></b></a> - JSON (JavaScript Object Notation) encoder/decoder <ul>  <li>Version: <strong>4.07</strong> on 2022-06-24</li>  <li>Votes: 96</li>  <li>Previous version: 4.06 was 1 month, 2 days before</li></ul></li><li><a href='https://metacpan.org/release/ISHIGAKI/JSON-PP-4.10' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>JSON::PP</span></b></a> - JSON::XS compatible pure-Perl module. <ul>  <li>Version: <strong>4.10</strong> on 2022-06-24</li>  <li>Votes: 15</li>  <li>Previous version: 4.09 was 1 month, 2 days before</li></ul></li><li><a href='https://metacpan.org/release/SRI/Minion-10.25' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Minion</span></b></a> - Job queue <ul>  <li>Version: <strong>10.25</strong> on 2022-06-24</li>  <li>Votes: 89</li>  <li>Previous version: 10.24 was 1 month, 26 days before</li></ul></li><li><a href='https://metacpan.org/release/BINGOS/Module-CoreList-5.20220620' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Module::CoreList</span></b></a> - what modules shipped with versions of perl <ul>  <li>Version: <strong>5.20220620</strong> on 2022-06-20</li>  <li>Votes: 38</li>  <li>Previous version: 5.20220527 was 23 days before</li></ul></li><li><a href='https://metacpan.org/release/KIMOTO/SPVM-0.9612' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>SPVM</span></b></a> - SPVM Language <ul>  <li>Version: <strong>0.9612</strong> on 2022-06-23</li>  <li>Votes: 27</li>  <li>Previous version: 0.9608 was 8 days before</li></ul></li><li><a href='https://metacpan.org/release/ANATOFUZ/Teng-0.33' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Teng</span></b></a> - very simple DBI wrapper/ORMapper <ul>  <li>Version: <strong>0.33</strong> on 2022-06-21</li>  <li>Votes: 25</li>  <li>Previous version: 0.32 was 2 years, 2 months, 27 days before</li></ul></li><li><a href='https://metacpan.org/release/TOBYINK/Zydeco-0.615' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Zydeco</span></b></a> - Jazz up your Perl <ul>  <li>Version: <strong>0.615</strong> on 2022-06-20</li>  <li>Votes: 16</li>  <li>Previous version: 0.613 was 1 year, 5 months, 11 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_26">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/06/dxii-metacpan-weekly-report.html">(dxii) metacpan weekly report - perl</a></h2>
-<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
-
-              <p class="text-right"><small>Published by Unknown
- on Sunday 26 June 2022 00:35</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>This is the weekly favourites list of CPAN distributions. Votes count: 49</p><p>Week's winners (+3): <b><a href="https://metacpan.org/module/perl">perl</a>&nbsp;</b></p><p>Build date: 2022/06/25 22:32:43 GMT</p><br /><p>Clicked for <u>first time</u>:</p><ul><li><a href="https://metacpan.org/module/ABNF::Grammar" target="_blank">ABNF::Grammar</a> - Validator and generator module for ABNF grammars</li><li><a href="https://metacpan.org/module/Alt::Acme::Math::XS::ModuleBuild" target="_blank">Alt::Acme::Math::XS::ModuleBuild</a> - Math is HARD (faster)</li><li><a href="https://metacpan.org/module/DBD::PgLite" target="_blank">DBD::PgLite</a> - PostgreSQL emulation mode for SQLite</li><li><a href="https://metacpan.org/module/Term::TUI" target="_blank">Term::TUI</a> - simple tool for building text-based user interfaces</li><li><a href="https://metacpan.org/module/UI::Various" target="_blank">UI::Various</a> - graphical/non-graphical user interface without external programs</li><li><a href="https://metacpan.org/module/WebService::Gravatar" target="_blank">WebService::Gravatar</a> - Perl interface to Gravatar API</li></ul><br /><p><u>Increasing</u> its reputation:</p><ul><li><a href="https://metacpan.org/module/Amazon::S3" target="_blank">Amazon::S3</a> (+1=3)</li><li><a href="https://metacpan.org/module/B::Hooks::AtRuntime" target="_blank">B::Hooks::AtRuntime</a> (+1=4)</li><li><a href="https://metacpan.org/module/Chart::GGPlot" target="_blank">Chart::GGPlot</a> (+1=9)</li><li><a href="https://metacpan.org/module/Class::Accessor::Lite" target="_blank">Class::Accessor::Lite</a> (+1=8)</li><li><a href="https://metacpan.org/module/CPAN::Site" target="_blank">CPAN::Site</a> (+1=4)</li><li><a href="https://metacpan.org/module/Dancer2" target="_blank">Dancer2</a> (+1=129)</li><li><a href="https://metacpan.org/module/Data::Frame" target="_blank">Data::Frame</a> (+1=8)</li><li><a href="https://metacpan.org/module/DBD::Firebird" target="_blank">DBD::Firebird</a> (+1=11)</li><li><a href="https://metacpan.org/module/DBD::SQLite" target="_blank">DBD::SQLite</a> (+1=97)</li><li><a href="https://metacpan.org/module/DBI" target="_blank">DBI</a> (+1=254)</li><li><a href="https://metacpan.org/module/DBIx::Class::DeploymentHandler" target="_blank">DBIx::Class::DeploymentHandler</a> (+1=21)</li><li><a href="https://metacpan.org/module/Dist::Milla" target="_blank">Dist::Milla</a> (+1=35)</li><li><a href="https://metacpan.org/module/File::HomeDir" target="_blank">File::HomeDir</a> (+1=32)</li><li><a href="https://metacpan.org/module/File::ShareDir::Install" target="_blank">File::ShareDir::Install</a> (+1=8)</li><li><a href="https://metacpan.org/module/Firefox::Marionette" target="_blank">Firefox::Marionette</a> (+1=12)</li><li><a href="https://metacpan.org/module/Function::Parameters" target="_blank">Function::Parameters</a> (+1=55)</li><li><a href="https://metacpan.org/module/HTML::Tree" target="_blank">HTML::Tree</a> (+1=32)</li><li><a href="https://metacpan.org/module/Inline::Module" target="_blank">Inline::Module</a> (+1=14)</li><li><a href="https://metacpan.org/module/InlineX::CPP2XS" target="_blank">InlineX::CPP2XS</a> (+1=4)</li><li><a href="https://metacpan.org/module/lib::relative" target="_blank">lib::relative</a> (+1=13)</li><li><a href="https://metacpan.org/module/Log::Log4perl::Layout::JSON" target="_blank">Log::Log4perl::Layout::JSON</a> (+1=2)</li><li><a href="https://metacpan.org/module/Minilla" target="_blank">Minilla</a> (+1=55)</li><li><a href="https://metacpan.org/module/Mojo::Run" target="_blank">Mojo::Run</a> (+1=5)</li><li><a href="https://metacpan.org/module/MooseX::Extended" target="_blank">MooseX::Extended</a> (+2=7)</li><li><a href="https://metacpan.org/module/Paws" target="_blank">Paws</a> (+1=53)</li><li><a href="https://metacpan.org/module/perl" target="_blank">perl</a> (+3=398)</li><li><a href="https://metacpan.org/module/PPI" target="_blank">PPI</a> (+1=56)</li><li><a href="https://metacpan.org/module/SPVM" target="_blank">SPVM</a> (+1=27)</li><li><a href="https://metacpan.org/module/Template::Toolkit" target="_blank">Template::Toolkit</a> (+1=137)</li><li><a href="https://metacpan.org/module/Term::Size::Any" target="_blank">Term::Size::Any</a> (+1=4)</li><li><a href="https://metacpan.org/module/Test2::Suite" target="_blank">Test2::Suite</a> (+2=36)</li><li><a href="https://metacpan.org/module/Test::Simple" target="_blank">Test::Simple</a> (+1=177)</li><li><a href="https://metacpan.org/module/Text::CSV_XS" target="_blank">Text::CSV_XS</a> (+1=95)</li><li><a href="https://metacpan.org/module/Text::Table::Tiny" target="_blank">Text::Table::Tiny</a> (+1=14)</li><li><a href="https://metacpan.org/module/Time::Piece" target="_blank">Time::Piece</a> (+1=51)</li><li><a href="https://metacpan.org/module/Tk" target="_blank">Tk</a> (+1=27)</li><li><a href="https://metacpan.org/module/URI::db" target="_blank">URI::db</a> (+1=9)</li><li><a href="https://metacpan.org/module/W3C::LinkChecker" target="_blank">W3C::LinkChecker</a> (+1=4)</li><li><a href="https://metacpan.org/module/Zilla::Dist" target="_blank">Zilla::Dist</a> (+1=6)</li></ul>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mjgardner/perl-lightning-talk-dont-fear-map-and-grep-27gn">Perl lightning talk: ”Don’t Fear map and grep”</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2030,7 +2264,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/569.html">#569 - Fundraising for Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2050,7 +2284,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-show-errors-during-development">Dancer2: Show errors during development</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2065,7 +2299,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/06/19#pwc169">Brilliantly Discover Achilles' Imperfection</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2231,7 +2465,7 @@ ensure that, within a minuscule rounding error, <code>$x</code> is an integer.</
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/could-you-join-tpf-board-june-2022">Do you want to support the Perl and Raku communities in a more strategic way?</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -2290,7 +2524,7 @@ The final vote will be made by the existing Board Members after gathering feedba
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grantschairjobcall">Calling All Grant Gurus! </a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -2340,7 +2574,7 @@ Volunteerism also gives you the chance to learn new things. Most likely, you’l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/new-prospectus-launched-june-22">Could you support future development of Perl and Raku?</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -2371,7 +2605,7 @@ Volunteerism also gives you the chance to learn new things. Most likely, you’l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/568.html">#568 - Perl v5.36 - the beginning of new era</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2391,7 +2625,7 @@ Volunteerism also gives you the chance to learn new things. Most likely, you’l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/06/12#pwc168">Take the Long Way Home</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2528,7 +2762,7 @@ on my M1 Mac Mini. </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2022/06/cpan-ftpcpanorg-depreciation.html">CPAN: ftp.cpan.org depreciation</a></h2>
 <a href="https://log.perl.org/" class="badge badge-primary" style="float: left">The Perl NOC</a>
@@ -2560,7 +2794,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 09 July 2022 16:47 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 09 July 2022 20:43 UTC</address>
             </div>
           </div>
         </div><!-- container -->
