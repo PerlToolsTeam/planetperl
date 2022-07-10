@@ -7,9 +7,156 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-07-10T16:48:22Z</updated>
+  <updated>2022-07-10T20:43:17Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+  <title>Maintaining Perl 5 Core (Dave Mitchell): June 2022</title>
+  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_june_2022"/>
+  <id>tag:news.perlfoundation.org,2022-07-10:/post/maintaining_perl5_core_davem_june_2022</id>
+  <published>2022-07-10T12:53:09</published>
+  <updated>2022-07-10T12:53:09</updated>
+  <summary>
+  <![CDATA[
+     Dave writes: This is my monthly report on work done during June covered by my TPF perl core maintenance grant. SUMMARY:  0:47 improve docs for internal exception handling  1:46 look into disabling smartmatch/switch.  8:02 make stack reference counted  7:58 process p5p mailbox   18:33 TOTAL The most interesting thing I did was that near the end of the month I started work on "making the 
+   ]]>
+  </summary>
+  <author>
+    <name>Jason A. Crome</name>
+  </author>
+  <category term="Grants" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
+   <![CDATA[
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>Dave writes:</p>
+
+<p>This is my monthly report on work done during June covered by my TPF perl
+core maintenance grant.</p>
+
+<p>SUMMARY:
+<code>
+      0:47 improve docs for internal exception handling (JMPENV etc)
+      1:46 look into disabling smartmatch/switch.
+      8:02 make stack reference counted
+      7:58 process p5p mailbox
+    ------
+     18:33 TOTAL (HH::MM)
+</code></p>
+
+<p>The most interesting thing I did was that near the end of the month I
+started work on "making the stack reference counted"; i.e. that when
+things are pushed onto the argument stack, their reference count (RC)
+should be incremented and, conversely, decremented when popped.</p>
+
+<p>Currently things on the stack aren't RCed, so there is a danger that such
+items could be prematurely freed. For example,</p>
+
+<pre><code>@a = (1,2,3);
+f(@a);
+
+sub f {
+    @a = (); # prematurely frees the elements of @a
+    print "($_[0])\n"; # prints an undefined value or random garbage
+}
+</code></pre>
+
+<p>This issue has been the basis of countless "unfixable" bug reports over
+the years, and in particular most fuzzing crash reports turn out to be
+caused by this issue.</p>
+
+<p>There is a particular difficulty in fixing this: specifically how do we
+get to there from where we are now, because it's rather an all-or-nothing
+scenario. Every single pp function in the 30K lines of code in the various
+<code>pp*.c</code> files all need to be updated to expect an RCed stack at the same
+time. You can't have only half of them updated: the stack is binary, it's
+either RCed or it isn't. So having updated only half the pp functions, you
+can't compile perl and run the test suite.</p>
+
+<p>My cunning plan for getting round that is to initially redefine all the
+<code>Perl_pp_foo()</code> functions to be small wrapper functions around the real
+functions. The wrappers are responsible for making a non-RCed copy of the
+function's args and calling the real (non-RC aware) function; then on
+return, shifting down and bumping the RC of any returned arguments. A
+similar thing will be done by <code>pp_entersub()</code> to call XS functions.</p>
+
+<p>This is crude and slow, but in principle allows the changeover to an RCed
+stack in a single go. Then at my leisure, I can go through the pp
+functions one by one and modify them to be RC-aware and remove the wrapper
+functions. Once all the important functions are done (e.g. all the ones in
+<code>pp_hot.c</code>) then the new system may be ready for production use. We can
+continue using wrapper functions for the slow/rare functions if converting
+them would be too much work.</p>
+
+<p>I intend to have a new build define, <code>PERL_RC_STACK</code>, which isn't initially
+enabled by default. Unless enabled, perl behaves as usual, with the stack
+not being reference counted, the wrapper functions not being defined, etc.
+So my work can proceed initially without breaking normal perl. Once the
+work is stable and we don't think it will break most of CPAN, then
+<code>PERL_RC_STACK</code> will be enabled by default in builds, but can be disabled at
+build time if necessary. Eventually the define will be removed
+altogether, meaning that various places in the perl core no longer need to
+handle both RC and non-RC cases.</p>
+
+<p>This work if fairly risky, in that I may well find along the way that the
+problems are unsurmountable and have to abandon it.</p>
+
+    ]]>
+  </content>
+</entry>
+  <entry>
+  <title>Maintaining Perl 5 Core (Dave Mitchell): May 2022</title>
+  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_may_2022"/>
+  <id>tag:news.perlfoundation.org,2022-07-10:/post/maintaining_perl5_core_davem_may_2022</id>
+  <published>2022-07-10T12:50:47</published>
+  <updated>2022-07-10T12:50:47</updated>
+  <summary>
+  <![CDATA[
+     Dave writes: This is my monthly report for May on work done covered by my TPF perl core maintenance grant. The main things I did were to fix an obscure panic when an eval is the last statement in a regex code block, e.g.  And, as a side-effect of working on that, I also improved the docs covering how perl handles exceptions internally. Other than that, I ended up 
+   ]]>
+  </summary>
+  <author>
+    <name>Jason A. Crome</name>
+  </author>
+  <category term="Grants" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
+   <![CDATA[
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>Dave writes:</p>
+
+<p>This is my monthly report for May on work done covered by my TPF perl core
+maintenance grant.</p>
+
+<p>The main things I did were to fix an obscure panic when an eval is the
+last statement in a regex code block, e.g.</p>
+
+<pre><code>/....(?{...; eval { ... }; }) .../
+</code></pre>
+
+<p>And, as a side-effect of working on that, I also improved the docs
+covering how perl handles exceptions internally.</p>
+
+<p>(Both these bits of work are currently in a branch but not yet merged.)</p>
+
+<p>Other than that, I ended up having my gall bladder removed late May, the
+pre- and post- effects of which have reduced the hours I have spent on
+perl somewhat recently - mostly just trying to keep up to date with my p5p
+mailbox and not doing much "real" work.</p>
+
+<p>SUMMARY:
+<code>
+      5:16 GH #19680 panic: restartop in perl_run
+      5:01 improve docs for internal exception handling (JMPENV etc)
+      5:26 process p5p mailbox
+      0:32 refactor regen/warnings.pl
+    ------
+     16:15 TOTAL (HH::MM)
+</code></p>
+
+    ]]>
+  </content>
+</entry>
   <entry>
   <title>Call for Grants: July 2022 Round</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/call_for_grants_july_2022"/>
@@ -167,6 +314,16 @@ $ ./ch-1.py 19 3
     <category term="perl"/>
     <category term="python"/>
     <category term="theweeklychallenge"/>
+  </entry>
+  <entry>
+    <title>Colin Crain › Perl Weekly Review #166</title>
+    <link rel="alternate" href="https://theweeklychallenge.org/blog/review-challenge-166/" type="text/html"/>
+    <content type="text">( &amp;hellip;continues from previous week. )
+Welcome to the Perl review pages for Week 166 of The Weekly Challenge! Here we will take the time to discuss the submissions offered up by the team, factor out some common methodologies that came up in those solutions, and highlight some of the unique approaches and unusual code created.
+ ●︎ Why do we do these challenges? I suppose any reasonable answer to that question would be from a field as wide ranging and varied as the people who choose to join the team.</content>
+    <id>https://theweeklychallenge.org/blog/review-challenge-166/</id>
+    <published>2022-07-10T00:00:00Z</published>
+    <updated>2022-07-10T00:00:00Z</updated>
   </entry>
   <entry>
     <title>The Weekly Challenge - Guest Contributions</title>
@@ -1159,19 +1316,6 @@ Today we are talking to Robert Ransbottom, the winner of May 2022 of The Weekly 
 Robert: I read most of a brief computing-101-ish book at a book store one afternoon.</div>
     </content>
     <id>https://theweeklychallenge.org/blog/meet-the-champion-2022-05/</id>
-    <published>2022-07-03T00:00:00Z</published>
-    <updated>2022-07-03T00:00:00Z</updated>
-  </entry>
-  <entry>
-    <title>Test::Excel</title>
-    <link rel="alternate" href="https://theweeklychallenge.org/blog/test-excel/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml">My first contribution to CPAN was Test::Excel. It was initiated as we had requirement for such at work at that time.
-It has gone through many changes, thanks to all for reporting issues and providing patches..
-It even got space as topic for Day 18 in Perl Advent Calendar 2018.
-It was a proud moment when a collegue of mine at work requested help with Test::Excel as it was not behaving as per her requirements.</div>
-    </content>
-    <id>https://theweeklychallenge.org/blog/test-excel/</id>
     <published>2022-07-03T00:00:00Z</published>
     <updated>2022-07-03T00:00:00Z</updated>
   </entry>
@@ -2618,96 +2762,6 @@ The final vote will be made by the existing Board Members after gathering feedba
 <h2>Any questions and further information</h2>
 
 <p>If you have any questions please get in touch with us at <a href="mailto:board@perlfoundation.org">board@perlfoundation.org</a>.</p>
-
-    ]]>
-  </content>
-</entry>
-  <entry>
-  <title>Calling All Grant Gurus! </title>
-  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/grantschairjobcall"/>
-  <id>tag:news.perlfoundation.org,2022-06-17:/post/grantschairjobcall</id>
-  <published>2022-06-17T14:59:34</published>
-  <updated>2022-06-17T14:59:34</updated>
-  <summary>
-  <![CDATA[
-     We are in need of a volunteer to take over the Grants Committee Chair responsibilities ASAP. What does the Grants Committee Chair do? Grants Committee Chair Job Duties Open a grants call every two months to invite community members to apply for funding. Facilitate discussion of grants between the public,The Perl Foundation/Raku Foundation, and Grants Committee members. Tally and report voting outcome at the end of each grant call. Work 
-   ]]>
-  </summary>
-  <author>
-    <name>Amber Deuel</name>
-  </author>
-  <category term="Grants" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
-   <![CDATA[
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/ed20b87e4006fc60edb450ad8dad59759453cb86/megaphone.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>We are in need of a volunteer to take over the Grants Committee Chair responsibilities ASAP. 
-What does the Grants Committee Chair do? </p>
-
-<h1>Grants Committee Chair Job Duties</h1>
-
-<ul>
-<li>Open a grants call every two months (January, March, May, July, September, November) to invite community members to apply for funding.</li>
-<li>Facilitate discussion of grants between the public,The Perl Foundation/Raku Foundation, and Grants Committee members.</li>
-<li>Tally and report voting outcome at the end of each grant call.</li>
-<li>Work with the foundation to ensure funding is available for approved grants.</li>
-<li>Make sure each approved grant has a grant manager assigned, else serve as grant manager.</li>
-<li>Serve as a liaison between the foundation and grantees</li>
-<li>Assist grant managers in removing roadblocks for grant managers and recipients</li>
-<li>Help grant managers keep grantees on time and on task.</li>
-<li>Other duties and reporting as needed by the foundation.</li>
-</ul>
-
-<h3>Okay, but what are the benefits?</h3>
-
-<p><strong>Helping Others</strong> 
-Nonprofits depend on volunteers. Not only will you be helping the foundation, you will also be helping the developers that apply for aid. Our grants fund a variety of projects that benefit the open-source community. </p>
-
-<p><em>*Networking with Other Programmers *</em>
-The service you perform while volunteering with the foundation allows you to meet new people that you may not have met otherwise. This community gives you a place to bond with peers over the important work you are doing. This can lead to new friendships and even job opportunities since you are constantly meeting, interacting, and networking with new people.</p>
-
-<p><strong>Learn New Things</strong>
-Volunteerism also gives you the chance to learn new things. Most likely, you’ll be working in a new capacity that is unfamiliar to you. This will allow you to gain new skills and gather new ideas. </p>
-
-<h3>Contact Us</h3>
-
-<p>If you're interested in this role, please email us at <a href="hello@perlfoundation.org">board@perlfoundation.org</a>.</p>
-
-    ]]>
-  </content>
-</entry>
-  <entry>
-  <title>Could you support future development of Perl and Raku?</title>
-  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/new-prospectus-launched-june-22"/>
-  <id>tag:news.perlfoundation.org,2022-06-15:/post/new-prospectus-launched-june-22</id>
-  <published>2022-06-15T05:17:45</published>
-  <updated>2022-06-15T05:17:45</updated>
-  <summary>
-  <![CDATA[
-     Billions of people around the world rely on Perl and Raku in some way without even realising it. A new prospectus from The Perl Foundation highlights how you can contribute to its ongoing development, either financially, or through volunteering time. By doing so you can: Ensure Perl and Raku are sustainably maintained and developed Gain valuable education opportunities for your teams at conferences Engage in important networking opportunities and build 
-   ]]>
-  </summary>
-  <author>
-    <name>Nic Evans</name>
-  </author>
-  <category term="Perl Foundation" scheme="http://www.sixapart.com/ns/types#category"/>
-  <category term="Raku Foundation" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
-   <![CDATA[
-     
-     <p>Billions of people around the world rely on Perl and Raku in some way without even realising it. A [new prospectus](<em>ra-rel-mnt</em>/simplecas/fetch_content/64c0601be328555858adc21a58e221c977fe55ae/Perl Raku Prospectus_Final_Interactive_v2.pdf) from The Perl Foundation highlights how you can contribute to its ongoing development, either financially, or through volunteering time. </p>
-
-<p>By doing so you can:
-* Ensure Perl and Raku are sustainably maintained and developed
-* Gain valuable education opportunities for your teams at conferences
-* Engage in important networking opportunities and build your corporate visibility
-* Recruit new and invaluable Perl or Raku developers to your team
-* Associate your brand with support for Perl and Raku</p>
-
-<h2>Please share the prospectus with colleagues and employers</h2>
-
-<p>Take a look at [the prospectus](<em>ra-rel-mnt</em>/simplecas/fetch_content/64c0601be328555858adc21a58e221c977fe55ae/Perl Raku Prospectus_Final_Interactive_v2.pdf) today and share it with your colleagues and employers too.</p>
-
-<p>[<img src="_ra-rel-mnt_/simplecas/fetch_content/8c78224a59b939d5c85cd0afe1523619aae5d229/prospectus cover page.jpg" style="max-width:100%;" />](<em>ra-rel-mnt</em>/simplecas/fetch_content/87ad918718351eef9604c5487e49a4c94760d91b/Perl Raku Prospectus_Final_Interactive.pdf) </p>
 
     ]]>
   </content>

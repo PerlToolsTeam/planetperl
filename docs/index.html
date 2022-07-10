@@ -59,6 +59,145 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_june_2022">Maintaining Perl 5 Core (Dave Mitchell): June 2022</a></h2>
+<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
+
+              <p class="text-right"><small>Published by Jason A. Crome
+ on Sunday 10 July 2022 12:53</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+   
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>Dave writes:</p>
+
+<p>This is my monthly report on work done during June covered by my TPF perl
+core maintenance grant.</p>
+
+<p>SUMMARY:
+<code>
+      0:47 improve docs for internal exception handling (JMPENV etc)
+      1:46 look into disabling smartmatch/switch.
+      8:02 make stack reference counted
+      7:58 process p5p mailbox
+    ------
+     18:33 TOTAL (HH::MM)
+</code></p>
+
+<p>The most interesting thing I did was that near the end of the month I
+started work on "making the stack reference counted"; i.e. that when
+things are pushed onto the argument stack, their reference count (RC)
+should be incremented and, conversely, decremented when popped.</p>
+
+<p>Currently things on the stack aren't RCed, so there is a danger that such
+items could be prematurely freed. For example,</p>
+
+<pre><code>@a = (1,2,3);
+f(@a);
+
+sub f {
+    @a = (); # prematurely frees the elements of @a
+    print "($_[0])\n"; # prints an undefined value or random garbage
+}
+</code></pre>
+
+<p>This issue has been the basis of countless "unfixable" bug reports over
+the years, and in particular most fuzzing crash reports turn out to be
+caused by this issue.</p>
+
+<p>There is a particular difficulty in fixing this: specifically how do we
+get to there from where we are now, because it's rather an all-or-nothing
+scenario. Every single pp function in the 30K lines of code in the various
+<code>pp*.c</code> files all need to be updated to expect an RCed stack at the same
+time. You can't have only half of them updated: the stack is binary, it's
+either RCed or it isn't. So having updated only half the pp functions, you
+can't compile perl and run the test suite.</p>
+
+<p>My cunning plan for getting round that is to initially redefine all the
+<code>Perl_pp_foo()</code> functions to be small wrapper functions around the real
+functions. The wrappers are responsible for making a non-RCed copy of the
+function's args and calling the real (non-RC aware) function; then on
+return, shifting down and bumping the RC of any returned arguments. A
+similar thing will be done by <code>pp_entersub()</code> to call XS functions.</p>
+
+<p>This is crude and slow, but in principle allows the changeover to an RCed
+stack in a single go. Then at my leisure, I can go through the pp
+functions one by one and modify them to be RC-aware and remove the wrapper
+functions. Once all the important functions are done (e.g. all the ones in
+<code>pp_hot.c</code>) then the new system may be ready for production use. We can
+continue using wrapper functions for the slow/rare functions if converting
+them would be too much work.</p>
+
+<p>I intend to have a new build define, <code>PERL_RC_STACK</code>, which isn't initially
+enabled by default. Unless enabled, perl behaves as usual, with the stack
+not being reference counted, the wrapper functions not being defined, etc.
+So my work can proceed initially without breaking normal perl. Once the
+work is stable and we don't think it will break most of CPAN, then
+<code>PERL_RC_STACK</code> will be enabled by default in builds, but can be disabled at
+build time if necessary. Eventually the define will be removed
+altogether, meaning that various places in the perl core no longer need to
+handle both RC and non-RC cases.</p>
+
+<p>This work if fairly risky, in that I may well find along the way that the
+problems are unsurmountable and have to abandon it.</p>
+
+    
+         </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_may_2022">Maintaining Perl 5 Core (Dave Mitchell): May 2022</a></h2>
+<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
+
+              <p class="text-right"><small>Published by Jason A. Crome
+ on Sunday 10 July 2022 12:50</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+   
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>Dave writes:</p>
+
+<p>This is my monthly report for May on work done covered by my TPF perl core
+maintenance grant.</p>
+
+<p>The main things I did were to fix an obscure panic when an eval is the
+last statement in a regex code block, e.g.</p>
+
+<pre><code>/....(?{...; eval { ... }; }) .../
+</code></pre>
+
+<p>And, as a side-effect of working on that, I also improved the docs
+covering how perl handles exceptions internally.</p>
+
+<p>(Both these bits of work are currently in a branch but not yet merged.)</p>
+
+<p>Other than that, I ended up having my gall bladder removed late May, the
+pre- and post- effects of which have reduced the hours I have spent on
+perl somewhat recently - mostly just trying to keep up to date with my p5p
+mailbox and not doing much "real" work.</p>
+
+<p>SUMMARY:
+<code>
+      5:16 GH #19680 panic: restartop in perl_run
+      5:01 improve docs for internal exception handling (JMPENV etc)
+      5:26 process p5p mailbox
+      0:32 refactor regen/warnings.pl
+    ------
+     16:15 TOTAL (HH::MM)
+</code></p>
+
+    
+         </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_july_2022">Call for Grants: July 2022 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
 
@@ -95,7 +234,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-172-1h8i">Weekly Challenge 172</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -207,7 +346,21 @@ $ ./ch-1.py 19 3
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-166/">Colin Crain › Perl Weekly Review #166</a></h2>
+<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
+
+              <p class="text-right"><small>Published
+ on Sunday 10 July 2022 00:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">( &hellip;continues from previous week. )
+Welcome to the Perl review pages for Week 166 of The Weekly Challenge! Here we will take the time to discuss the submissions offered up by the team, factor out some common methodologies that came up in those solutions, and highlight some of the unique approaches and unusual code created.
+ ●︎ Why do we do these challenges? I suppose any reasonable answer to that question would be from a field as wide ranging and varied as the people who choose to join the team.       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -219,7 +372,7 @@ $ ./ch-1.py 19 3
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-172-prime-partition-and-five-number-summary.html">Perl Weekly Challenge 172: Prime Partition and Five-Number Summary </a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -600,7 +753,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cd-10-great-cpan-modules-released-last.html">(cd) 10 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -612,7 +765,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxiv-metacpan-weekly-report.html">(dxiv) metacpan weekly report </a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -624,7 +777,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxlii-stackoverflow-perl-report.html">(dxlii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -636,7 +789,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/taskdateholidays-bug-fix-release-012-15jj">Task::Date::Holidays bug fix release 0.12</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -664,7 +817,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2022/07/mite-an-oo-compiler-for-perl.html">Mite: an OO compiler for Perl</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -785,7 +938,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/kavya/2022/07/error-flock-trapped-by-operation-mask-at-usrlib64perl5vendor-perlstorablepm.html"> ERROR: 'flock' trapped by operation mask at /usr/lib64/perl5/vendor_perl/Storable.pm </a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -808,7 +961,7 @@ Facing flock error when trying to execute the Automated unit testing .</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/hightowe/2022/07/totp-with-perl-and-authenoath.html">TOTP with Perl and Authen::OATH</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -938,7 +1091,7 @@ programs.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/07/announcing-perlcritic-policy-valuesandexpressionsprohibitfiletest-rwxrwx.html">Announcing perlcritic Policy ValuesAndExpressions::ProhibitFiletest_rwxRWX</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -969,7 +1122,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/volunteer-rt.cpan.org-admins-needed">Volunteer rt.cpan.org Admins Needed</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -989,7 +1142,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/571.html">#571 - Sponsoring TPF or individuals</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1006,7 +1159,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-route-parameters">Dancer2: Route parameters and sending 404 manually</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1021,7 +1174,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-171/">RECAP - The Weekly Challenge - 171</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1034,7 +1187,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-172/">The Weekly Challenge - 172</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1047,7 +1200,7 @@ Today is the first Monday of the month and time to announce the champion. Proud 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/03#pwc171">Abundant Composition</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1162,7 +1315,7 @@ easily do these things as well!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-05/">Meet The Champion: May 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1178,22 +1331,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/test-excel/">Test::Excel</a></h2>
-<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
-
-              <p class="text-right"><small>Published
- on Sunday 03 July 2022 00:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">My first contribution to CPAN was Test::Excel. It was initiated as we had requirement for such at work at that time.
-It has gone through many changes, thanks to all for reporting issues and providing patches..
-It even got space as topic for Day 18 in Perl Advent Calendar 2018.
-It was a proud moment when a collegue of mine at work requested help with Test::Excel as it was not behaving as per her requirements.       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/tobyink/mite-an-oo-compiler-for-perl-b70">Mite: an OO compiler for Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1432,7 +1570,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cccxcix-6-great-cpan-modules-released.html">(cccxcix) 6 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1444,7 +1582,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxiii-metacpan-weekly-report.html">(dxiii) metacpan weekly report - HTML::Tree</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1456,7 +1594,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/easiest-way-to-get-started-with-perl-48pk">Easiest Way to Get Started with Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1474,7 +1612,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/07/01/list-of-new-cpan-distributions-jun-2022/">List of new CPAN distributions – Jun 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -2088,7 +2226,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-06-29-cpanfile-a-teil-1">cpanfile – Teil 1</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2100,7 +2238,7 @@ It was a proud moment when a collegue of mine at work requested help with Test::
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-write-tests-using-github-actions-4jk8">How to Write Tests using Github Actions</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2319,7 +2457,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/570.html">#570 - CPAN Weekly</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2339,7 +2477,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-logging">Dancer2: Logging</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2354,7 +2492,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/569.html">#569 - Fundraising for Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2374,7 +2512,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-show-errors-during-development">Dancer2: Show errors during development</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2389,7 +2527,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/06/19#pwc169">Brilliantly Discover Achilles' Imperfection</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2555,7 +2693,7 @@ ensure that, within a minuscule rounding error, <code>$x</code> is an integer.</
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/could-you-join-tpf-board-june-2022">Do you want to support the Perl and Raku communities in a more strategic way?</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -2608,87 +2746,6 @@ The final vote will be made by the existing Board Members after gathering feedba
 <h2>Any questions and further information</h2>
 
 <p>If you have any questions please get in touch with us at <a href="mailto:board@perlfoundation.org">board@perlfoundation.org</a>.</p>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_34">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grantschairjobcall">Calling All Grant Gurus! </a></h2>
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Amber Deuel
- on Friday 17 June 2022 14:59</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/ed20b87e4006fc60edb450ad8dad59759453cb86/megaphone.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>We are in need of a volunteer to take over the Grants Committee Chair responsibilities ASAP. 
-What does the Grants Committee Chair do? </p>
-
-<h1>Grants Committee Chair Job Duties</h1>
-
-<ul>
-<li>Open a grants call every two months (January, March, May, July, September, November) to invite community members to apply for funding.</li>
-<li>Facilitate discussion of grants between the public,The Perl Foundation/Raku Foundation, and Grants Committee members.</li>
-<li>Tally and report voting outcome at the end of each grant call.</li>
-<li>Work with the foundation to ensure funding is available for approved grants.</li>
-<li>Make sure each approved grant has a grant manager assigned, else serve as grant manager.</li>
-<li>Serve as a liaison between the foundation and grantees</li>
-<li>Assist grant managers in removing roadblocks for grant managers and recipients</li>
-<li>Help grant managers keep grantees on time and on task.</li>
-<li>Other duties and reporting as needed by the foundation.</li>
-</ul>
-
-<h3>Okay, but what are the benefits?</h3>
-
-<p><strong>Helping Others</strong> 
-Nonprofits depend on volunteers. Not only will you be helping the foundation, you will also be helping the developers that apply for aid. Our grants fund a variety of projects that benefit the open-source community. </p>
-
-<p><em>*Networking with Other Programmers *</em>
-The service you perform while volunteering with the foundation allows you to meet new people that you may not have met otherwise. This community gives you a place to bond with peers over the important work you are doing. This can lead to new friendships and even job opportunities since you are constantly meeting, interacting, and networking with new people.</p>
-
-<p><strong>Learn New Things</strong>
-Volunteerism also gives you the chance to learn new things. Most likely, you’ll be working in a new capacity that is unfamiliar to you. This will allow you to gain new skills and gather new ideas. </p>
-
-<h3>Contact Us</h3>
-
-<p>If you're interested in this role, please email us at <a href="hello@perlfoundation.org">board@perlfoundation.org</a>.</p>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_35">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/new-prospectus-launched-june-22">Could you support future development of Perl and Raku?</a></h2>
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Nic Evans
- on Wednesday 15 June 2022 05:17</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-     <p>Billions of people around the world rely on Perl and Raku in some way without even realising it. A [new prospectus](<em>ra-rel-mnt</em>/simplecas/fetch_content/64c0601be328555858adc21a58e221c977fe55ae/Perl Raku Prospectus_Final_Interactive_v2.pdf) from The Perl Foundation highlights how you can contribute to its ongoing development, either financially, or through volunteering time. </p>
-
-<p>By doing so you can:
-* Ensure Perl and Raku are sustainably maintained and developed
-* Gain valuable education opportunities for your teams at conferences
-* Engage in important networking opportunities and build your corporate visibility
-* Recruit new and invaluable Perl or Raku developers to your team
-* Associate your brand with support for Perl and Raku</p>
-
-<h2>Please share the prospectus with colleagues and employers</h2>
-
-<p>Take a look at [the prospectus](<em>ra-rel-mnt</em>/simplecas/fetch_content/64c0601be328555858adc21a58e221c977fe55ae/Perl Raku Prospectus_Final_Interactive_v2.pdf) today and share it with your colleagues and employers too.</p>
-
-<p>[<img src="_ra-rel-mnt_/simplecas/fetch_content/8c78224a59b939d5c85cd0afe1523619aae5d229/prospectus cover page.jpg" style="max-width:100%;" />](<em>ra-rel-mnt</em>/simplecas/fetch_content/87ad918718351eef9604c5487e49a4c94760d91b/Perl Raku Prospectus_Final_Interactive.pdf) </p>
 
     
          </div><!-- card-text -->     </div>
@@ -2884,7 +2941,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 10 July 2022 16:48 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 10 July 2022 20:43 UTC</address>
             </div>
           </div>
         </div><!-- container -->
