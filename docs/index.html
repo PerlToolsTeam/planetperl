@@ -59,321 +59,6 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_june_2022">Maintaining Perl 5 Core (Dave Mitchell): June 2022</a></h2>
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Jason A. Crome
- on Sunday 10 July 2022 12:53</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>Dave writes:</p>
-
-<p>This is my monthly report on work done during June covered by my TPF perl
-core maintenance grant.</p>
-
-<p>SUMMARY:
-<code>
-      0:47 improve docs for internal exception handling (JMPENV etc)
-      1:46 look into disabling smartmatch/switch.
-      8:02 make stack reference counted
-      7:58 process p5p mailbox
-    ------
-     18:33 TOTAL (HH::MM)
-</code></p>
-
-<p>The most interesting thing I did was that near the end of the month I
-started work on "making the stack reference counted"; i.e. that when
-things are pushed onto the argument stack, their reference count (RC)
-should be incremented and, conversely, decremented when popped.</p>
-
-<p>Currently things on the stack aren't RCed, so there is a danger that such
-items could be prematurely freed. For example,</p>
-
-<pre><code>@a = (1,2,3);
-f(@a);
-
-sub f {
-    @a = (); # prematurely frees the elements of @a
-    print "($_[0])\n"; # prints an undefined value or random garbage
-}
-</code></pre>
-
-<p>This issue has been the basis of countless "unfixable" bug reports over
-the years, and in particular most fuzzing crash reports turn out to be
-caused by this issue.</p>
-
-<p>There is a particular difficulty in fixing this: specifically how do we
-get to there from where we are now, because it's rather an all-or-nothing
-scenario. Every single pp function in the 30K lines of code in the various
-<code>pp*.c</code> files all need to be updated to expect an RCed stack at the same
-time. You can't have only half of them updated: the stack is binary, it's
-either RCed or it isn't. So having updated only half the pp functions, you
-can't compile perl and run the test suite.</p>
-
-<p>My cunning plan for getting round that is to initially redefine all the
-<code>Perl_pp_foo()</code> functions to be small wrapper functions around the real
-functions. The wrappers are responsible for making a non-RCed copy of the
-function's args and calling the real (non-RC aware) function; then on
-return, shifting down and bumping the RC of any returned arguments. A
-similar thing will be done by <code>pp_entersub()</code> to call XS functions.</p>
-
-<p>This is crude and slow, but in principle allows the changeover to an RCed
-stack in a single go. Then at my leisure, I can go through the pp
-functions one by one and modify them to be RC-aware and remove the wrapper
-functions. Once all the important functions are done (e.g. all the ones in
-<code>pp_hot.c</code>) then the new system may be ready for production use. We can
-continue using wrapper functions for the slow/rare functions if converting
-them would be too much work.</p>
-
-<p>I intend to have a new build define, <code>PERL_RC_STACK</code>, which isn't initially
-enabled by default. Unless enabled, perl behaves as usual, with the stack
-not being reference counted, the wrapper functions not being defined, etc.
-So my work can proceed initially without breaking normal perl. Once the
-work is stable and we don't think it will break most of CPAN, then
-<code>PERL_RC_STACK</code> will be enabled by default in builds, but can be disabled at
-build time if necessary. Eventually the define will be removed
-altogether, meaning that various places in the perl core no longer need to
-handle both RC and non-RC cases.</p>
-
-<p>This work if fairly risky, in that I may well find along the way that the
-problems are unsurmountable and have to abandon it.</p>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_2">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_may_2022">Maintaining Perl 5 Core (Dave Mitchell): May 2022</a></h2>
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Jason A. Crome
- on Sunday 10 July 2022 12:50</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>Dave writes:</p>
-
-<p>This is my monthly report for May on work done covered by my TPF perl core
-maintenance grant.</p>
-
-<p>The main things I did were to fix an obscure panic when an eval is the
-last statement in a regex code block, e.g.</p>
-
-<pre><code>/....(?{...; eval { ... }; }) .../
-</code></pre>
-
-<p>And, as a side-effect of working on that, I also improved the docs
-covering how perl handles exceptions internally.</p>
-
-<p>(Both these bits of work are currently in a branch but not yet merged.)</p>
-
-<p>Other than that, I ended up having my gall bladder removed late May, the
-pre- and post- effects of which have reduced the hours I have spent on
-perl somewhat recently - mostly just trying to keep up to date with my p5p
-mailbox and not doing much "real" work.</p>
-
-<p>SUMMARY:
-<code>
-      5:16 GH #19680 panic: restartop in perl_run
-      5:01 improve docs for internal exception handling (JMPENV etc)
-      5:26 process p5p mailbox
-      0:32 refactor regen/warnings.pl
-    ------
-     16:15 TOTAL (HH::MM)
-</code></p>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_3">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_july_2022">Call for Grants: July 2022 Round</a></h2>
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Jason A. Crome
- on Sunday 10 July 2022 12:42</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>The Grants Committee is accepting grant proposals all the time. We evaluate them every two months and another round is starting.</p>
-
-<p>If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 July 17th, 2022, UTC. We will publish the received applications, get community feedback through July 24th, and we will conclude the process shortly thereafter.</p>
-
-<p>We now accept grant requests for core Perl and Raku development. There are some eligibility requirements that must be met for each language when submitting a grant. For Perl:
-* The applicant must be a contributor to the Perl core.
-* The application must be endorsed by one or more people with commit rights to the Perl core.</p>
-
-<p>For Raku:
-* The applicant must be a contributor to the Raku language specification or one of its implementations.
-* The application must be endorsed by one or more people in Raku Steering Council.</p>
-
-<p>For more information, see <a href="https://news.perlfoundation.org/post/grants_committee_expanded_role">this blog post</a>.</p>
-
-<p>To apply, please read <a href="https://www.perlfoundation.org/how-to-write-a-proposal.html">How to Write a Proposal</a>, <a href="https://www.perlfoundation.org/grants-committee.html">GC Charter, Rules of Operation</a> and <a href="https://www.perlfoundation.org/running-grants.html">Running Grants List</a> will also help you understand how the grant process works. We also got some <a href="https://grants.perlfoundation.org/">grant ideas</a> from the community. Grant applications may be submitted via <a href="https://docs.google.com/forms/d/16seYhrMjz8rgsau9e1MtwYY0fHB81mVKm-0SD6Ynty0/viewform">this Google Form</a>.</p>
-
-<p>We will confirm the receipt of application by no later than July 18th.</p>
-
-<p>If you have further questions, please contact me at tpf-grants-secretary at perl-foundation.org.</p>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_4">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-172-1h8i">Weekly Challenge 172</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Simon Green
- on Sunday 10 July 2022 10:28</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-172/">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-172/sgreen">My solutions</a></p>
-
-<h2>
-  
-  
-  Task 1: Prime Partition
-</h2>
-
-<h3>
-  
-  
-  Task
-</h3>
-
-<p>You are given two positive integers, <code>$m</code> and <code>$n</code>.</p>
-
-<p>Write a script to find out the Prime Partition of the given number. No duplicates allowed.</p>
-
-<h3>
-  
-  
-  My solution
-</h3>
-
-<p>This is one of those interesting tasks where there are multiple ways to tackle it. And the method really depends on the value of <code>m</code> and (more importantly) <code>n</code>.</p>
-
-<p>I took the quick and easy option, given that the examples provided have small values. In this method, I collect a list of all primes <code>&lt;=m</code> and store it in a list (array in Perl) called <code>primes</code>. I then use itertool's <a href="https://docs.python.org/3/library/itertools.html#itertools.combinations">combinations</a> method to work out all combinations of size <code>n</code>. If I find a combination that sums to the value of <code>m</code>, I print the results and exit. If I don't find one, I also print an appropriate message.</p>
-
-<p>For the Perl version, I use the <a href="https://metacpan.org/pod/Algorithm::Combinatorics">Algorithm::Combinatorics</a> module to perform the same function that Python's itertools provides. This is available as a RPM package in Fedora (the OS my server uses), so seems like a good choice.</p>
-
-<p>Now for a discussion about the case where <code>m</code> and <code>n</code> are larger. The problem with the above method is when <code>n</code> is larger, the number of combinations grows exponentially. This leads to a lot of calculations where the sum is clearly going to be too high or too low.</p>
-
-<p>Take for example trying to find 10 primes of 7920. The 1000th prime number is 7919. As I sorted the list highest to lowest, it means the first gazillion (well not quite, but it is a number with 26 digits in it, 999 × 998 × ... × 991) combinations will always result in a number that is too large. Rather than working through all combinations, we can eliminate ones that clearly won't be valid. For example, if we take the first number as 7829 (the 990th prime), we know that the sum of the remain digits can't be larger than 91.</p>
-
-<p>However, the example clearly sets an expectation that <code>m</code> and <code>n</code> are (relatively speaking) on the smaller side, so the brute force method is good enough.</p>
-
-<h3>
-  
-  
-  Example
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-1.py 18 2
-(13, 5)
-
-$ ./ch-1.py 19 3
-(11, 5, 3)
-
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  
-  
-  Task 2: Five-number Summary
-</h2>
-
-<h3>
-  
-  
-  Task
-</h3>
-
-<p>You are given an array of integers.</p>
-
-<p>Write a script to compute the <a href="https://en.wikipedia.org/wiki/Five-number_summary">five-number summary</a> of the given set of integers.</p>
-
-<h3>
-  
-  
-  My solution
-</h3>
-
-<p>The easy solution would just be use <a href="https://numpy.org/">numpy</a> which supports this out the box, but where is the fun in that? If this was code I needed to use at work, indeed <code>import numpy</code> would be at the top of the script.</p>
-
-<p>This task is pretty straight forward, so no real explanation is needed. Take the integers, sort them from lowest to highest, and find the position at each quartile. If that position is not a single value, then take the two values and half it.</p>
-
-<h3>
-  
-  
-  Example
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ ./ch-2.py 0 0 1 2 63 61 27 13
-0, 0.5, 7.5, 44, 63
-</code></pre>
-
-</div>
-
-
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_5">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-166/">Colin Crain › Perl Weekly Review #166</a></h2>
-<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
-
-              <p class="text-right"><small>Published
- on Sunday 10 July 2022 00:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">( &hellip;continues from previous week. )
-Welcome to the Perl review pages for Week 166 of The Weekly Challenge! Here we will take the time to discuss the submissions offered up by the team, factor out some common methodologies that came up in those solutions, and highlight some of the unique approaches and unusual code created.
- ●︎ Why do we do these challenges? I suppose any reasonable answer to that question would be from a field as wide ranging and varied as the people who choose to join the team.       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_6">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
-<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
-
-              <p class="text-right"><small>Published
- on Sunday 10 July 2022 00:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Elixir, Elm, Erlang, Excel VBA, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, MMIX, Mumps, Myrddin, Nim, Nix, Node.       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_7">
-            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-172-prime-partition-and-five-number-summary.html">Perl Weekly Challenge 172: Prime Partition and Five-Number Summary </a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -743,6 +428,107 @@ print(summary(moons));
 (0, 0.5, 7.5, 44.0, 63)
 </code></pre>
 
+<h3>Five-number Summary in Ruby</h3>
+
+<pre><code>def median(n)
+    size = n.length
+    if size %2 != 0
+        n[(size + 1) / 2] 
+    else
+        (n[size/2] + n[size/2 + 1]) / 2.0
+    end
+end
+
+def summary(n)
+    min = n[0]
+    max = n[-1]
+    med = median(n)
+    first_q = median( n.select { |i| i &lt; med })
+    last_q = median( n.select { |i| i &gt; med })
+    return min, first_q, med, last_q, max
+end
+
+moons = [0, 0, 1, 2, 63, 61, 27, 13]
+print summary(moons.sort), "\n"
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>[0, 0.5, 7.5, 44.0, 63]
+</code></pre>
+
+<h3>Five-number Summary in C</h3>
+
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int compare_int(const void *a,const void *b) {
+    int *x = (int *) a;
+    int *y = (int *) b;
+    return *x - *y;
+}
+
+float median (int count, int m[]) {
+    if (count % 2) {
+        return 1.0 * m[(count -1)/2];
+    } else {
+        return (m[count/2 -1] + m[count/2])/2.0;
+    }
+}
+
+int main() {
+    int moons[] = {0, 0, 1, 2, 63, 61, 27, 13};
+    int size = sizeof(moons)/sizeof(*moons);
+    qsort (moons, size, sizeof(*moons), compare_int);
+    float min = 1.0 * moons[0];
+    float med = median(size, moons);
+    int half = (int)size/2;
+    float first_q = median(half, moons);
+    float last_q = median(half, moons + 4);
+    float max = 1.0 * moons[size - 1];
+    printf ("%.2f %.2f %.2f %.2f %.2f", min, first_q, med, last_q, max);
+    return 0;
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>0.00 0.50 7.50 44.00 63.00
+</code></pre>
+
+<h3>Five-number Summary in Ring</h3>
+
+<p>Ring does not seem to have a filter (or <code>grep</code>) function and also doesn&#8217;t seem to have array slices. Or, if it has any of these two features, I did not find them in the documentation. In addition, Ring array indices start with 1. So, I managed manually the various ranges, but I must admit that, being used with array indices starting at 0, it took me quite a while to get the array index computations right. </p>
+
+<pre><code>moons = [0, 0, 1, 2, 63, 61, 27, 13]
+see summary(sort(moons))
+
+func summary(n)
+    min = n[1]
+    max = n[len(n)]
+    size = len(n)
+    med = median(1, size, n)
+    first_q =  median(1, size/2, n)
+    last_q = median(size/2 +1, size, n)
+    return [min, first_q, med, last_q, max]
+
+func median(low, high, n)
+    if (high + low) % 2 = 0 
+        return n[low + (high - low + 1)/2]
+    else
+        return (n[low + (high - low + 1)/2] + n[low + (high - low + 1)/2 - 1]) / 2.0
+    ok
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>0
+0.50
+7.50
+44
+63
+</code></pre>
+
 <h2>Wrapping up</h2>
 
 <p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on July 17, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
@@ -753,7 +539,560 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/10#pwc172">Partition the Summary</a></h2>
+<a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
+
+              <p class="text-right"><small>Published
+ on Sunday 10 July 2022 20:39</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+<p><em>The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.</em></p>
+
+<h2>Part 1</h2>
+
+<p><em>You are given two positive integers, $n and $k. Write a script to find out the Prime 
+Partition of the given number. No duplicates are allowed.</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+use boolean;
+use Math::Combinatorics;
+
+sub sieve_atkin{
+    my($upper_bound) = @_;
+    my @primes = (2, 3, 5);
+    my @atkin = (false) x $upper_bound;    
+    my @sieve = (1, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 49, 53, 59);
+    for my $x (1 .. sqrt($upper_bound)){
+        for(my $y = 1; $y <= sqrt($upper_bound); $y+=2){
+            my $m = (4 * $x ** 2) + ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (1, 13, 17, 29, 37, 41, 49, 53) if $m <= $upper_bound; 
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    } 
+    for(my $x = 1; $x <= sqrt($upper_bound); $x += 2){
+        for(my $y = 2; $y <= sqrt($upper_bound); $y += 2){
+            my $m = (3 * $x ** 2) + ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (7, 19, 31, 43) if $m <= $upper_bound; 
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    }   
+    for(my $x = 2; $x <= sqrt($upper_bound); $x++){
+        for(my $y = $x - 1; $y >= 1; $y -= 2){
+            my $m = (3 * $x ** 2) - ($y ** 2);
+            my @remainders;  
+            @remainders = grep {$m % 60 == $_} (11, 23, 47, 59) if $m <= $upper_bound; 
+            $atkin[$m] = !$atkin[$m] if @remainders; 
+        }          
+    } 
+    my @m;
+    for my $w (0 .. ($upper_bound / 60)){
+        for my $s (@sieve){
+            push @m, 60 * $w + $s;  
+        }
+    }
+    for my $m (@m){
+        last if $upper_bound < ($m ** 2);
+        my $mm = $m ** 2;
+        if($atkin[$m]){
+            for my $m2 (@m){
+                my $c = $mm * $m2;
+                last if $c > $upper_bound;
+                $atkin[$c] = false;
+            }
+        }
+    }
+    map{ push @primes, $_ if $atkin[$_] } 0 .. @atkin - 1;
+    return @primes; 
+}
+
+sub prime_partition{
+    my($n, $k) = @_;
+    my @partitions;
+    my @primes = sieve_atkin($n);
+    my $combinations = Math::Combinatorics->new(count => $k, data => [@primes]);
+    while(my @combination = $combinations->next_combination()){
+        push @partitions, [@combination] if unpack("%32I*", pack("I*", @combination)) == $n;
+    }
+    return @partitions;
+}
+
+MAIN:{
+    my($n, $k);
+    $n = 18, $k = 2;
+    map{ 
+        print "$n = " . join(", ", @{$_}) . "\n"
+    } prime_partition($n, $k);
+    print"\n\n";
+    $n = 19, $k = 3;
+    map{ 
+        print "$n = " . join(", ", @{$_}) . "\n"
+    } prime_partition($n, $k);
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-1.pl
+18 = 7, 11
+18 = 5, 13
+
+
+19 = 3, 11, 5
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>Only when writing this short blog did I realize there is a far more efficient way of 
+doing this!</p>
+
+<p>Here we see a brute force exhaustion of all possible combinations. This works alright for 
+when <code>$n</code> and <code>$k</code> are relatively small. For larger values a procedure like this would be
+better,</p>
+
+<pre>
+1. Obtain all primes $p < $n
+2. Start with $n and compute $m = $n - $p for all $p
+3. If $m is prime and $k = 2 DONE
+4. Else set $n = $m and repeat, computing a new $m with all $p < $m stopping with the same criteria if $m is prime and $k is satisfied
+</pre>
+
+<p>This procedure would be a natural fit for recursion, if you were in the mood for that sort 
+of thing.</p>
+
+<h2>Part 2</h2>
+
+<p><em>You are given an array of integers. Write a script to compute the five-number summary of 
+the given set of integers.</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+sub five_number_summary{
+    my @numbers = @_;
+    my($minimum, $maximum, $first_quartile, $median, $third_quartile);
+    my @sorted = sort {$a <=> $b} @numbers;
+    $minimum = $sorted[0];
+    $maximum = $sorted[@sorted - 1];
+    if(@sorted % 2 == 0){
+        my $median_0 = $sorted[int(@sorted / 2) - 1];
+        my $median_1 = $sorted[int(@sorted / 2)];
+        $median = ($median_0 + $median_1) / 2;
+        my @lower_half = @sorted[0 .. int(@sorted / 2)];
+        my $median_lower_0 = $lower_half[int(@lower_half / 2) - 1];
+        my $median_lower_1 = $lower_half[int(@lower_half / 2)];
+        $first_quartile = ($median_lower_0 + $median_lower_1) / 2;       
+        my @upper_half = @sorted[int(@sorted / 2) .. @sorted];
+        my $median_upper_0 = $upper_half[int(@upper_half / 2) - 1];
+        my $median_upper_1 = $upper_half[int(@upper_half / 2)];
+        $third_quartile = ($median_upper_0 + $median_upper_1) / 2;
+    }
+    else{
+        $median = $sorted[int(@sorted / 2)];
+        $first_quartile = [@sorted[0 .. int(@sorted / 2)]]->[int(@sorted / 2) / 2];
+        $third_quartile = [@sorted[int(@sorted / 2) .. @sorted]]->[(@sorted - int(@sorted / 2)) / 2];
+    }
+    return {
+        minimum => $minimum, 
+        maximum => $maximum, 
+        first_quartile => $first_quartile, 
+        median => $median, 
+        third_quartile => $third_quartile
+    };
+}
+
+MAIN:{
+    my @numbers;
+    my $five_number_summary;
+    @numbers = (6, 3, 7, 8, 1, 3, 9);
+    print join(", ", @numbers) . "\n";
+    $five_number_summary = five_number_summary(@numbers);
+    map{
+        print "$_: $five_number_summary->{$_}\n";
+    } keys %{$five_number_summary};
+    print "\n\n";
+    @numbers = (2, 6, 3, 8, 1, 5, 9, 4);
+    print join(", ", @numbers) . "\n";    
+    $five_number_summary = five_number_summary(@numbers);
+    map{
+        print "$_: $five_number_summary->{$_}\n";
+    } keys %{$five_number_summary};
+    print "\n\n";
+    @numbers = (1, 2, 2, 3, 4, 6, 6, 7, 7, 7, 8, 11, 12, 15, 15, 15, 17, 17, 18, 20);
+    print join(", ", @numbers) . "\n";      
+    $five_number_summary = five_number_summary(@numbers);
+    map{
+        print "$_: $five_number_summary->{$_}\n";
+    } keys %{$five_number_summary};
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-2.pl
+6, 3, 7, 8, 1, 3, 9
+third_quartile: 8
+maximum: 9
+minimum: 1
+first_quartile: 3
+median: 6
+
+
+2, 6, 3, 8, 1, 5, 9, 4
+median: 4.5
+first_quartile: 2.5
+minimum: 1
+maximum: 9
+third_quartile: 7
+
+
+1, 2, 2, 3, 4, 6, 6, 7, 7, 7, 8, 11, 12, 15, 15, 15, 17, 17, 18, 20
+maximum: 20
+third_quartile: 15
+first_quartile: 5
+median: 7.5
+minimum: 1
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>Note that the case of an even or odd number of elements of the list (and sublists) 
+requires slightly special handling.</p>
+
+<h2>References</h2>
+
+<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-172/">Challenge 172</a></p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_june_2022">Maintaining Perl 5 Core (Dave Mitchell): June 2022</a></h2>
+<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
+
+              <p class="text-right"><small>Published by Jason A. Crome
+ on Sunday 10 July 2022 12:53</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+   
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>Dave writes:</p>
+
+<p>This is my monthly report on work done during June covered by my TPF perl
+core maintenance grant.</p>
+
+<p>SUMMARY:
+<code>
+      0:47 improve docs for internal exception handling (JMPENV etc)
+      1:46 look into disabling smartmatch/switch.
+      8:02 make stack reference counted
+      7:58 process p5p mailbox
+    ------
+     18:33 TOTAL (HH::MM)
+</code></p>
+
+<p>The most interesting thing I did was that near the end of the month I
+started work on "making the stack reference counted"; i.e. that when
+things are pushed onto the argument stack, their reference count (RC)
+should be incremented and, conversely, decremented when popped.</p>
+
+<p>Currently things on the stack aren't RCed, so there is a danger that such
+items could be prematurely freed. For example,</p>
+
+<pre><code>@a = (1,2,3);
+f(@a);
+
+sub f {
+    @a = (); # prematurely frees the elements of @a
+    print "($_[0])\n"; # prints an undefined value or random garbage
+}
+</code></pre>
+
+<p>This issue has been the basis of countless "unfixable" bug reports over
+the years, and in particular most fuzzing crash reports turn out to be
+caused by this issue.</p>
+
+<p>There is a particular difficulty in fixing this: specifically how do we
+get to there from where we are now, because it's rather an all-or-nothing
+scenario. Every single pp function in the 30K lines of code in the various
+<code>pp*.c</code> files all need to be updated to expect an RCed stack at the same
+time. You can't have only half of them updated: the stack is binary, it's
+either RCed or it isn't. So having updated only half the pp functions, you
+can't compile perl and run the test suite.</p>
+
+<p>My cunning plan for getting round that is to initially redefine all the
+<code>Perl_pp_foo()</code> functions to be small wrapper functions around the real
+functions. The wrappers are responsible for making a non-RCed copy of the
+function's args and calling the real (non-RC aware) function; then on
+return, shifting down and bumping the RC of any returned arguments. A
+similar thing will be done by <code>pp_entersub()</code> to call XS functions.</p>
+
+<p>This is crude and slow, but in principle allows the changeover to an RCed
+stack in a single go. Then at my leisure, I can go through the pp
+functions one by one and modify them to be RC-aware and remove the wrapper
+functions. Once all the important functions are done (e.g. all the ones in
+<code>pp_hot.c</code>) then the new system may be ready for production use. We can
+continue using wrapper functions for the slow/rare functions if converting
+them would be too much work.</p>
+
+<p>I intend to have a new build define, <code>PERL_RC_STACK</code>, which isn't initially
+enabled by default. Unless enabled, perl behaves as usual, with the stack
+not being reference counted, the wrapper functions not being defined, etc.
+So my work can proceed initially without breaking normal perl. Once the
+work is stable and we don't think it will break most of CPAN, then
+<code>PERL_RC_STACK</code> will be enabled by default in builds, but can be disabled at
+build time if necessary. Eventually the define will be removed
+altogether, meaning that various places in the perl core no longer need to
+handle both RC and non-RC cases.</p>
+
+<p>This work if fairly risky, in that I may well find along the way that the
+problems are unsurmountable and have to abandon it.</p>
+
+    
+         </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_4">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl5_core_davem_may_2022">Maintaining Perl 5 Core (Dave Mitchell): May 2022</a></h2>
+<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
+
+              <p class="text-right"><small>Published by Jason A. Crome
+ on Sunday 10 July 2022 12:50</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+   
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>Dave writes:</p>
+
+<p>This is my monthly report for May on work done covered by my TPF perl core
+maintenance grant.</p>
+
+<p>The main things I did were to fix an obscure panic when an eval is the
+last statement in a regex code block, e.g.</p>
+
+<pre><code>/....(?{...; eval { ... }; }) .../
+</code></pre>
+
+<p>And, as a side-effect of working on that, I also improved the docs
+covering how perl handles exceptions internally.</p>
+
+<p>(Both these bits of work are currently in a branch but not yet merged.)</p>
+
+<p>Other than that, I ended up having my gall bladder removed late May, the
+pre- and post- effects of which have reduced the hours I have spent on
+perl somewhat recently - mostly just trying to keep up to date with my p5p
+mailbox and not doing much "real" work.</p>
+
+<p>SUMMARY:
+<code>
+      5:16 GH #19680 panic: restartop in perl_run
+      5:01 improve docs for internal exception handling (JMPENV etc)
+      5:26 process p5p mailbox
+      0:32 refactor regen/warnings.pl
+    ------
+     16:15 TOTAL (HH::MM)
+</code></p>
+
+    
+         </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_5">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_july_2022">Call for Grants: July 2022 Round</a></h2>
+<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
+
+              <p class="text-right"><small>Published by Jason A. Crome
+ on Sunday 10 July 2022 12:42</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+   
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>The Grants Committee is accepting grant proposals all the time. We evaluate them every two months and another round is starting.</p>
+
+<p>If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 July 17th, 2022, UTC. We will publish the received applications, get community feedback through July 24th, and we will conclude the process shortly thereafter.</p>
+
+<p>We now accept grant requests for core Perl and Raku development. There are some eligibility requirements that must be met for each language when submitting a grant. For Perl:
+* The applicant must be a contributor to the Perl core.
+* The application must be endorsed by one or more people with commit rights to the Perl core.</p>
+
+<p>For Raku:
+* The applicant must be a contributor to the Raku language specification or one of its implementations.
+* The application must be endorsed by one or more people in Raku Steering Council.</p>
+
+<p>For more information, see <a href="https://news.perlfoundation.org/post/grants_committee_expanded_role">this blog post</a>.</p>
+
+<p>To apply, please read <a href="https://www.perlfoundation.org/how-to-write-a-proposal.html">How to Write a Proposal</a>, <a href="https://www.perlfoundation.org/grants-committee.html">GC Charter, Rules of Operation</a> and <a href="https://www.perlfoundation.org/running-grants.html">Running Grants List</a> will also help you understand how the grant process works. We also got some <a href="https://grants.perlfoundation.org/">grant ideas</a> from the community. Grant applications may be submitted via <a href="https://docs.google.com/forms/d/16seYhrMjz8rgsau9e1MtwYY0fHB81mVKm-0SD6Ynty0/viewform">this Google Form</a>.</p>
+
+<p>We will confirm the receipt of application by no later than July 18th.</p>
+
+<p>If you have further questions, please contact me at tpf-grants-secretary at perl-foundation.org.</p>
+
+    
+         </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_6">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-172-1h8i">Weekly Challenge 172</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Simon Green
+ on Sunday 10 July 2022 10:28</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-172/">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-172/sgreen">My solutions</a></p>
+
+<h2>
+  
+  
+  Task 1: Prime Partition
+</h2>
+
+<h3>
+  
+  
+  Task
+</h3>
+
+<p>You are given two positive integers, <code>$m</code> and <code>$n</code>.</p>
+
+<p>Write a script to find out the Prime Partition of the given number. No duplicates allowed.</p>
+
+<h3>
+  
+  
+  My solution
+</h3>
+
+<p>This is one of those interesting tasks where there are multiple ways to tackle it. And the method really depends on the value of <code>m</code> and (more importantly) <code>n</code>.</p>
+
+<p>I took the quick and easy option, given that the examples provided have small values. In this method, I collect a list of all primes <code>&lt;=m</code> and store it in a list (array in Perl) called <code>primes</code>. I then use itertool's <a href="https://docs.python.org/3/library/itertools.html#itertools.combinations">combinations</a> method to work out all combinations of size <code>n</code>. If I find a combination that sums to the value of <code>m</code>, I print the results and exit. If I don't find one, I also print an appropriate message.</p>
+
+<p>For the Perl version, I use the <a href="https://metacpan.org/pod/Algorithm::Combinatorics">Algorithm::Combinatorics</a> module to perform the same function that Python's itertools provides. This is available as a RPM package in Fedora (the OS my server uses), so seems like a good choice.</p>
+
+<p>Now for a discussion about the case where <code>m</code> and <code>n</code> are larger. The problem with the above method is when <code>n</code> is larger, the number of combinations grows exponentially. This leads to a lot of calculations where the sum is clearly going to be too high or too low.</p>
+
+<p>Take for example trying to find 10 primes of 7920. The 1000th prime number is 7919. As I sorted the list highest to lowest, it means the first gazillion (well not quite, but it is a number with 26 digits in it, 999 × 998 × ... × 991) combinations will always result in a number that is too large. Rather than working through all combinations, we can eliminate ones that clearly won't be valid. For example, if we take the first number as 7829 (the 990th prime), we know that the sum of the remain digits can't be larger than 91.</p>
+
+<p>However, the example clearly sets an expectation that <code>m</code> and <code>n</code> are (relatively speaking) on the smaller side, so the brute force method is good enough.</p>
+
+<h3>
+  
+  
+  Example
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./ch-1.py 18 2
+(13, 5)
+
+$ ./ch-1.py 19 3
+(11, 5, 3)
+
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  Task 2: Five-number Summary
+</h2>
+
+<h3>
+  
+  
+  Task
+</h3>
+
+<p>You are given an array of integers.</p>
+
+<p>Write a script to compute the <a href="https://en.wikipedia.org/wiki/Five-number_summary">five-number summary</a> of the given set of integers.</p>
+
+<h3>
+  
+  
+  My solution
+</h3>
+
+<p>The easy solution would just be use <a href="https://numpy.org/">numpy</a> which supports this out the box, but where is the fun in that? If this was code I needed to use at work, indeed <code>import numpy</code> would be at the top of the script.</p>
+
+<p>This task is pretty straight forward, so no real explanation is needed. Take the integers, sort them from lowest to highest, and find the position at each quartile. If that position is not a single value, then take the two values and half it.</p>
+
+<h3>
+  
+  
+  Example
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ ./ch-2.py 0 0 1 2 63 61 27 13
+0, 0.5, 7.5, 44, 63
+</code></pre>
+
+</div>
+
+
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_7">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-166/">Colin Crain › Perl Weekly Review #166</a></h2>
+<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
+
+              <p class="text-right"><small>Published
+ on Sunday 10 July 2022 00:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">( &hellip;continues from previous week. )
+Welcome to the Perl review pages for Week 166 of The Weekly Challenge! Here we will take the time to discuss the submissions offered up by the team, factor out some common methodologies that came up in those solutions, and highlight some of the unique approaches and unusual code created.
+ ●︎ Why do we do these challenges? I suppose any reasonable answer to that question would be from a field as wide ranging and varied as the people who choose to join the team.       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
           <div class="card" id="card_8">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
+<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
+
+              <p class="text-right"><small>Published
+ on Sunday 10 July 2022 00:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Elixir, Elm, Erlang, Excel VBA, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, MMIX, Mumps, Myrddin, Nim, Nix, Node.       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cd-10-great-cpan-modules-released-last.html">(cd) 10 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -765,7 +1104,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxiv-metacpan-weekly-report.html">(dxiv) metacpan weekly report </a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -777,7 +1116,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxlii-stackoverflow-perl-report.html">(dxlii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -789,7 +1128,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/taskdateholidays-bug-fix-release-012-15jj">Task::Date::Holidays bug fix release 0.12</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -817,7 +1156,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2022/07/mite-an-oo-compiler-for-perl.html">Mite: an OO compiler for Perl</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -938,7 +1277,7 @@ print(summary(moons));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/kavya/2022/07/error-flock-trapped-by-operation-mask-at-usrlib64perl5vendor-perlstorablepm.html"> ERROR: 'flock' trapped by operation mask at /usr/lib64/perl5/vendor_perl/Storable.pm </a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -961,7 +1300,7 @@ Facing flock error when trying to execute the Automated unit testing .</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/hightowe/2022/07/totp-with-perl-and-authenoath.html">TOTP with Perl and Authen::OATH</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1091,7 +1430,7 @@ programs.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/07/announcing-perlcritic-policy-valuesandexpressionsprohibitfiletest-rwxrwx.html">Announcing perlcritic Policy ValuesAndExpressions::ProhibitFiletest_rwxRWX</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1122,7 +1461,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/volunteer-rt.cpan.org-admins-needed">Volunteer rt.cpan.org Admins Needed</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1142,7 +1481,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/571.html">#571 - Sponsoring TPF or individuals</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1159,7 +1498,7 @@ open my $handle, '&lt;', $file;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-route-parameters">Dancer2: Route parameters and sending 404 manually</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1174,7 +1513,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-171/">RECAP - The Weekly Challenge - 171</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1187,7 +1526,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-172/">The Weekly Challenge - 172</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1200,7 +1539,7 @@ Today is the first Monday of the month and time to announce the champion. Proud 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/03#pwc171">Abundant Composition</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1315,7 +1654,7 @@ easily do these things as well!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-05/">Meet The Champion: May 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1331,7 +1670,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/tobyink/mite-an-oo-compiler-for-perl-b70">Mite: an OO compiler for Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1570,7 +1909,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cccxcix-6-great-cpan-modules-released.html">(cccxcix) 6 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1582,7 +1921,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxiii-metacpan-weekly-report.html">(dxiii) metacpan weekly report - HTML::Tree</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1594,7 +1933,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/easiest-way-to-get-started-with-perl-48pk">Easiest Way to Get Started with Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1612,7 +1951,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/07/01/list-of-new-cpan-distributions-jun-2022/">List of new CPAN distributions – Jun 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -2226,7 +2565,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-06-29-cpanfile-a-teil-1">cpanfile – Teil 1</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2238,7 +2577,7 @@ Robert: I read most of a brief computing-101-ish book at a book store one aftern
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-write-tests-using-github-actions-4jk8">How to Write Tests using Github Actions</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2457,7 +2796,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/570.html">#570 - CPAN Weekly</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2477,7 +2816,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-logging">Dancer2: Logging</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2492,7 +2831,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/569.html">#569 - Fundraising for Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2512,7 +2851,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-show-errors-during-development">Dancer2: Show errors during development</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2527,7 +2866,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/06/19#pwc169">Brilliantly Discover Achilles' Imperfection</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2693,7 +3032,7 @@ ensure that, within a minuscule rounding error, <code>$x</code> is an integer.</
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/could-you-join-tpf-board-june-2022">Do you want to support the Perl and Raku communities in a more strategic way?</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -2752,7 +3091,7 @@ The final vote will be made by the existing Board Members after gathering feedba
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/568.html">#568 - Perl v5.36 - the beginning of new era</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2772,7 +3111,7 @@ The final vote will be made by the existing Board Members after gathering feedba
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/06/12#pwc168">Take the Long Way Home</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2909,7 +3248,7 @@ on my M1 Mac Mini. </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://log.perl.org/2022/06/cpan-ftpcpanorg-depreciation.html">CPAN: ftp.cpan.org depreciation</a></h2>
 <a href="https://log.perl.org/" class="badge badge-primary" style="float: left">The Perl NOC</a>
@@ -2941,7 +3280,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 10 July 2022 20:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 11 July 2022 01:01 UTC</address>
             </div>
           </div>
         </div><!-- container -->
