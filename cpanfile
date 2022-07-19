@@ -1,1 +1,2 @@
-requires 'Perlanet'
+requires 'Perlanet';
+requires 'LWP::Protocol::https';
