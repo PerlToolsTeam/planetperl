@@ -10,11 +10,17 @@ $(document).ready(function() {
 
   $(document).keypress(function(e) {
     switch (e.which) {
+      case 104:
+        $('.card-body').hide();
+        break;
       case 110:
         next_div();
         break;
       case 112:
         prev_div();
+        break;
+      case 115:
+        $('.card-body').show();
         break;
     }
   });
