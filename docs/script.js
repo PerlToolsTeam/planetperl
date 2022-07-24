@@ -15,9 +15,11 @@ $(document).ready(function() {
         setCookie('showhide', 'hide', 1000);
         break;
       case 110:
+        console.log('n');
         next_div();
         break;
       case 112:
+        console.log('p');
         prev_div();
         break;
       case 115:
@@ -43,31 +45,45 @@ $(document).ready(function() {
 
 function get_curr_card() {
   var all_cards = $('.card');
-  var prev_card = all_cards[0];
+  var prev_card = all_cards.first();
 
   for (var i = 0; i < all_cards.length; i++) {
-    if (all_cards[i].offset.top > 0) {
+    console.log(all_cards[i].id + ' - ' + all_cards[i].getBoundingClientRect().top + ' (' + $('nav').height() + ')');
+    if (all_cards[i].getBoundingClientRect().top > $('nav').height()) {
+      console.log('Breaking...');
       break;
     }
     prev_card = all_cards[i];
   }
 
-  return prev_card;
+  console.log('Curr - ' + prev_card.id)
+
+  return $(prev_card);
 }
 
 function move_to(elem) {
-  alert('Move to: ' + elem);
-  $(document).scrollTop(elem.offset.top - $('nav').height());
+  console.log('Moving to: ' + elem[0].id + ' / ' + elem.offset().top + ' + ' + $('nav').height());
+  console.log(elem.offset().top + $('nav').height());
+
+  window.scroll(0, elem.offset().top + $('nav').height());
 }
 
 function next_div() {
-  var card = get_curr_card().next();
-  move_to(card);
+  var curr = get_curr_card();
+  if (curr.next().length) {
+    move_to(curr.next());
+  } else {
+    console.log('No next card');
+  }
 }
 
 function prev_div() {
-  var card = get_curr_card().prev();
-  move_to(card);
+  var curr = get_curr_card();
+  if (curr.prev().length) {
+    move_to(curr.prev());
+  } else {
+    console.log('No previous card');
+  }
 }
 
 function setCookie(cname, cvalue, exdays) {
