@@ -7,9 +7,188 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-07-24T20:43:27Z</updated>
+  <updated>2022-07-25T01:00:29Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Permutations Ranked in Disarray on Mars</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/24#pwc174" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">
+<p><em>The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.</em></p>
+
+<h2>Part 1</h2>
+
+<p><em>Write a script to generate the first 19 Disarium Numbers.</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+use POSIX;
+
+sub disarium_n{
+    my($n) = @_;
+    my @disariums;
+    map{
+        return @disariums if @disariums == $n;
+        my @digits = split(//, $_);
+        my $digit_sum = 0;
+        map{
+            $digit_sum += $digits[$_] ** ($_ + 1);
+        } 0 .. @digits - 1;
+        push @disariums, $digit_sum if $digit_sum == $_;
+    } 0 .. INT_MAX / 100;
+}
+
+MAIN:{
+    print join(", ", disarium_n(19)) . "\n";
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-1.pl
+0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 89, 135, 175, 518, 598, 1306, 1676, 2427, 2646798
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>I gave myself a <em>writing prompt</em> for this exercise: only use map. This turned out to
+present a small issue and that is, how do we terminate out of a <code>map</code> early? This comes up
+because we do not need to examine all numbers in the large range of <code>0 .. INT_MAX / 100</code>.
+Once we find the 19 numbers we require we should just stop looking. <code>last</code> will not work
+from within a <code>map</code> it turns out. In this case a <code>return</code> works well. But suppose we did
+not want to <code>return</code> out of the subroutine entirely? Well, I have tested it out and it 
+turns out that <code>goto</code> will work fine from within a <code>map</code> block as well!</p>
+
+<p>That code would look something like this, where the <code>CONTINUE</code> block would have some more
+code for doing whatever else was left to do. </p>
+
+<pre><code class="perl">
+sub disarium_n{
+    my($n) = @_;
+    my @disariums;
+    map{
+        goto CONTINUE if @disariums == $n;
+        my @digits = split(//, $_);
+        my $digit_sum = 0;
+        map{
+            $digit_sum += $digits[$_] ** ($_ + 1);
+        } 0 .. @digits - 1;
+        push @disariums, $digit_sum if $digit_sum == $_;
+    } 0 .. INT_MAX / 100;
+    CONTINUE:{
+        ##
+        # more to do before we return
+        ##
+    }
+    return @disariums;
+}
+</code></pre>
+
+<h2>Part 2</h2>
+
+<p><em>You are given a list of integers with no duplicates, e.g. [0, 1, 2]. Write two functions, 
+permutation2rank() which will take the list and determine its rank (starting at 0) in the 
+set of possible permutations arranged in lexicographic order, and rank2permutation() which 
+will take the list and a rank number and produce just that permutation.</em></p>
+
+<h3>Solution</h3>
+
+<pre><code class="perl">
+use strict;
+use warnings;
+package PermutationRanking{
+    use Mars::Class;
+    use List::Permutor;
+
+    attr q/list/;
+    attr q/permutations/;
+    attr q/permutations_sorted/;
+    attr q/permutations_ranked/;
+
+    sub BUILD{
+        my $self = shift;
+        my @permutations;
+        my %permutations_ranked;
+        my $permutor = new List::Permutor(@{$self-&gt;list()});
+        while(my @set = $permutor-&gt;next()) {
+            push @permutations, join(":", @set);
+        }
+        my @permutations_sorted = sort @permutations;
+        my $rank = 0;
+        for my $p (@permutations_sorted){
+            $permutations_ranked{$p} = $rank;
+            $rank++;
+        }
+        @permutations_sorted = map {[split(/:/, $_)]} @permutations_sorted;
+        $self-&gt;permutations_sorted(\@permutations_sorted);
+        $self-&gt;permutations_ranked(\%permutations_ranked);
+    }
+
+    sub permutation2rank{
+        my($self, $list) = @_;
+        return $self-&gt;permutations_ranked()-&gt;{join(":", @{$list})};
+    }
+
+    sub rank2permutation{
+        my($self, $n) = @_;
+        return "[" . join(", ", @{$self-&gt;permutations_sorted()-&gt;[$n]}) . "]";
+    }
+}
+
+package main{
+    my $ranker = new PermutationRanking(list =&gt; [0, 1, 2]);
+    print "[1, 0, 2] has rank " . $ranker-&gt;permutation2rank([1, 0, 2]) . "\n";
+    print "[" . join(", ", @{$ranker-&gt;list()}) . "]"  . " has permutation at rank 1 --&gt; " . $ranker-&gt;rank2permutation(1) . "\n";
+}
+</code></pre>
+
+<h3>Sample Run</h3>
+
+<pre><code class="shell">
+$ perl perl/ch-2.pl
+[1, 0, 2] has rank 2
+[0, 1, 2] has permutation at rank 1 --&gt; [0, 2, 1]
+</code></pre>
+
+<h3>Notes</h3>
+
+<p>I've been enjoying trying out Al Newkirk's Mars OOP framework. When it comes to Object 
+Oriented code in Perl I've usually just gone with the default syntax or <code>Class::Struct</code>.
+I am far from a curmudgeon when it comes to OOP though, as I have a lot of experience
+using Java and C++. What I like about Mars is that it reminds me of the best parts of
+<code>Class::Struct</code> as well as the best parts of how Java does OOP. The code above, by its
+nature does not require all the features of Mars as here we don't need much in the way 
+of Roles or Interfaces.</p>
+
+<p>Perhaps guided by my desire to try out Mars more I have taken a definitively OOP approach
+to this problem. From the problem statement the intent may have been to have two 
+independent functions. This code has two methods which depend on the constructor (defined
+within <code>sub BUILD</code>) to have populated the internal class variables needed.</p>
+
+<p>There is a small trick here that the sorting is to be by <em>lexicograohic order</em>, which 
+conveniently is the default for Perl's default <code>sort</code>. That doesn't really buy us any
+algorithmic improvement in performance, in fact it hurts it! Other approaches exist for 
+this problem which avoid producing all permutations of the list.</p>
+
+<h2>References</h2>
+
+<p><a href="https://oeis.org/A032799">Disarium Numbers</a></p>
+
+<p><a href="https://metacpan.org/pod/Mars">Mars</a></p>
+
+<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-174/">Challenge 174</a></p></div>
+    </content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc174</id>
+    <published>2022-07-24T19:34:00-04:00</published>
+    <updated>2022-07-24T19:34:00-04:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry>
     <title>Perl Weekly Challenge 174: Disarium Numbers and Permutation Rankings</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-174-disarium-numbers-and-permutation-rankings.html"/>
