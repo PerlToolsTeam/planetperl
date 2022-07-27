@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-07-27T12:57:25Z</updated>
+  <updated>2022-07-27T16:52:17Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -15,7 +15,7 @@
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-175-last-sunday-and-perfect-totient-numbers.html"/>
     <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10861</id>
     <published>2022-07-27T14:36:06Z</published>
-    <updated>2022-07-27T14:41:32Z</updated>
+    <updated>2022-07-27T18:38:43Z</updated>
     <author>
         <name>laurent_r</name>
         <uri>https://laurent-rosenfeld.developpez.com/</uri>
@@ -179,9 +179,14 @@ $ perl ./last-sunday.pl 2023
 
 <h3>Perfect Totient Numbers in Raku</h3>
 
-<p>Raku has a built-in infix <a href="https://docs.raku.org/routine/gcd">gcd</a> operator. So it is quite easy: in the <code>is-perfect-totient</code> subroutine, we simply compute the totient of the input number <em>n</em> (i.e. count the number of positive integers up to <em>n</em> that are relatively prime to <em>n</em>), then iteratively compute the totient of the totient, and so on, until we reach 1. Finally, we compare the sum of all totients to the original input number.</p>
+<p>Raku has a built-in infix <a href="https://docs.raku.org/routine/gcd">gcd</a> operator. So it is quite easy: in the <code>is-perfect-totient</code> subroutine, we simply compute the totient of the input number <em>n</em> (i.e. count the number positive integers up to <em>n</em> that are relatively prime to <em>n</em>), then iteratively compute the totient of the totient, and so on, until we reach 1. Finally, we compare the sum of all totients to the original input number.</p>
 
-<pre><code>my $count = 0;
+<h4>Raw Unoptimized Version</h4>
+
+<p>This is our first Raku version.</p>
+
+<pre><code># Unoptimized version, don't use it
+my $count = 0;
 for 2..Inf -&gt; $n {
     print "$n " and $count++ if is-perfect-totient $n;
     last if $count &gt;= 20;
@@ -204,13 +209,91 @@ sub is-perfect-totient ($num) {
 3 9 15 27 39 81 111 183 243 255 327 363 471 729 2187 2199 3063 4359 4375 5571
 </code></pre>
 
-<p>Note that the program becomes quite slow for the last perfect totient values (about 25 seconds to run).</p>
+<p>The program becomes quite slow for the last perfect totient values (about 25 seconds to run). I tried some micro-optimizations, but without any significant improvement.</p>
+
+<h4>Caching the Totient Sums (Naive Version)</h4>
+
+<p>If you think about it, the above program computes the sum of the totients many times for the same number. We could store these values to avoid recomputing them. This strategy is called <em>caching</em> (or sometimes <em>memoizing</em>). We use the <code>@tot</code> array as a cache (or memo) to store the totient sums. When we want to compute the totient of a number, we first check if it is in the cache and use this value if such is the case, and we do the computation the hard way (with <code>gcd</code>) only if it is not in the cache.</p>
+
+<p>This could lead to this program:</p>
+
+<pre><code># Naive caching strategy
+my $count = 0;
+my @tot = 0, 0;
+for 2..Inf -&gt; $n {
+    print "$n " and $count++ if is-perfect-totient $n;
+    last if $count &gt;= 20;
+}
+say "";
+say "Time spent: ", now - INIT now;
+
+sub is-perfect-totient ($num) {
+    my $n = $num;
+    my $sum = 0;
+    while $n &gt;= 1 {
+        if (defined @tot[$n]) {
+            $sum += @tot[$n];
+            last;
+        } else {
+            $n = (grep { $n gcd $_ == 1 }, 1..^$n).elems;
+            $sum += $n;
+        }
+    }
+    @tot[$num] = $sum;
+    return $num == $sum;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ ./raku perfect-totient_cached_1.raku
+3 9 15 27 39 81 111 183 243 255 327 363 471 729 2187 2199 3063 4359 4375 5571
+Time spent: 15.32900533
+</code></pre>
+
+<p>So we are nom at 15 seconds. This is a significant improvement (although less than what I hoped).</p>
+
+<h4>Caching the Totient Sums (Improved Version)</h4>
+
+<p>We are testing every integer in ascending order. When we are testing one such new integer we know for sure that we haven&#8217;t computed its totient sum so far and need to compute it, and we also know for sure that we have already done the calculation for its totient number. In other words, we no longer need the <code>while</code> loop, we can just compute the totient for the new input integer, and add to that the totient sum of the totient, which we are guaranteed to have in the cache. This leads to a significant code simplification of the <code>is-perfect-totient</code> subroutine:</p>
+
+<pre><code># Improved caching strategy
+my $count = 0;
+my @tot = 0, 0;
+for 2..Inf -&gt; $n {
+    print "$n " and $count++ if is-perfect-totient $n;
+    last if $count &gt;= 20;
+}
+say "";
+say "Time spent: ", now - INIT now;
+
+sub is-perfect-totient ($num) {
+    my $sum = (grep { $num gcd $_ == 1 }, 1..^$num).elems;
+    $sum += @tot[$sum];
+    @tot[$num] = $sum;
+    return $num == $sum;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./perfect-totient_cached_2.raku
+3 9 15 27 39 81 111 183 243 255 327 363 471 729 2187 2199 3063 4359 4375 5571
+Time spent: 12.34103864
+</code></pre>
+
+<p>The code simplification has also led to an additional performance improvement of about 20%.</p>
 
 <h3>Perfect Totient Numbers in Perl</h3>
 
-<p>Our Perl implementation is really a port to Perl of the Raku program above, with the only difference that we need to implement our own <code>gcd</code> subroutine, since two numbers are relatively prime (or coprime) if their greatest common divisor equals 1. For this, our <code>gcd</code> subroutine will use the so-called <a href="https://en.wikipedia.org/wiki/Greatest_common_divisor#Euclidean_algorithm">Euclidean algorithm</a>, which is an improved variant of <a href="https://en.wikipedia.org/wiki/Greatest_common_divisor#Euclid's_algorithm">Euclid&#8217;s original method</a>.</p>
+<p>Our Perl implementation is really a port to Perl of the first Raku program above, with the only difference that we need to implement our own <code>gcd</code> subroutine, since two numbers are relatively prime (or coprime) if their greatest common divisor equals 1. For this, our <code>gcd</code> subroutine will use the so-called <a href="https://en.wikipedia.org/wiki/Greatest_common_divisor#Euclidean_algorithm">Euclidean algorithm</a>, which is an improved variant of <a href="https://en.wikipedia.org/wiki/Greatest_common_divisor#Euclid's_algorithm">Euclid&#8217;s original method</a>.</p>
 
-<pre><code>use strict;
+<h4>Raw Unoptimized Version</h4>
+
+<p>This is our first Perl version.</p>
+
+<pre><code># Unoptimized version, don't use it
+use strict;
 use warnings;
 use feature qw/say/;
 
@@ -246,7 +329,55 @@ say "";
 3 9 15 27 39 81 111 183 243 255 327 363 471 729 2187 2199 3063 4359 4375 5571
 </code></pre>
 
-<p>This program is even slower (39 seconds) than the Raku version (25 seconds), presumably because of the pure Perl implementation of the <code>gcd</code> function.</p>
+<p>This program is even slower (39 seconds) than the first Raku version (25 seconds), presumably because of the pure Perl implementation of the <code>gcd</code> function. So, we will also use the caching strategy previously tested in Raku</p>
+
+<h4>Caching the Totient Sums</h4>
+
+<p>Here, we will go directly to the improved caching strategy used in the third Raku program.</p>
+
+<pre><code># Optimized cached version
+use strict;
+use warnings;
+use feature qw/say/;
+
+my @tot = (0, 0);
+
+sub gcd {
+    my ($i, $j) = sort { $a &lt;=&gt; $b } @_;
+    while ($j) {
+        ($i, $j) = ($j, $i % $j);
+    }
+    return $i;
+}
+
+sub is_perfect_totient {
+    my $num = shift;
+    my $sum = scalar grep { gcd( $num, $_) == 1 } 1..$num-1;
+    $sum += $tot[$sum];
+    $tot[$num] = $sum;
+    return $num == $sum;
+}
+
+my $count = 0;
+my $n = 1;
+while ($count &lt; 20) {
+    print "$n " and $count++ if is_perfect_totient $n;
+    $n++;
+}
+say "";
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ time perl perfect-totient_cached.pl
+3 9 15 27 39 81 111 183 243 255 327 363 471 729 2187 2199 3063 4359 4375 5571
+
+real    0m20,371s
+user    0m20,281s
+sys     0m0,046s
+</code></pre>
+
+<p>So, our caching program runs almost twice faster than our original Perl program.</p>
 
 <h3>Perfect Totient Numbers in Julia</h3>
 
@@ -279,7 +410,7 @@ end
 3 9 15 27 39 81 111 183 243 255 327 363 471 729 2187 2199 3063 4359 4375 5571
 </code></pre>
 
-<p>This Julia implementation runs much faster (about 4 seconds) than the Raku and Perl versions.</p>
+<p>This Julia implementation runs much faster (less than 4 seconds) than the Raku and Perl versions. There no urgent need to try to use the caching strategy used for Raku and Perl.</p>
 
 <h2>Wrapping up</h2>
 
