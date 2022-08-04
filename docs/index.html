@@ -269,6 +269,129 @@ SKIP: {
           </div><!-- card -->
           <div class="card" id="card_2">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_dave_mitchell_july_2022">Maintaining Perl 5 Core (Dave Mitchell): July 2022</a></h2>
+<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
+
+              <p class="text-right"><small>Published by Jason A. Crome
+ on Wednesday 03 August 2022 21:15</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+   
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <p>Dave writes: </p>
+
+<p>This is my monthly report on work done during July covered by my TPF perl
+core maintenance grant.
+<code>
+      3:57 BBC: TODDR/YAML-Syck-1.34.tar.gz (Issue #19939)
+      3:28 Format in fill-mode has inconsistent behaviour (Issue #19985)
+      4:58 Goto xsub forces scalar context (#19188)
+      0:57 Returning undef returns a weird hash reference (Issue #19996)
+      0:37 Segmentation fault with use re 'eval' (Issue #19390)
+      0:20 fix build warning
+     39:28 make stack reference counted
+      6:11 process p5p mailbox
+      1:16 segfault on goto &amp;xs_sub when calling sub is replaced (Issue #19936)
+    ------
+     61:12 TOTAL (HH::MM)
+</code>
+I worked on quite a few tickets last month, but the most important thing I
+did was to continue work on making the stack reference counted (work I
+started near the end of June).</p>
+
+<p>This is still very much a work in progress and I have nothing visible
+(i.e. pushed) to show for it yet, but what I have done so far is:</p>
+
+<p>1) Put wrappers around 254 pp functions.</p>
+
+<p>This changes the definitions of pp function from e.g.:
+<code>
+    PP(pp_subst)
+    {
+        ...
+    }
+</code>
+to
+<code>
+    PP_wrapped(pp_subst, ((PL_op-&amp;gt;op_flags &amp; OPf_STACKED) ? 2 : 1), 0)
+    {
+        ...
+    }
+</code>
+which on normal builds has no effect, but on builds with <code>PERL_RC_STACK</code>
+defined, it expands to something like:
+```
+    OP*
+    Perl_pp_subst(aTHX) {
+        return
+            Perl_pp_wrap(my_perl, S_norcs_pp_subst,
+                ((PL_op-&gt;op_flags &amp; OPf_STACKED) ? 2 : 1), 0);
+    }</p>
+
+<pre><code>STATIC OP*
+S_norcs_pp_subst(pTHX)
+{
+    ...
+}
+</code></pre>
+
+<p><code>``
+</code>pp_wrap()<code>is responsible for pushing a (non-reference-counted) copy
+of the current stack frame onto the end of the stack, then calling the
+original pp function</code>S_norcs_pp_subst()`, which doesn't know about
+reference-counted arguments, then shifting down and bumping the reference
+count of everything that it returns on the stack.</p>
+
+<p>The two numeric arguments for <code>pp_wrap</code> are how many arguments that op
+expects on the stack, or for list ops, how many (mark-delineated) lists it
+expects. Often these are just constants, but for some, like <code>pp_subst</code>, it
+varies depending on flags.</p>
+
+<p>2) Of the remaining 56 pp functions, some didn't need wrapping (like
+<code>pp_pushmark</code>), while others required special handling - like most of the
+<code>pp_enterfoo</code> and <code>pp_leavefoo</code> functions. For example most leavefoo ops in
+void context just abandon any arguments left on the stack:
+<code>
+    PL_stack_sp = PL_stack_base + cx-&amp;gt;blk_oldsp;
+</code>
+For a reference-counted stack, this means that all those SVs leak. So I've
+replaced all such occurrences with an inline function call:
+<code>
+    rpp_pop_to(PL_stack_base + cx-&amp;gt;blk_oldsp);
+</code>
+which on normal builds just resets <code>PL_stack_sp</code>, while on <code>PERL_RC_STACK</code>
+builds, it will decrement the reference count of all those abandoned stack
+items first.</p>
+
+<p>I have almost finished doing (2) - just a handful of ops still need going
+over on a line-by-line basis (in particular <code>pp_goto()</code>, which I've been
+leaving to absolutely last).</p>
+
+<p>None of the changes I've done so far actually do reference-counting yet: <code>pp_wrap()</code>, <code>rpp_pop_to()</code> etc currently have any <code>SvREFCNT_dec()</code>s etc
+commented out. The idea is that I can initially add all these
+modifications to the core while perl still works, Then once all that work
+is done I should be able to make changes in a small number of places - <code>pp_wrap()</code>, <code>rpp_pop_to()</code> etc - and the whole of the perl core should
+become reference-count-aware at once. This means that initially the core
+will be merely mostly broken rather than completely broken, and it should
+be easier to fix up those remaining bits which need it.</p>
+
+<p>Then later on, things can be made more efficient again, e.g. by removing
+the wrapper functions from common ops and make them directly
+reference-count aware instead.</p>
+
+<p>PS - for the avoidance of doubt, even with all these changes, unless the
+core is built with <code>PERL_RC_STACK</code> defined, none of these changes take
+affect yet.</p>
+
+    
+         </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/-perl-weekly-challenge-176-permuted-multiples-and-reversible-numbers.html"># Perl Weekly Challenge 176: Permuted Multiples and Reversible Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -435,7 +558,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-06/">Meet The Champion: June 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -451,7 +574,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_july_2022_votes">Grants: July 2022 Votes</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -481,7 +604,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/575.html">#575 - Backward compatibility</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -499,7 +622,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/08/spvm-continues-to-undergo-heavy-changes.html">SPVM continues to undergo heavy changes.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -551,7 +674,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/08/01/list-of-new-cpan-distributions-jul-2022/">List of new CPAN distributions – Jul 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1254,7 +1377,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-170/">Colin Crain › Perl Weekly Review #170</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1268,7 +1391,7 @@ Welcome to the Perl review pages for Week 170 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-175/">RECAP - The Weekly Challenge - 175</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1281,7 +1404,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-176/">The Weekly Challenge - 176</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1294,7 +1417,7 @@ Today is the first Monday of the month and time to declare our next champion. I 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1306,7 +1429,7 @@ Today is the first Monday of the month and time to declare our next champion. I 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-175-last-sunday-and-perfect-totient-numbers.html">Perl Weekly Challenge 175: Last Sunday and Perfect Totient Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2568,7 +2691,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/totient-numbers-on-a-sunday-5fnc">Totient numbers on a Sunday</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2696,7 +2819,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-exercise-2">Dancer2: Exercise 2 - Multi-Counter, Random redirection</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2711,7 +2834,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cdiii-11-great-cpan-modules-released.html">(cdiii) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2723,7 +2846,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxvii-metacpan-weekly-report.html">(dxvii) metacpan weekly report - Storable::Improved</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2735,7 +2858,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxlv-stackoverflow-perl-report.html">(dxlv) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2747,7 +2870,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/30#pwc175">Sunday Was Perfectly Totient</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2903,7 +3026,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/07/numeric-variable-names-with-leading-zeroes.html">Numeric Variable Names With Leading Zeroes</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2937,7 +3060,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-174-disarium-numbers-and-permutation-rankings.html">Perl Weekly Challenge 174: Disarium Numbers and Permutation Rankings</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -4130,7 +4253,7 @@ Rank:  5  -&gt; permutation  [ 3, 2, 1 ]
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/574.html">#574 - Perl Community</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -4146,7 +4269,7 @@ Rank:  5  -&gt; permutation  [ 3, 2, 1 ]
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/24#pwc174">Permutations Ranked in Disarray on Mars</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -4326,7 +4449,7 @@ this problem which avoid producing all permutations of the list.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-174-5ga6">Weekly Challenge 174</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -4386,7 +4509,7 @@ $ ./ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cdii-12-great-cpan-modules-released.html">(cdii) 12 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -4398,7 +4521,7 @@ $ ./ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxvi-metacpan-weekly-report-perlcritic.html">(dxvi) metacpan weekly report - Perl::Critic</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -4410,7 +4533,7 @@ $ ./ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/chris-nandor">Chris Nandor</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -4427,7 +4550,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-07-20-spaa-mit-ical-dateien-und-zeitzonen">Spaß mit ICal-Dateien und Zeitzonen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -4439,7 +4562,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/todd-rinaldo-nominated-for-board-position">Todd Rinaldo Nominated for Board Position</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -4479,7 +4602,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/573.html">#573 - Pocket money or serious support?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -4495,7 +4618,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/17#pwc173">Suffering Succotash!</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -4635,7 +4758,7 @@ phrase and the character.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-more-route-parameters">Dancer2: More route parameters</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -4650,7 +4773,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-173-1kli">Weekly Challenge 173</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -4766,7 +4889,7 @@ $ ./ch-1.py 120
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_tensorflow_jnap_july_2022">Grant Proposal: Google TensorFlow API Bindings for Perl (John Napiorkowski)</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -4877,7 +5000,7 @@ $ ./ch-1.py 120
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_june_2022">Maintaining Perl (Tony Cook): June 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -5114,33 +5237,6 @@ Which I calculate is 72.43 hours.</p>
 
 <p>Approximately 45 tickets were reviewed or worked on, and 10 patches
 were applied.</p>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_35">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprc-2022-soc-report">TPRC 2022 SOC Report</a></h2>
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Todd Rinaldo
- on Monday 11 July 2022 18:18</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/01cc7150e7b9abb6a426ac09728aabe3b2ace91d/logo-square.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>As with past conferences, the TPRC 2022 conference had a Standards of Conduct document all attendees were required to agree to. We believe that it’s important to share the outcome of these policies so that people in our community know that we are enforcing them and what outcomes to expect from violations.</p>
-
-<p>This is an anonymized summary of the incidents reported to the SoC Committee and the committee’s response:</p>
-
-<ul>
-<li>A conference attendee made an inappropriate remark to a fellow attendee.  The Standards of Conduct committee spoke with the reported attendee. As this was not the first such incident with the reported attendee, we gave them a final warning. Further violations of the SoC will result in a temporary ban from the conference and other TPF/RF spaces</li>
-<li>A group of conference attendees were playing Cards Against Humanity in a shared conference space.  Conference organizers spoke to the group and asked them to move the game to a private space; the attendees chose to end the game.</li>
-</ul>
 
     
          </div><!-- card-text -->     </div>
@@ -5571,7 +5667,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 04 August 2022 01:00 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 04 August 2022 04:56 UTC</address>
             </div>
           </div>
         </div><!-- container -->
