@@ -59,6 +59,216 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/testing-code-that-is-difficult-to-test-with-perl-81n">Testing Code That is Difficult to Test (With Perl)</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Nicholas Hubbard
+ on Wednesday 03 August 2022 23:03</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Code that performs side effects is difficult to test because we need figure out how to sandbox the effects so we can observe the state of the sandbox before and after executing the effectful code. The difficulty is increased when the side effectful code also depends on specific OS configurations. Let us explore my solution to such a predicament.</p>
+
+<p>I have been working on the next major release of my <a href="https://btrfs.wiki.kernel.org/index.php/Main_Page">btrfs</a> snapshot manager <a href="https://github.com/NicholasBHubbard/yabsm">yabsm</a> and I want to write unit tests for functions that take and delete btrfs snapshots. This code performs the side effect of taking and deleting snapshots and depends on the OS having a btrfs subvolume available that the user running the program has read+write permissions on.</p>
+
+<p>Yabsm is written in Perl so if you don't know Perl it may be difficult to follow the code examples.</p>
+
+<p><a id="org8ffeacf"></a></p>
+
+<h1>
+  
+  
+  Disclaimer
+</h1>
+
+<p>This is just a description of a solution to a problem I came across. I do not claim to be any kind of authority on code testing.</p>
+
+<p><a id="orga1cad11"></a></p>
+
+<h1>
+  
+  
+  A quick note on btrfs
+</h1>
+
+<p>Btrfs is a Linux filesystem that allows you to take snapshots of your filesystem. A btrfs filesystem is organized into various "subvolumes" that can be mounted at various locations in your file tree. A common configuration is to have three subvolumes mounted at <code>/</code>, <code>/home</code>, and <code>/.snapshots</code> so you can seperately snapshot your <code>/</code>, and <code>/home</code> directories, and store the snapshots in <code>/.snapshots</code>.</p>
+
+<p><a id="orga6ee1a8"></a></p>
+
+<h1>
+  
+  
+  The code to be tested
+</h1>
+
+<p>Let us assume we have already defined the following 4 predicates.</p>
+
+<p><code>is_btrfs_subvolume</code> is satisfied if passed a string representing the path of a btrfs subvolume on the system.</p>
+
+<p><code>is_btrfs_dir</code> is satisfied if passed a string representing a directory on the system that resides on a btrfs subvolume.</p>
+
+<p><code>is_btrfs_snapshot</code> is satisfied if passed a string representing a path to a btrfs snapshot on the system. This predicate is a bit of a fib because every snapshot is also a subvolume and thus would also be satisfied by <code>is_btrfs_subvolume</code>. For simplicity purposes we will pretend that we can differentiate between subvolumes and snapshots.</p>
+
+<p><code>can_read_write_dir</code> is satisfied if passed a directory that the current user has read+write permissions for.   </p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub take_snapshot {
+
+    # Take a read-only btrfs snapshot of $subvolume named $name and place it in
+    # $destination.
+
+    my $name        = shift;
+    my $subvolume   = shift;
+    my $destination = shift;
+
+    # preconditions
+    return 0 unless is_btrfs_subvolume($subvolume);
+    return 0 unless can_read_write_dir($subvolume);
+    return 0 unless is_btrfs_dir($destination);
+    return 0 unless can_read_write_dir($destination);
+
+    my $cmd    = "btrfs subvolume snapshot -r '$subvolume' '$destination/$name'";
+    my $status = system $cmd;
+
+    unless (0 == $status) {
+        die "Aborting because '$cmd' exited with non-zero status";
+    }
+
+    return 1;
+}
+
+sub delete_snapshot {
+
+    # Delete the btrfs snapshot $snapshot.
+
+    my $snapshot = shift;
+
+    # preconditions
+    return 0 unless is_btrfs_snapshot($snapshot);
+    return 0 unless can_read_write_dir($snapshot);
+
+    my $cmd    = "btrfs subvolume delete '$snapshot'";
+    my $status = system $cmd;
+
+    unless (0 == $status) {
+        die "Aborting because '$cmd' exited with non-zero status";
+    }
+
+    return 1;
+}
+</code></pre>
+
+</div>
+
+<p><a id="org2b68600"></a></p>
+
+<h1>
+  
+  
+  Testing the code
+</h1>
+
+<p>As you can see the code above uses the 4 predicates to assert that preconditions are met before we perform the actual side effect of taking or deleting a snapshot. It is also important to notice that if the side effect fails (determined via <code>btrfs</code>'s exit status) then we kill the program. There is an underlying assumption going on here; if certain preconditions are met then we can be sure that our <code>btrfs</code> system command will run successfully.</p>
+
+<p>Hmm, maybe in our test environment we can set up different scenarios around these preconditions and see if our assumptions are correct.</p>
+
+<ol>
+<li>
+<p>Finding a btrfs subvolume</p>
+
+<p>We cannot take and delete snapshots unless we have a btrfs subvolume available. The simplest way to find a btrfs subvolume is to ask the tester to supply us one via a command line parameter. We can use Perl's built-in <a href="https://perldoc.perl.org/Getopt::Long">Getopt::Long</a> library to make this easy.</p>
+<pre class="highlight plaintext"><code>use Getopt::Long;
+my $BTRFS_SUBVOLUME;
+GetOptions( 's=s' =&gt; \$BTRFS_SUBVOLUME );
+</code></pre>
+<p>We now have a variable <code>$BTRFS_SUBVOLUME</code>, that if defined means the tester supplied us with a btrfs subvolume.</p>
+
+<p>Perl's built-in <a href="https://perldoc.perl.org/Test::More">Test::More</a> library allows us to skip tests if certain conditions are met so we can use the definedness of <code>$BTRFS_SUBVOLUME</code> for such conditions.    </p>
+</li>
+<li>
+<p>Setting up the sandbox</p>
+
+<p>If <code>$BTRFS_SUBVOLUME</code> is defined then we can attempt to set up our sandbox.</p>
+
+<p>We will use the <code>tempdir</code> function from the built-in <code>File::Temp</code> library to create a sandbox directory that will be removed when our test script terminates. This sandbox will reside on the <code>$BTRFS_SUBVOLUME</code> which means we can place snapshots inside it.</p>
+
+<p>We will require that our test script needs to be run with root privilages so we can be sure we have the necessary permissions for taking and deleting snapshots.</p>
+<pre class="highlight plaintext"><code>use File::Temp 'tempdir';
+
+my $BTRFS_SANDBOX;
+if ($BTRFS_SUBVOLUME) {
+    die "Must be root user" if $&lt;;
+    die "'$BTRFS_SUBVOLUME' is not a btrfs subvolume" unless is_btrfs_subvolume($BTRFS_SUBVOLUME);
+    $BTRFS_SANDBOX = tmpdir('sandboxXXXXXX', DIR =&gt; $BTRFS_SUBVOLUME, CLEANUP =&gt; 1);
+    die "'$BTRFS_SANDBOX' is not a btrfs directory" unless is_btrfs_dir($BTRFS_SANDBOX);
+}
+</code></pre>
+</li>
+<li>
+<p>Testing</p>
+
+<p>We are ready to write our tests! Lets use the <a href="https://metacpan.org/pod/Test::Exception">Test::Exception</a> library from <a href="https://www.cpan.org/">CPAN</a> to test that our subroutines don't kill the program when they're not supposed to.</p>
+
+<p>Please refer to the documentation on <a href="https://metacpan.org/pod/Test::Exception#lives_and">Test::Exception::livesand</a>, <a href="https://perldoc.perl.org/Test::More#is">Test::More::is</a> and <a href="https://perldoc.perl.org/Test::More#SKIP:-BLOCK">Test::More SKIP blocks</a> if you are confused about the test framework specific code.</p>
+
+<p>Here's the tests - be sure to read the comments!</p>
+<pre class="highlight plaintext"><code>use Test::More 'no_plan';
+use Test::Exception;
+
+SKIP: {
+    skip "Skipping btrfs specific tests because we don't have a btrfs sandbox available", 9
+        unless $BTRFS_SUBVOLUME;
+
+    ### take_snapshot
+
+    # All the preconditions for taking a snapshot should be met
+    lives_and { is take_snapshot('foo', $BTRFS_SUBVOLUME, $BTRFS_SANDBOX), 1 } 'take_snapshot terminated are returned true';
+
+    # Make sure the snapshot was actually created
+    is(is_btrfs_snapshot("$BTRFS_SANDBOX/foo"), 1, 'The snapshot was created');
+
+    ### delete_snapshot
+
+    # All the preconditions for deleting a snapshot should be met
+    lives_and { is delete_snapshot("$BTRFS_SANDBOX/foo"), 1 } 'delete_snapshot terminated and returned true';
+
+    # Make sure the snapshot was actually deleted
+    is(is_btrfs_snapshot("$BTRFS_SANDBOX/foo"), 0, 'The snapshot was deleted');
+
+    ### Preconditions not met
+
+    # There is no subvolume named "$BTRFS_SANDBOX/quux"
+    lives_and { is take_snapshot('foo', "$BTRFS_SANDBOX/quux", $BTRFS_SANDBOX), 0 } 'take_snapshot returns false if non-existent subvolume';
+    is(is_btrfs_snapshot("$BTRFS_SANDBOX/foo"), 0, 'no snapshot was created');
+
+    # There is no btrfs directory named "$BTRFS_SANDBOX/quux"
+    lives_and { is take_snapshot('foo', $BTRFS_SUBVOLUME, "$BTRFS_SANDBOX/quux"), 0 } 'take_snapshot returns false if non-existent btrfs target dir;
+    is(is_btrfs_snapshot("$BTRFS_SANDBOX/quux/foo"), 0, 'no snapshot was created');
+
+    # There is no snapshot named "BTRFS_SANDBOX/quux"
+    lives_and { is delete_snapshot("$BTRFS_SANDBOX/quux"), 0 } 'delete_snapshot returns false if non-existent snapshot;
+}
+</code></pre>
+<p>The way I test the code is by testing that if <code>take_snapshot</code> and <code>delete_snapshot</code> are called with arguments that satisfy their preconditions, the functions execute succesfully. I then then observe the state of the sandbox to see if a snapshot was in fact taken or deleted.</p>
+
+<p>I also test that if I call the functions with arguments that do not satisfy the preconditions then the side-effect of taking/deleting a snapshot is never performed. </p>
+</li>
+</ol>
+
+<p><a id="orge975103"></a></p>
+
+<h1>
+  
+  
+  Summary
+</h1>
+
+<p>The first step to testing side-effectful code is to write the code in a way that allows it to be tested. I used a set of preconditions on function arguments that if satisfied should result in succesful execution of the side effect. I was able to set up a testing sandbox where I can observe the valididity of these assumptions.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/-perl-weekly-challenge-176-permuted-multiples-and-reversible-numbers.html"># Perl Weekly Challenge 176: Permuted Multiples and Reversible Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -225,7 +435,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-06/">Meet The Champion: June 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -241,7 +451,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_july_2022_votes">Grants: July 2022 Votes</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -271,7 +481,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/575.html">#575 - Backward compatibility</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -289,7 +499,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/08/spvm-continues-to-undergo-heavy-changes.html">SPVM continues to undergo heavy changes.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -341,7 +551,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/08/01/list-of-new-cpan-distributions-jul-2022/">List of new CPAN distributions – Jul 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1044,7 +1254,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-170/">Colin Crain › Perl Weekly Review #170</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1058,7 +1268,7 @@ Welcome to the Perl review pages for Week 170 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-175/">RECAP - The Weekly Challenge - 175</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1071,7 +1281,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-176/">The Weekly Challenge - 176</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1084,7 +1294,7 @@ Today is the first Monday of the month and time to declare our next champion. I 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1096,7 +1306,7 @@ Today is the first Monday of the month and time to declare our next champion. I 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-175-last-sunday-and-perfect-totient-numbers.html">Perl Weekly Challenge 175: Last Sunday and Perfect Totient Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2358,7 +2568,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/totient-numbers-on-a-sunday-5fnc">Totient numbers on a Sunday</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2486,7 +2696,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-exercise-2">Dancer2: Exercise 2 - Multi-Counter, Random redirection</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2501,7 +2711,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cdiii-11-great-cpan-modules-released.html">(cdiii) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2513,7 +2723,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxvii-metacpan-weekly-report.html">(dxvii) metacpan weekly report - Storable::Improved</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2525,7 +2735,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxlv-stackoverflow-perl-report.html">(dxlv) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2537,7 +2747,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/30#pwc175">Sunday Was Perfectly Totient</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2693,7 +2903,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/07/numeric-variable-names-with-leading-zeroes.html">Numeric Variable Names With Leading Zeroes</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2727,7 +2937,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-174-disarium-numbers-and-permutation-rankings.html">Perl Weekly Challenge 174: Disarium Numbers and Permutation Rankings</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -3920,7 +4130,7 @@ Rank:  5  -&gt; permutation  [ 3, 2, 1 ]
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/574.html">#574 - Perl Community</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -3936,7 +4146,7 @@ Rank:  5  -&gt; permutation  [ 3, 2, 1 ]
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/24#pwc174">Permutations Ranked in Disarray on Mars</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -4116,7 +4326,7 @@ this problem which avoid producing all permutations of the list.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-174-5ga6">Weekly Challenge 174</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -4176,7 +4386,7 @@ $ ./ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cdii-12-great-cpan-modules-released.html">(cdii) 12 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -4188,7 +4398,7 @@ $ ./ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxvi-metacpan-weekly-report-perlcritic.html">(dxvi) metacpan weekly report - Perl::Critic</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -4200,7 +4410,7 @@ $ ./ch-1.pl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/chris-nandor">Chris Nandor</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -4217,7 +4427,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-07-20-spaa-mit-ical-dateien-und-zeitzonen">Spaß mit ICal-Dateien und Zeitzonen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -4229,7 +4439,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/todd-rinaldo-nominated-for-board-position">Todd Rinaldo Nominated for Board Position</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -4269,7 +4479,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/573.html">#573 - Pocket money or serious support?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -4285,7 +4495,7 @@ As I have not heard much from him in recent years I thought it would be interest
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/17#pwc173">Suffering Succotash!</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -4425,7 +4635,7 @@ phrase and the character.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-more-route-parameters">Dancer2: More route parameters</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -4440,7 +4650,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-173-1kli">Weekly Challenge 173</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -4556,7 +4766,7 @@ $ ./ch-1.py 120
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposal_tensorflow_jnap_july_2022">Grant Proposal: Google TensorFlow API Bindings for Perl (John Napiorkowski)</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -4667,7 +4877,7 @@ $ ./ch-1.py 120
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_june_2022">Maintaining Perl (Tony Cook): June 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -4910,7 +5120,7 @@ were applied.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprc-2022-soc-report">TPRC 2022 SOC Report</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -4937,7 +5147,7 @@ were applied.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/572.html">#572 - Perl Blogger?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -4959,7 +5169,7 @@ were applied.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/10#pwc172">Partition the Summary</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -5197,7 +5407,7 @@ requires slightly special handling.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-172-1h8i">Weekly Challenge 172</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -5309,34 +5519,6 @@ $ ./ch-1.py 19 3
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/jonasbn/taskdateholidays-bug-fix-release-012-15jj">Task::Date::Holidays bug fix release 0.12</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by jonasbn
- on Saturday 09 July 2022 10:39</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>With the <a href="https://dev.to/jonasbn/release-130-of-dateholidays-more-holiday-for-the-french-36o7">releases 1.31 of Date::Holidays and 0.11 of Task::Date::Holidays</a> I apparently forgot to test properly, so an issue was not observed. I believe I have accidentally tested <a href="https://metacpan.org/pod/Task::Date::Holidays">Task::Date::Holidays</a> 0.11 with <a href="https://metacpan.org/pod/Date::Holidays">Date::Holidays</a> 1.30 not 1.31.</p>
-
-<p>This resulted in a lot of reports on failing tests from CPAN testers.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--75sgJckw--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pdh7yc2gnu4tiy181ack.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--75sgJckw--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/pdh7yc2gnu4tiy181ack.png" alt="Test matrix for Task::Date::Holidays 0.11" width="880" height="1141"></a></p>
-
-<p>Ref: <a href="http://matrix.cpantesters.org/?dist=Task-Date-Holidays%200.11">cpantesters.org</a></p>
-
-<p>Since it is my holiday I was able to find the time to dig into  the <em>holidays</em> and Yesterday I found the issue, adjusted the tests and shipped 0.12 and already today the results look much better.</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--5A0C-Loh--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xxcaklzovw29debvjw9h.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--5A0C-Loh--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/xxcaklzovw29debvjw9h.png" alt="Test matrix for Task::Date::Holidays 0.11" width="880" height="635"></a></p>
-
-<p>Ref: <a href="http://matrix.cpantesters.org/?dist=Task-Date-Holidays%200.12">cpantesters.org</a></p>
-
-<p>One more item on the TODO list ticked off...</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
           <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/571.html">#571 - Sponsoring TPF or individuals</a></h2>
@@ -5389,7 +5571,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 03 August 2022 20:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 04 August 2022 01:00 UTC</address>
             </div>
           </div>
         </div><!-- container -->
