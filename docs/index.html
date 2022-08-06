@@ -59,6 +59,101 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html">Match Anything, Quickly</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Saturday 06 August 2022 05:44</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Sometimes I want to filter a set of strings, but the details of the filter are not known beforehand. In particular, I may want a null filter, which simply accepts anything.</p>
+
+<p>This looks like a job for a regular expression, but I can think of at least two implementations. One is to pass around regular expression objects. The second is to wrap a match (<code>m//</code>) in a subroutine reference, and pass that around. Given the use of regular expressions, there are a number of possibilities for a regular expression that matches any string.</p>
+
+<p>I wondered whether one of the alternatives I was choosing among was faster than another, so I decided to <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> them. Both implementations applied the regular expression to a global variable. In practice this would probably be a localized <code>$_</code>, but my read of the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> module says that it also localizes <code>$_</code>, but leaves it <code>undef</code>.</p>
+
+<p><strong>Note</strong> that the empty pattern is not benchmarked, because it is equivalent to the last successfully-matched pattern, if any. The <code>sub { 1 }</code> was included because if we're dealing in code references, the null filter simply needs to return a true value.</p>
+
+<p>Here are the results, obtained with Perl 5.36.0, unthreaded. The script that generated them is on <a href="https://trwyant.github.io/blog/2022-08-05/match-anything-quickly.PL">GitHub</a></p>
+
+<table>
+<thead>
+<tr><th>Implementation</th><th>Rate</th></tr>
+</thead>
+<tbody>
+<tr><td>sub { 1 }</td><td style="text-align: right;">294117647.06/sec</td></tr>
+<tr><td>sub { m/ .? /smx }</td><td style="text-align: right;">21645021.65/sec</td></tr>
+<tr><td>sub { m/ .{0} /smx }</td><td style="text-align: right;">21598272.14/sec</td></tr>
+<tr><td>sub { m/ (*ACCEPT) /smx }</td><td style="text-align: right;">20964360.59/sec</td></tr>
+<tr><td>sub { m/ (?) /smx }</td><td style="text-align: right;">20876826.72/sec</td></tr>
+<tr><td>sub { m/ \A /smx }</td><td style="text-align: right;">20746887.97/sec</td></tr>
+<tr><td>sub { m/ (?:) /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>sub { m/ ^ /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2344665.89/sec</td></tr>
+<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2344116.27/sec</td></tr>
+<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2336448.60/sec</td></tr>
+<tr><td>qr/ \A /smx</td><td style="text-align: right;">2315350.78/sec</td></tr>
+<tr><td>qr/ .? /smx</td><td style="text-align: right;">2208968.41/sec</td></tr>
+<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2180074.12/sec</td></tr>
+<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1717327.84/sec</td></tr>
+</tbody>
+</table>
+
+<p>Somewhat to my surprise, the subroutine-reference implementation was an
+order of magnitude faster than the regular-expression-reference implementation.
+I expected that, <code>Regexp</code>s being first-class objects, it would be
+pretty much equivalent to <code>m/ ... /</code> wrapped in a subroutine --
+maybe even a little faster.</p>
+
+<p>A little messing around with <code>perl -MO=Concise</code> got me the following:</p>
+
+<pre>
+$ perl -MO=Concise -e '$_ =~ m/foo/;'
+5  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+4     &lt;/&gt; match(/"foo"/) vKS -&gt;5
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+-e syntax OK
+$ perl -MO=Concise -e '$_ =~ qr/foo/;'
+7  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+6     &lt;/&gt; match() vKS -&gt;7
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+5        &lt;|&gt; regcomp(other-&gt;6) sK -&gt;6
+4           &lt;/&gt; qr(/"foo"/) s -&gt;5
+-e syntax OK
+</pre>
+
+<p>The salient difference, to my eye, was the presence of the <code>regcomp</code> operator in the second case. <a href="https://metacpan.org/pod/Perldoc::Search"><code>perldoc-search</code></a> on this led me eventually to <a href="https://perldoc.perl.org/perlreapi.html"><code>perlreapi</code></a> which says, in part,</p>
+
+<p><br />
+<dl><br />
+    <dt>"precomp" "prelen"</dt><br />
+    <dd><br />
+	<p>Used for optimisations. "precomp" holds a copy of the pattern that was compiled and "prelen" its length. When a new pattern is to be compiled (such as inside a loop) the internal "regcomp" operator checks if the last compiled "REGEXP"'s "precomp" and "prelen" are equivalent to the new one, and if so uses the old pattern instead of compiling a new one.</p></p>
+
+<p>	<p>The relevant snippet from "Perl_pp_regcomp":</p><br />
+	<pre><br />
+            if (!re || !re-&gt;precomp || re-&gt;prelen != (I32)len ||<br />
+                memNE(re-&gt;precomp, t, len))<br />
+            /* Compile a new pattern */<br />
+	</pre><br />
+    </dd><br />
+</dl></p>
+
+<p>So I <strong>assume</strong> that the speed difference <strong>might</strong> be reduced if the filter was called in a tight enough loop. But if so, the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> loop is not tight enough, and it's pretty tight. On the other hand, maybe the <code>Benchmark</code> loop <strong>is</strong> tight enough, and the extra time is spent determining that a recompilation is not needed. But it will take deeper knowledge of Perl internals than I possess to sort this out.</p>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/-perl-weekly-challenge-176-permuted-multiples-and-reversible-numbers.html"># Perl Weekly Challenge 176: Permuted Multiples and Reversible Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -789,7 +884,7 @@ func is_reversible (m)
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-08-05-wie-erstellt-man-eine-user-story-map">Wie erstellt man eine User Story Map?</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -801,7 +896,7 @@ func is_reversible (m)
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -813,7 +908,7 @@ func is_reversible (m)
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/pluscoloring/terrain-coloringbook-30d">Terrain ColoringBook</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -842,7 +937,7 @@ The script operates on whole directories. Every image in the indir (below) will 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/testing-code-that-is-difficult-to-test-with-perl-81n">Testing Code That is Difficult to Test (With Perl)</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1062,7 +1157,7 @@ SKIP: {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_dave_mitchell_july_2022">Maintaining Perl 5 Core (Dave Mitchell): July 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1185,7 +1280,7 @@ affect yet.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-06/">Meet The Champion: June 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1201,7 +1296,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_july_2022_votes">Grants: July 2022 Votes</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1231,7 +1326,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/575.html">#575 - Backward compatibility</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1249,7 +1344,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/08/spvm-continues-to-undergo-heavy-changes.html">SPVM continues to undergo heavy changes.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1301,7 +1396,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/08/01/list-of-new-cpan-distributions-jul-2022/">List of new CPAN distributions – Jul 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -2004,7 +2099,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-170/">Colin Crain › Perl Weekly Review #170</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2018,7 +2113,7 @@ Welcome to the Perl review pages for Week 170 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-175/">RECAP - The Weekly Challenge - 175</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2031,7 +2126,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-176/">The Weekly Challenge - 176</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2044,7 +2139,7 @@ Today is the first Monday of the month and time to declare our next champion. I 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-175-last-sunday-and-perfect-totient-numbers.html">Perl Weekly Challenge 175: Last Sunday and Perfect Totient Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -3306,7 +3401,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/totient-numbers-on-a-sunday-5fnc">Totient numbers on a Sunday</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -3434,7 +3529,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-exercise-2">Dancer2: Exercise 2 - Multi-Counter, Random redirection</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -3449,7 +3544,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cdiii-11-great-cpan-modules-released.html">(cdiii) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -3461,7 +3556,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxvii-metacpan-weekly-report.html">(dxvii) metacpan weekly report - Storable::Improved</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -3473,7 +3568,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxlv-stackoverflow-perl-report.html">(dxlv) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -3485,7 +3580,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/30#pwc175">Sunday Was Perfectly Totient</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -3641,7 +3736,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/07/numeric-variable-names-with-leading-zeroes.html">Numeric Variable Names With Leading Zeroes</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -3671,1199 +3766,6 @@ but not a best practice!</p>
 <p>Under the circumstances I can not imagine anyone (other than maybe the original poster on p5p) actually wanting this perlcritic policy published, but I did stick it on GitHub for the curious.</p>
 
         
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_23">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-174-disarium-numbers-and-permutation-rankings.html">Perl Weekly Challenge 174: Disarium Numbers and Permutation Rankings</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Tuesday 26 July 2022 12:38</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 174 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-174/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on July 24, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Disarium Numbers</h2>
-
-<p><em>Write a script to generate first 19 Disarium Numbers.</em></p>
-
-<blockquote>
-  <p><em>A disarium number is an integer where the sum of each digit raised to the power of its position in the number, is equal to the number.</em></p>
-</blockquote>
-
-<p><em>For example,</em></p>
-
-<pre><code>518 is a disarium number as (5 ** 1) + (1 ** 2) + (8 ** 3) =&gt; 5 + 1 + 512 =&gt; 518
-</code></pre>
-
-<p>In Raku and Perl, we&#8217;ll implicitly convert the input number into a string of characters (<code>@digits</code>), split it into an array of characters, and then implicitly convert each character into a digit.  In some other languages such as awk, bc, or C, such implicit conversion don&#8217;t happen or are tedious, and we will use mathematical computations to get the individual digits.</p>
-
-<h3>Disarium Numbers in Raku</h3>
-
-<p>This is quite straight forward. We have a <code>is-disarium</code> subroutine which returns a True value is the described sum is equal to the input value, and False otherwise.  Then we use it to test each subsequent integer from 0 on and print out the number if it is a disarium number. We stop when we reach 19 disarium numbers.</p>
-
-<pre><code>sub is-disarium($num) {
-    my @digits = $num.comb;
-    my $sum = [+] map { $^b ** ($^a + 1) }, @digits.kv;
-    return $num == $sum;
-}
-my $count = 0;
-my $i = 0;
-while $count &lt; 19 {
-    ++$count and say $i if is-disarium($i);
-    $i++;
-    # say "i: $i";
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>0
-1
-2
-3
-4
-5
-6
-7
-8
-9
-89
-135
-175
-518
-598
-1306
-1676
-2427
-2646798
-</code></pre>
-
-<p>This program took 0.4 second to find the first 18 disarium numbers, and then more than 4 minutes to find the 19th one. I have to confess that, for years, I have been too lazy to upgrade my Rakudo installation, which dates from 2019. This time, I decided it was high time to upgrade it and installed version 2022.06 to see what happens.</p>
-
-<p>The good news is that, with this new version, the program ran in about 45 seconds. More than five times faster, that&#8217;s a rather impressive improvement. The bad news, though, is that it&#8217;s  still very slow. The equivalent Perl and Python programs (see below) both took slightly less than 10 seconds, the Julia implementation ran in 3 seconds, and the C program completed in less than half a second. There is definitely a large opportunity for performance improvement. I love Raku, but I must admit that, in terms or performance, it is currently not good at intensive number crunching.</p>
-
-<h3>Disarium Numbers in Perl</h3>
-
-<p>This is a port to Perl of the Raku program just above, with a <code>is_disarium</code> subroutine to find is the input integer is a disarium number.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub is_disarium {
-    my $num = shift;
-    my @digits = split '', $num;
-    my $i = 1;
-    my $sum = 0;
-    $sum += $_ for map {  $_ ** $i++ } @digits;
-    return $num == $sum;
-}
-my $i = 0;
-my $count = 0;
-while ($count &lt; 19) {
-    say $i and $count++ if is_disarium $i;
-    $i++;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ time perl ./disarium.pl
-
-0
-1
-2
-3
-[Lines omitted for brevity]
-1676
-2427
-2646798
-
-real    0m9,781s
-user    0m9,625s
-sys     0m0,046s
-</code></pre>
-
-<h3>Disarium Numbers in Julia</h3>
-
-<p>Julia has the built-in <code>digits</code> function, which produces a list of digits of the input number (in the wrong order for our purpose), and <code>enumerate</code> iterator, which yields a list of indexes and values. These functions make the <code>is_disarium</code> function very simple (it could easily be written in one single code line).</p>
-
-<pre><code>function is_disarium(n)
-    s = sum(i ^ p for (p, i) in enumerate(reverse(digits(n))))
-    return s == n
-end
-
-count = 0
-i = 0
-while count &lt; 19
-    if is_disarium(i)
-        println(i)
-        global count += 1
-    end
-    global i += 1
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>julia ./disarium.jl
-0
-1
-2
-3
-[Lines omitted for brevity]
-1676
-2427
-2646798
-</code></pre>
-
-<h3>Disarium Numbers in awk</h3>
-
-<p>The awk language doesn&#8217;t have the powerful string functions of Raku, Perl, or Julia. In the <code>while</code> loop of the <code>is_disarium</code> function, we use the integer division and modulo operators to get each digit of the input integer in turn. </p>
-
-<pre><code>function is_disarium(num) {
-    n = num
-    sum = 0
-    len = length(n)
-    while (n &gt; 0) {
-        sum += (n % 10) ^ len
-        n = int(n/10)
-        len--
-    }
-    return (sum == num)
-}
-
-BEGIN {
-    count = 0
-    i = 0
-    while (count &lt; 19) {
-        if (is_disarium(i)) {
-            printf("%d\n", i)
-            count++
-        }
-        i++
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ awk -f ./disarium.awk
-0
-1
-2
-3
-[Lines omitted for brevity]
-1676
-2427
-2646798
-</code></pre>
-
-<h3>Disarium Numbers in bc</h3>
-
-<p>This program is very similar to the awk program just above, with the same method to access the individual digits.</p>
-
-<pre><code>define is_disarium (num) {
-    n = num
-    sum = 0
-    len = length(n)
-    while (n &gt; 0) {
-        sum += (n % 10) ^ len
-        n = n/10
-        len -= 1
-    }
-    return (sum == num)
-}
-
-count = 0
-i = 0
-while (count &lt; 19) {
-    if (is_disarium(i)) {
-        print i, "\n"
-        count += 1
-    }
-    i += 1
-}
-quit
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ bc  ./disarium.bc
-bc 1.06.95
-Copyright 1991-1994, 1997, 1998, 2000, 2004, 2006 Free Software Foundation, Inc.
-This is free software with ABSOLUTELY NO WARRANTY.
-For details type `warranty'.
-0
-1
-2
-3
-[Lines omitted for brevity]
-1676
-2427
-2646798
-</code></pre>
-
-<h3>Disarium Numbers in dc</h3>
-
-<p>The problem can be solved with a dc one-liner (spread over two lines for formatting reasons):</p>
-
-<pre><code>$ dc -e '[10/ll1+sld0&lt;Lx] sL [d10%ll^ls+ss10/ll1-sld0&lt;Dx] sD [lc1+sc
-lnp] sP [lisnln0sllLx0ssclnlDxlsln=Pli1+silc18&gt;Ix] sI0si0sclIx'
-0
-1
-2
-3
-4
-5
-6
-7
-8
-9
-89
-135
-175
-518
-598
-1306
-1676
-2427
-</code></pre>
-
-<p>Note that I only printed 18 numbers because this is getting really slow.</p>
-
-<p>This is not a golf attempt: I could have removed a few spaces if I had wanted to golf it. </p>
-
-<p>But I must admit dc scripts are not easy to read. This is now a much more readable version of the same solution:</p>
-
-<pre><code># Macro for computing the input number length
-[10      # pushes 10 to stack
- /       # divides input by 10 and stores result on stack
- ll      # push length on stack
- 1+      # add one to stack (length)
- # p     # prints intermediate length (for debugging)
- sl      # saves length to register l
- d       # duplicates value (number) on top of stack
- 0       # pushes 0 to stack
- &lt;Lx     # executes length macro (L) if number &gt; 0
-] sL     # end of length macro, store it in L
-
-# is Disarium macro
-[d      # duplicates value (number) on top of stack
-10      # pushes 10 to stack
-%       # pushes (number % 10) to stack
-ll      # pushes length to stack
-^       # computes (n % 10) ^ len
-ls      # pushes sum to stack
-+ss     # computes new sum and stores it in s
-10/     # integer division number / 10
-ll      # pushes length on stack
-1-      # subtract 1 froml length
-sl      # stores new length in l
-d       # duplicates value (number) on top of stack
-0       # pushes 0 to stack
-&lt;Dx     # executes recursively disarium macro (D) if number &gt; 0
-] sD    # stores disarium macro in D
-
-# Printing and counting macro
-[lc1+sc # increments disarium number counter
-lnp     # print number
-]sP # Stores printing macro in P
-
-# Iteration macro
-[li sn  # Stores iteration variable in number register
-ln      # pushes number to stack
-0sl     # stores 0 in register l (length)
-lLx     # runs the length macro
-0ss     # inititialize sum to 0
-cln     # clear stack and pushes number onto it
-# llp   # print the length
-lDx     # runs the Disarium macro once
-lsln    # pushes sum and number
-=P      # runs the printing macro if numbers are equal
-li      # loads iteration variable
-1+si    # increments iteration variable
-lc18    # pushes counter and 18 on stack
-&gt;Ix     # runs recursively iteration macro if counter &lt; 18
-] sI    # end of iteration macro, stores it in I 
-
-# Main
-0si     # Initiate iteration variable
-0sc     # Initiate disarium numbers counter
-lIx     # running iteration macro the first time
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ dc disarium.dc
-0
-1
-2
-3
-[Lines omitted for brevity]
-1306
-1676
-2427
-</code></pre>
-
-<p>Understanding the solution in details would require a lot more explanations than what I can provide here. If you want to understand better how this program works and, more broadly, how the dc syntax works, you are kindly invited to read <a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-174-disarium-numbers-in-dc.html">this other blog post</a> where I describe the solution in detail.</p>
-
-<h3>Disarium Numbers in C</h3>
-
-<p>The C programming language doesn&#8217;t have a standard exponentiation operator. So I wrote a <code>power</code> function to perform exponentiation of individual digits. There is also no direct way to find the number of digits of an integer. So, I used <code>floor(log10(n)) + 1</code> to find the size of an integer <code>n</code>, except that it would fail for an input of 0, so I used this method only for integers larger than 9.</p>
-
-<pre><code>#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-#include &lt;math.h&gt;
-
-int power (int base, int exponent) {
-    int result = 1;
-    for (int i = 1; i &lt;= exponent; i++) {
-        result *= base;
-    }
-    return result;
-}
-
-int is_disarium (int num) {
-    int n = num;
-    int sum = 0;
-    int len = n &lt;= 9 ? 1 : floor(log10(n)) + 1;
-    while (n &gt; 0) {
-        sum += power(n % 10, len);
-        n /= 10;
-        len--;
-    }
-
-    return num == sum;
-}
-
-int main() {
-    int count = 0;
-    int i = 0;
-    while (count &lt; 19) {
-        if (is_disarium(i)) {
-            printf("%d\n", i);
-            count++;
-        }
-        i++;
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ time ./a.out
-0
-1
-2
-3
-[Lines omitted for brevity]
-1676
-2427
-2646798
-
-real    0m0,475s
-user    0m0,280s
-sys     0m0,015s
-</code></pre>
-
-<h3>Disarium Numbers in Python</h3>
-
-<p>Also using the integer division and modulo operators to get each digit of the input integer.</p>
-
-<pre><code>def is_disarium(num):
-    n = num
-    size = len(str(n))
-    sum = 0
-    while n &gt; 0:
-        sum += (n % 10) ** size
-        n //= 10
-        size -= 1
-    return sum == num
-
-i = 0
-count = 0
-while count &lt; 19:
-    if is_disarium(i):
-        print(i)
-        count += 1
-    i += 1
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ python3 disarium.py
-0
-1
-2
-3
-[Lines omitted for brevity]
-1306
-1676
-2427
-2646798
-</code></pre>
-
-<h3>Disarium Numbers in Ruby</h3>
-
-<pre><code>def is_disarium(num)
-    n = num.to_s
-    sum = 0
-    for i in 1..(n.length)
-        sum += n[i-1].to_i**i
-    end
-    return sum == num
-end
-
-i = 0
-count = 0
-while count &lt; 19
-    if is_disarium(i)
-        printf("%d ", i)
-        count += 1
-    end
-    i += 1
-end
-print("\n")
-</code></pre>
-
-<p>From now on, our programs will display the disarium numbers on one line to save space: </p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Kotlin</h3>
-
-<p>Kotlin has a <code>pow</code> function for exponentiation, but it works with <code>Double</code> and <code>Float</code> leading to numerous time-consuming difficulties. I ended up writing my own <code>power</code> functions for integers.</p>
-
-<pre><code>fun power(n: Int, exp: Int): Int {
-    return when {
-        exp &gt; 1 -&gt; n * power(n, exp-1)
-        exp == 1 -&gt; n
-        else -&gt; 1
-    }
-}
-fun is_disarium(num: Int): Boolean {
-    val n = num.toString()
-    var sum = 0
-    for (i in 1..n.length) {
-        sum += power (n[i-1] - '0', i)
-    }
-    return sum == num
-}
-fun main() {
-    var i = 0
-    var count = 0
-    while (count &lt; 19) {
-        if (is_disarium(i)) {
-            print("$i ")
-            count++
-        }
-        i++
-    }
-    println("")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Rust</h3>
-
-<p>I don&#8217;t really like Rust because, in my humble opinion, its type system is really an obstructive straitjacket and gets in the way of doing simple things. Just like in Kotlin, I ended up writing my own <code>power</code> functions for exponentiating integers.</p>
-
-<pre><code>fn power(n: i32, exp: i32) -&gt; i32 {
-    let mut result = 1;
-    for _i in 0..exp {
-        result *= n;
-    }
-    return result;
-}
-fn is_disarium(num: i32) -&gt; bool {
-    let mut n = num;
-    let mut sum = 0;
-    let mut i = 1;
-    let len = num.to_string().len();
-    while n &gt; 0 {
-        sum += power(n % 10, len as i32 - i + 1);
-        n /= 10;
-        i += 1
-    }
-    return sum == num;
-}
-fn main() {
-    let mut i = 0;
-    let mut count = 0;
-    while count &lt;= 18 {
-        if is_disarium(i) {
-            print!("{} ", i);
-            count += 1;
-        }
-        i += 1;
-    }
-    println!("{}", " ")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Java</h3>
-
-<pre><code>import java.lang.Math;
-
-public class DisariumNumbers {
-    public static boolean is_disarium(int num) {
-        int n = num;
-        int len = Integer.toString(n).length();
-        int sum = 0;
-        int i = 1;
-        while (n &gt; 0) {
-            sum += Math.pow(n % 10, len - i + 1);
-            n /= 10;
-            i ++;
-        }
-        return sum  == num;
-    }
-
-    public static void main(String[] args) {
-        int i = 0;
-        int count = 0;
-        while (count &lt;= 18) {
-            if (is_disarium(i)) {
-                System.out.printf("%d ", i);
-                count++;
-            }
-            i++;
-        }
-        System.out.printf("%s", "\n");
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Scala</h3>
-
-<pre><code>object Disarium extends App {
-  def power(base: Int, exp: Int): Int = {
-    var result = 1
-    for (i &lt;- 1 to exp) {
-      result *= base
-    }
-    return result
-  }
-  def is_disarium(num: Int): Boolean = {
-    val digits = num.toString.split("")
-    var sum = 0
-    for (i &lt;- 0 to (digits.size - 1)) {
-      sum += power(digits(i).toInt, i + 1)
-    }
-    return num == sum
-  }
-  var i = 0
-  var count = 0
-  while (count &lt; 19) {
-    if (is_disarium(i)) {
-      count += 1
-      printf("%d ", i)
-    }
-    i += 1
-  }
-  println("")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Ring</h3>
-
-<pre><code>i = 0
-count = 0
-while count &lt; 19
-    if is_disarium(i)
-        see "" + i + " "
-        count++
-    ok
-    i++
-end    
-see nl
-
-func pow (base, exp)
-    result = 1
-    for i = 0 to exp - 1
-        result *= base
-    next
-    return result
-
-func is_disarium (num)
-    n = "" + num
-    sum = 0
-    for i = 1 to len(n)
-        sum += pow (n[i] % 10, i)
-    next
-    return sum = num
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./disarium.ring
-0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Nim</h3>
-
-<pre><code>import strutils
-import math
-
-proc is_disarium(num: int): bool =
-  let n = intToStr(num)
-  var sum = 0
-  for i in 0..len(n)-1:
-    sum += int((int(n[i])-48) ^ (i+1))
-  return sum == num
-
-var i = 0
-var count = 0
-while count &lt; 19:
-  if is_disarium(i):
-    stdout.write i, " "
-    count += 1
-  i += 1
-echo ""
-</code></pre>
-
-<p>Output:</p>
-
-<p>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798 </p>
-
-<h3>Disarium Numbers in Go</h3>
-
-<pre><code>package main
-
-import (
-    "fmt"
-    "math"
-    "strconv"
-)
-
-func is_disarium(num int) bool {
-    n := num
-    i := 0
-    sum := 0
-    l := len(strconv.Itoa(n))
-    for n &gt; 0 {
-        sum += int(math.Pow(float64(n%10), float64(l-i)))
-        n /= 10
-        i++
-    }
-    return sum == num
-}
-func main() {
-    i := 0
-    count := 0
-    for count &lt; 19 {
-        if is_disarium(i) {
-            fmt.Printf("%d ", i)
-            count++
-        }
-        i++
-    }
-    fmt.Println("")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Tcl</h3>
-
-<p>I used to be a fan of Tcl some 25 to 30 years ago, not that I really loved Tcl itself, but because it came usually bundled with the Tk graphical toolkit, and I really loved Tk, which made fairly easy the design and implementation of graphical interfaces. But I wasn&#8217;t really impressed at the time by its shell-looking syntax and, often, I wasn&#8217;t quite sure whether I should add a <code>$</code> sign before a variable name or not, or whether I should use <code>[...]</code>, <code>(...)</code>, or <code>{...}</code>. Now, more than a quarter of century later, I have forgotten most if not all the details about the syntax, and I find it quite difficult to use and somewhat awkward (but perhaps it is my own prejudice). Still, I&#8217;m posting this Tcl implementation as a kind of tribute to John Ousterhout, the blessed creator of Tcl-Tk.</p>
-
-<pre><code>proc is_disarium {num} {
-    set n num
-    set sum 0
-    set i 1
-    set ch 1
-    foreach char [split $num {}] {
-        scan $char %d ch
-        set sum [ expr ($sum + $ch ** $i)]
-        incr i
-    }
-    return [ expr $num == $sum ? 1 : 0]
-}
-set i 0
-set count 0
-while { $count &lt; 19 } {
-    if [ is_disarium $i ] {
-        puts -nonewline  "${i} "
-        incr count
-    }
-    incr i
-}
-puts ""
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ tclsh ./disarium.tcl
-0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in D</h3>
-
-<pre><code>import std.stdio;
-import std.math;
-import std.conv;
-
-bool is_disarium(int num) {
-    int n = num;
-    int sum = 0;
-    ulong len = to!string(num, 10).length;
-    while (n &gt; 0) {
-        sum += pow(n % 10, len);
-        n /= 10;
-        len--;
-    }
-    return num == sum;
-}
-void main() {
-    int i = 0;
-    int count = 0;
-    while (count &lt; 19) {
-        if (is_disarium(i)) {
-            printf("%d ", i);
-            count++;
-        }
-        i++;
-    }
-    writeln(" ");
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in Dart</h3>
-
-<pre><code>import "dart:math";
-import "dart:io";
-void main() {
-    var count = 0;
-    var i = 0;
-    while (count &lt; 19) {
-        if (is_disarium(i)) {
-            stdout.write("$i ");
-            count++;
-        }
-        i++;
-    }
-}
-
-bool is_disarium(numb) {
-    var n = numb;
-    var len = n.toString().length;
-    var sum = 0;
-    while (n &gt; 0) {
-        sum += (pow(n % 10, len)).toInt();
-        n = (n / 10).toInt();
-        len--;
-    }
-    return numb == sum;
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>0 1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798
-</code></pre>
-
-<h3>Disarium Numbers in JavaScript</h3>
-
-<pre><code>function is_disarium (num) {
-    let n = num
-    let len = n.toString().length
-    let sum = 0
-    while (n &gt; 0) {
-        sum += (n % 10) ** len
-        n = parseInt(n / 10, 10)
-        len--
-    }
-    return num == sum
-}
-let count = 0
-let i = 1
-while (count &lt; 18) {
-    if (is_disarium(i)) {
-        process.stdout.write(i + " ")
-        count++
-    }
-    i++
-}
-</code></pre>
-
-<p>Output:</p>
-
-<p>1 2 3 4 5 6 7 8 9 89 135 175 518 598 1306 1676 2427 2646798 </p>
-
-<h2>Task 2: Permutation Ranking</h2>
-
-<p><em>You are given a list of integers with no duplicates, e.g. <code>[0, 1, 2]</code>.</em></p>
-
-<p><em>Write two functions, <code>permutation2rank()</code> which will take the list and determine its rank (starting at 0) in the set of possible permutations arranged in lexicographic order, and <code>rank2permutation()</code> which will take the list and a rank number and produce just that permutation.</em></p>
-
-<p><em>Please checkout this <a href="https://tryalgo.org/en/permutations/2016/09/05/permutation-rank">post</a> for more informations and algorithm.</em></p>
-
-<p><em>Given the list <code>[0, 1, 2]</code> the ordered permutations are:</em></p>
-
-<pre><code>0: [0, 1, 2]
-1: [0, 2, 1]
-2: [1, 0, 2]
-3: [1, 2, 0]
-4: [2, 0, 1]
-5: [2, 1, 0]
-</code></pre>
-
-<p><em>and therefore:</em></p>
-
-<pre><code>permutation2rank([1, 0, 2]) = 2
-
-rank2permutation([0, 1, 2], 1) = [0, 2, 1]
-</code></pre>
-
-<p>Given that dealing with integers, I do not understand why permutations should be arranged in lexicographic order. I would expect permutation <code>[9, 11]</code> to be before permutation <code>[11, 9]</code>, but lexicographic order would arrange them the other way around: <code>[11, 9], [9, 11]</code>. Well, it doesn&#8217;t really matter and we will use in our tests only single digit integers to avoid bizarre results. I&#8217;ll even use a test with single letters to show that my implementation also works with letters.</p>
-
-<p>The second thing is that since my implementation of <code>permutation2rank</code> creates an ordered array of permutations, we don&#8217;t really need the <code>rank2permutation</code> subroutine to find the permutation with rank <code>n</code>, since I only need to lookup the array. I&#8217;ll create the <code>rank2permutation</code> subroutine nonetheless, just to abide with the specification.</p>
-
-<h3>Permutation Ranking in Raku</h3>
-
-<p>In Raku, the <code>permutations</code> method will create permutations in the proper order provided the input permutation is itself in the right order. So we only need to sort the input permutation at the beginning.</p>
-
-<pre><code>my @permut_str;
-
-sub permutation2rank(@in) {
-    # if the input list is sorted, then permutations will be sorted
-    # Forcing a lexicographic order (although not really needed here)
-    my @sorted = sort { $^a leg $^b }, @in;
-    my @permutations = @sorted.permutations;
-    @permut_str = map {[join " ", $_]}, @permutations;
-    my %ranks = map { $^b =&gt; $^a }, @permut_str.kv;
-}
-sub rank2permutations ($rank) {
-    return @permut_str[$rank];
-}
-
-my @tests = (1, 0, 2), (6, 3, 4), &lt;a c d b&gt;;
-for @tests -&gt; @test {
-    my %ranks = permutation2rank(@test);
-    say @permut_str;
-    my $test = join " ", @test;
-    say "[$test] has rank %ranks{$test}";
-    say "Rank %ranks{$test} is ", rank2permutations(%ranks{$test});
-    say "Rank {%ranks{$test} - 1} is ", rank2permutations(%ranks{$test} - 1);
-    say "";
-}
-</code></pre>
-
-<p>Note that we are also printing the sorted permutations to enable easy verification of the results.</p>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./permute_ranks.raku
-[[0 1 2] [0 2 1] [1 0 2] [1 2 0] [2 0 1] [2 1 0]]
-[1 0 2] has rank 2
-Rank 2 is [1 0 2]
-Rank 1 is [0 2 1]
-
-[[3 4 6] [3 6 4] [4 3 6] [4 6 3] [6 3 4] [6 4 3]]
-[6 3 4] has rank 4
-Rank 4 is [6 3 4]
-Rank 3 is [4 6 3]
-
-[[a b c d] [a b d c] [a c b d] [a c d b] [a d b c] [a d c b] [b a c d] [b a d c] [b c a d] [b c d a] [b d a c] [b d c a] [c a b d] [c a d b] [c b a d] [c b d a] [c d a b] [c d b a] [d a b c] [d a c b] [d b a c] [d b c a] [d c a b] [d c b a]]
-[a c d b] has rank 3
-Rank 3 is [a c d b]
-Rank 2 is [a c b d]
-</code></pre>
-
-<h3>Permutation Ranking in Perl</h3>
-
-<p>Perl has no built-in function to create permutations, so we implement the recursive <code>permute</code> subroutine to do that. Note that we designed it in such a way as to create the permutations in the right order, provided the input permutation is itself in the proper order.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-use Data::Dumper;
-
-my @permutations;
-
-sub permute {
-    my ($done, $left) = @_;
-    if (scalar @$left == 0) {
-        push @permutations, $done;
-        return;
-    }
-    my @left = @$left;
-    permute([ @$done, $left[$_]], [@left[0..$_-1], @left[$_+1..$#left]]) for 0..$#left;
-}
-
-sub permutation2rank {
-    # if the input list is sorted, then permutations will be sorted
-    # This will be in lexicographic order, even for numbers
-    my @sorted = sort @_;
-    permute([], [@sorted]);
-    my @permut_str = map {join " ", @$_} @permutations;
-    my $count = 0;
-    my %ranks = map { $_ =&gt; $count++ } @permut_str;
-}
-
-sub rank2permutations {
-    return (map {join " ", @$_} @permutations)[$_[0]];
-}
-
-my @tests = ( [1, 0, 2], [6, 3, 4], [&lt;a d c b&gt;]);
-for my $test (@tests) {
-    @permutations = ();
-    my %ranks = permutation2rank (@$test);
-    my $test_str = join " ", @$test;
-    say "Rank of [$test_str] is: $ranks{$test_str}";
-    for my $i (2, 4, 5) {
-        say "Rank $i is [", rank2permutations ($i), "]";
-    }
-    say " ";
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./permute_ranks.pl
-Rank of [1 0 2] is: 2
-Rank 2 is [1 0 2]
-Rank 4 is [2 0 1]
-Rank 5 is [2 1 0]
-
-Rank of [6 3 4] is: 4
-Rank 2 is [4 3 6]
-Rank 4 is [6 3 4]
-Rank 5 is [6 4 3]
-
-Rank of [a d c b] is: 5
-Rank 2 is [a c b d]
-Rank 4 is [a d b c]
-Rank 5 is [a d c b]
-</code></pre>
-
-<h3>Permutation Ranking in Julia</h3>
-
-<p>Note that Julia array subscripts start at 1, not 0. Therefore, the ranks are shifted by 1 compared to other languages and the output differs accordingly. It would be easy to fix that, but I preferred to keep the Julia semantic.</p>
-
-<pre><code># Note: Julia array subscripts start at 1, not 0
-using Combinatorics
-
-function permute(in_list)
-    return collect(permutations(sort(in_list), length(in_list)))
-end
-
-function permutation2rank(perms, input)
-    for i in 1:length(perms)
-        if perms[i] == input
-            return i
-        end
-    end
-end
-
-function rank2permutation(perm_list, index)
-    return perm_list[index]
-end
-
-perm_in = [3, 1, 2]
-perms = permute(perm_in)
-println("Permutations: ", perms)
-println("Permutation ", perm_in, " -&gt; rank ", permutation2rank(perms, perm_in))
-for i in 1:length(perms)
-    println("Rank: ", i, " -&gt; permutation ", rank2permutation(perms, i))
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ julia ./permute_ranks.jl
-Permutations: [[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]]
-Permutation [3, 1, 2] -&gt; rank 5
-Rank: 1 -&gt; permutation [1, 2, 3]
-Rank: 2 -&gt; permutation [1, 3, 2]
-Rank: 3 -&gt; permutation [2, 1, 3]
-Rank: 4 -&gt; permutation [2, 3, 1]
-Rank: 5 -&gt; permutation [3, 1, 2]
-Rank: 6 -&gt; permutation [3, 2, 1]
-</code></pre>
-
-<h3>Permutation Ranking in Python</h3>
-
-<p>Comparing two arrays with the <code>==</code> operator doesn&#8217;t seem to work in Python. There may be a better way to compare arrays, but I decided to stringify the arrays and to compare the resulting strings.</p>
-
-<pre><code>def stringify(input):
-  return " ".join(map(str, input))
-
-def permute(input):
-  temp = input.copy() # avoid modifying input perm with the sort
-  temp.sort()
-  return list(itertools.permutations(temp))
-
-def permutation2rank(perms, input):
-  perms_str = map(stringify, perms)
-  input_str = stringify(input)
-  for index, value in enumerate(perms_str):
-    if value == input_str:
-      return index 
-
-def rank2permutation(permutation, rank):
-  return permutation[rank]
-
-perm = [3, 1, 2]
-perms = permute(perm)
-print("Permutations: ", str(perms))
-rank = permutation2rank(perms, perm)
-print("Permutation ", perm, " -&gt; rank ", rank)
-for i in range(0, len(perms)):
-  print("Rank: ", i, " -&gt; permutation ", rank2permutation(perms, i))
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ python3 ./permute_ranks.py
-Permutations:  [(1, 2, 3), (1, 3, 2), (2, 1, 3), (2, 3, 1), (3, 1, 2), (3, 2, 1)]
-Permutation  [3, 1, 2]  -&gt; rank  4
-Rank:  0  -&gt; permutation  (1, 2, 3)
-Rank:  1  -&gt; permutation  (1, 3, 2)
-Rank:  2  -&gt; permutation  (2, 1, 3)
-Rank:  3  -&gt; permutation  (2, 3, 1)
-Rank:  4  -&gt; permutation  (3, 1, 2)
-Rank:  5  -&gt; permutation  (3, 2, 1)
-</code></pre>
-
-<h3>Permutation Ranking in Ruby</h3>
-
-<pre><code>def permute(in_list)
-    return in_list.sort.permutation(in_list.length).to_a
-end
-
-def permutation2rank(perms, input)
-    for i in 0..perms.length - 1
-        if perms[i] == input
-            return i
-        end
-    end
-end
-
-def rank2permutation(perms, index)
-    return perms[index]
-end
-
-perm_in = [3, 1, 2]
-perms = permute(perm_in)
-puts("Permutations: #{perms} \n")
-print("Permutation #{perm_in} -&gt; rank  #{permutation2rank(perms, perm_in)} \n")
-for i in 1..perms.length - 1
-    print("Rank:  #{i} -&gt; permutation  #{rank2permutation(perms, i)} \n")
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Permutations: [[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]] 
-Permutation [3, 1, 2] -&gt; rank 4
-Rank: 1 -&gt; permutation [1, 3, 2]
-Rank: 2 -&gt; permutation [2, 1, 3]
-Rank: 3 -&gt; permutation [2, 3, 1]
-Rank: 4 -&gt; permutation [3, 1, 2]
-Rank: 5 -&gt; permutation [3, 2, 1]
-</code></pre>
-
-<h3>Permutation Ranking in Javascript</h3>
-
-<p>JavaScript doesn&#8217;t seem to have a built-in permutation function. The <code>permute</code> function in the program below is derived from <a href="https://stackoverflow.com/questions/9960908/permutations-in-javascript">this Stack Overflow page</a>. I liked it because of its functional style. When I used JavaScript around 2003-04 for Web page development, I did not like too much its somewhat clunky syntax. Taking a fresh look at it nowadays really changes my perception, it appears that the language has really improved in the meantime. I&#8217;ll try to look deeper into it as soon as I get some free time.</p>
-
-<pre><code>function permute(inputArray) {
-    let inAry = [...inputArray].sort(); //copy and sort input
-    return inAry.reduce(function permute(res, item, key, arr) {
-        return res.concat(arr.length &gt; 1 &amp;&amp; arr.slice(0, key)
-            .concat(arr.slice(key + 1))
-            .reduce(permute, [])
-            .map(function (perm) {
-                 return [item].concat(perm);
-            }) || item);
-    }, []);
-}
-
-function permutation2rank(perms, in_perm) {
-    let input = JSON.stringify(in_perm)
-    for (var i = 0; i &lt; perms.length; i++) {  
-        // stringify permutations to enable comparison
-        if (JSON.stringify(perms[i]) == input) {
-            return i
-        }
-    }
-}
-
-function rank2permutation(perm_list, index) {
-    return perm_list[index]
-}
-
-let perm_in = [3, 1, 2];
-let perms = permute(perm_in)
-console.log(perms)
-let rank = permutation2rank(perms, perm_in)
-console.log("Permutation", perm_in, "has rank", rank)
-for (var i = 0; i &lt; perms.length; i++) {
-    console.log("Rank: ", i, " -&gt; permutation ", rank2permutation(perms, i))
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>node /tmp/CUuyiMw4x0.js
-[ [ 1, 2, 3 ],
-[ 1, 3, 2 ],
-[ 2, 1, 3 ],
-[ 2, 3, 1 ],
-[ 3, 1, 2 ],
-[ 3, 2, 1 ] ]
-Permutation [ 3, 1, 2 ] has rank 4
-Rank:  0  -&gt; permutation  [ 1, 2, 3 ]
-Rank:  1  -&gt; permutation  [ 1, 3, 2 ]
-Rank:  2  -&gt; permutation  [ 2, 1, 3 ]
-Rank:  3  -&gt; permutation  [ 2, 3, 1 ]
-Rank:  4  -&gt; permutation  [ 3, 1, 2 ]
-Rank:  5  -&gt; permutation  [ 3, 2, 1 ]
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on July 31, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
            </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
@@ -6138,7 +5040,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 05 August 2022 20:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 06 August 2022 01:00 UTC</address>
             </div>
           </div>
         </div><!-- container -->
