@@ -59,118 +59,11 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html">Match Anything, Quickly</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Tom Wyant
- on Saturday 06 August 2022 05:44</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Sometimes I want to filter a set of strings, but the details of the filter are not known beforehand. In particular, I may want a null filter, which simply accepts anything.</p>
-
-<p>This looks like a job for a regular expression, but I can think of at least two implementations. One is to pass around regular expression objects. The second is to wrap a match (<code>m//</code>) in a subroutine reference, and pass that around. Given the use of regular expressions, there are a number of possibilities for a regular expression that matches any string.</p>
-
-<p>I wondered whether one of the alternatives I was choosing among was faster than another, so I decided to <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> them. Both implementations applied the regular expression to a global variable. In practice this would probably be a localized <code>$_</code>, but my read of the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> module says that it also localizes <code>$_</code>, but leaves it <code>undef</code>.</p>
-
-<p><strong>Note</strong> that the empty pattern is not benchmarked, because it is equivalent to the last successfully-matched pattern, if any. The <code>sub { 1 }</code> was included because if we're dealing in code references, the null filter simply needs to return a true value.</p>
-
-<p>Here are the results, obtained with Perl 5.36.0, unthreaded. The script that generated them is on <a href="https://trwyant.github.io/blog/2022-08-05/match-anything-quickly.PL">GitHub</a></p>
-
-<table>
-<thead>
-<tr><th>Implementation</th><th>Rate</th></tr>
-</thead>
-<tbody>
-<tr><td>sub { 1 }</td><td style="text-align: right;">294117647.06/sec</td></tr>
-<tr><td>sub { m/ .? /smx }</td><td style="text-align: right;">21645021.65/sec</td></tr>
-<tr><td>sub { m/ .{0} /smx }</td><td style="text-align: right;">21598272.14/sec</td></tr>
-<tr><td>sub { m/ (*ACCEPT) /smx }</td><td style="text-align: right;">20964360.59/sec</td></tr>
-<tr><td>sub { m/ (?) /smx }</td><td style="text-align: right;">20876826.72/sec</td></tr>
-<tr><td>sub { m/ \A /smx }</td><td style="text-align: right;">20746887.97/sec</td></tr>
-<tr><td>sub { m/ (?:) /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
-<tr><td>sub { m/ ^ /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
-<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2344665.89/sec</td></tr>
-<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2344116.27/sec</td></tr>
-<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2336448.60/sec</td></tr>
-<tr><td>qr/ \A /smx</td><td style="text-align: right;">2315350.78/sec</td></tr>
-<tr><td>qr/ .? /smx</td><td style="text-align: right;">2208968.41/sec</td></tr>
-<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2180074.12/sec</td></tr>
-<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1717327.84/sec</td></tr>
-</tbody>
-</table>
-
-<p>Somewhat to my surprise, the subroutine-reference implementation was an
-order of magnitude faster than the regular-expression-reference implementation.
-I expected that, <code>Regexp</code>s being first-class objects, it would be
-pretty much equivalent to <code>m/ ... /</code> wrapped in a subroutine --
-maybe even a little faster.</p>
-
-<p>A little messing around with <code>perl -MO=Concise</code> got me the following:</p>
-
-<pre>
-$ perl -MO=Concise -e '$_ =~ m/foo/;'
-5  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
-1     &lt;0&gt; enter v -&gt;2
-2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
-4     &lt;/&gt; match(/"foo"/) vKS -&gt;5
--        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
-3           &lt;$&gt; gvsv(*_) s -&gt;4
--e syntax OK
-$ perl -MO=Concise -e '$_ =~ qr/foo/;'
-7  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
-1     &lt;0&gt; enter v -&gt;2
-2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
-6     &lt;/&gt; match() vKS -&gt;7
--        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
-3           &lt;$&gt; gvsv(*_) s -&gt;4
-5        &lt;|&gt; regcomp(other-&gt;6) sK -&gt;6
-4           &lt;/&gt; qr(/"foo"/) s -&gt;5
--e syntax OK
-</pre>
-
-<p>The salient difference, to my eye, was the presence of the <code>regcomp</code> operator in the second case. <a href="https://metacpan.org/pod/Perldoc::Search"><code>perldoc-search</code></a> on this led me eventually to <a href="https://perldoc.perl.org/perlreapi.html"><code>perlreapi</code></a> which says, in part,</p>
-
-<p><br />
-<dl><br />
-    <dt>"precomp" "prelen"</dt><br />
-    <dd><br />
-	<p>Used for optimisations. "precomp" holds a copy of the pattern that was compiled and "prelen" its length. When a new pattern is to be compiled (such as inside a loop) the internal "regcomp" operator checks if the last compiled "REGEXP"'s "precomp" and "prelen" are equivalent to the new one, and if so uses the old pattern instead of compiling a new one.</p></p>
-
-<p>	<p>The relevant snippet from "Perl_pp_regcomp":</p><br />
-	<pre><br />
-            if (!re || !re-&gt;precomp || re-&gt;prelen != (I32)len ||<br />
-                memNE(re-&gt;precomp, t, len))<br />
-            /* Compile a new pattern */<br />
-	</pre><br />
-    </dd><br />
-</dl></p>
-
-<p>So I <strong>assume</strong> that the speed difference <strong>might</strong> be reduced if the filter was called in a tight enough loop. But if so, the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> loop is not tight enough, and it's pretty tight. On the other hand, maybe the <code>Benchmark</code> loop <strong>is</strong> tight enough, and the extra time is spent determining that a recompilation is not needed. But it will take deeper knowledge of Perl internals than I possess to sort this out.</p>
-
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_2">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
-<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
-
-              <p class="text-right"><small>Published
- on Saturday 06 August 2022 00:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_3">
-            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/-perl-weekly-challenge-176-permuted-multiples-and-reversible-numbers.html"># Perl Weekly Challenge 176: Permuted Multiples and Reversible Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
               <p class="text-right"><small>Published by laurent_r
- on Friday 05 August 2022 17:42</small></p>
+ on Sunday 07 August 2022 03:08</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
         <p>These are some answers to the Week 176 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-176/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
@@ -886,6 +779,243 @@ func is_reversible (m)
 10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
 </code></pre>
 
+<h3>Reversible Numbers in JavaScript</h3>
+
+<pre><code>function is_reversible (n) {
+    var digits = n.toString().split("")
+    let reverse_digits = digits.reverse()
+    let reverse_n = parseInt(reverse_digits.join(""));
+    var sum = n + reverse_n
+    while (sum &gt; 0) {
+        let k = sum % 10
+        if (k % 2 == 0) { 
+          return false 
+        }
+        sum = Math.floor(sum / 10)
+    }
+    return true    
+}
+
+for (var i = 1; i &lt;= 100; i++) {
+    if (is_reversible(i)) {
+        process.stdout.write(i + " ")
+    } 
+}
+process.stdout.write(" \n")
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Nim</h3>
+
+<p>I tried to use the <code>split</code> function with an empty string as a delimiter, but Nim&#8217;s <code>split</code> function apparently does not accept an empty string. Looking for a solution on the Internet, I found on <a href="https://stackoverflow.com/questions/50853426/how-do-i-convert-a-string-into-a-sequence-of-characters-in-nim">this Stack Overflow page</a> that a Nim string is a sequence of chars, so that a simple cast (e.g. <code>@(intToStr(n)</code>) will split the string into individual chars.</p>
+
+<pre><code>import strutils
+import algorithm 
+
+proc is_reversible(n: int): bool =
+  # A Nim string is a sequence of chars, so that a cast will 
+  # split the string into individual chars
+  let rev = parseInt(join(@(intToStr(n)).reversed(), ""))
+  var sum = n + rev
+  while sum &gt; 0:
+    let k = sum mod 10
+    if (k mod 2 == 0):
+      return false
+    sum = (sum / 10).int
+  return true    
+
+
+for i in 1..100:
+  if is_reversible(i):
+    stdout.write i, " "
+echo ""
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Dart</h3>
+
+<pre><code>import "dart:io";
+
+void main() {
+    for (int i = 0; i &lt;= 100; i++ ) {
+        if (is_reversible(i)) {
+            stdout.write("$i ");
+        }
+    }
+}
+
+bool is_reversible(n) {
+    var rev = int.parse(n.toString().split("").reversed.join(""));
+    var digits = (n + rev).toString().split("");
+    int len = digits.length;
+    for (int i = 0; i &lt; len; i++) {
+        if (int.parse(digits[i]) % 2 == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Kotlin</h3>
+
+<pre><code>fun is_reversible(n: Int): Boolean {
+    val sum = n + n.toString().reversed().toInt()
+    val sumstr = sum.toString()
+    for (i in 1..sumstr.length) {
+        if (sumstr[i-1].toInt() % 2 == 0) {
+            return false
+        }
+    }
+    return true
+}
+
+fun main() {
+    for (i in 1..100) {
+        if (is_reversible(i)) {
+            print("$i ")
+        }
+    }
+    println(" ")
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Java</h3>
+
+<p>My Java implementation of the reversible numbers task is faithful to Java&#8217;s reputation of being very verbose.</p>
+
+<pre><code>public class ReversibleNumbers {
+
+    public static int reverse(int n) {
+        String n_str = String.valueOf(n);
+        String rev = "";
+        char ch;
+        for (int i = 0; i &lt; n_str.length(); i++) {
+            ch = n_str.charAt(i);   //extracts each character
+            rev = ch + rev;         //adds each character in front of the existing string
+        }
+        return Integer.parseInt(rev);
+    }
+
+    public static boolean isReversible(int n) {
+        int sum = n + reverse(n);
+        char[] digits = String.valueOf(sum).toCharArray();
+        for (int i = 0; i &lt; digits.length; i++) {
+            if ((digits[i] - '0') % 2 == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static void main(String[] args) {
+        for (int i = 1; i &lt;= 100; i++) {
+            if (isReversible(i)) {
+                System.out.printf("%d ", i);
+            }
+        }
+        System.out.printf("%s", "\n");
+    }
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Lua</h3>
+
+<pre><code>local function is_reversible(n)
+    rev = tonumber(string.reverse(tostring(n)))
+    sum = rev + n
+    while sum &gt; 0 do
+        if sum % 2 == 0 then
+            return false
+        end
+        sum = math.floor(sum / 10)
+    end
+    return true
+end
+
+for i = 1, 100 do
+    if is_reversible(i) then
+        io.write(i, " ")
+    end
+end
+print("")
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Go</h3>
+
+<p>For some reason, programming languages maintained by groups of dedicated open-source users, such as Raku, Perl, Julia, Nim, JavaScript, Scala, Kotlin, and Lua, have an off-the-shelf <code>reverse</code> function or method, whereas programming languages maintained by very big corporations, such as Java or Go, don&#8217;t have it, in spite of their huge financial resources. It appears that the open-source model is more efficient. IT managers should think about it: the best programming languages might not be what they think.</p>
+
+<pre><code>package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func reverse(n int) int {
+    n_str := strconv.Itoa(n)
+    rev := ""
+    for _, v := range n_str {
+        rev = string(v) + rev
+    }
+    rev_num, _ := strconv.Atoi(rev)
+    return rev_num
+}
+
+func is_reversible(n int) bool {
+    sum := n + reverse(n)
+    sum_str := strconv.Itoa(sum)
+    for i := 0; i &lt; len(sum_str); i++ {
+        if sum_str[i] % 2 == 0 {
+            return false
+        }
+    }
+    return true
+}
+
+func main() {
+    for i := 1; i &lt;= 100; i++ {
+        if is_reversible(i) {
+            fmt.Printf("%d ", i)
+        }
+    }
+    fmt.Println("")
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
 <h2>Wrapping up</h2>
 
 <p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on August 14, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
@@ -896,7 +1026,150 @@ func is_reversible (m)
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/08/cdiv-14-great-cpan-modules-released.html">(cdiv) 14 great CPAN modules released last week</a></h2>
+<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
+
+              <p class="text-right"><small>Published by Unknown
+ on Saturday 06 August 2022 23:15</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/PLICEASE/Alien-Build-2.51' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Alien::Build</span></b></a> - Build external dependencies for use in CPAN <ul>  <li>Version: <strong>2.51</strong> on 2022-08-03</li>  <li>Votes: 22</li>  <li>Previous version: 2.51 was  before</li></ul></li><li><a href='https://metacpan.org/release/OLIVER/App-Netdisco-2.053005' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::Netdisco</span></b></a> - An open source web-based network management tool. <ul>  <li>Version: <strong>2.053005</strong> on 2022-08-04</li>  <li>Votes: 14</li>  <li>Previous version: 2.052010 was 8 days before</li></ul></li><li><a href='https://metacpan.org/release/GUGOD/App-perlbrew-0.96' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::perlbrew</span></b></a> - Manage perl installations in your $HOME <ul>  <li>Version: <strong>0.96</strong> on 2022-07-31</li>  <li>Votes: 170</li>  <li>Previous version: 0.95 was 2 months, 16 days before</li></ul></li><li><a href='https://metacpan.org/release/JJNAPIORK/Catalyst-View-TT-0.46' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Catalyst::View::TT</span></b></a> - Template View Class <ul>  <li>Version: <strong>0.46</strong> on 2022-08-03</li>  <li>Votes: 16</li>  <li>Previous version: 0.45 was 2 years, 12 days before</li></ul></li><li><a href='https://metacpan.org/release/DANKOGAI/Encode-3.19' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Encode</span></b></a> - character encodings in Perl <ul>  <li>Version: <strong>3.19</strong> on 2022-08-04</li>  <li>Votes: 57</li>  <li>Previous version: 3.18 was 1 month, 9 days before</li></ul></li><li><a href='https://metacpan.org/release/ISHIGAKI/JSON-4.09' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>JSON</span></b></a> - JSON (JavaScript Object Notation) encoder/decoder <ul>  <li>Version: <strong>4.09</strong> on 2022-08-01</li>  <li>Votes: 97</li>  <li>Previous version: 4.07 was 1 month, 7 days before</li></ul></li><li><a href='https://metacpan.org/release/ISHIGAKI/JSON-PP-4.11' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>JSON::PP</span></b></a> - JSON::XS compatible pure-Perl module. <ul>  <li>Version: <strong>4.11</strong> on 2022-07-31</li>  <li>Votes: 16</li>  <li>Previous version: 4.10 was 1 month, 7 days before</li></ul></li><li><a href='https://metacpan.org/release/ARISTOTLE/Memoize-1.09' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Memoize</span></b></a> - Make functions faster by trading space for time <ul>  <li>Version: <strong>1.09</strong> on 2022-08-01</li>  <li>Votes: 24</li>  <li>Previous version: 1.03 was 10 years, 3 months, 9 days before</li></ul></li><li><a href='https://metacpan.org/release/RKITOVER/Net-SSH2-0.73' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Net::SSH2</span></b></a> - Support for the SSH 2 protocol via libssh2. <ul>  <li>Version: <strong>0.73</strong> on 2022-08-03</li>  <li>Votes: 23</li>  <li>Previous version: 0.72 was 1 year, 7 months, 12 days before</li></ul></li><li><a href='https://metacpan.org/release/OALDERS/Pithub-0.01038' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Pithub</span></b></a> - Github v3 API <ul>  <li>Version: <strong>0.01038</strong> on 2022-08-03</li>  <li>Votes: 19</li>  <li>Previous version: 0.01037 was 14 days before</li></ul></li><li><a href='https://metacpan.org/release/DCONWAY/PPR-0.001002' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>PPR</span></b></a> - Pattern-based Perl Recognizer <ul>  <li>Version: <strong>0.001002</strong> on 2022-08-03</li>  <li>Votes: 17</li>  <li>Previous version: 0.000028 was 2 years, 1 month, 5 days before</li></ul></li><li><a href='https://metacpan.org/release/KIMOTO/SPVM-0.9635' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>SPVM</span></b></a> - SPVM Language <ul>  <li>Version: <strong>0.9635</strong> on 2022-08-04</li>  <li>Votes: 26</li>  <li>Previous version: 0.9630 was 6 days before</li></ul></li><li><a href='https://metacpan.org/release/TOBYINK/Type-Tiny-1.016007' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Type::Tiny</span></b></a> - tiny, yet Moo(se)-compatible type constraint <ul>  <li>Version: <strong>1.016007</strong> on 2022-08-04</li>  <li>Votes: 131</li>  <li>Previous version: 1.016006 was 10 days before</li></ul></li><li><a href='https://metacpan.org/release/MARKOV/XML-Compile-SOAP-3.28' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>XML::Compile::SOAP</span></b></a> - SOAP version 1.1 <ul>  <li>Version: <strong>3.28</strong> on 2022-08-01</li>  <li>Votes: 13</li>  <li>Previous version: 3.27 was 1 year, 3 months, 24 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/08/dxviii-metacpan-weekly-report.html">(dxviii) metacpan weekly report - Algorithm::Line::Bresenham</a></h2>
+<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
+
+              <p class="text-right"><small>Published by Unknown
+ on Saturday 06 August 2022 23:12</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>This is the weekly favourites list of CPAN distributions. Votes count: 32</p><p>Week's winner: <b><a href="https://metacpan.org/module/Algorithm::Line::Bresenham" target="_blank">Algorithm::Line::Bresenham (+2)</a></b></p><p>Build date: 2022/08/06 21:12:25 GMT</p><br/><p>Clicked for <u>first time</u>:</p><ul><li><a href="https://metacpan.org/module/Apache::ConfigParser" target="_blank">Apache::ConfigParser</a> - Load Apache configuration files</li><li><a href="https://metacpan.org/module/App::PFT" target="_blank">App::PFT</a> - Hacker friendly static blog generator</li><li><a href="https://metacpan.org/module/Dist::Zilla::Plugin::SyncCPANfile" target="_blank">Dist::Zilla::Plugin::SyncCPANfile</a> - Sync a cpanfile with the prereqs listed in dist.ini</li><li><a href="https://metacpan.org/module/Excel::ValueWriter::XLSX" target="_blank">Excel::ValueWriter::XLSX</a> - generating data-only Excel workbooks in XLSX format, fast</li><li><a href="https://metacpan.org/module/Search::Fzf" target="_blank">Search::Fzf</a> - Ported Fzf using perl. </li><li><a href="https://metacpan.org/module/Test2::Tools::HTTP::UA::Mojo" target="_blank">Test2::Tools::HTTP::UA::Mojo</a> - Mojo user agent wrapper for Test2::Tools::HTTP</li></ul><br/><p><u>Increasing</u> its reputation:</p><ul><li><a href="https://metacpan.org/module/Algorithm::Line::Bresenham" target="_blank">Algorithm::Line::Bresenham</a> (+2=2)</li><li><a href="https://metacpan.org/module/App::perlbrew" target="_blank">App::perlbrew</a> (+1=170)</li><li><a href="https://metacpan.org/module/B::Hooks::AtRuntime" target="_blank">B::Hooks::AtRuntime</a> (+1=5)</li><li><a href="https://metacpan.org/module/Devel::NYTProf" target="_blank">Devel::NYTProf</a> (+1=178)</li><li><a href="https://metacpan.org/module/Devel::ptkdb" target="_blank">Devel::ptkdb</a> (+1=8)</li><li><a href="https://metacpan.org/module/Devel::StrictMode" target="_blank">Devel::StrictMode</a> (+1=7)</li><li><a href="https://metacpan.org/module/Excel::Writer::XLSX" target="_blank">Excel::Writer::XLSX</a> (+1=57)</li><li><a href="https://metacpan.org/module/Feature::Compat::Try" target="_blank">Feature::Compat::Try</a> (+1=11)</li><li><a href="https://metacpan.org/module/Form::Diva" target="_blank">Form::Diva</a> (+1=4)</li><li><a href="https://metacpan.org/module/Math::AnyNum" target="_blank">Math::AnyNum</a> (+1=6)</li><li><a href="https://metacpan.org/module/Mojolicious" target="_blank">Mojolicious</a> (+1=472)</li><li><a href="https://metacpan.org/module/Net::Google::Spreadsheets" target="_blank">Net::Google::Spreadsheets</a> (+1=3)</li><li><a href="https://metacpan.org/module/Net::SFTP::Foreign" target="_blank">Net::SFTP::Foreign</a> (+1=23)</li><li><a href="https://metacpan.org/module/PadWalker" target="_blank">PadWalker</a> (+1=24)</li><li><a href="https://metacpan.org/module/PAR::Packer" target="_blank">PAR::Packer</a> (+1=40)</li><li><a href="https://metacpan.org/module/PDF::Reuse" target="_blank">PDF::Reuse</a> (+1=9)</li><li><a href="https://metacpan.org/module/Promise::Me" target="_blank">Promise::Me</a> (+1=2)</li><li><a href="https://metacpan.org/module/Search::Elasticsearch" target="_blank">Search::Elasticsearch</a> (+1=44)</li><li><a href="https://metacpan.org/module/Storable::Improved" target="_blank">Storable::Improved</a> (+1=3)</li><li><a href="https://metacpan.org/module/Sub::HandlesVia" target="_blank">Sub::HandlesVia</a> (+1=8)</li><li><a href="https://metacpan.org/module/Sub::Quote" target="_blank">Sub::Quote</a> (+1=8)</li><li><a href="https://metacpan.org/module/Sys::Binmode" target="_blank">Sys::Binmode</a> (+1=5)</li><li><a href="https://metacpan.org/module/Text::Markdown::Hoedown" target="_blank">Text::Markdown::Hoedown</a> (+1=13)</li><li><a href="https://metacpan.org/module/Time::HiRes" target="_blank">Time::HiRes</a> (+1=59)</li><li><a href="https://metacpan.org/module/Variable::Magic" target="_blank">Variable::Magic</a> (+1=24)</li></ul>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
           <div class="card" id="card_4">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/08/dxlvi-stackoverflow-perl-report.html">(dxlvi) stackoverflow perl report</a></h2>
+<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
+
+              <p class="text-right"><small>Published by Unknown
+ on Saturday 06 August 2022 23:11</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>These are the five most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br />Between brackets: [<b>question score</b> / answers count]<br />Build date: 2022-08-06 21:10:40 GMT</p><hr /><ol><li><a href="http://stackoverflow.com/questions/73225870" target="_blank">Perl: speed of s/// with variable in replacement</a> - [<b>7</b>/2]</li><li><a href="http://stackoverflow.com/questions/73239362" target="_blank">Perl regex capture groups and nth occurence</a> - [<b>3</b>/4]</li><li><a href="http://stackoverflow.com/questions/73249717" target="_blank">How can I pass prove (Test::More) an argument, e.g. an API URL?</a> - [<b>2</b>/2]</li><li><a href="http://stackoverflow.com/questions/73252211" target="_blank">Perl regex combining capture groups &amp; nth string</a> - [<b>2</b>/2]</li><li><a href="http://stackoverflow.com/questions/73262562" target="_blank">Linux grep command in Perl script now working</a> - [<b>2</b>/2]</li></ol>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_5">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html">Match Anything, Quickly</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Saturday 06 August 2022 05:44</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>Sometimes I want to filter a set of strings, but the details of the filter are not known beforehand. In particular, I may want a null filter, which simply accepts anything.</p>
+
+<p>This looks like a job for a regular expression, but I can think of at least two implementations. One is to pass around regular expression objects. The second is to wrap a match (<code>m//</code>) in a subroutine reference, and pass that around. Given the use of regular expressions, there are a number of possibilities for a regular expression that matches any string.</p>
+
+<p>I wondered whether one of the alternatives I was choosing among was faster than another, so I decided to <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> them. Both implementations applied the regular expression to a global variable. In practice this would probably be a localized <code>$_</code>, but my read of the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> module says that it also localizes <code>$_</code>, but leaves it <code>undef</code>.</p>
+
+<p><strong>Note</strong> that the empty pattern is not benchmarked, because it is equivalent to the last successfully-matched pattern, if any. The <code>sub { 1 }</code> was included because if we're dealing in code references, the null filter simply needs to return a true value.</p>
+
+<p>Here are the results, obtained with Perl 5.36.0, unthreaded. The script that generated them is on <a href="https://trwyant.github.io/blog/2022-08-05/match-anything-quickly.PL">GitHub</a></p>
+
+<table>
+<thead>
+<tr><th>Implementation</th><th>Rate</th></tr>
+</thead>
+<tbody>
+<tr><td>sub { 1 }</td><td style="text-align: right;">294117647.06/sec</td></tr>
+<tr><td>sub { m/ .? /smx }</td><td style="text-align: right;">21645021.65/sec</td></tr>
+<tr><td>sub { m/ .{0} /smx }</td><td style="text-align: right;">21598272.14/sec</td></tr>
+<tr><td>sub { m/ (*ACCEPT) /smx }</td><td style="text-align: right;">20964360.59/sec</td></tr>
+<tr><td>sub { m/ (?) /smx }</td><td style="text-align: right;">20876826.72/sec</td></tr>
+<tr><td>sub { m/ \A /smx }</td><td style="text-align: right;">20746887.97/sec</td></tr>
+<tr><td>sub { m/ (?:) /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>sub { m/ ^ /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2344665.89/sec</td></tr>
+<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2344116.27/sec</td></tr>
+<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2336448.60/sec</td></tr>
+<tr><td>qr/ \A /smx</td><td style="text-align: right;">2315350.78/sec</td></tr>
+<tr><td>qr/ .? /smx</td><td style="text-align: right;">2208968.41/sec</td></tr>
+<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2180074.12/sec</td></tr>
+<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1717327.84/sec</td></tr>
+</tbody>
+</table>
+
+<p>Somewhat to my surprise, the subroutine-reference implementation was an
+order of magnitude faster than the regular-expression-reference implementation.
+I expected that, <code>Regexp</code>s being first-class objects, it would be
+pretty much equivalent to <code>m/ ... /</code> wrapped in a subroutine --
+maybe even a little faster.</p>
+
+<p>A little messing around with <code>perl -MO=Concise</code> got me the following:</p>
+
+<pre>
+$ perl -MO=Concise -e '$_ =~ m/foo/;'
+5  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+4     &lt;/&gt; match(/"foo"/) vKS -&gt;5
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+-e syntax OK
+$ perl -MO=Concise -e '$_ =~ qr/foo/;'
+7  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+6     &lt;/&gt; match() vKS -&gt;7
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+5        &lt;|&gt; regcomp(other-&gt;6) sK -&gt;6
+4           &lt;/&gt; qr(/"foo"/) s -&gt;5
+-e syntax OK
+</pre>
+
+<p>The salient difference, to my eye, was the presence of the <code>regcomp</code> operator in the second case. <a href="https://metacpan.org/pod/Perldoc::Search"><code>perldoc-search</code></a> on this led me eventually to <a href="https://perldoc.perl.org/perlreapi.html"><code>perlreapi</code></a> which says, in part,</p>
+
+<p><br />
+<dl><br />
+    <dt>"precomp" "prelen"</dt><br />
+    <dd><br />
+	<p>Used for optimisations. "precomp" holds a copy of the pattern that was compiled and "prelen" its length. When a new pattern is to be compiled (such as inside a loop) the internal "regcomp" operator checks if the last compiled "REGEXP"'s "precomp" and "prelen" are equivalent to the new one, and if so uses the old pattern instead of compiling a new one.</p></p>
+
+<p>	<p>The relevant snippet from "Perl_pp_regcomp":</p><br />
+	<pre><br />
+            if (!re || !re-&gt;precomp || re-&gt;prelen != (I32)len ||<br />
+                memNE(re-&gt;precomp, t, len))<br />
+            /* Compile a new pattern */<br />
+	</pre><br />
+    </dd><br />
+</dl></p>
+
+<p>So I <strong>assume</strong> that the speed difference <strong>might</strong> be reduced if the filter was called in a tight enough loop. But if so, the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> loop is not tight enough, and it's pretty tight. On the other hand, maybe the <code>Benchmark</code> loop <strong>is</strong> tight enough, and the extra time is spent determining that a recompilation is not needed. But it will take deeper knowledge of Perl internals than I possess to sort this out.</p>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_6">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
+<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
+
+              <p class="text-right"><small>Published
+ on Saturday 06 August 2022 00:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-08-05-wie-erstellt-man-eine-user-story-map">Wie erstellt man eine User Story Map?</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -908,7 +1181,7 @@ func is_reversible (m)
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/pluscoloring/terrain-coloringbook-30d">Terrain ColoringBook</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -937,7 +1210,7 @@ The script operates on whole directories. Every image in the indir (below) will 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/testing-code-that-is-difficult-to-test-with-perl-81n">Testing Code That is Difficult to Test (With Perl)</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1157,7 +1430,7 @@ SKIP: {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_dave_mitchell_july_2022">Maintaining Perl 5 Core (Dave Mitchell): July 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1280,7 +1553,7 @@ affect yet.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-06/">Meet The Champion: June 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1296,7 +1569,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grants_july_2022_votes">Grants: July 2022 Votes</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1326,7 +1599,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/575.html">#575 - Backward compatibility</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1344,7 +1617,7 @@ PokGoPun: My passion in computer programming started since childhood when my par
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/08/spvm-continues-to-undergo-heavy-changes.html">SPVM continues to undergo heavy changes.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1396,7 +1669,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/08/01/list-of-new-cpan-distributions-jul-2022/">List of new CPAN distributions – Jul 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -2099,7 +2372,7 @@ JSON - JSON
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-170/">Colin Crain › Perl Weekly Review #170</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2113,7 +2386,7 @@ Welcome to the Perl review pages for Week 170 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-175/">RECAP - The Weekly Challenge - 175</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2126,7 +2399,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-176/">The Weekly Challenge - 176</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2139,7 +2412,7 @@ Today is the first Monday of the month and time to declare our next champion. I 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/07/perl-weekly-challenge-175-last-sunday-and-perfect-totient-numbers.html">Perl Weekly Challenge 175: Last Sunday and Perfect Totient Numbers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -3401,7 +3674,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/totient-numbers-on-a-sunday-5fnc">Totient numbers on a Sunday</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -3529,7 +3802,7 @@ sys     0m0,046s
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-exercise-2">Dancer2: Exercise 2 - Multi-Counter, Random redirection</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -3544,7 +3817,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cdiii-11-great-cpan-modules-released.html">(cdiii) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -3556,7 +3829,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxvii-metacpan-weekly-report.html">(dxvii) metacpan weekly report - Storable::Improved</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -3568,19 +3841,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxlv-stackoverflow-perl-report.html">(dxlv) stackoverflow perl report</a></h2>
-<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
-
-              <p class="text-right"><small>Published by Unknown
- on Saturday 30 July 2022 21:37</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>These are the five most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br />Between brackets: [<b>question score</b> / answers count]<br />Build date: 2022-07-30 19:36:39 GMT</p><hr /><ol><li><a href="http://stackoverflow.com/questions/73168517" target="_blank">Perl regex capture groups and reshuffle pattern</a> - [<b>3</b>/3]</li><li><a href="http://stackoverflow.com/questions/73127046" target="_blank">Can't install some POE perl module in Strawberry Perl</a> - [<b>3</b>/0]</li><li><a href="http://stackoverflow.com/questions/73152164" target="_blank">Replace newline if condition is met in next line in text file with linux command line tools</a> - [<b>2</b>/3]</li><li><a href="http://stackoverflow.com/questions/73103709" target="_blank">Calculate the difference between two dates as years-and-days but without months?</a> - [<b>2</b>/1]</li><li><a href="http://stackoverflow.com/questions/73106099" target="_blank">Perl 5 : assignment of an anonymous arrayref, where the array is still empty = copy-construction?</a> - [<b>2</b>/1]</li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/30#pwc175">Sunday Was Perfectly Totient</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -3736,7 +3997,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/07/numeric-variable-names-with-leading-zeroes.html">Numeric Variable Names With Leading Zeroes</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -3770,7 +4031,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/574.html">#574 - Perl Community</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -3786,7 +4047,7 @@ but not a best practice!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/24#pwc174">Permutations Ranked in Disarray on Mars</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -3966,7 +4227,7 @@ this problem which avoid producing all permutations of the list.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-174-5ga6">Weekly Challenge 174</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -4023,30 +4284,6 @@ $ ./ch-1.pl
 
 
        </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_27">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/cdii-12-great-cpan-modules-released.html">(cdii) 12 great CPAN modules released last week</a></h2>
-<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
-
-              <p class="text-right"><small>Published by Unknown
- on Saturday 23 July 2022 19:41</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/HAARG/Catalyst-Runtime-5.90129' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Catalyst::Runtime</span></b></a> - The Catalyst Framework Runtime <ul>  <li>Version: <strong>5.90129</strong> on 2022-07-23</li>  <li>Votes: 150</li>  <li>Previous version: 5.90128 was 1 year, 10 months, 12 days before</li></ul></li><li><a href='https://metacpan.org/release/DAMI/DBIx-DataModel-3.03' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>DBIx::DataModel</span></b></a> - UML-based Object-Relational Mapping (ORM) framework <ul>  <li>Version: <strong>3.03</strong> on 2022-07-23</li>  <li>Votes: 12</li>  <li>Previous version: 3.01 was 1 year, 5 months, 21 days before</li></ul></li><li><a href='https://metacpan.org/release/ETJ/GraphViz2-2.67' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>GraphViz2</span></b></a> - A wrapper for AT&T's Graphviz <ul>  <li>Version: <strong>2.67</strong> on 2022-07-21</li>  <li>Votes: 12</li>  <li>Previous version: 2.66 was 1 year, 5 months before</li></ul></li><li><a href='https://metacpan.org/release/ARISTOTLE/Memoize-1.04' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Memoize</span></b></a> - Make functions faster by trading space for time <ul>  <li>Version: <strong>1.04</strong> on 2022-07-22</li>  <li>Votes: 24</li>  <li>Previous version: 1.03 was 10 years, 3 months before</li></ul></li><li><a href='https://metacpan.org/release/BINGOS/Module-CoreList-5.20220720' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Module::CoreList</span></b></a> - what modules shipped with versions of perl <ul>  <li>Version: <strong>5.20220720</strong> on 2022-07-21</li>  <li>Votes: 38</li>  <li>Previous version: 5.20220620 was 1 month, 1 day before</li></ul></li><li><a href='https://metacpan.org/release/OALDERS/Pithub-0.01037' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Pithub</span></b></a> - Github v3 API <ul>  <li>Version: <strong>0.01037</strong> on 2022-07-20</li>  <li>Votes: 19</li>  <li>Previous version: 0.01036 was 1 year, 5 months, 12 days before</li></ul></li><li><a href='https://metacpan.org/release/OALDERS/PPI-1.276' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>PPI</span></b></a> - Parse, Analyze and Manipulate Perl (without perl) <ul>  <li>Version: <strong>1.276</strong> on 2022-07-19</li>  <li>Votes: 56</li>  <li>Previous version: 1.274 was 2 months, 17 days before</li></ul></li><li><a href='https://metacpan.org/release/KIMOTO/SPVM-0.9627' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>SPVM</span></b></a> - SPVM Language <ul>  <li>Version: <strong>0.9627</strong> on 2022-07-22</li>  <li>Votes: 27</li>  <li>Previous version: 0.9623 was 7 days before</li></ul></li><li><a href='https://metacpan.org/release/DAMI/SQL-Abstract-More-1.39' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>SQL::Abstract::More</span></b></a> - extension of SQL::Abstract with more constructs and more flexible API <ul>  <li>Version: <strong>1.39</strong> on 2022-07-22</li>  <li>Votes: 20</li>  <li>Previous version: 1.38 was 3 months, 19 days before</li></ul></li><li><a href='https://metacpan.org/release/TOBYINK/Type-Tiny-1.016005' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Type::Tiny</span></b></a> - tiny, yet Moo(se)-compatible type constraint <ul>  <li>Version: <strong>1.016005</strong> on 2022-07-23</li>  <li>Votes: 131</li>  <li>Previous version: 1.014000 was 26 days before</li></ul></li><li><a href='https://metacpan.org/release/SIMBABQUE/WWW-Mechanize-2.12' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>WWW::Mechanize</span></b></a> - Handy web browsing in a Perl object <ul>  <li>Version: <strong>2.12</strong> on 2022-07-20</li>  <li>Votes: 93</li>  <li>Previous version: 2.10 was 16 days before</li></ul></li><li><a href='https://metacpan.org/release/TOBYINK/Zydeco-0.616' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Zydeco</span></b></a> - Jazz up your Perl <ul>  <li>Version: <strong>0.616</strong> on 2022-07-19</li>  <li>Votes: 18</li>  <li>Previous version: 0.615 was 29 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_28">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/07/dxvi-metacpan-weekly-report-perlcritic.html">(dxvi) metacpan weekly report - Perl::Critic</a></h2>
-<a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
-
-              <p class="text-right"><small>Published by Unknown
- on Saturday 23 July 2022 19:39</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>This is the weekly favourites list of CPAN distributions. Votes count: 43</p><p>Week's winner: <b><a href="https://metacpan.org/module/Perl::Critic" target="_blank">Perl::Critic (+2)</a></b></p><p>Build date: 2022/07/23 17:38:39 GMT</p><br/><p>Clicked for <u>first time</u>:</p><ul><li><a href="https://metacpan.org/module/Geo::IPinfo" target="_blank">Geo::IPinfo</a> - The official Perl library for IPinfo.</li><li><a href="https://metacpan.org/module/Image::PHash" target="_blank">Image::PHash</a> - Fast perceptual image hashing (DCT-based pHash)</li><li><a href="https://metacpan.org/module/RT::Extension::ChangeManagement" target="_blank">RT::Extension::ChangeManagement</a> - RT-Extension-ChangeManagement Extension</li><li><a href="https://metacpan.org/module/Term::Graille" target="_blank">Term::Graille</a> - Graphical Display in the terminal using UTF8 Braille characters</li><li><a href="https://metacpan.org/module/Tie::LevelDB" target="_blank">Tie::LevelDB</a> - A Perl Interface to the Google LevelDB NoSQL database</li></ul><br/><p><u>Increasing</u> its reputation:</p><ul><li><a href="https://metacpan.org/module/App::cpanminus" target="_blank">App::cpanminus</a> (+1=267)</li><li><a href="https://metacpan.org/module/App::perlbrew" target="_blank">App::perlbrew</a> (+1=169)</li><li><a href="https://metacpan.org/module/Cache::LRU" target="_blank">Cache::LRU</a> (+1=4)</li><li><a href="https://metacpan.org/module/Capture::Tiny" target="_blank">Capture::Tiny</a> (+1=96)</li><li><a href="https://metacpan.org/module/Carton" target="_blank">Carton</a> (+1=117)</li><li><a href="https://metacpan.org/module/CGI::Tiny" target="_blank">CGI::Tiny</a> (+1=8)</li><li><a href="https://metacpan.org/module/Chart" target="_blank">Chart</a> (+1=7)</li><li><a href="https://metacpan.org/module/Data::Validate::IP" target="_blank">Data::Validate::IP</a> (+1=10)</li><li><a href="https://metacpan.org/module/DateTime::Tiny" target="_blank">DateTime::Tiny</a> (+1=8)</li><li><a href="https://metacpan.org/module/DBI" target="_blank">DBI</a> (+1=257)</li><li><a href="https://metacpan.org/module/Devel::NYTProf" target="_blank">Devel::NYTProf</a> (+1=177)</li><li><a href="https://metacpan.org/module/Dist::Zilla::Plugin::Test::Pod::LinkCheck" target="_blank">Dist::Zilla::Plugin::Test::Pod::LinkCheck</a> (+1=3)</li><li><a href="https://metacpan.org/module/File::NFSLock" target="_blank">File::NFSLock</a> (+1=2)</li><li><a href="https://metacpan.org/module/Filter" target="_blank">Filter</a> (+1=9)</li><li><a href="https://metacpan.org/module/Getopt::Long::Descriptive" target="_blank">Getopt::Long::Descriptive</a> (+1=49)</li><li><a href="https://metacpan.org/module/HTML::Escape" target="_blank">HTML::Escape</a> (+1=14)</li><li><a href="https://metacpan.org/module/HTTP::CookieJar" target="_blank">HTTP::CookieJar</a> (+1=8)</li><li><a href="https://metacpan.org/module/HTTP::Tiny" target="_blank">HTTP::Tiny</a> (+1=103)</li><li><a href="https://metacpan.org/module/Image::Imlib2" target="_blank">Image::Imlib2</a> (+1=3)</li><li><a href="https://metacpan.org/module/Lock::File" target="_blank">Lock::File</a> (+1=5)</li><li><a href="https://metacpan.org/module/Log::Log4perl" target="_blank">Log::Log4perl</a> (+1=93)</li><li><a href="https://metacpan.org/module/MCE" target="_blank">MCE</a> (+1=91)</li><li><a href="https://metacpan.org/module/Memory::Usage" target="_blank">Memory::Usage</a> (+1=4)</li><li><a href="https://metacpan.org/module/Mojo::SQLite" target="_blank">Mojo::SQLite</a> (+1=25)</li><li><a href="https://metacpan.org/module/Mojolicious" target="_blank">Mojolicious</a> (+1=472)</li><li><a href="https://metacpan.org/module/Music::FretboardDiagram" target="_blank">Music::FretboardDiagram</a> (+1=3)</li><li><a href="https://metacpan.org/module/Net::IP" target="_blank">Net::IP</a> (+1=9)</li><li><a href="https://metacpan.org/module/Net::IP::XS" target="_blank">Net::IP::XS</a> (+1=3)</li><li><a href="https://metacpan.org/module/Nice::Try" target="_blank">Nice::Try</a> (+1=6)</li><li><a href="https://metacpan.org/module/Path::Iterator::Rule" target="_blank">Path::Iterator::Rule</a> (+1=24)</li><li><a href="https://metacpan.org/module/Path::Tiny" target="_blank">Path::Tiny</a> (+1=172)</li><li><a href="https://metacpan.org/module/Perl::Critic" target="_blank">Perl::Critic</a> (+2=121)</li><li><a href="https://metacpan.org/module/Perl::Critic::Community" target="_blank">Perl::Critic::Community</a> (+1=3)</li><li><a href="https://metacpan.org/module/Perl::Tidy" target="_blank">Perl::Tidy</a> (+1=126)</li><li><a href="https://metacpan.org/module/Plack" target="_blank">Plack</a> (+1=227)</li><li><a href="https://metacpan.org/module/Syntax::Keyword::Try" target="_blank">Syntax::Keyword::Try</a> (+1=36)</li><li><a href="https://metacpan.org/module/Zydeco" target="_blank">Zydeco</a> (+1=18)</li></ul>       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -5040,7 +5277,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 06 August 2022 20:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 07 August 2022 01:00 UTC</address>
             </div>
           </div>
         </div><!-- container -->

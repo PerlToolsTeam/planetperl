@@ -7,120 +7,15 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-08-06T20:43:47Z</updated>
+  <updated>2022-08-07T01:00:19Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
-  <entry>
-    <title>Match Anything, Quickly</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html"/>
-    <id>tag:blogs.perl.org,2022:/users/tom_wyant//506.10871</id>
-    <published>2022-08-06T05:39:25Z</published>
-    <updated>2022-08-06T05:44:30Z</updated>
-    <author>
-        <name>Tom Wyant</name>
-        
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/tom_wyant/">
-        <![CDATA[<p>Sometimes I want to filter a set of strings, but the details of the filter are not known beforehand. In particular, I may want a null filter, which simply accepts anything.</p>
-
-<p>This looks like a job for a regular expression, but I can think of at least two implementations. One is to pass around regular expression objects. The second is to wrap a match (<code>m//</code>) in a subroutine reference, and pass that around. Given the use of regular expressions, there are a number of possibilities for a regular expression that matches any string.</p>
-
-<p>I wondered whether one of the alternatives I was choosing among was faster than another, so I decided to <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> them. Both implementations applied the regular expression to a global variable. In practice this would probably be a localized <code>$_</code>, but my read of the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> module says that it also localizes <code>$_</code>, but leaves it <code>undef</code>.</p>
-
-<p><strong>Note</strong> that the empty pattern is not benchmarked, because it is equivalent to the last successfully-matched pattern, if any. The <code>sub { 1 }</code> was included because if we're dealing in code references, the null filter simply needs to return a true value.</p>
-
-<p>Here are the results, obtained with Perl 5.36.0, unthreaded. The script that generated them is on <a href="https://trwyant.github.io/blog/2022-08-05/match-anything-quickly.PL">GitHub</a></p>
-
-<table>
-<thead>
-<tr><th>Implementation</th><th>Rate</th></tr>
-</thead>
-<tbody>
-<tr><td>sub { 1 }</td><td style="text-align: right;">294117647.06/sec</td></tr>
-<tr><td>sub { m/ .? /smx }</td><td style="text-align: right;">21645021.65/sec</td></tr>
-<tr><td>sub { m/ .{0} /smx }</td><td style="text-align: right;">21598272.14/sec</td></tr>
-<tr><td>sub { m/ (*ACCEPT) /smx }</td><td style="text-align: right;">20964360.59/sec</td></tr>
-<tr><td>sub { m/ (?) /smx }</td><td style="text-align: right;">20876826.72/sec</td></tr>
-<tr><td>sub { m/ \A /smx }</td><td style="text-align: right;">20746887.97/sec</td></tr>
-<tr><td>sub { m/ (?:) /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
-<tr><td>sub { m/ ^ /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
-<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2344665.89/sec</td></tr>
-<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2344116.27/sec</td></tr>
-<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2336448.60/sec</td></tr>
-<tr><td>qr/ \A /smx</td><td style="text-align: right;">2315350.78/sec</td></tr>
-<tr><td>qr/ .? /smx</td><td style="text-align: right;">2208968.41/sec</td></tr>
-<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2180074.12/sec</td></tr>
-<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1717327.84/sec</td></tr>
-</tbody>
-</table>
-
-<p>Somewhat to my surprise, the subroutine-reference implementation was an
-order of magnitude faster than the regular-expression-reference implementation.
-I expected that, <code>Regexp</code>s being first-class objects, it would be
-pretty much equivalent to <code>m/ ... /</code> wrapped in a subroutine --
-maybe even a little faster.</p>
-
-<p>A little messing around with <code>perl -MO=Concise</code> got me the following:</p>
-
-<pre>
-$ perl -MO=Concise -e '$_ =~ m/foo/;'
-5  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
-1     &lt;0&gt; enter v -&gt;2
-2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
-4     &lt;/&gt; match(/"foo"/) vKS -&gt;5
--        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
-3           &lt;$&gt; gvsv(*_) s -&gt;4
--e syntax OK
-$ perl -MO=Concise -e '$_ =~ qr/foo/;'
-7  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
-1     &lt;0&gt; enter v -&gt;2
-2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
-6     &lt;/&gt; match() vKS -&gt;7
--        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
-3           &lt;$&gt; gvsv(*_) s -&gt;4
-5        &lt;|&gt; regcomp(other-&gt;6) sK -&gt;6
-4           &lt;/&gt; qr(/"foo"/) s -&gt;5
--e syntax OK
-</pre>
-
-<p>The salient difference, to my eye, was the presence of the <code>regcomp</code> operator in the second case. <a href="https://metacpan.org/pod/Perldoc::Search"><code>perldoc-search</code></a> on this led me eventually to <a href="https://perldoc.perl.org/perlreapi.html"><code>perlreapi</code></a> which says, in part,</p>
-
-<p><br />
-<dl><br />
-    <dt>"precomp" "prelen"</dt><br />
-    <dd><br />
-	<p>Used for optimisations. "precomp" holds a copy of the pattern that was compiled and "prelen" its length. When a new pattern is to be compiled (such as inside a loop) the internal "regcomp" operator checks if the last compiled "REGEXP"'s "precomp" and "prelen" are equivalent to the new one, and if so uses the old pattern instead of compiling a new one.</p></p>
-
-<p>	<p>The relevant snippet from "Perl_pp_regcomp":</p><br />
-	<pre><br />
-            if (!re || !re-&gt;precomp || re-&gt;prelen != (I32)len ||<br />
-                memNE(re-&gt;precomp, t, len))<br />
-            /* Compile a new pattern */<br />
-	</pre><br />
-    </dd><br />
-</dl></p>
-
-<p>So I <strong>assume</strong> that the speed difference <strong>might</strong> be reduced if the filter was called in a tight enough loop. But if so, the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> loop is not tight enough, and it's pretty tight. On the other hand, maybe the <code>Benchmark</code> loop <strong>is</strong> tight enough, and the extra time is spent determining that a recompilation is not needed. But it will take deeper knowledge of Perl internals than I possess to sort this out.</p>
-]]>
-        
-    </content>
-</entry>
-  <entry>
-    <title>The Weekly Challenge - Guest Contributions</title>
-    <link rel="alternate" href="https://theweeklychallenge.org/blog/guest-contribution/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.</div>
-    </content>
-    <id>https://theweeklychallenge.org/blog/guest-contribution/</id>
-    <published>2022-08-06T00:00:00Z</published>
-    <updated>2022-08-06T00:00:00Z</updated>
-  </entry>
   <entry>
     <title># Perl Weekly Challenge 176: Permuted Multiples and Reversible Numbers</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/08/-perl-weekly-challenge-176-permuted-multiples-and-reversible-numbers.html"/>
     <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10868</id>
     <published>2022-08-02T14:06:47Z</published>
-    <updated>2022-08-05T17:42:11Z</updated>
+    <updated>2022-08-07T03:08:12Z</updated>
     <author>
         <name>laurent_r</name>
         <uri>https://laurent-rosenfeld.developpez.com/</uri>
@@ -839,6 +734,243 @@ func is_reversible (m)
 10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
 </code></pre>
 
+<h3>Reversible Numbers in JavaScript</h3>
+
+<pre><code>function is_reversible (n) {
+    var digits = n.toString().split("")
+    let reverse_digits = digits.reverse()
+    let reverse_n = parseInt(reverse_digits.join(""));
+    var sum = n + reverse_n
+    while (sum &gt; 0) {
+        let k = sum % 10
+        if (k % 2 == 0) { 
+          return false 
+        }
+        sum = Math.floor(sum / 10)
+    }
+    return true    
+}
+
+for (var i = 1; i &lt;= 100; i++) {
+    if (is_reversible(i)) {
+        process.stdout.write(i + " ")
+    } 
+}
+process.stdout.write(" \n")
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Nim</h3>
+
+<p>I tried to use the <code>split</code> function with an empty string as a delimiter, but Nim&#8217;s <code>split</code> function apparently does not accept an empty string. Looking for a solution on the Internet, I found on <a href="https://stackoverflow.com/questions/50853426/how-do-i-convert-a-string-into-a-sequence-of-characters-in-nim">this Stack Overflow page</a> that a Nim string is a sequence of chars, so that a simple cast (e.g. <code>@(intToStr(n)</code>) will split the string into individual chars.</p>
+
+<pre><code>import strutils
+import algorithm 
+
+proc is_reversible(n: int): bool =
+  # A Nim string is a sequence of chars, so that a cast will 
+  # split the string into individual chars
+  let rev = parseInt(join(@(intToStr(n)).reversed(), ""))
+  var sum = n + rev
+  while sum &gt; 0:
+    let k = sum mod 10
+    if (k mod 2 == 0):
+      return false
+    sum = (sum / 10).int
+  return true    
+
+
+for i in 1..100:
+  if is_reversible(i):
+    stdout.write i, " "
+echo ""
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Dart</h3>
+
+<pre><code>import "dart:io";
+
+void main() {
+    for (int i = 0; i &lt;= 100; i++ ) {
+        if (is_reversible(i)) {
+            stdout.write("$i ");
+        }
+    }
+}
+
+bool is_reversible(n) {
+    var rev = int.parse(n.toString().split("").reversed.join(""));
+    var digits = (n + rev).toString().split("");
+    int len = digits.length;
+    for (int i = 0; i &lt; len; i++) {
+        if (int.parse(digits[i]) % 2 == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Kotlin</h3>
+
+<pre><code>fun is_reversible(n: Int): Boolean {
+    val sum = n + n.toString().reversed().toInt()
+    val sumstr = sum.toString()
+    for (i in 1..sumstr.length) {
+        if (sumstr[i-1].toInt() % 2 == 0) {
+            return false
+        }
+    }
+    return true
+}
+
+fun main() {
+    for (i in 1..100) {
+        if (is_reversible(i)) {
+            print("$i ")
+        }
+    }
+    println(" ")
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Java</h3>
+
+<p>My Java implementation of the reversible numbers task is faithful to Java&#8217;s reputation of being very verbose.</p>
+
+<pre><code>public class ReversibleNumbers {
+
+    public static int reverse(int n) {
+        String n_str = String.valueOf(n);
+        String rev = "";
+        char ch;
+        for (int i = 0; i &lt; n_str.length(); i++) {
+            ch = n_str.charAt(i);   //extracts each character
+            rev = ch + rev;         //adds each character in front of the existing string
+        }
+        return Integer.parseInt(rev);
+    }
+
+    public static boolean isReversible(int n) {
+        int sum = n + reverse(n);
+        char[] digits = String.valueOf(sum).toCharArray();
+        for (int i = 0; i &lt; digits.length; i++) {
+            if ((digits[i] - '0') % 2 == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static void main(String[] args) {
+        for (int i = 1; i &lt;= 100; i++) {
+            if (isReversible(i)) {
+                System.out.printf("%d ", i);
+            }
+        }
+        System.out.printf("%s", "\n");
+    }
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Lua</h3>
+
+<pre><code>local function is_reversible(n)
+    rev = tonumber(string.reverse(tostring(n)))
+    sum = rev + n
+    while sum &gt; 0 do
+        if sum % 2 == 0 then
+            return false
+        end
+        sum = math.floor(sum / 10)
+    end
+    return true
+end
+
+for i = 1, 100 do
+    if is_reversible(i) then
+        io.write(i, " ")
+    end
+end
+print("")
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
+<h3>Reversible Numbers in Go</h3>
+
+<p>For some reason, programming languages maintained by groups of dedicated open-source users, such as Raku, Perl, Julia, Nim, JavaScript, Scala, Kotlin, and Lua, have an off-the-shelf <code>reverse</code> function or method, whereas programming languages maintained by very big corporations, such as Java or Go, don&#8217;t have it, in spite of their huge financial resources. It appears that the open-source model is more efficient. IT managers should think about it: the best programming languages might not be what they think.</p>
+
+<pre><code>package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func reverse(n int) int {
+    n_str := strconv.Itoa(n)
+    rev := ""
+    for _, v := range n_str {
+        rev = string(v) + rev
+    }
+    rev_num, _ := strconv.Atoi(rev)
+    return rev_num
+}
+
+func is_reversible(n int) bool {
+    sum := n + reverse(n)
+    sum_str := strconv.Itoa(sum)
+    for i := 0; i &lt; len(sum_str); i++ {
+        if sum_str[i] % 2 == 0 {
+            return false
+        }
+    }
+    return true
+}
+
+func main() {
+    for i := 1; i &lt;= 100; i++ {
+        if is_reversible(i) {
+            fmt.Printf("%d ", i)
+        }
+    }
+    fmt.Println("")
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>10 12 14 16 18 21 23 25 27 30 32 34 36 41 43 45 50 52 54 61 63 70 72 81 90
+</code></pre>
+
 <h2>Wrapping up</h2>
 
 <p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on August 14, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
@@ -847,6 +979,171 @@ func is_reversible (m)
 
     </content>
 </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-6899272257092785905</id>
+    <published>2022-08-06T23:15:00.001+02:00</published>
+    <updated>2022-08-06T23:15:34.297+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(cdiv) 14 great CPAN modules released last week</title>
+    <content type="html">Updates for &lt;i&gt;great CPAN modules&lt;/i&gt; released last week. A module is considered &lt;i&gt;great&lt;/i&gt; if its favorites count is greater or equal than 12.&lt;br/&gt;&lt;br/&gt;&lt;ol&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/PLICEASE/Alien-Build-2.51' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Alien::Build&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Build external dependencies for use in CPAN &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;2.51&lt;/strong&gt; on 2022-08-03&lt;/li&gt;  &lt;li&gt;Votes: 22&lt;/li&gt;  &lt;li&gt;Previous version: 2.51 was  before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/OLIVER/App-Netdisco-2.053005' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;App::Netdisco&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - An open source web-based network management tool. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;2.053005&lt;/strong&gt; on 2022-08-04&lt;/li&gt;  &lt;li&gt;Votes: 14&lt;/li&gt;  &lt;li&gt;Previous version: 2.052010 was 8 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/GUGOD/App-perlbrew-0.96' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;App::perlbrew&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Manage perl installations in your $HOME &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.96&lt;/strong&gt; on 2022-07-31&lt;/li&gt;  &lt;li&gt;Votes: 170&lt;/li&gt;  &lt;li&gt;Previous version: 0.95 was 2 months, 16 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/JJNAPIORK/Catalyst-View-TT-0.46' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Catalyst::View::TT&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Template View Class &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.46&lt;/strong&gt; on 2022-08-03&lt;/li&gt;  &lt;li&gt;Votes: 16&lt;/li&gt;  &lt;li&gt;Previous version: 0.45 was 2 years, 12 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/DANKOGAI/Encode-3.19' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Encode&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - character encodings in Perl &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;3.19&lt;/strong&gt; on 2022-08-04&lt;/li&gt;  &lt;li&gt;Votes: 57&lt;/li&gt;  &lt;li&gt;Previous version: 3.18 was 1 month, 9 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ISHIGAKI/JSON-4.09' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;JSON&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - JSON (JavaScript Object Notation) encoder/decoder &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;4.09&lt;/strong&gt; on 2022-08-01&lt;/li&gt;  &lt;li&gt;Votes: 97&lt;/li&gt;  &lt;li&gt;Previous version: 4.07 was 1 month, 7 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ISHIGAKI/JSON-PP-4.11' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;JSON::PP&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - JSON::XS compatible pure-Perl module. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;4.11&lt;/strong&gt; on 2022-07-31&lt;/li&gt;  &lt;li&gt;Votes: 16&lt;/li&gt;  &lt;li&gt;Previous version: 4.10 was 1 month, 7 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ARISTOTLE/Memoize-1.09' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Memoize&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Make functions faster by trading space for time &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.09&lt;/strong&gt; on 2022-08-01&lt;/li&gt;  &lt;li&gt;Votes: 24&lt;/li&gt;  &lt;li&gt;Previous version: 1.03 was 10 years, 3 months, 9 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/RKITOVER/Net-SSH2-0.73' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Net::SSH2&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Support for the SSH 2 protocol via libssh2. &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.73&lt;/strong&gt; on 2022-08-03&lt;/li&gt;  &lt;li&gt;Votes: 23&lt;/li&gt;  &lt;li&gt;Previous version: 0.72 was 1 year, 7 months, 12 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/OALDERS/Pithub-0.01038' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Pithub&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Github v3 API &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.01038&lt;/strong&gt; on 2022-08-03&lt;/li&gt;  &lt;li&gt;Votes: 19&lt;/li&gt;  &lt;li&gt;Previous version: 0.01037 was 14 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/DCONWAY/PPR-0.001002' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;PPR&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Pattern-based Perl Recognizer &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.001002&lt;/strong&gt; on 2022-08-03&lt;/li&gt;  &lt;li&gt;Votes: 17&lt;/li&gt;  &lt;li&gt;Previous version: 0.000028 was 2 years, 1 month, 5 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/KIMOTO/SPVM-0.9635' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;SPVM&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - SPVM Language &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.9635&lt;/strong&gt; on 2022-08-04&lt;/li&gt;  &lt;li&gt;Votes: 26&lt;/li&gt;  &lt;li&gt;Previous version: 0.9630 was 6 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/TOBYINK/Type-Tiny-1.016007' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Type::Tiny&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - tiny, yet Moo(se)-compatible type constraint &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.016007&lt;/strong&gt; on 2022-08-04&lt;/li&gt;  &lt;li&gt;Votes: 131&lt;/li&gt;  &lt;li&gt;Previous version: 1.016006 was 10 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/MARKOV/XML-Compile-SOAP-3.28' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;XML::Compile::SOAP&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - SOAP version 1.1 &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;3.28&lt;/strong&gt; on 2022-08-01&lt;/li&gt;  &lt;li&gt;Votes: 13&lt;/li&gt;  &lt;li&gt;Previous version: 3.27 was 1 year, 3 months, 24 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;/ol&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/6899272257092785905/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2022/08/cdiv-14-great-cpan-modules-released.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6899272257092785905"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6899272257092785905"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2022/08/cdiv-14-great-cpan-modules-released.html" title="(cdiv) 14 great CPAN modules released last week"/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-6205877060506931455</id>
+    <published>2022-08-06T23:12:00.002+02:00</published>
+    <updated>2022-08-06T23:12:52.065+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(dxviii) metacpan weekly report - Algorithm::Line::Bresenham</title>
+    <content type="html">&lt;p&gt;This is the weekly favourites list of CPAN distributions. Votes count: 32&lt;/p&gt;&lt;p&gt;Week's winner: &lt;b&gt;&lt;a href="https://metacpan.org/module/Algorithm::Line::Bresenham" target="_blank"&gt;Algorithm::Line::Bresenham (+2)&lt;/a&gt;&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Build date: 2022/08/06 21:12:25 GMT&lt;/p&gt;&lt;br/&gt;&lt;p&gt;Clicked for &lt;u&gt;first time&lt;/u&gt;:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Apache::ConfigParser" target="_blank"&gt;Apache::ConfigParser&lt;/a&gt; - Load Apache configuration files&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/App::PFT" target="_blank"&gt;App::PFT&lt;/a&gt; - Hacker friendly static blog generator&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Dist::Zilla::Plugin::SyncCPANfile" target="_blank"&gt;Dist::Zilla::Plugin::SyncCPANfile&lt;/a&gt; - Sync a cpanfile with the prereqs listed in dist.ini&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Excel::ValueWriter::XLSX" target="_blank"&gt;Excel::ValueWriter::XLSX&lt;/a&gt; - generating data-only Excel workbooks in XLSX format, fast&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Search::Fzf" target="_blank"&gt;Search::Fzf&lt;/a&gt; - Ported Fzf using perl. &lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Test2::Tools::HTTP::UA::Mojo" target="_blank"&gt;Test2::Tools::HTTP::UA::Mojo&lt;/a&gt; - Mojo user agent wrapper for Test2::Tools::HTTP&lt;/li&gt;&lt;/ul&gt;&lt;br/&gt;&lt;p&gt;&lt;u&gt;Increasing&lt;/u&gt; its reputation:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Algorithm::Line::Bresenham" target="_blank"&gt;Algorithm::Line::Bresenham&lt;/a&gt; (+2=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/App::perlbrew" target="_blank"&gt;App::perlbrew&lt;/a&gt; (+1=170)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/B::Hooks::AtRuntime" target="_blank"&gt;B::Hooks::AtRuntime&lt;/a&gt; (+1=5)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Devel::NYTProf" target="_blank"&gt;Devel::NYTProf&lt;/a&gt; (+1=178)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Devel::ptkdb" target="_blank"&gt;Devel::ptkdb&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Devel::StrictMode" target="_blank"&gt;Devel::StrictMode&lt;/a&gt; (+1=7)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Excel::Writer::XLSX" target="_blank"&gt;Excel::Writer::XLSX&lt;/a&gt; (+1=57)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Feature::Compat::Try" target="_blank"&gt;Feature::Compat::Try&lt;/a&gt; (+1=11)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Form::Diva" target="_blank"&gt;Form::Diva&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Math::AnyNum" target="_blank"&gt;Math::AnyNum&lt;/a&gt; (+1=6)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mojolicious" target="_blank"&gt;Mojolicious&lt;/a&gt; (+1=472)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Net::Google::Spreadsheets" target="_blank"&gt;Net::Google::Spreadsheets&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Net::SFTP::Foreign" target="_blank"&gt;Net::SFTP::Foreign&lt;/a&gt; (+1=23)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/PadWalker" target="_blank"&gt;PadWalker&lt;/a&gt; (+1=24)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/PAR::Packer" target="_blank"&gt;PAR::Packer&lt;/a&gt; (+1=40)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/PDF::Reuse" target="_blank"&gt;PDF::Reuse&lt;/a&gt; (+1=9)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Promise::Me" target="_blank"&gt;Promise::Me&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Search::Elasticsearch" target="_blank"&gt;Search::Elasticsearch&lt;/a&gt; (+1=44)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Storable::Improved" target="_blank"&gt;Storable::Improved&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Sub::HandlesVia" target="_blank"&gt;Sub::HandlesVia&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Sub::Quote" target="_blank"&gt;Sub::Quote&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Sys::Binmode" target="_blank"&gt;Sys::Binmode&lt;/a&gt; (+1=5)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Text::Markdown::Hoedown" target="_blank"&gt;Text::Markdown::Hoedown&lt;/a&gt; (+1=13)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Time::HiRes" target="_blank"&gt;Time::HiRes&lt;/a&gt; (+1=59)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Variable::Magic" target="_blank"&gt;Variable::Magic&lt;/a&gt; (+1=24)&lt;/li&gt;&lt;/ul&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/6205877060506931455/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2022/08/dxviii-metacpan-weekly-report.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6205877060506931455"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6205877060506931455"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2022/08/dxviii-metacpan-weekly-report.html" title="(dxviii) metacpan weekly report - Algorithm::Line::Bresenham"/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
+  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
+    <id>tag:blogger.com,1999:blog-5910101498857524639.post-6678998493873591637</id>
+    <published>2022-08-06T23:11:00.001+02:00</published>
+    <updated>2022-08-06T23:11:48.538+02:00</updated>
+    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
+    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
+    <title type="text">(dxlvi) stackoverflow perl report</title>
+    <content type="html">&lt;p&gt;These are the five most rated questions at &lt;a href="http://www.stackoverflow.com"&gt;Stack Overflow&lt;/a&gt; last week.&lt;br /&gt;Between brackets: [&lt;b&gt;question score&lt;/b&gt; / answers count]&lt;br /&gt;Build date: 2022-08-06 21:10:40 GMT&lt;/p&gt;&lt;hr /&gt;&lt;ol&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73225870" target="_blank"&gt;Perl: speed of s/// with variable in replacement&lt;/a&gt; - [&lt;b&gt;7&lt;/b&gt;/2]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73239362" target="_blank"&gt;Perl regex capture groups and nth occurence&lt;/a&gt; - [&lt;b&gt;3&lt;/b&gt;/4]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73249717" target="_blank"&gt;How can I pass prove (Test::More) an argument, e.g. an API URL?&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/2]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73252211" target="_blank"&gt;Perl regex combining capture groups &amp;amp; nth string&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/2]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73262562" target="_blank"&gt;Linux grep command in Perl script now working&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/2]&lt;/li&gt;&lt;/ol&gt;</content>
+    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/6678998493873591637/comments/default" title="Enviar comentarios"/>
+    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2022/08/dxlvi-stackoverflow-perl-report.html#comment-form" title="0 comentarios"/>
+    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6678998493873591637"/>
+    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6678998493873591637"/>
+    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2022/08/dxlvi-stackoverflow-perl-report.html" title="(dxlvi) stackoverflow perl report"/>
+    <author>
+      <name>Unknown</name>
+      <email>noreply@blogger.com</email>
+      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
+    </author>
+    <thr:total>0</thr:total>
+  </entry>
+  <entry>
+    <title>Match Anything, Quickly</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html"/>
+    <id>tag:blogs.perl.org,2022:/users/tom_wyant//506.10871</id>
+    <published>2022-08-06T05:39:25Z</published>
+    <updated>2022-08-06T05:44:30Z</updated>
+    <author>
+        <name>Tom Wyant</name>
+        
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/tom_wyant/">
+        <![CDATA[<p>Sometimes I want to filter a set of strings, but the details of the filter are not known beforehand. In particular, I may want a null filter, which simply accepts anything.</p>
+
+<p>This looks like a job for a regular expression, but I can think of at least two implementations. One is to pass around regular expression objects. The second is to wrap a match (<code>m//</code>) in a subroutine reference, and pass that around. Given the use of regular expressions, there are a number of possibilities for a regular expression that matches any string.</p>
+
+<p>I wondered whether one of the alternatives I was choosing among was faster than another, so I decided to <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> them. Both implementations applied the regular expression to a global variable. In practice this would probably be a localized <code>$_</code>, but my read of the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> module says that it also localizes <code>$_</code>, but leaves it <code>undef</code>.</p>
+
+<p><strong>Note</strong> that the empty pattern is not benchmarked, because it is equivalent to the last successfully-matched pattern, if any. The <code>sub { 1 }</code> was included because if we're dealing in code references, the null filter simply needs to return a true value.</p>
+
+<p>Here are the results, obtained with Perl 5.36.0, unthreaded. The script that generated them is on <a href="https://trwyant.github.io/blog/2022-08-05/match-anything-quickly.PL">GitHub</a></p>
+
+<table>
+<thead>
+<tr><th>Implementation</th><th>Rate</th></tr>
+</thead>
+<tbody>
+<tr><td>sub { 1 }</td><td style="text-align: right;">294117647.06/sec</td></tr>
+<tr><td>sub { m/ .? /smx }</td><td style="text-align: right;">21645021.65/sec</td></tr>
+<tr><td>sub { m/ .{0} /smx }</td><td style="text-align: right;">21598272.14/sec</td></tr>
+<tr><td>sub { m/ (*ACCEPT) /smx }</td><td style="text-align: right;">20964360.59/sec</td></tr>
+<tr><td>sub { m/ (?) /smx }</td><td style="text-align: right;">20876826.72/sec</td></tr>
+<tr><td>sub { m/ \A /smx }</td><td style="text-align: right;">20746887.97/sec</td></tr>
+<tr><td>sub { m/ (?:) /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>sub { m/ ^ /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2344665.89/sec</td></tr>
+<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2344116.27/sec</td></tr>
+<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2336448.60/sec</td></tr>
+<tr><td>qr/ \A /smx</td><td style="text-align: right;">2315350.78/sec</td></tr>
+<tr><td>qr/ .? /smx</td><td style="text-align: right;">2208968.41/sec</td></tr>
+<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2180074.12/sec</td></tr>
+<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1717327.84/sec</td></tr>
+</tbody>
+</table>
+
+<p>Somewhat to my surprise, the subroutine-reference implementation was an
+order of magnitude faster than the regular-expression-reference implementation.
+I expected that, <code>Regexp</code>s being first-class objects, it would be
+pretty much equivalent to <code>m/ ... /</code> wrapped in a subroutine --
+maybe even a little faster.</p>
+
+<p>A little messing around with <code>perl -MO=Concise</code> got me the following:</p>
+
+<pre>
+$ perl -MO=Concise -e '$_ =~ m/foo/;'
+5  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+4     &lt;/&gt; match(/"foo"/) vKS -&gt;5
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+-e syntax OK
+$ perl -MO=Concise -e '$_ =~ qr/foo/;'
+7  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+6     &lt;/&gt; match() vKS -&gt;7
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+5        &lt;|&gt; regcomp(other-&gt;6) sK -&gt;6
+4           &lt;/&gt; qr(/"foo"/) s -&gt;5
+-e syntax OK
+</pre>
+
+<p>The salient difference, to my eye, was the presence of the <code>regcomp</code> operator in the second case. <a href="https://metacpan.org/pod/Perldoc::Search"><code>perldoc-search</code></a> on this led me eventually to <a href="https://perldoc.perl.org/perlreapi.html"><code>perlreapi</code></a> which says, in part,</p>
+
+<p><br />
+<dl><br />
+    <dt>"precomp" "prelen"</dt><br />
+    <dd><br />
+	<p>Used for optimisations. "precomp" holds a copy of the pattern that was compiled and "prelen" its length. When a new pattern is to be compiled (such as inside a loop) the internal "regcomp" operator checks if the last compiled "REGEXP"'s "precomp" and "prelen" are equivalent to the new one, and if so uses the old pattern instead of compiling a new one.</p></p>
+
+<p>	<p>The relevant snippet from "Perl_pp_regcomp":</p><br />
+	<pre><br />
+            if (!re || !re-&gt;precomp || re-&gt;prelen != (I32)len ||<br />
+                memNE(re-&gt;precomp, t, len))<br />
+            /* Compile a new pattern */<br />
+	</pre><br />
+    </dd><br />
+</dl></p>
+
+<p>So I <strong>assume</strong> that the speed difference <strong>might</strong> be reduced if the filter was called in a tight enough loop. But if so, the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> loop is not tight enough, and it's pretty tight. On the other hand, maybe the <code>Benchmark</code> loop <strong>is</strong> tight enough, and the extra time is spent determining that a recompilation is not needed. But it will take deeper knowledge of Perl internals than I possess to sort this out.</p>
+]]>
+        
+    </content>
+</entry>
+  <entry>
+    <title>The Weekly Challenge - Guest Contributions</title>
+    <link rel="alternate" href="https://theweeklychallenge.org/blog/guest-contribution/" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.</div>
+    </content>
+    <id>https://theweeklychallenge.org/blog/guest-contribution/</id>
+    <published>2022-08-06T00:00:00Z</published>
+    <updated>2022-08-06T00:00:00Z</updated>
+  </entry>
   <entry>
     <title>Wie erstellt man eine User Story Map?</title>
     <link rel="alternate" href="https://blog.perl-academy.de/2022-08-05-wie-erstellt-man-eine-user-story-map" type="text/html"/>
@@ -3542,26 +3839,6 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
     </author>
     <thr:total>0</thr:total>
   </entry>
-  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
-    <id>tag:blogger.com,1999:blog-5910101498857524639.post-568805406856213740</id>
-    <published>2022-07-30T21:37:00.001+02:00</published>
-    <updated>2022-07-30T21:37:22.626+02:00</updated>
-    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
-    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
-    <title type="text">(dxlv) stackoverflow perl report</title>
-    <content type="html">&lt;p&gt;These are the five most rated questions at &lt;a href="http://www.stackoverflow.com"&gt;Stack Overflow&lt;/a&gt; last week.&lt;br /&gt;Between brackets: [&lt;b&gt;question score&lt;/b&gt; / answers count]&lt;br /&gt;Build date: 2022-07-30 19:36:39 GMT&lt;/p&gt;&lt;hr /&gt;&lt;ol&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73168517" target="_blank"&gt;Perl regex capture groups and reshuffle pattern&lt;/a&gt; - [&lt;b&gt;3&lt;/b&gt;/3]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73127046" target="_blank"&gt;Can't install some POE perl module in Strawberry Perl&lt;/a&gt; - [&lt;b&gt;3&lt;/b&gt;/0]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73152164" target="_blank"&gt;Replace newline if condition is met in next line in text file with linux command line tools&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/3]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73103709" target="_blank"&gt;Calculate the difference between two dates as years-and-days but without months?&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/1]&lt;/li&gt;&lt;li&gt;&lt;a href="http://stackoverflow.com/questions/73106099" target="_blank"&gt;Perl 5 : assignment of an anonymous arrayref, where the array is still empty = copy-construction?&lt;/a&gt; - [&lt;b&gt;2&lt;/b&gt;/1]&lt;/li&gt;&lt;/ol&gt;</content>
-    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/568805406856213740/comments/default" title="Enviar comentarios"/>
-    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2022/07/dxlv-stackoverflow-perl-report.html#comment-form" title="0 comentarios"/>
-    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/568805406856213740"/>
-    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/568805406856213740"/>
-    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2022/07/dxlv-stackoverflow-perl-report.html" title="(dxlv) stackoverflow perl report"/>
-    <author>
-      <name>Unknown</name>
-      <email>noreply@blogger.com</email>
-      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
-    </author>
-    <thr:total>0</thr:total>
-  </entry>
   <entry>
     <title>Sunday Was Perfectly Totient</title>
     <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/07/30#pwc175" type="text/html"/>
@@ -4006,46 +4283,6 @@ $ ./ch-1.pl
     <category term="perl"/>
     <category term="python"/>
     <category term="theweeklychallenge"/>
-  </entry>
-  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
-    <id>tag:blogger.com,1999:blog-5910101498857524639.post-5459349394724045217</id>
-    <published>2022-07-23T19:41:00.001+02:00</published>
-    <updated>2022-07-23T19:41:36.473+02:00</updated>
-    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
-    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
-    <title type="text">(cdii) 12 great CPAN modules released last week</title>
-    <content type="html">Updates for &lt;i&gt;great CPAN modules&lt;/i&gt; released last week. A module is considered &lt;i&gt;great&lt;/i&gt; if its favorites count is greater or equal than 12.&lt;br/&gt;&lt;br/&gt;&lt;ol&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/HAARG/Catalyst-Runtime-5.90129' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Catalyst::Runtime&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - The Catalyst Framework Runtime &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;5.90129&lt;/strong&gt; on 2022-07-23&lt;/li&gt;  &lt;li&gt;Votes: 150&lt;/li&gt;  &lt;li&gt;Previous version: 5.90128 was 1 year, 10 months, 12 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/DAMI/DBIx-DataModel-3.03' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;DBIx::DataModel&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - UML-based Object-Relational Mapping (ORM) framework &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;3.03&lt;/strong&gt; on 2022-07-23&lt;/li&gt;  &lt;li&gt;Votes: 12&lt;/li&gt;  &lt;li&gt;Previous version: 3.01 was 1 year, 5 months, 21 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ETJ/GraphViz2-2.67' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;GraphViz2&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - A wrapper for AT&amp;T's Graphviz &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;2.67&lt;/strong&gt; on 2022-07-21&lt;/li&gt;  &lt;li&gt;Votes: 12&lt;/li&gt;  &lt;li&gt;Previous version: 2.66 was 1 year, 5 months before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/ARISTOTLE/Memoize-1.04' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Memoize&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Make functions faster by trading space for time &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.04&lt;/strong&gt; on 2022-07-22&lt;/li&gt;  &lt;li&gt;Votes: 24&lt;/li&gt;  &lt;li&gt;Previous version: 1.03 was 10 years, 3 months before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/BINGOS/Module-CoreList-5.20220720' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Module::CoreList&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - what modules shipped with versions of perl &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;5.20220720&lt;/strong&gt; on 2022-07-21&lt;/li&gt;  &lt;li&gt;Votes: 38&lt;/li&gt;  &lt;li&gt;Previous version: 5.20220620 was 1 month, 1 day before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/OALDERS/Pithub-0.01037' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Pithub&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Github v3 API &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.01037&lt;/strong&gt; on 2022-07-20&lt;/li&gt;  &lt;li&gt;Votes: 19&lt;/li&gt;  &lt;li&gt;Previous version: 0.01036 was 1 year, 5 months, 12 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/OALDERS/PPI-1.276' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;PPI&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Parse, Analyze and Manipulate Perl (without perl) &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.276&lt;/strong&gt; on 2022-07-19&lt;/li&gt;  &lt;li&gt;Votes: 56&lt;/li&gt;  &lt;li&gt;Previous version: 1.274 was 2 months, 17 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/KIMOTO/SPVM-0.9627' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;SPVM&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - SPVM Language &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.9627&lt;/strong&gt; on 2022-07-22&lt;/li&gt;  &lt;li&gt;Votes: 27&lt;/li&gt;  &lt;li&gt;Previous version: 0.9623 was 7 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/DAMI/SQL-Abstract-More-1.39' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;SQL::Abstract::More&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - extension of SQL::Abstract with more constructs and more flexible API &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.39&lt;/strong&gt; on 2022-07-22&lt;/li&gt;  &lt;li&gt;Votes: 20&lt;/li&gt;  &lt;li&gt;Previous version: 1.38 was 3 months, 19 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/TOBYINK/Type-Tiny-1.016005' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Type::Tiny&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - tiny, yet Moo(se)-compatible type constraint &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;1.016005&lt;/strong&gt; on 2022-07-23&lt;/li&gt;  &lt;li&gt;Votes: 131&lt;/li&gt;  &lt;li&gt;Previous version: 1.014000 was 26 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/SIMBABQUE/WWW-Mechanize-2.12' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;WWW::Mechanize&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Handy web browsing in a Perl object &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;2.12&lt;/strong&gt; on 2022-07-20&lt;/li&gt;  &lt;li&gt;Votes: 93&lt;/li&gt;  &lt;li&gt;Previous version: 2.10 was 16 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;li&gt;&lt;a href='https://metacpan.org/release/TOBYINK/Zydeco-0.616' target='_blank'&gt;&lt;b&gt;&lt;span style='font-family: Courier New, Courier, monospace;'&gt;Zydeco&lt;/span&gt;&lt;/b&gt;&lt;/a&gt; - Jazz up your Perl &lt;ul&gt;  &lt;li&gt;Version: &lt;strong&gt;0.616&lt;/strong&gt; on 2022-07-19&lt;/li&gt;  &lt;li&gt;Votes: 18&lt;/li&gt;  &lt;li&gt;Previous version: 0.615 was 29 days before&lt;/li&gt;&lt;/ul&gt;&lt;/li&gt;&lt;/ol&gt;</content>
-    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/5459349394724045217/comments/default" title="Enviar comentarios"/>
-    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2022/07/cdii-12-great-cpan-modules-released.html#comment-form" title="0 comentarios"/>
-    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/5459349394724045217"/>
-    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/5459349394724045217"/>
-    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2022/07/cdii-12-great-cpan-modules-released.html" title="(cdii) 12 great CPAN modules released last week"/>
-    <author>
-      <name>Unknown</name>
-      <email>noreply@blogger.com</email>
-      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
-    </author>
-    <thr:total>0</thr:total>
-  </entry>
-  <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
-    <id>tag:blogger.com,1999:blog-5910101498857524639.post-6672857162011626588</id>
-    <published>2022-07-23T19:39:00.001+02:00</published>
-    <updated>2022-07-23T19:39:07.596+02:00</updated>
-    <category scheme="http://www.blogger.com/atom/ns#" term="cpan"/>
-    <category scheme="http://www.blogger.com/atom/ns#" term="perl"/>
-    <title type="text">(dxvi) metacpan weekly report - Perl::Critic</title>
-    <content type="html">&lt;p&gt;This is the weekly favourites list of CPAN distributions. Votes count: 43&lt;/p&gt;&lt;p&gt;Week's winner: &lt;b&gt;&lt;a href="https://metacpan.org/module/Perl::Critic" target="_blank"&gt;Perl::Critic (+2)&lt;/a&gt;&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Build date: 2022/07/23 17:38:39 GMT&lt;/p&gt;&lt;br/&gt;&lt;p&gt;Clicked for &lt;u&gt;first time&lt;/u&gt;:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Geo::IPinfo" target="_blank"&gt;Geo::IPinfo&lt;/a&gt; - The official Perl library for IPinfo.&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Image::PHash" target="_blank"&gt;Image::PHash&lt;/a&gt; - Fast perceptual image hashing (DCT-based pHash)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/RT::Extension::ChangeManagement" target="_blank"&gt;RT::Extension::ChangeManagement&lt;/a&gt; - RT-Extension-ChangeManagement Extension&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Term::Graille" target="_blank"&gt;Term::Graille&lt;/a&gt; - Graphical Display in the terminal using UTF8 Braille characters&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Tie::LevelDB" target="_blank"&gt;Tie::LevelDB&lt;/a&gt; - A Perl Interface to the Google LevelDB NoSQL database&lt;/li&gt;&lt;/ul&gt;&lt;br/&gt;&lt;p&gt;&lt;u&gt;Increasing&lt;/u&gt; its reputation:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/App::cpanminus" target="_blank"&gt;App::cpanminus&lt;/a&gt; (+1=267)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/App::perlbrew" target="_blank"&gt;App::perlbrew&lt;/a&gt; (+1=169)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Cache::LRU" target="_blank"&gt;Cache::LRU&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Capture::Tiny" target="_blank"&gt;Capture::Tiny&lt;/a&gt; (+1=96)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Carton" target="_blank"&gt;Carton&lt;/a&gt; (+1=117)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/CGI::Tiny" target="_blank"&gt;CGI::Tiny&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Chart" target="_blank"&gt;Chart&lt;/a&gt; (+1=7)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Data::Validate::IP" target="_blank"&gt;Data::Validate::IP&lt;/a&gt; (+1=10)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/DateTime::Tiny" target="_blank"&gt;DateTime::Tiny&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/DBI" target="_blank"&gt;DBI&lt;/a&gt; (+1=257)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Devel::NYTProf" target="_blank"&gt;Devel::NYTProf&lt;/a&gt; (+1=177)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Dist::Zilla::Plugin::Test::Pod::LinkCheck" target="_blank"&gt;Dist::Zilla::Plugin::Test::Pod::LinkCheck&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/File::NFSLock" target="_blank"&gt;File::NFSLock&lt;/a&gt; (+1=2)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Filter" target="_blank"&gt;Filter&lt;/a&gt; (+1=9)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Getopt::Long::Descriptive" target="_blank"&gt;Getopt::Long::Descriptive&lt;/a&gt; (+1=49)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/HTML::Escape" target="_blank"&gt;HTML::Escape&lt;/a&gt; (+1=14)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/HTTP::CookieJar" target="_blank"&gt;HTTP::CookieJar&lt;/a&gt; (+1=8)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/HTTP::Tiny" target="_blank"&gt;HTTP::Tiny&lt;/a&gt; (+1=103)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Image::Imlib2" target="_blank"&gt;Image::Imlib2&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Lock::File" target="_blank"&gt;Lock::File&lt;/a&gt; (+1=5)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Log::Log4perl" target="_blank"&gt;Log::Log4perl&lt;/a&gt; (+1=93)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/MCE" target="_blank"&gt;MCE&lt;/a&gt; (+1=91)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Memory::Usage" target="_blank"&gt;Memory::Usage&lt;/a&gt; (+1=4)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mojo::SQLite" target="_blank"&gt;Mojo::SQLite&lt;/a&gt; (+1=25)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Mojolicious" target="_blank"&gt;Mojolicious&lt;/a&gt; (+1=472)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Music::FretboardDiagram" target="_blank"&gt;Music::FretboardDiagram&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Net::IP" target="_blank"&gt;Net::IP&lt;/a&gt; (+1=9)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Net::IP::XS" target="_blank"&gt;Net::IP::XS&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Nice::Try" target="_blank"&gt;Nice::Try&lt;/a&gt; (+1=6)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Path::Iterator::Rule" target="_blank"&gt;Path::Iterator::Rule&lt;/a&gt; (+1=24)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Path::Tiny" target="_blank"&gt;Path::Tiny&lt;/a&gt; (+1=172)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Perl::Critic" target="_blank"&gt;Perl::Critic&lt;/a&gt; (+2=121)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Perl::Critic::Community" target="_blank"&gt;Perl::Critic::Community&lt;/a&gt; (+1=3)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Perl::Tidy" target="_blank"&gt;Perl::Tidy&lt;/a&gt; (+1=126)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Plack" target="_blank"&gt;Plack&lt;/a&gt; (+1=227)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Syntax::Keyword::Try" target="_blank"&gt;Syntax::Keyword::Try&lt;/a&gt; (+1=36)&lt;/li&gt;&lt;li&gt;&lt;a href="https://metacpan.org/module/Zydeco" target="_blank"&gt;Zydeco&lt;/a&gt; (+1=18)&lt;/li&gt;&lt;/ul&gt;</content>
-    <link rel="replies" type="application/atom+xml" href="https://niceperl.blogspot.com/feeds/6672857162011626588/comments/default" title="Enviar comentarios"/>
-    <link rel="replies" type="text/html" href="https://niceperl.blogspot.com/2022/07/dxvi-metacpan-weekly-report-perlcritic.html#comment-form" title="0 comentarios"/>
-    <link rel="edit" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6672857162011626588"/>
-    <link rel="self" type="application/atom+xml" href="https://www.blogger.com/feeds/5910101498857524639/posts/default/6672857162011626588"/>
-    <link rel="alternate" type="text/html" href="https://niceperl.blogspot.com/2022/07/dxvi-metacpan-weekly-report-perlcritic.html" title="(dxvi) metacpan weekly report - Perl::Critic"/>
-    <author>
-      <name>Unknown</name>
-      <email>noreply@blogger.com</email>
-      <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
-    </author>
-    <thr:total>0</thr:total>
   </entry>
   <entry>
   <title>Chris Nandor</title>
