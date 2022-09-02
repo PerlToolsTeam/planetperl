@@ -59,6 +59,181 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html">Match Anything, Quickly</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Friday 02 September 2022 23:28</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p><strong>Revision:</strong> that Cincinnati Perl Mongers found an error in the benchmark script used for this post. <a href="http://blogs.perl.org/users/tom_wyant/2022/09/match-anything-quickly----revision-1.html">Match Anything Quickly - Revision 1</a> discusses their findings and links to a revised benchmark script. -- TRW 2022-09-02</p>
+
+<p>Sometimes I want to filter a set of strings, but the details of the filter are not known beforehand. In particular, I may want a null filter, which simply accepts anything.</p>
+
+<p>This looks like a job for a regular expression, but I can think of at least two implementations. One is to pass around regular expression objects. The second is to wrap a match (<code>m//</code>) in a subroutine reference, and pass that around. Given the use of regular expressions, there are a number of possibilities for a regular expression that matches any string.</p>
+
+<p>I wondered whether one of the alternatives I was choosing among was faster than another, so I decided to <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> them. Both implementations applied the regular expression to a global variable. In practice this would probably be a localized <code>$_</code>, but my read of the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> module says that it also localizes <code>$_</code>, but leaves it <code>undef</code>.</p>
+
+<p><strong>Note</strong> that the empty pattern is not benchmarked, because it is equivalent to the last successfully-matched pattern, if any. The <code>sub { 1 }</code> was included because if we're dealing in code references, the null filter simply needs to return a true value.</p>
+
+<p>Here are the results, obtained with Perl 5.36.0, unthreaded. The script that generated them is on <a href="https://trwyant.github.io/blog/2022-08-05/match-anything-quickly.PL">GitHub</a></p>
+
+<table>
+<thead>
+<tr><th>Implementation</th><th>Rate</th></tr>
+</thead>
+<tbody>
+<tr><td>sub { 1 }</td><td style="text-align: right;">294117647.06/sec</td></tr>
+<tr><td>sub { m/ .? /smx }</td><td style="text-align: right;">21645021.65/sec</td></tr>
+<tr><td>sub { m/ .{0} /smx }</td><td style="text-align: right;">21598272.14/sec</td></tr>
+<tr><td>sub { m/ (*ACCEPT) /smx }</td><td style="text-align: right;">20964360.59/sec</td></tr>
+<tr><td>sub { m/ (?) /smx }</td><td style="text-align: right;">20876826.72/sec</td></tr>
+<tr><td>sub { m/ \A /smx }</td><td style="text-align: right;">20746887.97/sec</td></tr>
+<tr><td>sub { m/ (?:) /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>sub { m/ ^ /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
+<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2344665.89/sec</td></tr>
+<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2344116.27/sec</td></tr>
+<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2336448.60/sec</td></tr>
+<tr><td>qr/ \A /smx</td><td style="text-align: right;">2315350.78/sec</td></tr>
+<tr><td>qr/ .? /smx</td><td style="text-align: right;">2208968.41/sec</td></tr>
+<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2180074.12/sec</td></tr>
+<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1717327.84/sec</td></tr>
+</tbody>
+</table>
+
+<p>Somewhat to my surprise, the subroutine-reference implementation was an
+order of magnitude faster than the regular-expression-reference implementation.
+I expected that, <code>Regexp</code>s being first-class objects, it would be
+pretty much equivalent to <code>m/ ... /</code> wrapped in a subroutine --
+maybe even a little faster.</p>
+
+<p>A little messing around with <code>perl -MO=Concise</code> got me the following:</p>
+
+<pre>
+$ perl -MO=Concise -e '$_ =~ m/foo/;'
+5  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+4     &lt;/&gt; match(/"foo"/) vKS -&gt;5
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+-e syntax OK
+$ perl -MO=Concise -e '$_ =~ qr/foo/;'
+7  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
+1     &lt;0&gt; enter v -&gt;2
+2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
+6     &lt;/&gt; match() vKS -&gt;7
+-        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
+3           &lt;$&gt; gvsv(*_) s -&gt;4
+5        &lt;|&gt; regcomp(other-&gt;6) sK -&gt;6
+4           &lt;/&gt; qr(/"foo"/) s -&gt;5
+-e syntax OK
+</pre>
+
+<p>The salient difference, to my eye, was the presence of the <code>regcomp</code> operator in the second case. <a href="https://metacpan.org/pod/Perldoc::Search"><code>perldoc-search</code></a> on this led me eventually to <a href="https://perldoc.perl.org/perlreapi.html"><code>perlreapi</code></a> which says, in part,</p>
+
+<p><br />
+<dl><br />
+    <dt>"precomp" "prelen"</dt><br />
+    <dd><br />
+	<p>Used for optimisations. "precomp" holds a copy of the pattern that was compiled and "prelen" its length. When a new pattern is to be compiled (such as inside a loop) the internal "regcomp" operator checks if the last compiled "REGEXP"'s "precomp" and "prelen" are equivalent to the new one, and if so uses the old pattern instead of compiling a new one.</p></p>
+
+<p>	<p>The relevant snippet from "Perl_pp_regcomp":</p><br />
+	<pre><br />
+            if (!re || !re-&gt;precomp || re-&gt;prelen != (I32)len ||<br />
+                memNE(re-&gt;precomp, t, len))<br />
+            /* Compile a new pattern */<br />
+	</pre><br />
+    </dd><br />
+</dl></p>
+
+<p>So I <strong>assume</strong> that the speed difference <strong>might</strong> be reduced if the filter was called in a tight enough loop. But if so, the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> loop is not tight enough, and it's pretty tight. On the other hand, maybe the <code>Benchmark</code> loop <strong>is</strong> tight enough, and the extra time is spent determining that a recompilation is not needed. But it will take deeper knowledge of Perl internals than I possess to sort this out.</p>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/tom_wyant/2022/09/match-anything-quickly----revision-1.html">Match Anything, Quickly -- Revision 1</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Friday 02 September 2022 23:23</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p><cite>O wad some Power the giftie gie us<br />
+    To see oursels as ithers see us!<br />
+    It wad frae mony a blunder free us,<br />
+    An' foolish notion: ...</cite></p>
+
+<p>My previous blog post, <a href="https://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html">Match Anything, Quickly</a>, brought a number of responses which are worth reading in their own right. The one that triggered this post, though, was from <a href="https://nrdvana.net/">Nerdvana</a> and Devin of Cincinnati Perl Mongers, who pointed out an error in my benchmark script. I had left off the intended <code>/smx</code> from the <code>qr/ ... /</code> version of the test, which meant that the regular expression did not in fact match.</p>
+
+<p><strong>Three cheers for code reviews!</strong></p>
+
+<p>The Cincinnati Perl Mongers came up with a further case which combines my two:</p>
+
+<pre>
+eval "do { my \$regex = qr/ $re /smx; " .
+        "sub { \$MATCH =~ /\$regex/o }};"
+</pre>
+
+<p>They benchmarked this as being slightly slower than the case where the regular expression is simply interpolated into the subroutine verbatim.</p>
+
+<p>Interestingly (to me, at least) they reported that the removal of the <code>/o</code> modifier made their case 2-3 times slower. This surprised me somewhat, as I had understood that modern Perls (for some value of "modern") had done things to minimize the performance difference between the presence and absence of <code>/o</code>.</p>
+
+<p>For the record, the corrected script is also on <a href="https://trwyant.github.io/blog/2022-09-02/match-anything-quickly-rev01.PL">GitHub</a>. The corrections include an option that tests to make sure all benchmarked things actually match. The result of running this with the <code>--test</code> and <code>--html</code> options (on a different machine than the original post) is:</p>
+
+<pre>
+ok 1 - sub { 1 }
+ok 2 - sub { $MATCH =~ m/ (*ACCEPT) /smx }
+ok 3 - qr/ (*ACCEPT) /smx
+ok 4 - sub { $MATCH =~ m/ (?) /smx }
+ok 5 - qr/ (?) /smx
+ok 6 - sub { $MATCH =~ m/ (?:) /smx }
+ok 7 - qr/ (?:) /smx
+ok 8 - sub { $MATCH =~ m/ .? /smx }
+ok 9 - qr/ .? /smx
+ok 10 - sub { $MATCH =~ m/ .{0} /smx }
+ok 11 - qr/ .{0} /smx
+ok 12 - sub { $MATCH =~ m/ \A /smx }
+ok 13 - qr/ \A /smx
+ok 14 - sub { $MATCH =~ m/ ^ /smx }
+ok 15 - qr/ ^ /smx
+1..15
+</pre>
+
+<table>
+<thead>
+<tr><th>Implementation</th><th>Rate</th></tr>
+</thead>
+<tbody>
+<tr><td>sub { 1 }</td><td style="text-align: right;">434782608.70/sec</td></tr>
+<tr><td>sub { $MATCH =~ m/ \A /smx }</td><td style="text-align: right;">13333333.33/sec</td></tr>
+<tr><td>sub { $MATCH =~ m/ ^ /smx }</td><td style="text-align: right;">13315579.23/sec</td></tr>
+<tr><td>sub { $MATCH =~ m/ (?:) /smx }</td><td style="text-align: right;">12315270.94/sec</td></tr>
+<tr><td>sub { $MATCH =~ m/ (?) /smx }</td><td style="text-align: right;">11173184.36/sec</td></tr>
+<tr><td>sub { $MATCH =~ m/ .{0} /smx }</td><td style="text-align: right;">10593220.34/sec</td></tr>
+<tr><td>sub { $MATCH =~ m/ .? /smx }</td><td style="text-align: right;">10449320.79/sec</td></tr>
+<tr><td>sub { $MATCH =~ m/ (*ACCEPT) /smx }</td><td style="text-align: right;">4380201.49/sec</td></tr>
+<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2612330.20/sec</td></tr>
+<tr><td>qr/ \A /smx</td><td style="text-align: right;">2603488.67/sec</td></tr>
+<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2586652.87/sec</td></tr>
+<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2575991.76/sec</td></tr>
+<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2518891.69/sec</td></tr>
+<tr><td>qr/ .? /smx</td><td style="text-align: right;">2510670.35/sec</td></tr>
+<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1849796.52/sec</td></tr>
+</tbody>
+</table>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-sessions">Dancer2: Sessions</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
 
@@ -72,7 +247,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-09-02-distribution-auf-distzilla-umstellen">Distribution auf Dist::Zilla umstellen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -84,7 +259,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -96,7 +271,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jmeneghin/calculating-tetranucleotide-k-mer-frequencies-969">Calculating tetranucleotide (k-mer) frequencies</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -148,7 +323,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/perl-weekly-challenge-180-first-unique-character-and-trim-list.html">Perl Weekly Challenge 180:  First Unique Character and Trim List</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -712,7 +887,7 @@ i: 4, nums: 9 0 6 2 3 8 5 =&gt; 9 6 8 5
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/09/01/list-of-new-cpan-distributions-aug-2022/">List of new CPAN distributions – Aug 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1361,7 +1536,7 @@ i: 4, nums: 9 0 6 2 3 8 5 =&gt; 9 6 8 5
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/marcosrobertosilva/solving-bin-packing-problem-using-perl-and-neos-server-k75">Solving Bin Packing Problem using Perl and NEOS Server</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1544,7 +1719,7 @@ i: 4, nums: 9 0 6 2 3 8 5 =&gt; 9 6 8 5
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/579.html">#579 - Looking for that motivation</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1562,7 +1737,7 @@ i: 4, nums: 9 0 6 2 3 8 5 =&gt; 9 6 8 5
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-173/">Colin Crain › Perl Weekly Review #173</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1576,7 +1751,7 @@ Welcome to the Perl review pages for Week 173 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-179/">RECAP - The Weekly Challenge - 179</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1589,7 +1764,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-180/">The Weekly Challenge - 180</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1602,7 +1777,7 @@ Today, we are giving away Token #3 to Robert DiCicco for the book, Learning Perl
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/perl-weekly-challenge-179-ordinal-numbers-and-unicode-sparkline.html">Perl Weekly Challenge 179: Ordinal Numbers and Unicode Sparkline</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1915,7 +2090,7 @@ min: 0.00; max: 7999.00
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/the-ordinal-sparkline-dn5">The Ordinal Sparkline</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2060,7 +2235,7 @@ $ ./ch-2.py 1 8 2 7 3 6 10
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/08/cdvii-9-great-cpan-modules-released.html">(cdvii) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2072,7 +2247,7 @@ $ ./ch-2.py 1 8 2 7 3 6 10
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/08/dxx-metacpan-weekly-report.html">(dxx) metacpan weekly report - Try::Tiny</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2084,7 +2259,7 @@ $ ./ch-2.py 1 8 2 7 3 6 10
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/08/dxlviii-stackoverflow-perl-report.html">(dxlviii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2096,7 +2271,7 @@ $ ./ch-2.py 1 8 2 7 3 6 10
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/al_newkirk/2022/08/introducing-venus-a-new-world-for-perl-5.html">Introducing Venus, a new world for Perl 5</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -3000,7 +3175,7 @@ $yaml-&gt;encode;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/how-i-use-emacs-to-write-perl-40e6">How I use Emacs to write Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -3218,7 +3393,7 @@ $yaml-&gt;encode;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jmeneghin/get-gc-content-1971">Get GC Content</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -3248,7 +3423,7 @@ Quistad, S. D. 2015. Viruses, Corals and the Origin of Metazoans. UC San Diego, 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-configuration">Dancer2: Configuration</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -3263,7 +3438,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/578.html">#578 - Corinna MVP</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -3282,7 +3457,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-172/">Colin Crain › Perl Weekly Review #172</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -3296,7 +3471,7 @@ Welcome to the Perl review pages for Week 172 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/08/cdvi-15-great-cpan-modules-released.html">(cdvi) 15 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -3305,1702 +3480,6 @@ Welcome to the Perl review pages for Week 172 of The Weekly Challenge! Here we w
  on Saturday 20 August 2022 23:58</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">Updates for <i>great CPAN modules</i> released last week. A module is considered <i>great</i> if its favorites count is greater or equal than 12.<br/><br/><ol><li><a href='https://metacpan.org/release/PLICEASE/Alien-Build-2.59' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Alien::Build</span></b></a> - Build external dependencies for use in CPAN <ul>  <li>Version: <strong>2.59</strong> on 2022-08-16</li>  <li>Votes: 22</li>  <li>Previous version: 2.56 was 3 days before</li></ul></li><li><a href='https://metacpan.org/release/OLIVER/App-Netdisco-2.055000' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>App::Netdisco</span></b></a> - An open source web-based network management tool. <ul>  <li>Version: <strong>2.055000</strong> on 2022-08-17</li>  <li>Votes: 14</li>  <li>Previous version: 2.053007 was 8 days before</li></ul></li><li><a href='https://metacpan.org/release/PABLROD/Chart-Plotly-0.042' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Chart::Plotly</span></b></a> - Generate html/javascript charts from perl data using javascript library plotly.js <ul>  <li>Version: <strong>0.042</strong> on 2022-08-15</li>  <li>Votes: 15</li>  <li>Previous version: 0.041 was 1 year, 9 months, 14 days before</li></ul></li><li><a href='https://metacpan.org/release/DROLSKY/DateTime-TimeZone-2.53' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>DateTime::TimeZone</span></b></a> - Time zone object base class and factory <ul>  <li>Version: <strong>2.53</strong> on 2022-08-14</li>  <li>Votes: 18</li>  <li>Previous version: 2.52 was 4 months, 28 days before</li></ul></li><li><a href='https://metacpan.org/release/PEVANS/IO-Async-0.802' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>IO::Async</span></b></a> - Asynchronous event-driven programming <ul>  <li>Version: <strong>0.802</strong> on 2022-08-15</li>  <li>Votes: 68</li>  <li>Previous version: 0.801 was 8 months before</li></ul></li><li><a href='https://metacpan.org/release/JHTHORSEN/JSON-Validator-5.10' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>JSON::Validator</span></b></a> - Validate data against a JSON schema <ul>  <li>Version: <strong>5.10</strong> on 2022-08-17</li>  <li>Votes: 30</li>  <li>Previous version: 5.08 was 4 months, 23 days before</li></ul></li><li><a href='https://metacpan.org/release/BINGOS/Module-CoreList-5.20220820' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Module::CoreList</span></b></a> - what modules shipped with versions of perl <ul>  <li>Version: <strong>5.20220820</strong> on 2022-08-20</li>  <li>Votes: 38</li>  <li>Previous version: 5.20220720 was 30 days before</li></ul></li><li><a href='https://metacpan.org/release/JHTHORSEN/Mojolicious-Plugin-OpenAPI-5.07' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Mojolicious::Plugin::OpenAPI</span></b></a> - OpenAPI / Swagger plugin for Mojolicious <ul>  <li>Version: <strong>5.07</strong> on 2022-08-17</li>  <li>Votes: 41</li>  <li>Previous version: 5.05 was 4 months, 23 days before</li></ul></li><li><a href='https://metacpan.org/release/SYP/Net-Curl-0.52' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Net::Curl</span></b></a> - Perl interface for libcurl <ul>  <li>Version: <strong>0.52</strong> on 2022-08-17</li>  <li>Votes: 16</li>  <li>Previous version: 0.51 was 1 month, 9 days before</li></ul></li><li><a href='https://metacpan.org/release/JHTHORSEN/OpenAPI-Client-1.05' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>OpenAPI::Client</span></b></a> - A client for talking to an Open API powered server <ul>  <li>Version: <strong>1.05</strong> on 2022-08-17</li>  <li>Votes: 14</li>  <li>Previous version: 1.04 was 2 months, 14 days before</li></ul></li><li><a href='https://metacpan.org/release/KARASIK/Prima-1.66' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Prima</span></b></a> - a perl graphic toolkit <ul>  <li>Version: <strong>1.66</strong> on 2022-08-20</li>  <li>Votes: 34</li>  <li>Previous version: 1.65 was 4 months before</li></ul></li><li><a href='https://metacpan.org/release/KIMOTO/SPVM-0.9643' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>SPVM</span></b></a> - SPVM Language <ul>  <li>Version: <strong>0.9643</strong> on 2022-08-18</li>  <li>Votes: 26</li>  <li>Previous version: 0.9638 was 8 days before</li></ul></li><li><a href='https://metacpan.org/release/ABW/Template-Toolkit-3.101' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Template::Toolkit</span></b></a> - comprehensive template processing system <ul>  <li>Version: <strong>3.101</strong> on 2022-08-16</li>  <li>Votes: 137</li>  <li>Previous version: 3.100 was 3 months, 20 days before</li></ul></li><li><a href='https://metacpan.org/release/TOBYINK/Type-Tiny-1.016008' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>Type::Tiny</span></b></a> - tiny, yet Moo(se)-compatible type constraint <ul>  <li>Version: <strong>1.016008</strong> on 2022-08-14</li>  <li>Votes: 131</li>  <li>Previous version: 1.016007 was 10 days before</li></ul></li><li><a href='https://metacpan.org/release/SIMBABQUE/WWW-Mechanize-2.14' target='_blank'><b><span style='font-family: Courier New, Courier, monospace;'>WWW::Mechanize</span></b></a> - Handy web browsing in a Perl object <ul>  <li>Version: <strong>2.14</strong> on 2022-08-15</li>  <li>Votes: 93</li>  <li>Previous version: 2.13 was 17 days before</li></ul></li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_24">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/perl-weekly-challenge-177-damm-algorithm-and-palindromic-prime-cyclops.html">Perl Weekly Challenge 177: Damm Algorithm and Palindromic Prime Cyclops</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Thursday 18 August 2022 19:19</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 177 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-177/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on Aug. 14, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Damm Algorithm</h2>
-
-<p><em>You are given a positive number, <code>$n</code>.</em></p>
-
-<p><em>Write a script to validate the given number against the included check digit.</em></p>
-
-<p><em>Please checkout the <a href="https://en.wikipedia.org/wiki/Damm_algorithm">wikipedia page</a> for information.</em></p>
-
-<p><em>Example 1</em></p>
-
-<pre><code>Input: $n = 5724
-Output: 1 as it is valid number
-</code></pre>
-
-<p><em>Example 2</em></p>
-
-<pre><code>Input: $n = 5727
-Output: 0 as it is invalid number
-</code></pre>
-
-<p>The algorithm is a check digit algorithm named after H. Michael Damm, who presented it in 2004.</p>
-
-<p>The process is quite simple. We&#8217;ll use the quasi-group table provided in the afore-mentioned Wikipedia article:</p>
-
-<pre><code>0 3 1 7 5 9 8 6 4 2
-7 0 9 2 1 5 4 8 6 3
-4 2 0 6 8 7 1 3 5 9
-1 7 5 0 9 8 3 4 2 6
-6 1 2 3 0 4 5 9 7 8
-3 6 7 4 2 0 9 5 8 1
-5 8 6 9 7 2 0 1 3 4
-8 9 4 5 3 6 2 0 1 7
-9 4 3 8 6 1 7 2 0 5
-2 5 8 1 4 3 6 7 9 0
-</code></pre>
-
-<h3>Damm Algorithm in Raku</h3>
-
-<p>The process is simple. We start with a temporary value of 0. For each digit in the input number, we look up the table with the temporary variable and the digit, and set the temporary variable to the integer found in the table. At the end, the number is valid is the temporary variable is 0. For our test, we will use the two examples provided in the task specification, and we will test all numbers in the <code>5700..5800</code> range.</p>
-
-<pre><code>my @damm =  &lt; 0 3 1 7 5 9 8 6 4 2 &gt;,
-            &lt; 7 0 9 2 1 5 4 8 6 3 &gt;,
-            &lt; 4 2 0 6 8 7 1 3 5 9 &gt;,
-            &lt; 1 7 5 0 9 8 3 4 2 6 &gt;,
-            &lt; 6 1 2 3 0 4 5 9 7 8 &gt;,
-            &lt; 3 6 7 4 2 0 9 5 8 1 &gt;,
-            &lt; 5 8 6 9 7 2 0 1 3 4 &gt;,
-            &lt; 8 9 4 5 3 6 2 0 1 7 &gt;,
-            &lt; 9 4 3 8 6 1 7 2 0 5 &gt;,
-            &lt; 2 5 8 1 4 3 6 7 9 0 &gt;;
-
-sub is-valid ($n) {
-    my $t = 0;
-    $t = @damm[$t][$_] for $n.comb;
-    return $t == 0;
-}
-
-for 5724, 5727 -&gt; $test {
-    say $test, is-valid($test) ?? " is valid." !! " is not valid.";
-}
-say "\nValid numbers between 5700 and 5800 are: ";
-for 5700..5800 -&gt; $i {
-    print "$i " if is-valid $i;
-}
-say "";
-</code></pre>
-
-<p>This program displays the following output: </p>
-
-<pre><code>$ raku ./damm-algo.raku
-5724 is valid.
-5727 is not valid.
-
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h3>Damm Algorithm in Perl</h3>
-
-<p>The algorithm for finding the check digit is the same as the one for testing whether a number is valid. So, rather than simply testing the validity directly as we did in Raku, we&#8217;ll write a <code>find_check</code> subroutine to find the check digit. Then, a number will be valid if its check digit is 0. Thus, we sort of get the two functions for the price of one. Besides that, the process is essentially the same as in Raku. Check the Raku section above is you need further explanations.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-my @damm =  (
-[ &lt; 0 3 1 7 5 9 8 6 4 2 &gt; ],
-[ &lt; 7 0 9 2 1 5 4 8 6 3 &gt; ],
-[ &lt; 4 2 0 6 8 7 1 3 5 9 &gt; ],
-[ &lt; 1 7 5 0 9 8 3 4 2 6 &gt; ],
-[ &lt; 6 1 2 3 0 4 5 9 7 8 &gt; ],
-[ &lt; 3 6 7 4 2 0 9 5 8 1 &gt; ],
-[ &lt; 5 8 6 9 7 2 0 1 3 4 &gt; ],
-[ &lt; 8 9 4 5 3 6 2 0 1 7 &gt; ],
-[ &lt; 9 4 3 8 6 1 7 2 0 5 &gt; ],
-[ &lt; 2 5 8 1 4 3 6 7 9 0 &gt; ] );
-
-sub find_check {
-    my $n = shift;
-    my $t = 0;
-    $t = $damm[$t][$_] for split //, $n;
-    return $t;
-}
-
-sub is_valid {
-    my $n = shift;
-    return find_check($n) == 0;
-}
-
-for my $test (5724, 5727) {
-    say $test, is_valid($test) ? " is valid." : " is not valid.";
-}
-say "\nValid numbers between 5700 and 5800 are: ";
-for my $i (5700..5800) {
-    print "$i " if is_valid $i;
-}
-say "";
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./damm-algo.pl
-5724 is valid.
-5727 is not valid.
-
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h3>Damm Algorithm in Other Languages</h3>
-
-<p>We now present the same Damm algorithm in the following 18 guest languages (in alphabetic order):</p>
-
-<ul>
-<li>awk</li>
-<li>C</li>
-<li>D</li>
-<li>Dart</li>
-<li>Go</li>
-<li>Java</li>
-<li>JavaScript</li>
-<li>Julia</li>
-<li>Kotlin</li>
-<li>Lua</li>
-<li>Nim</li>
-<li>Pascal</li>
-<li>Python</li>
-<li>Ring</li>
-<li>Ruby</li>
-<li>Rust</li>
-<li>Scala</li>
-<li>Tcl</li>
-</ul>
-
-<p>From now on, for all guest language implementations, the test will consist in listing the valid numbers between 5700 and 5800, a range that includes the two test cases (5724 and 5727) suggested in the task specification.</p>
-
-<h4>Damm Algorithm in awk</h4>
-
-<p>The awk programming language has minimal support for arrays. It doesn&#8217;t seem to support two-dimensional arrays, and iniitializing arrays in a pain in the neck (there may be some way, but the documentation is scarce). So we implement the <code>damm</code> lookup array as an array of strings and initialize it by initializing each item in the array (in the <code>populate_damm</code> function). Then we use the <code>substr</code> built-in function to retrieve the wanted value from the strings.</p>
-
-<pre><code>function is_valid(n) {
-    t = 0
-    for (j = 1; j &lt;= length(n); j++) {
-        t = substr(damm[t],substr(n, j, 1) + 1 ,1)
-    }
-    return t == 0
-}
-function populate_damm() {
-    damm[0] = "0317598642"
-    damm[1] = "7092154863"
-    damm[2] = "4206871359"
-    damm[3] = "1750983426"
-    damm[4] = "6123045978"
-    damm[5] = "3674209581"
-    damm[6] = "5869720134"
-    damm[7] = "8945362017"
-    damm[8] = "9438617205"
-    damm[9] = "2581436790"
-}
-BEGIN {
-    populate_damm()
-    print("Valid numbers between 5700 and 5800 are: ")
-    for (i  = 5700; i&lt;= 5800; i++) {
-        if (is_valid(i)) {
-            printf("%d ", i)
-        }
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ awk -f ./damm-algo.awk
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<p>Note that I was thinking about a <em>bc</em> implementation of the Damm algorithm, but I gave up the idea because the situation with arrays (and also documentation) is worse that in awk.</p>
-
-<h4>Damm Algorithm in C</h4>
-
-<p>Not much to say, the code is quite clear. Just note that, in the <code>temp = damm[temp][str[i] - '0'];</code> code line, we need to subtract the Ascii value of 0 (48) from the value in the <code>str</code> integer-to-string conversion in order to get proper subscripts. We will have to do the same in a number of other guest language implementations. </p>
-
-<pre><code>#include &lt;stdio.h&gt;
-
-const char damm[10][10] = {
-        {0, 3, 1, 7, 5, 9, 8, 6, 4, 2},
-        {7, 0, 9, 2, 1, 5, 4, 8, 6, 3},
-        {4, 2, 0, 6, 8, 7, 1, 3, 5, 9},
-        {1, 7, 5, 0, 9, 8, 3, 4, 2, 6},
-        {6, 1, 2, 3, 0, 4, 5, 9, 7, 8},
-        {3, 6, 7, 4, 2, 0, 9, 5, 8, 1},
-        {5, 8, 6, 9, 7, 2, 0, 1, 3, 4},
-        {8, 9, 4, 5, 3, 6, 2, 0, 1, 7},
-        {9, 4, 3, 8, 6, 1, 7, 2, 0, 5},
-        {2, 5, 8, 1, 4, 3, 6, 7, 9, 0},
-    };
-
-int is_valid(int num) {
-    int temp = 0;
-    char str[10];
-    int len = sprintf(str, "%d", num);   // convert input int to string
-    str[len] = '\0';
-    for (int i = 0; i &lt; len; i++) {
-         temp = damm[temp][str[i] - '0'];
-    }
-    return temp == 0;
-}
-
-int main() {
-    printf("%s\n", "Valid numbers between 5700 and 5800 are: ");
-    for (int i = 5700; i &lt; 5800; i++) {
-        if (is_valid(i)) 
-            printf("%d ", i);
-    }
-    printf("%s\n", "");
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ./a.out
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in D</h4>
-
-<p>As usual, the D syntax is very similar to the C syntax, but D is just a bit simpler to use than C.</p>
-
-<pre><code>import std.stdio;
-import std.conv;
-
-auto damm = [
-    [0, 3, 1, 7, 5, 9, 8, 6, 4, 2],
-    [7, 0, 9, 2, 1, 5, 4, 8, 6, 3],
-    [4, 2, 0, 6, 8, 7, 1, 3, 5, 9],
-    [1, 7, 5, 0, 9, 8, 3, 4, 2, 6],
-    [6, 1, 2, 3, 0, 4, 5, 9, 7, 8],
-    [3, 6, 7, 4, 2, 0, 9, 5, 8, 1],
-    [5, 8, 6, 9, 7, 2, 0, 1, 3, 4],
-    [8, 9, 4, 5, 3, 6, 2, 0, 1, 7],
-    [9, 4, 3, 8, 6, 1, 7, 2, 0, 5],
-    [2, 5, 8, 1, 4, 3, 6, 7, 9, 0],
-];
-
-bool is_valid (int num) {
-    string str = to!string(num, 10);
-    int temp = 0;
-    foreach (ch; str) {
-        temp = damm[temp][ch - '0'];
-    }
-    return temp == 0;
-}
-
-void main() {
-    writeln("Valid numbers between 5700 and 5800 are: ");
-    for (int i = 5700; i &lt; 5800; i++) {
-        if (is_valid(i)) 
-            printf("%d ", i);
-    }
-    writeln("");
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are: 
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Dart</h4>
-
-<p>Like in awk, I haven&#8217;t found a good way to declare and initialize two-dimensional arrays in Dart, and the documentation is quite sparse. So I used the same solution as in awk: an array of strings.</p>
-
-<pre><code>import "dart:io";
-
-var damm = [ "0317598642",
-             "7092154863",
-             "4206871359",
-             "1750983426",
-             "6123045978",
-             "3674209581",
-             "5869720134",
-             "8945362017",
-             "9438617205",
-             "2581436790" ];
-
-void main() {
-    print("Valid numbers between 5700 and 5800 are:");
-    for (int i = 5700; i &lt;= 5800; i++ ) {
-        if (is_valid(i)) {
-            stdout.write("$i ");
-        }
-    }
-    stdout.write("\n");
-}
-bool is_valid(n) {
-    var digits = n.toString().split("");
-    int temp = 0;
-    var len = digits.length;
-    for (int i = 0; i &lt; len; i++) { 
-        var row = damm[temp];
-        var idx = int.parse(digits[i]);
-        temp = int.parse(row[idx]);
-    }
-    return temp == 0;
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Go</h4>
-
-<pre><code>import (
-    "fmt"
-    "strconv"
-)
-
-var damm = [10][10] int {
-    {0, 3, 1, 7, 5, 9, 8, 6, 4, 2},
-    {7, 0, 9, 2, 1, 5, 4, 8, 6, 3},
-    {4, 2, 0, 6, 8, 7, 1, 3, 5, 9},
-    {1, 7, 5, 0, 9, 8, 3, 4, 2, 6},
-    {6, 1, 2, 3, 0, 4, 5, 9, 7, 8},
-    {3, 6, 7, 4, 2, 0, 9, 5, 8, 1},
-    {5, 8, 6, 9, 7, 2, 0, 1, 3, 4},
-    {8, 9, 4, 5, 3, 6, 2, 0, 1, 7},
-    {9, 4, 3, 8, 6, 1, 7, 2, 0, 5},
-    {2, 5, 8, 1, 4, 3, 6, 7, 9, 0},
-}
-
-func is_valid(num int) bool {
-    var n_str = strconv.Itoa(num)
-    var temp = 0
-    for _, ch := range n_str {
-        temp = damm[temp][ch-'0']
-    }
-    return temp == 0
-}
-
-func main() {
-    fmt.Println("Valid numbers between 5700 and 5800 are:")
-    for i := 5700; i &lt;= 5800; i++ {
-        if is_valid(i) {
-            fmt.Printf("%d ", i)
-        }
-    }
-    fmt.Println("")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Java</h4>
-
-<pre><code>public class DammCheckDigit {
-    private static final int[][] damm = 
-        { {0, 3, 1, 7, 5, 9, 8, 6, 4, 2},
-          {7, 0, 9, 2, 1, 5, 4, 8, 6, 3},
-          {4, 2, 0, 6, 8, 7, 1, 3, 5, 9},
-          {1, 7, 5, 0, 9, 8, 3, 4, 2, 6},
-          {6, 1, 2, 3, 0, 4, 5, 9, 7, 8},
-          {3, 6, 7, 4, 2, 0, 9, 5, 8, 1},
-          {5, 8, 6, 9, 7, 2, 0, 1, 3, 4},
-          {8, 9, 4, 5, 3, 6, 2, 0, 1, 7},
-          {9, 4, 3, 8, 6, 1, 7, 2, 0, 5},
-          {2, 5, 8, 1, 4, 3, 6, 7, 9, 0} };
-
-    private static boolean is_valid(Integer num) {
-        char[] n = num.toString().toCharArray();
-        int temp = 0;
-        for (char ch : n) {
-            temp = damm[temp][ch - '0'];
-        }
-        return temp == 0;
-    }
-
-    public static void main(String[] args) {
-        System.out.printf("%s", "Valid numbers between 5700 and 5800 are:");
-        for(int i = 5700; i &lt;= 5800; i++) {
-            if (is_valid(i))  System.out.printf("%d ", i);
-        }
-        System.out.printf("%s", "\n");
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in JavaScript</h4>
-
-<pre><code>damm = [ [0, 3, 1, 7, 5, 9, 8, 6, 4, 2],
-         [7, 0, 9, 2, 1, 5, 4, 8, 6, 3],
-         [4, 2, 0, 6, 8, 7, 1, 3, 5, 9],
-         [1, 7, 5, 0, 9, 8, 3, 4, 2, 6],
-         [6, 1, 2, 3, 0, 4, 5, 9, 7, 8],
-         [3, 6, 7, 4, 2, 0, 9, 5, 8, 1],
-         [5, 8, 6, 9, 7, 2, 0, 1, 3, 4],
-         [8, 9, 4, 5, 3, 6, 2, 0, 1, 7],
-         [9, 4, 3, 8, 6, 1, 7, 2, 0, 5],
-         [2, 5, 8, 1, 4, 3, 6, 7, 9, 0] ];
-
-function is_valid (n) {
-    let digits = n.toString().split("")
-    var temp = 0
-    for (var i = 0; i &lt; digits.length; i++) {
-        temp = damm[temp][digits[i]]
-    }
-    return temp == 0
-}
-
-console.log("Valid numbers between 5700 and 5800 are:")
-for (var i = 5700; i &lt;= 5800; i++) {
-    if (is_valid(i)) {
-        process.stdout.write(i + " ")
-    }
-}
-console.log("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Julia</h4>
-
-<p>Julia array indices start at 1, not 0, so the crucial code line (<code>temp = damm[temp + 1][d - '0' + 1]</code>) needs to add 1 to the array subscripts when retrieving values from the <code>damm</code> matrix.</p>
-
-<pre><code>function is_valid(num)
-    damm = (
-        (0, 3, 1, 7, 5, 9, 8, 6, 4, 2),
-        (7, 0, 9, 2, 1, 5, 4, 8, 6, 3),
-        (4, 2, 0, 6, 8, 7, 1, 3, 5, 9),
-        (1, 7, 5, 0, 9, 8, 3, 4, 2, 6),
-        (6, 1, 2, 3, 0, 4, 5, 9, 7, 8),
-        (3, 6, 7, 4, 2, 0, 9, 5, 8, 1),
-        (5, 8, 6, 9, 7, 2, 0, 1, 3, 4),
-        (8, 9, 4, 5, 3, 6, 2, 0, 1, 7),
-        (9, 4, 3, 8, 6, 1, 7, 2, 0, 5),
-        (2, 5, 8, 1, 4, 3, 6, 7, 9, 0))
-    temp = 0
-    str = string(num)
-    for d in str
-        temp = damm[temp + 1][d - '0' + 1]
-    end
-    return temp == 0
-end
-
-println("Valid numbers between 5700 and 5800 are: ")
-for i in 5700:5800
-    if is_valid(i)
-        print("$i ")
-    end
-end
-println("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ julia ./damm-algo.jl
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Kotlin</h4>
-
-<p>Declaring and initializing a matrix in Kotlin is somewhat painful, but the code is otherwise fairly straight forward.</p>
-
-<pre><code>val damm = arrayOf(
-    intArrayOf(0, 3, 1, 7, 5, 9, 8, 6, 4, 2),
-    intArrayOf(7, 0, 9, 2, 1, 5, 4, 8, 6, 3),
-    intArrayOf(4, 2, 0, 6, 8, 7, 1, 3, 5, 9),
-    intArrayOf(1, 7, 5, 0, 9, 8, 3, 4, 2, 6),
-    intArrayOf(6, 1, 2, 3, 0, 4, 5, 9, 7, 8),
-    intArrayOf(3, 6, 7, 4, 2, 0, 9, 5, 8, 1),
-    intArrayOf(5, 8, 6, 9, 7, 2, 0, 1, 3, 4),
-    intArrayOf(8, 9, 4, 5, 3, 6, 2, 0, 1, 7),
-    intArrayOf(9, 4, 3, 8, 6, 1, 7, 2, 0, 5),
-    intArrayOf(2, 5, 8, 1, 4, 3, 6, 7, 9, 0)
-)
-
-fun is_valid(num: Int): Boolean {
-    val n_str = num.toString()
-    var temp = 0
-    for (d in n_str) {
-        temp = damm[temp][d - '0']
-    }
-    return temp == 0
-}
-
-fun main() {
-    println("Valid numbers between 5700 and 5800 are: ")
-    for (i in 5700..5800) {
-        if (is_valid(i)) print("$i ")
-    }
-    println("")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are: 
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Lua</h4>
-
-<p>Like in Julia, Lua array indices start at 1, not 0, so the crucial code line (<code>temp = damm[temp + 1][ch + 1]</code>) needs to add 1 to the array subscripts when retrieving values from the <code>damm</code> matrix.</p>
-
-<pre><code>local damm = {
-    {0,3,1,7,5,9,8,6,4,2},
-    {7,0,9,2,1,5,4,8,6,3},
-    {4,2,0,6,8,7,1,3,5,9},
-    {1,7,5,0,9,8,3,4,2,6},
-    {6,1,2,3,0,4,5,9,7,8},
-    {3,6,7,4,2,0,9,5,8,1},
-    {5,8,6,9,7,2,0,1,3,4},
-    {8,9,4,5,3,6,2,0,1,7},
-    {9,4,3,8,6,1,7,2,0,5},
-    {2,5,8,1,4,3,6,7,9,0}
-}
-function is_valid(num)
-    local n_str = tostring(num)
-    local temp = 0
-    for ch in n_str:gmatch"." do
-        temp = damm[temp + 1][ch + 1]
-    end
-    return temp == 0
-end
-
-print("Valid numbers between 5700 and 5800 are: ")
-for i = 5700, 5800 do
-    if is_valid(i) then
-        io.write(i, " ")
-    end
-end
-print("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are: 
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Nim</h4>
-
-<p>Remember that Nim control flow is indentation-based, like Python.</p>
-
-<pre><code>import strutils
-
-let damm = [ [0, 3, 1, 7, 5, 9, 8, 6, 4, 2],
-             [7, 0, 9, 2, 1, 5, 4, 8, 6, 3],
-             [4, 2, 0, 6, 8, 7, 1, 3, 5, 9],
-             [1, 7, 5, 0, 9, 8, 3, 4, 2, 6],
-             [6, 1, 2, 3, 0, 4, 5, 9, 7, 8],
-             [3, 6, 7, 4, 2, 0, 9, 5, 8, 1],
-             [5, 8, 6, 9, 7, 2, 0, 1, 3, 4],
-             [8, 9, 4, 5, 3, 6, 2, 0, 1, 7],
-             [9, 4, 3, 8, 6, 1, 7, 2, 0, 5],
-             [2, 5, 8, 1, 4, 3, 6, 7, 9, 0] ]
-
-proc is_valid(num: int): bool =
-  let n_str = intToStr(num)
-  var temp = 0
-  for i in 0..len(n_str) - 1:
-    temp = damm[temp][int(n_str[i]) - 48]
-  return temp == 0
-
-echo "Valid numbers between 5700 and 5800 are:"
-for i in 5700..5800:
-  if is_valid(i):
-    stdout.write i, " "
-echo ""
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Pascal</h4>
-
-<p>I&#8217;m not particularly fond of Pascal, which I found too verbose (at least, by today&#8217;s criteria), and I&#8217;ve never used it for real-life projects (well, except some quite small Delphi projects a number of decades ago). But, having said that, I must add that Pascal is nonetheless a soft point for me, as it is the first language that I learned in my IS studies (although I had programmed as an autodidact before starting my studies, in Basic, in C, and in the pseudo-assembler of programmable pocket calculators). Pascal is quite clean (perhaps too clean) and it is with Pascal that I first learned the tenets of structured programming.  Other languages that I used at the time and found interesting were Fortran, Ada, Prolog, Caml, and especially Modula-2 (or, was it Modula-3? Quite possibly both, one after the other. I&#8217;m not quite sure). I might try implementations in some of these languages some day, although I have forgotten most about them. Another  language that I also (vaguely) learned at the time of my early studies is Cobol, but I disliked it so much that it is very unlikely that I will ever try to code something in it in the future.</p>
-
-<pre><code>program DammCheckDigit;
-uses
-  sysutils;
-
-const damm : array[0..9,0..9] of integer =
-    ( (0,3,1,7,5,9,8,6,4,2),
-      (7,0,9,2,1,5,4,8,6,3),
-      (4,2,0,6,8,7,1,3,5,9),
-      (1,7,5,0,9,8,3,4,2,6),
-      (6,1,2,3,0,4,5,9,7,8),
-      (3,6,7,4,2,0,9,5,8,1),
-      (5,8,6,9,7,2,0,1,3,4),
-      (8,9,4,5,3,6,2,0,1,7),
-      (9,4,3,8,6,1,7,2,0,5),
-      (2,5,8,1,4,3,6,7,9,0) );
-
-function is_valid(num : integer) : boolean;
-var
-    temp, i : integer;
-    n_str : string;
-begin
-    n_str := inttostr(num);
-    temp := 0;
-    for i := 0 to length(n_str) do
-    begin
-        temp := damm[temp, ord(n_str[i]) - ord ('0')];
-    end;
-    is_valid := temp=0;
-end;
-
-var
-    i : integer;
-begin
-    writeln('Valid numbers between 5700 and 5800 are:');
-    for i := 5700 to 5800 do
-    begin
-        if is_valid(i) then
-             write(i, ' ');
-    end;
-    writeln
-end.
-
-{
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797 
-}
-</code></pre>
-
-<h4>Damm Algorithm in Python</h4>
-
-<pre><code>damm = (
-    (0, 3, 1, 7, 5, 9, 8, 6, 4, 2),
-    (7, 0, 9, 2, 1, 5, 4, 8, 6, 3),
-    (4, 2, 0, 6, 8, 7, 1, 3, 5, 9),
-    (1, 7, 5, 0, 9, 8, 3, 4, 2, 6),
-    (6, 1, 2, 3, 0, 4, 5, 9, 7, 8),
-    (3, 6, 7, 4, 2, 0, 9, 5, 8, 1),
-    (5, 8, 6, 9, 7, 2, 0, 1, 3, 4),
-    (8, 9, 4, 5, 3, 6, 2, 0, 1, 7),
-    (9, 4, 3, 8, 6, 1, 7, 2, 0, 5),
-    (2, 5, 8, 1, 4, 3, 6, 7, 9, 0)
-)
-
-def is_valid(num: int) -&gt; bool:
-  temp = 0
-  for d in str(num):
-    temp = damm[temp][int(d)] 
-  return temp == 0
-
-print("Valid numbers between 5700 and 5800 are:")
-for i in range(5700, 5801):
-  if is_valid(i):
-    print(i, end=' ')
-print("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ python3 ./damm-algo.py
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Ring</h4>
-
-<p>Like in Julia and Lua, array indices start at 1, not 0, so the crucial code line (<code>temp = damm[temp + 1][ch - '0' + 1]</code>) needs to add 1 to the array subscripts when retrieving values from the <code>damm</code> matrix.</p>
-
-<pre><code>damm = [ [0, 3, 1, 7, 5, 9, 8, 6, 4, 2],
-         [7, 0, 9, 2, 1, 5, 4, 8, 6, 3],
-         [4, 2, 0, 6, 8, 7, 1, 3, 5, 9],
-         [1, 7, 5, 0, 9, 8, 3, 4, 2, 6],
-         [6, 1, 2, 3, 0, 4, 5, 9, 7, 8],
-         [3, 6, 7, 4, 2, 0, 9, 5, 8, 1],
-         [5, 8, 6, 9, 7, 2, 0, 1, 3, 4],
-         [8, 9, 4, 5, 3, 6, 2, 0, 1, 7],
-         [9, 4, 3, 8, 6, 1, 7, 2, 0, 5],
-         [2, 5, 8, 1, 4, 3, 6, 7, 9, 0] ]
-
-see "Valid numbers between 5700 and 5800 are:" + nl
-for i = 5700 to 5800
-    if is_valid(i)
-        see "" + i + " "
-    ok
-next
-see " " + nl
-
-func is_valid(num)
-    temp = 0
-    n = string(num)
-    for ch in n
-        temp = damm[temp + 1][ch - '0' + 1]
-    next
-    return temp = 0
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./damm-algo.ring
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Ruby</h4>
-
-<p>The Ruby implementation is very simple and very concise, thanks to the built-in <code>digits</code> function. Note, however, that this function returns the digits in an inverse order, so we need to reverse it.</p>
-
-<pre><code>def is_valid (n)
-    damm = [ [0,3,1,7,5,9,8,6,4,2],
-             [7,0,9,2,1,5,4,8,6,3],
-             [4,2,0,6,8,7,1,3,5,9],
-             [1,7,5,0,9,8,3,4,2,6],
-             [6,1,2,3,0,4,5,9,7,8],
-             [3,6,7,4,2,0,9,5,8,1],
-             [5,8,6,9,7,2,0,1,3,4],
-             [8,9,4,5,3,6,2,0,1,7],
-             [9,4,3,8,6,1,7,2,0,5],
-             [2,5,8,1,4,3,6,7,9,0] ]
-    temp = 0
-    for ch in n.digits.reverse
-        temp = damm[temp][ch]
-    end
-    return temp == 0
-end
-
-puts("Valid numbers between 5700 and 5800 are:")
-for i in 5700..5800
-    if is_valid(i)
-        printf("%d ", i)
-    end
-end
-puts("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Rust</h4>
-
-<pre><code>fn is_valid(num: u32) -&gt; bool {
-    static DAMM: [[u8; 10]; 10] = [
-        [0, 3, 1, 7, 5, 9, 8, 6, 4, 2],
-        [7, 0, 9, 2, 1, 5, 4, 8, 6, 3],
-        [4, 2, 0, 6, 8, 7, 1, 3, 5, 9],
-        [1, 7, 5, 0, 9, 8, 3, 4, 2, 6],
-        [6, 1, 2, 3, 0, 4, 5, 9, 7, 8],
-        [3, 6, 7, 4, 2, 0, 9, 5, 8, 1],
-        [5, 8, 6, 9, 7, 2, 0, 1, 3, 4],
-        [8, 9, 4, 5, 3, 6, 2, 0, 1, 7],
-        [9, 4, 3, 8, 6, 1, 7, 2, 0, 5],
-        [2, 5, 8, 1, 4, 3, 6, 7, 9, 0],
-    ];
-
-    let mut temp = 0;
-    let n_str = num.to_string();
-    let digits = n_str.bytes();
-    for i in digits {
-        temp = DAMM[temp as usize][i as usize - 48];
-    };
-    return temp == 0
-}
-
-fn main() {
-    println!("{}", "Valid numbers between 5700 and 5800 are:");
-    for i in 5700..5800 {
-        if is_valid(i) {
-            print!("{} ", i);
-        }
-    }
-    println!("{}", " ");
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Scala</h4>
-
-<pre><code>object DammCheckDigit extends App {
-  var damm =
-    Vector(
-      Vector(0, 3, 1, 7, 5, 9, 8, 6, 4, 2),
-      Vector(7, 0, 9, 2, 1, 5, 4, 8, 6, 3),
-      Vector(4, 2, 0, 6, 8, 7, 1, 3, 5, 9),
-      Vector(1, 7, 5, 0, 9, 8, 3, 4, 2, 6),
-      Vector(6, 1, 2, 3, 0, 4, 5, 9, 7, 8),
-      Vector(3, 6, 7, 4, 2, 0, 9, 5, 8, 1),
-      Vector(5, 8, 6, 9, 7, 2, 0, 1, 3, 4),
-      Vector(8, 9, 4, 5, 3, 6, 2, 0, 1, 7),
-      Vector(9, 4, 3, 8, 6, 1, 7, 2, 0, 5),
-      Vector(2, 5, 8, 1, 4, 3, 6, 7, 9, 0)
-    )
-
-  def is_valid(num: Int): Boolean = {
-    val num_str = num.toString.getBytes
-    var temp = 0
-    for (ch &lt;- num_str) {
-      temp = damm(temp)(ch - '0')
-    }
-    return temp == 0
-  }
-
-  println("Valid numbers between 5700 and 5800 are:")
-  for (i &lt;- 5700 to 5800) {
-    if (is_valid(i)) {
-      printf("%d ", i)
-    }
-  }
-  println("")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h4>Damm Algorithm in Tcl</h4>
-
-<p>As in awk and Dart, I haven&#8217;t found a good way to declare and initialize two-dimensional arrays in Tcl, and the documentation is quite sparse. So I used the same solution as in awk and Dart for the conversion matrix: an array of strings. My knowledge of Tcl dates from the 1990s and is very rusty, so I initially had an interpreter error on almost every code line. So, be aware that my implementation certainly doesn’t satisfy the best practices of this language.</p>
-
-<pre><code>proc is_valid {n} {
-    set damm(0) "0317598642"
-    set damm(1) "7092154863"
-    set damm(2) "4206871359"
-    set damm(3) "1750983426"
-    set damm(4) "6123045978"
-    set damm(5) "3674209581"
-    set damm(6) "5869720134"
-    set damm(7) "8945362017"
-    set damm(8) "9438617205"
-    set damm(9) "2581436790"
-
-    set temp 0
-    foreach ch [split $n {}] {
-        set row $damm($temp)
-        set temp [ string index $row $ch ]
-    }
-    return [ expr $temp == 0 ? 1 : 0]
-}
-
-puts "Valid numbers between 5700 and 5800 are: "
-for {set i 5700} {$i &lt;= 5800} {incr i} {
-    if [ is_valid $i ] {
-        puts -nonewline  "${i} "
-    }
-}
-puts ""
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ tclsh ./damm-algo.tcl
-Valid numbers between 5700 and 5800 are:
-5708 5719 5724 5735 5743 5756 5762 5770 5781 5797
-</code></pre>
-
-<h2>Task 2: Palindromic Prime Cyclops</h2>
-
-<p><em>Write a script to generate first 20 Palindromic Prime Cyclops Numbers.</em></p>
-
-<blockquote>
-  <p><em>A cyclops number is a number with an odd number of digits that has a zero in the center only.</em></p>
-</blockquote>
-
-<p><em>Output</em></p>
-
-<pre><code>101, 16061, 31013, 35053, 38083, 73037, 74047, 91019, 94049,
-1120211, 1150511, 1160611, 1180811, 1190911, 1250521, 1280821,
-1360631, 1390931, 1490941, 1520251
-</code></pre>
-
-<h3>Palindromic Prime Cyclops in Raku</h3>
-
-<p>In order to reduce the pointless computations, we&#8217;ll only test number ranges with an odd number of digits (<code>100..999, 10000..99999, 1000000..9999999</code>). As it turns out, the process is quite fast (about 2.6 seconds), so that performance enhancement wasn&#8217;t really required. I find it nonetheless better to avoid useless computations.</p>
-
-<pre><code>sub is-cyclops ($n) {
-    my $length = $n.chars;
-    return False if $length %% 2;
-    my $mid = ($length - 1) /2;
-    return False if substr($n, $mid, 1) != 0;
-    return False if $n.comb[0..$mid-1] ~~ /0/;
-    return False if $n.comb[$mid+1..$length-1] ~~ /0/;
-    return True;
-}
-
-my $count = 0;
-for |(100..999), |(10000..99999), |(1000000..9999999) -&gt; $i {
-    next unless $i eq $i.flip;
-    next unless $i.is-prime;
-    if is-cyclops $i {
-        print "$i ";
-        $count++;
-        last if $count == 20;
-    }
-}
-say "";
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ time raku ./cyclops.raku
-101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-
-real    0m2,573s
-user    0m0,015s
-sys     0m0,015s
-</code></pre>
-
-<h3>Palindromic Prime Cyclops in Perl</h3>
-
-<p>This is a port to Perl of the Raku program above. Since Perl doesn&#8217;t have a built-in <code>is_prime</code> subroutine, we roll out our own.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-sub is_cyclops {
-    my $n = shift;
-    my $len = length $n;
-    return 0 if $len % 2 == 0;
-    my $mid = ($len - 1) /2;
-    return 0 if substr($n, $mid, 1) != 0;
-    return 0 if (split //, $n)[0..$mid-1] =~ /0/;
-    return 0 if (split //, $n)[$mid+1..$len-1] =~ /0/;
-    return 1;
-}
-
-sub is_prime {
-   my $n = shift;
-   return 1 if $n == 2;
-   return 0 if $n % 2 == 0;
-   return 0 if $n == 1;
-   my $p = 3;
-   my $sqrt = sqrt $n;
-   while ($p &lt;= $sqrt) {
-       return 0 if $n % $p == 0;
-       $p += 2;
-   }
-   return 1;
-}
-
-my $count = 0;
-for my $i (100..999, 10000..99999, 1000000..9999999) {
-    next unless $i eq reverse $i;
-    next unless is_cyclops $i;
-    if (is_prime $i) {
-        print "$i ";
-        $count++;
-        last if $count == 20;
-    }
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./cyclops.pl
-101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h3>Palindromic Prime Cyclops in Other Languages</h3>
-
-<p>We now present the same palindromic prime cyclop implementations in the following 8 guest languages:</p>
-
-<ul>
-<li>Julia</li>
-<li>JavaScript</li>
-<li>Kotlin</li>
-<li>Lua</li>
-<li>Python</li>
-<li>Ring</li>
-<li>Ruby</li>
-<li>Coconut</li>
-</ul>
-
-<h4>Palindromic Prime Cyclops in Julia</h4>
-
-<p>I like the concision of Perl and Raku postfix conditionals such as:</p>
-
-<pre><code>return False if substr($n, $mid, 1) != 0;
-return False if $n.comb[0..$mid-1] ~~ /0/;
-return False if $n.comb[$mid+1..$length-1] ~~ /0/;
-return True;
-</code></pre>
-
-<p>In most other languages, you would need three code lines for each case, for example in JavaScript:</p>
-
-<pre><code>if (s[mid] != '0') {
-    return false
-}
-if (s.slice(0, mid-1).search('0') &gt;= 0) {
-    return false
-}
-if (s.slice(mid+1).search('0') &gt;= 0) {
-    return false
-}
-return true
-</code></pre>
-
-<p>Julia doesn&#8217;t have postfix conditionals, but you can use short-circuit evaluation of the <code>&amp;&amp;</code> and <code>||</code> operators as an alternative to short <code>if</code> statements to reach the same concision.</p>
-
-<p>The short-circuit evaluation, which is common to most imperative programming languages, means that:</p>
-
-<ul>
-<li>In the expression a &amp;&amp; b, the subexpression b is only evaluated if a evaluates to true.</li>
-<li>In the expression a || b, the subexpression b is only evaluated if a evaluates to false.</li>
-</ul>
-
-<p>Instead of <code>if &lt;cond&gt; &lt;statement&gt; end</code>, one can write <code>&lt;cond&gt; &amp;&amp; &lt;statement&gt;</code> (which could be read as: <code>&lt;cond&gt; and then &lt;statement&gt;</code>). Similarly, instead of <code>if ! &lt;cond&gt; &lt;statement&gt; end</code>, one can write <cond> || <statement> (which could be read as: <code>&lt;cond&gt; or else &lt;statement&gt;</code>). This idiomatic alternative to short <code>if</code> statement is frequently used in Julia. Although most languages have the short-circuit behavior of logical operators, not many of them support this construct with an ending statement. Raku and Perl do, but this is not commonly used because the <code>return false if ...</code> is admittedly clearer. In the seven guest languages used here, only Kotlin also supports this construct.</p>
-
-<p>So, in Julia, we will have, for example:</p>
-
-<pre><code>len % 2 == 0 &amp;&amp; return false
-...
-s[mid] == '0' || return false
-</code></pre>
-
-<p>This is our Julia implementation using this concise construct:</p>
-
-<pre><code>using Primes
-
-function is_cyclops(n)
-    s = string(n)
-    len = length(s)
-    len % 2 == 0 &amp;&amp; return false
-    mid = Int((len + 1) /2)
-    s[mid] == '0' || return false
-    if occursin('0', s[1:mid-1]) || occursin('0', s[mid+1:len])
-        return false
-    end
-    return true;
-end
-
-count = 0
-for i = [101:999; 10000:99999; 1000000:9999999]
-    string(i) != reverse(string(i)) &amp;&amp; continue
-    is_cyclops(i) || continue
-    if isprime(i)
-        print("$i ")
-        global count += 1
-        count &gt;= 20 &amp;&amp; break
-    end
-end
-println("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ julia ./cyclop.jl
-101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h4>Palindromic Prime Cyclops in JavaScript</h4>
-
-<p>JavaScript doesn&#8217;t have a built-in function for prime numbers (just as almost all other guest languages to follow). So we roll out our own <code>is_prime</code> function (ported from the Perl implementation above).</p>
-
-<p>It also doesn&#8217;t seem possible to combine ranges as we&#8217;ve done previously in other languages, so we use a <code>if ... else if ... else if ...</code> construct to simulate range concatenation.</p>
-
-<pre><code>function is_cyclops (n) {
-    let s = n.toString()
-    let len = s.length
-    if (len % 2 == 0) {
-        return false
-    }
-
-    let mid = (len - 1) / 2
-    if (s[mid] != '0') {
-        return false
-    }
-
-    if (s.slice(0, mid-1).search('0') &gt;= 0) {
-        return false
-    }
-    if (s.slice(mid+1).search('0') &gt;= 0) {
-        return false
-    }
-    return true
-}
-
-function is_prime(n) {
-    if (n == 2) {
-        return true
-    }
-    if (n &lt; 2 || n % 2 == 0) {
-        return false
-    }
-    var p = 3
-    let sqrt_n = Math.sqrt(n)
-    while (p &lt;= sqrt_n) {
-        if (n % p == 0) {
-            return false
-        }
-        p += 2
-    }
-    return true
-}
-
-var count = 0
-var i = 100
-while (count &lt; 20) {
-    i++
-    if (i == 999) {
-        i = 10000
-    } else if (i == 99999) {
-        i = 1000000
-    } else if (i &gt;= 9999999) {
-        break
-    }
-    if (i.toString() != i.toString().split("").reverse().join("")) {
-        continue;
-    }
-    if (! is_cyclops(i)) {
-        continue;
-    }
-    if (is_prime(i)) {
-        process.stdout.write(i + " ")
-        count++
-    }
-}
-console.log("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h4>Palindromic Prime Cyclops in Kotlin</h4>
-
-<p>I do not know whether the short-circuit evaluation alternative to short <code>if</code> statement described above in the context of the Julia language is as commonly used in Kotlin as it is in Julia, but, since it works in Kotlin, I&#8217;ll use it here. Also note that we need to implement our own <code>is_prime</code> function in Kotlin.</p>
-
-<pre><code>fun is_prime(n: Int): Boolean {
-    n == 2 &amp;&amp; return true
-    if (n &lt; 2 || n % 2 == 0) {
-        return false
-    }
-    var p = 3
-    val sqrt_n : Int = Math.sqrt(n.toDouble()).toInt()
-    while (p &lt;= sqrt_n) {
-        n % p == 0 &amp;&amp; return false
-        p += 2
-    }
-    return true
-}
-
-fun is_cyclops(num: Int): Boolean {
-    val s = num.toString()
-    val len = s.length
-    len % 2 == 0 &amp;&amp; return false
-    val mid = ((len - 1) /2).toInt()
-    s[mid] == '0' || return false
-    if ('0' in s.slice(0 until mid) or '0' in s.slice(mid+1 until len) {
-        return false
-    }
-    return true
-}
-
-fun main() {
-    var count = 0
-    var i = 100
-    while (count &lt; 20) {
-        i++
-        if (i == 999) {
-             i = 10000
-        } else if (i == 99999) {
-            i = 1000000
-        } else if (i &gt;= 9999999) {
-            break
-        }
-        if (i.toString() != i.toString().reversed()) {
-            continue;
-        }
-        if (! is_cyclops(i)) {
-            continue;
-        }
-        if (is_prime(i)) {
-            print("$i ")
-            count++
-        }
-    }
-    println(" ")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>    101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h4>Palindromic Prime Cyclops in Lua</h4>
-
-<p>Lua doesn&#8217;t have a <code>next</code> or <code>continue</code> statement to  go directly to the next iteration of a loop, because &#8220;the language is designed to be small.&#8221; I&#8217;m not sure it is a very good reason, as, in my humble opinion, this kind of statement is very useful. This is the reason for which we have two <code>goto skip</code> statements in the main part of the program. I know very well what Edsger Dijkstra said in his famous letter to ACM  &#8220;Go To Statement Considered Harmful,&#8221; but Donald Knuth commented that a &#8220;goto forward&#8221; within the same routine wasn&#8217;t that bad. This is the case here. Having said that, I would definitely prefer if Lua had a <code>continue</code> or <code>next</code> statement rather than a <code>goto</code> statement.</p>
-
-<p>We also have to implement a <code>is_prime</code> function here.</p>
-
-<pre><code>local function is_cyclops(num)
-    local n_str = tostring(num)
-    size = string.len(n_str)
-    if size % 2 == 0 then
-        return false
-    end
-    mid = (size + 1) / 2
-    if string.sub(n_str, mid, mid ) ~= '0' then
-        return false
-    end
-    if string.sub(n_str, 1, mid-1):find "0" ~= nil then
-        return false
-    end
-    if string.sub(n_str, mid+1, len):find "0" ~= nil then
-        return false
-    end
-    return true
-end
-
-local function is_prime(n)
-    if n == 2 then
-        return true
-    end
-    if n &lt; 2 or n % 2 == 0 then
-        return false
-    end
-    local p = 3
-    sqrt_n = math.sqrt(n)
-    while p &lt;= sqrt_n do
-        if n % p == 0 then
-            return false
-        end
-        p = p + 2
-    end
-    return true
-end
-
-count = 0
-i = 100
-while count &lt; 20 do
-    i = i + 1
-    if i == 999 then
-        i = 10000
-    elseif i == 99999 then
-        i = 1000000
-    elseif i &gt;= 9999999 then
-        break
-    end
-
-    if i ~= tonumber(string.reverse(tostring(i))) then
-        goto skip
-    end
-    if not is_cyclops(i) then
-        goto skip
-    end
-    if is_prime(i) then
-        io.write(i, " ")
-        count = count + 1
-    end
-    ::skip::
-end
-print("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h4>Palindromic Prime Cyclops in Python</h4>
-
-<pre><code>import math
-from re import search
-from itertools import chain
-
-def is_prime(n):
-  if n == 2:
-    return True
-  if n == 0 or n == 1 or n % 2 == 0:
-    return False
-  p = 3
-  sqrt_n = math.sqrt(n)
-  while (p &lt;= sqrt_n):
-    if ((n % p) == 0):
-      return False
-    p += 2
-  return True
-
-def is_cyclops (num):
-  s = str(num)
-  size = len(s)
-  if size % 2 == 0:
-    return False
-  mid = int((size - 1) / 2)
-  if s[mid] != '0':
-    return False
-  if search(r"0", s[0:mid-1]) or search(r"0", s[mid+1:size-1]):
-    return False
-  return True
-
-count = 0
-myrange = chain(range(100, 999), range(10000, 99999), range(1000000, 9999999))
-for i in myrange:
-  if str(i) != str(i)[::-1]:
-    continue
-  if not is_cyclops(i):
-    continue
-  if is_prime(i):
-    print(i, end=' ')
-    count += 1
-    if count &gt;= 20: 
-      break
-
-print("")
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ python3 ./cyclop.py
-101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h4>Palindromic Prime Cyclops in Ring</h4>
-
-<p>As far as I can tell, Ring also doesn&#8217;t have <code>continue</code> or <code>next</code> statements (and also no <code>last</code> and no <code>break</code>). Or, at least, I couldn&#8217;t find them (or an equivalent) in the documentation. So I had to use nested <code>if</code> statements, something that I don’t like too much. It also appears that there is no built-in function for reversing a string, so I wrote a <code>is_palindrome</code> function. And also a <code>is_prime</code> function. Also note that the equality operator (<code>==</code> in many languages) is spelled with a single equal sign in Ring, so we have for example <code>if n % p = 0</code>. I wonder how the compiler can distinguish it from the assignment operator, there must be some cases that are ambiguous.</p>
-
-<pre><code>i = 100
-count = 0
-while count &lt; 20
-    i++
-    if i = 999
-        i = 10000
-    ok
-    if i = 99999
-        i = 1000000
-    ok
-    if is_palindrome(i)
-        if is_cyclops(i)
-            if is_prime(i)
-                count++
-                see "" + i + " "
-            ok
-       ok
-   ok
-end
-see "" + nl
-
-func is_prime (n)
-    if n = 2 
-        return true
-    ok
-    if n &lt; 2 or n % 2 = 0
-        return false
-    ok
-    p = 3
-    sqrt_n = sqrt(n)
-    while p &lt; sqrt_n
-        if n % p = 0
-            return false
-        ok
-        p++
-    end
-    return true
-
-func is_cyclops(n)
-    s = "" + n
-    size = len(s)
-    if size % 2 = 0
-        return false
-    ok
-    mid = ( size + 1) / 2
-    if s[mid] != 0
-        return false
-    ok
-
-    if substr(left(s, mid-1), "0") &gt; 0
-        return false
-    ok
-    if substr(right(s, mid-1), "0") &gt; 0
-        return false
-    ok
-    return true
-
-func is_palindrome(n)
-    s = "" + n
-    size = len(s)
-    for i = 1 to size/2
-        if s[i] != s[size - i + 1]
-            return false
-        ok
-    next
-    return true
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring  ./cyclop.ring
-101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h4>Palindromic Prime Cyclops in Ruby</h4>
-
-<p>Ruby has a built-in <code>prime</code> function, so we don&#8217;t need to implement it. I found a way to combine ranges, but I must admit that this is copied from a post on Stack Overflow, I would not have found it by myself.</p>
-
-<pre><code>require 'prime'
-
-def is_cyclops (num) 
-    s = num.to_s
-    len = s.length;
-    if len % 2 == 0 then
-        return false
-    end
-    mid = (len - 1) / 2
-    if s[mid] != '0' then
-        return false
-    end
-    if s[0..mid-1][/0/] || s[mid+1..len-1][/0/]
-        return false
-    end 
-    return true
-end
-
-count = 0;
-range = [ 100..999, 10000..99999, 1000000..9999999 ].map { |r| Array(r) }.inject( :+ )
-for i in range
-    if i.to_s != i.to_s.reverse || ! is_cyclops(i)
-        next
-    end
-    if i.prime?
-        printf("%d ", i)
-        count += 1;
-        if count == 20
-            break
-        end
-    end
-end
-puts ""
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h4>Palindromic Prime Cyclops in Coconut (a Functional Extension of Python)</h4>
-
-<p><em>This section on Coconut was added on August 18, 2022.</em></p>
-
-<p>Coconut is a variant of Python built for functional programming. It is actually a kind of extension of Python, and Coconut code is in fact compiled to Python code. The documentation is still somewhat limited, but there is a good <a href="https://coconut.readthedocs.io/en/latest/HELP.html#case-study-1-factorial">Coconut Tutorial</a> and a reference <a href="https://coconut.readthedocs.io/en/latest/DOCS.html">Coconut Documentation</a>.</p>
-
-<p>I was interested in trying to use Coconut for this task essentially because of its support to pipeline style programming. Since we&#8217;re looking for the first twenty integers having a certain set of properties (prime, palindromic, with an odd number of digits, with a 0 in the middle and no other 0, etc.), it is appealing to use a pipeline of filters, one for each of these properties, as done in the last (main) section of the code below.</p>
-
-<pre><code>import math
-from re import search
-
-def is_prime(n):
-    case n:
-        match 0:
-            return False
-        match 1:
-            return False
-        match 2:
-            return True
-        match _ is int if n &gt; 2:
-            if n % 2 == 0:
-                return False
-            p = 3
-            sqrt_n = math.sqrt(n)
-            while (p &lt;= sqrt_n):
-                if (n % p) == 0:
-                    return False
-                p += 2
-            return True
-
-def is_cyclops (num):
-  s = str(num)
-  size = len(s)
-  mid = int((size - 1) / 2)
-  if s[mid] != '0':
-    return False
-  if search(r"0", s[0:mid-1]) or search(r"0", s[mid+1:size-1]):
-    return False
-  return True
-
-range(100, 999) :: range(10000, 99999) :: range(1000000, 9000000) \
-|&gt; filter$( -&gt; str(_) == str(_)[::-1]) \    # palindrome
-|&gt; filter$( -&gt; len(str(_)) %2 != 0) \       # odd number of digits
-|&gt; filter$(is_cyclops) |&gt; filter$(is_prime) \
-|&gt;  list |&gt; .$[:20] |&gt; print
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>101 16061 31013 35053 38083 73037 74047 91019 94049 1120211 1150511 1160611 1180811 1190911 1250521 1280821 1360631 1390931 1490941 1520251
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on August 21, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_25">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2022/08/rfc-new-api-for-typeparams.html">RFC: new API for Type::Params</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Toby Inkster
- on Thursday 18 August 2022 12:53</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Firstly, I'm not planning on breaking compatibility with Type::Params. The new API would live under a different namespace, such as Type::Params2.</p>
-
-<p>The API for Type::Params is currently:</p>
-<pre style="background:#ffe; border:1px solid #cc9; font-size:80%; padding: 4px">
-use feature 'state';
-use Type::Params qw( compile compile_named_oo );
-use Types::Standard -types;
-
-sub function_with_positional_parameters {
-  state $check = compile( ArrayRef, Int, Int );
-  my ( $list, $start, $end ) = $check->( @_ );
-
-  my @slice = @{$list}[ $start .. $end ];
-  return \@slice;
-}
-
-sub function_with_named_parameters {
-  state $check = compile_named_oo( list => ArrayRef, start => Int, end => Int );
-  my ( $arg ) = $check->( @_ );
-
-  my @slice = @{$arg->list}[ $arg->start .. $arg->end ];
-  return \@slice;
-}
-</pre>
-
-<p>Alternatively, there's:</p>
-<pre style="background:#ffe; border:1px solid #cc9; font-size:80%; padding: 4px">
-use Type::Params qw( wrap_subs compile_named_oo );
-use Types::Standard -types;
-
-wrap_subs function_with_positional_parameters => [ ArrayRef, Int, Int ];
-
-sub function_with_positional_parameters {
-  my ( $list, $start, $end ) = @_;
-
-  my @slice = @{$list}[ $start .. $end ];
-  return \@slice;
-}
-
-wrap_subs function_with_named_parameters =>
-  compile_named_oo( list => ArrayRef, start => Int, end => Int );
-
-sub function_with_named_parameters {
-  my ( $arg ) = @_;
-
-  my @slice = @{$arg->list}[ $arg->start .. $arg->end ];
-  return \@slice;
-}
-</pre>
-
-<p>My suggested API is:</p>
-<pre style="background:#efe; border:1px solid #9c9; font-size:80%; padding: 4px">
-use feature 'state';
-use Type::Params2;
-use Types::Standard -types;
-
-sub function_with_positional_parameters {
-  state $check = signature(
-    pos => [ ArrayRef, Int, Int ],
-  );
-  my ( $list, $start, $end ) = $check->( @_ );
-
-  my @slice = @{$list}[ $start .. $end ];
-  return \@slice;
-}
-
-sub function_with_named_parameters {
-  state $check = signature(
-    named => [ list => ArrayRef, start => Int, end => Int ],
-  );
-  my ( $arg ) = $check->( @_ );
-
-  my @slice = @{$arg->list}[ $arg->start .. $arg->end ];
-  return \@slice;
-}
-</pre>
-
-<p>It would also support the inside-out technique:</p>
-<pre style="background:#efe; border:1px solid #9c9; font-size:80%; padding: 4px">
-use Type::Params2;
-use Types::Standard -types;
-
-signature_for function_with_positional_parameters => (
-  pos => [ ArrayRef, Int, Int ],
-);
-
-sub function_with_positional_parameters {
-  my ( $list, $start, $end ) = @_;
-
-  my @slice = @{$list}[ $start .. $end ];
-  return \@slice;
-}
-
-signature_for function_with_named_parameters => (
-  named => [ list => ArrayRef, start => Int, end => Int ],
-);
-
-sub function_with_named_parameters {
-  my ( $arg ) = @_;
-
-  my @slice = @{$arg->list}[ $arg->start .. $arg->end ];
-  return \@slice;
-}
-</pre>
-
-<p>There would be a shortcut for methods:</p>
-<pre style="background:#efe; border:1px solid #9c9; font-size:80%; padding: 4px">
-signature_for method_with_named_parameters => (
-  method => 1,
-  named  => [ list => ArrayRef, start => Int, end => Int ],
-);
-
-sub method_with_named_parameters {
-  my ( $self, $arg ) = @_;
-
-  my @slice = @{$arg->list}[ $arg->start .. $arg->end ];
-  return \@slice;
-}
-</pre>
-
-<p>Comments? Do people think this would be an improvement?</p>
-        
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -5523,7 +4002,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 02 September 2022 16:51 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 02 September 2022 20:43 UTC</address>
             </div>
           </div>
         </div><!-- container -->
