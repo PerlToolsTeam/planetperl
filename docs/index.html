@@ -2919,129 +2919,6 @@ considered on a daily basis!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_dave_mitchell_july_2022">Maintaining Perl 5 Core (Dave Mitchell): July 2022</a></h2>
-<a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
-
-              <p class="text-right"><small>Published by Jason A. Crome
- on Wednesday 03 August 2022 21:15</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-   
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>Dave writes: </p>
-
-<p>This is my monthly report on work done during July covered by my TPF perl
-core maintenance grant.
-<code>
-      3:57 BBC: TODDR/YAML-Syck-1.34.tar.gz (Issue #19939)
-      3:28 Format in fill-mode has inconsistent behaviour (Issue #19985)
-      4:58 Goto xsub forces scalar context (#19188)
-      0:57 Returning undef returns a weird hash reference (Issue #19996)
-      0:37 Segmentation fault with use re 'eval' (Issue #19390)
-      0:20 fix build warning
-     39:28 make stack reference counted
-      6:11 process p5p mailbox
-      1:16 segfault on goto &amp;xs_sub when calling sub is replaced (Issue #19936)
-    ------
-     61:12 TOTAL (HH::MM)
-</code>
-I worked on quite a few tickets last month, but the most important thing I
-did was to continue work on making the stack reference counted (work I
-started near the end of June).</p>
-
-<p>This is still very much a work in progress and I have nothing visible
-(i.e. pushed) to show for it yet, but what I have done so far is:</p>
-
-<p>1) Put wrappers around 254 pp functions.</p>
-
-<p>This changes the definitions of pp function from e.g.:
-<code>
-    PP(pp_subst)
-    {
-        ...
-    }
-</code>
-to
-<code>
-    PP_wrapped(pp_subst, ((PL_op-&amp;gt;op_flags &amp; OPf_STACKED) ? 2 : 1), 0)
-    {
-        ...
-    }
-</code>
-which on normal builds has no effect, but on builds with <code>PERL_RC_STACK</code>
-defined, it expands to something like:
-```
-    OP*
-    Perl_pp_subst(aTHX) {
-        return
-            Perl_pp_wrap(my_perl, S_norcs_pp_subst,
-                ((PL_op-&gt;op_flags &amp; OPf_STACKED) ? 2 : 1), 0);
-    }</p>
-
-<pre><code>STATIC OP*
-S_norcs_pp_subst(pTHX)
-{
-    ...
-}
-</code></pre>
-
-<p><code>``
-</code>pp_wrap()<code>is responsible for pushing a (non-reference-counted) copy
-of the current stack frame onto the end of the stack, then calling the
-original pp function</code>S_norcs_pp_subst()`, which doesn't know about
-reference-counted arguments, then shifting down and bumping the reference
-count of everything that it returns on the stack.</p>
-
-<p>The two numeric arguments for <code>pp_wrap</code> are how many arguments that op
-expects on the stack, or for list ops, how many (mark-delineated) lists it
-expects. Often these are just constants, but for some, like <code>pp_subst</code>, it
-varies depending on flags.</p>
-
-<p>2) Of the remaining 56 pp functions, some didn't need wrapping (like
-<code>pp_pushmark</code>), while others required special handling - like most of the
-<code>pp_enterfoo</code> and <code>pp_leavefoo</code> functions. For example most leavefoo ops in
-void context just abandon any arguments left on the stack:
-<code>
-    PL_stack_sp = PL_stack_base + cx-&amp;gt;blk_oldsp;
-</code>
-For a reference-counted stack, this means that all those SVs leak. So I've
-replaced all such occurrences with an inline function call:
-<code>
-    rpp_pop_to(PL_stack_base + cx-&amp;gt;blk_oldsp);
-</code>
-which on normal builds just resets <code>PL_stack_sp</code>, while on <code>PERL_RC_STACK</code>
-builds, it will decrement the reference count of all those abandoned stack
-items first.</p>
-
-<p>I have almost finished doing (2) - just a handful of ops still need going
-over on a line-by-line basis (in particular <code>pp_goto()</code>, which I've been
-leaving to absolutely last).</p>
-
-<p>None of the changes I've done so far actually do reference-counting yet: <code>pp_wrap()</code>, <code>rpp_pop_to()</code> etc currently have any <code>SvREFCNT_dec()</code>s etc
-commented out. The idea is that I can initially add all these
-modifications to the core while perl still works, Then once all that work
-is done I should be able to make changes in a small number of places - <code>pp_wrap()</code>, <code>rpp_pop_to()</code> etc - and the whole of the perl core should
-become reference-count-aware at once. This means that initially the core
-will be merely mostly broken rather than completely broken, and it should
-be easier to fix up those remaining bits which need it.</p>
-
-<p>Then later on, things can be made more efficient again, e.g. by removing
-the wrapper functions from common ops and make them directly
-reference-count aware instead.</p>
-
-<p>PS - for the avoidance of doubt, even with all these changes, unless the
-core is built with <code>PERL_RC_STACK</code> defined, none of these changes take
-affect yet.</p>
-
-    
-         </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
 
         </div><!-- col-md-8 -->
         <div class="col-md-2">
@@ -3062,7 +2939,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 03 September 2022 20:43 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 04 September 2022 01:00 UTC</address>
             </div>
           </div>
         </div><!-- container -->
