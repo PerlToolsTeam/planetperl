@@ -7,7 +7,7 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-09-06T05:14:28Z</updated>
+  <updated>2022-09-06T08:48:03Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
   <entry>
@@ -1567,103 +1567,6 @@ checker, otherwise use the `perl' checker."&lt;/span&gt;
     <category term="perl"/>
   </entry>
   <entry>
-    <title>Match Anything, Quickly</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2022/08/match-anything-quickly.html"/>
-    <id>tag:blogs.perl.org,2022:/users/tom_wyant//506.10871</id>
-    <published>2022-08-06T05:39:25Z</published>
-    <updated>2022-09-02T23:28:29Z</updated>
-    <author>
-        <name>Tom Wyant</name>
-        
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/tom_wyant/">
-        <![CDATA[<p><strong>Revision:</strong> that Cincinnati Perl Mongers found an error in the benchmark script used for this post. <a href="http://blogs.perl.org/users/tom_wyant/2022/09/match-anything-quickly----revision-1.html">Match Anything Quickly - Revision 1</a> discusses their findings and links to a revised benchmark script. -- TRW 2022-09-02</p>
-
-<p>Sometimes I want to filter a set of strings, but the details of the filter are not known beforehand. In particular, I may want a null filter, which simply accepts anything.</p>
-
-<p>This looks like a job for a regular expression, but I can think of at least two implementations. One is to pass around regular expression objects. The second is to wrap a match (<code>m//</code>) in a subroutine reference, and pass that around. Given the use of regular expressions, there are a number of possibilities for a regular expression that matches any string.</p>
-
-<p>I wondered whether one of the alternatives I was choosing among was faster than another, so I decided to <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> them. Both implementations applied the regular expression to a global variable. In practice this would probably be a localized <code>$_</code>, but my read of the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> module says that it also localizes <code>$_</code>, but leaves it <code>undef</code>.</p>
-
-<p><strong>Note</strong> that the empty pattern is not benchmarked, because it is equivalent to the last successfully-matched pattern, if any. The <code>sub { 1 }</code> was included because if we're dealing in code references, the null filter simply needs to return a true value.</p>
-
-<p>Here are the results, obtained with Perl 5.36.0, unthreaded. The script that generated them is on <a href="https://trwyant.github.io/blog/2022-08-05/match-anything-quickly.PL">GitHub</a></p>
-
-<table>
-<thead>
-<tr><th>Implementation</th><th>Rate</th></tr>
-</thead>
-<tbody>
-<tr><td>sub { 1 }</td><td style="text-align: right;">294117647.06/sec</td></tr>
-<tr><td>sub { m/ .? /smx }</td><td style="text-align: right;">21645021.65/sec</td></tr>
-<tr><td>sub { m/ .{0} /smx }</td><td style="text-align: right;">21598272.14/sec</td></tr>
-<tr><td>sub { m/ (*ACCEPT) /smx }</td><td style="text-align: right;">20964360.59/sec</td></tr>
-<tr><td>sub { m/ (?) /smx }</td><td style="text-align: right;">20876826.72/sec</td></tr>
-<tr><td>sub { m/ \A /smx }</td><td style="text-align: right;">20746887.97/sec</td></tr>
-<tr><td>sub { m/ (?:) /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
-<tr><td>sub { m/ ^ /smx }</td><td style="text-align: right;">20618556.70/sec</td></tr>
-<tr><td>qr/ (?) /smx</td><td style="text-align: right;">2344665.89/sec</td></tr>
-<tr><td>qr/ (?:) /smx</td><td style="text-align: right;">2344116.27/sec</td></tr>
-<tr><td>qr/ ^ /smx</td><td style="text-align: right;">2336448.60/sec</td></tr>
-<tr><td>qr/ \A /smx</td><td style="text-align: right;">2315350.78/sec</td></tr>
-<tr><td>qr/ .? /smx</td><td style="text-align: right;">2208968.41/sec</td></tr>
-<tr><td>qr/ .{0} /smx</td><td style="text-align: right;">2180074.12/sec</td></tr>
-<tr><td>qr/ (*ACCEPT) /smx</td><td style="text-align: right;">1717327.84/sec</td></tr>
-</tbody>
-</table>
-
-<p>Somewhat to my surprise, the subroutine-reference implementation was an
-order of magnitude faster than the regular-expression-reference implementation.
-I expected that, <code>Regexp</code>s being first-class objects, it would be
-pretty much equivalent to <code>m/ ... /</code> wrapped in a subroutine --
-maybe even a little faster.</p>
-
-<p>A little messing around with <code>perl -MO=Concise</code> got me the following:</p>
-
-<pre>
-$ perl -MO=Concise -e '$_ =~ m/foo/;'
-5  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
-1     &lt;0&gt; enter v -&gt;2
-2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
-4     &lt;/&gt; match(/"foo"/) vKS -&gt;5
--        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
-3           &lt;$&gt; gvsv(*_) s -&gt;4
--e syntax OK
-$ perl -MO=Concise -e '$_ =~ qr/foo/;'
-7  &lt;@&gt; leave[1 ref] vKP/REFC -&gt;(end)
-1     &lt;0&gt; enter v -&gt;2
-2     &lt;;&gt; nextstate(main 1 -e:1) v:{ -&gt;3
-6     &lt;/&gt; match() vKS -&gt;7
--        &lt;1&gt; ex-rv2sv sK/1 -&gt;4
-3           &lt;$&gt; gvsv(*_) s -&gt;4
-5        &lt;|&gt; regcomp(other-&gt;6) sK -&gt;6
-4           &lt;/&gt; qr(/"foo"/) s -&gt;5
--e syntax OK
-</pre>
-
-<p>The salient difference, to my eye, was the presence of the <code>regcomp</code> operator in the second case. <a href="https://metacpan.org/pod/Perldoc::Search"><code>perldoc-search</code></a> on this led me eventually to <a href="https://perldoc.perl.org/perlreapi.html"><code>perlreapi</code></a> which says, in part,</p>
-
-<p><br />
-<dl><br />
-    <dt>"precomp" "prelen"</dt><br />
-    <dd><br />
-	<p>Used for optimisations. "precomp" holds a copy of the pattern that was compiled and "prelen" its length. When a new pattern is to be compiled (such as inside a loop) the internal "regcomp" operator checks if the last compiled "REGEXP"'s "precomp" and "prelen" are equivalent to the new one, and if so uses the old pattern instead of compiling a new one.</p></p>
-
-<p>	<p>The relevant snippet from "Perl_pp_regcomp":</p><br />
-	<pre><br />
-            if (!re || !re-&gt;precomp || re-&gt;prelen != (I32)len ||<br />
-                memNE(re-&gt;precomp, t, len))<br />
-            /* Compile a new pattern */<br />
-	</pre><br />
-    </dd><br />
-</dl></p>
-
-<p>So I <strong>assume</strong> that the speed difference <strong>might</strong> be reduced if the filter was called in a tight enough loop. But if so, the <a href="https://perldoc.perl.org/Benchmark.html"><code>Benchmark</code></a> loop is not tight enough, and it's pretty tight. On the other hand, maybe the <code>Benchmark</code> loop <strong>is</strong> tight enough, and the extra time is spent determining that a recompilation is not needed. But it will take deeper knowledge of Perl internals than I possess to sort this out.</p>
-]]>
-        
-    </content>
-</entry>
-  <entry>
     <title>Match Anything, Quickly -- Revision 1</title>
     <link rel="alternate" href="http://blogs.perl.org/users/tom_wyant/2022/09/match-anything-quickly----revision-1.html"/>
     <id>tag:blogs.perl.org,2022:/users/tom_wyant//506.10881</id>
@@ -2691,6 +2594,319 @@ Welcome to the Perl review pages for Week 173 of The Weekly Challenge! Here we w
     <published>2022-08-29T00:00:00Z</published>
     <updated>2022-08-29T00:00:00Z</updated>
   </entry>
+  <entry>
+    <title>Perl Weekly Challenge 179: Ordinal Numbers and Unicode Sparkline</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/08/perl-weekly-challenge-179-ordinal-numbers-and-unicode-sparkline.html"/>
+    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10877</id>
+    <published>2022-08-24T21:56:35Z</published>
+    <updated>2022-08-28T20:28:50Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 179 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-179/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on Aug. 28, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Ordinal Number Spelling</h2>
+
+<p><em>You are given a positive number, <code>$n</code>.</em></p>
+
+<p><em>Write a script to spell the ordinal number.</em></p>
+
+<p><em>For example,</em></p>
+
+<pre><code>11 =&gt; eleventh
+62 =&gt; sixty-second
+99 =&gt; ninety-ninth
+</code></pre>
+
+<p>Hum, this task is not very interesting, since it has more to do with English than with computer science. I&#8217;m not going to enumerate dozens of numeral or ordinal English names. So, contrary to what I usually do, I&#8217;ll use an off-the-shelf module to complete this task.</p>
+
+<h3>Ordinal Number Spelling in Raku</h3>
+
+<p>Here, we use the <code>Lingua::EN::Numbers</code> Raku module:</p>
+
+<pre><code>use Lingua::EN::Numbers;
+
+for 11, 62, 99 -&gt; $num {
+    say "$num =&gt; ", ordinal($num);
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./ordinal_numbers.raku
+11 =&gt; eleventh
+62 =&gt; sixty-second
+99 =&gt; ninety-ninth
+</code></pre>
+
+<h3>Ordinal Number Spelling in Perl</h3>
+
+<p>The Perl module we&#8217;re going to use is also called <code>Lingua::EN::Numbers</code>, but it&#8217;s not the same package as the Raku module used above.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature qw/say/;
+
+use Lingua::EN::Numbers qw/num2en_ordinal/;
+
+for my $num (11, 62, 99) {
+    say "$num =&gt; ", ordinal($num);
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./ordinal_numbers.pl
+11 =&gt; eleventh
+62 =&gt; sixty-second
+99 =&gt; ninety-ninth
+</code></pre>
+
+<h2>Task 2: Unicode Sparkline</h2>
+
+<p><em>You are given a list of positive numbers, <code>@n</code>.</em></p>
+
+<p><em>Write a script to print sparkline in Unicode for the given list of numbers.</em></p>
+
+<p>Here, I regret to have to say that my friend Mohammad has been a bit sloppy, since he did not explain anything about sparklines (I had never heard about sparklines before). A sparkline is a very small graph of successive values laid out horizontally where the height of the line is proportional to the values in succession. See this <a href="https://en.wikipedia.org/wiki/Sparkline">Wikipedia Page</a> for additional information.</p>
+
+<p>The <a href="https://www.rosettacode.org/wiki/Sparkline_in_unicode">Rosetta Code Web site</a> provides additional information about Unicode sparklines:</p>
+
+<blockquote>
+  <p>Use the following series of Unicode characters to create a program that takes a series of numbers separated by one or more whitespace or comma characters and generates a sparkline-type bar graph of the values on a single line of output.</p>
+
+<p>The eight characters: &#8216;▁▂▃▄▅▆▇█&#8217; (Unicode values U+2581 through U+2588). </p>
+</blockquote>
+
+<p>We have eight Unicode characters of growing size, so the problem essentially boils down to scaling the input sequence to eight steps.</p>
+
+<h3>Unicode Sparkline in Raku</h3>
+
+<pre><code>my @bars = map {.chr}, 0x2581 .. 0x2588;
+for &lt; 2 4 6 8 10 12 10 8 6 4 2&gt;, &lt;0 1 19 20&gt;, 
+    &lt;0 999 4000 4999 7000 7999&gt; -&gt; @test {
+    my ($min, $max) = @test.minmax[0,*-1];
+    say "@test[]; min: $min; max: $max.";
+    say join '', @bars[ map { @bars * ($_ - $min) / ($max - $min) min @bars.end }, @test], "\n";
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./sparkline.raku
+2 4 6 8 10 12 10 8 6 4 2; min: 2; max: 12.
+▁▂▄▅▇█▇▅▄▂▁
+
+0 1 19 20; min: 0; max: 20.
+▁▁██
+
+0 999 4000 4999 7000 7999; min: 0; max: 7999.
+▁▁▅▅██
+</code></pre>
+
+<h3>Unicode Sparkline in Perl</h3>
+
+<pre><code>use strict;
+use warnings;
+use feature qw/say/;
+
+binmode(STDOUT, ":utf8");
+my @bars = map chr, 0x2581 .. 0x2588;
+
+for my $test ([&lt; 2 4 6 8 10 12 10 8 6 4 2&gt;], 
+    [&lt;0 1 19 20&gt;], [&lt;0 999 4000 4999 7000 7999&gt;]) {
+    my @test = @$test;
+    my ($min, $max) = (sort {$a &lt;=&gt; $b} @$test)[0, $#test];
+    my $out = "";
+    for my $item (@test) {
+        my $h = @bars * ($item - $min) / ($max - $min);
+        $h = $#bars if $h &gt; $#bars;
+        $out .= $bars[int($h)];
+    }
+    say "@test; min: $min; max: $max.";
+    say $out, "\n";
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl sparkline.pl
+2 4 6 8 10 12 10 8 6 4 2; min: 2; max: 12.
+▁▂▄▅▇█▇▅▄▂▁
+
+0 1 19 20; min: 0; max: 20.
+▁▁██
+
+0 999 4000 4999 7000 7999; min: 0; max: 7999.
+▁▁▅▅██
+</code></pre>
+
+<h3>Unicode Sparkline in Julia</h3>
+
+<pre><code>function sparkline(test)
+    bars = '\u2581':'\u2588'
+    bar_count = length(bars)
+    min, max = extrema(test)
+    out = ""
+    for item in test
+        h = 1 + bar_count * (item - min) / (max - min)
+        h &gt; bar_count &amp;&amp; (h = bar_count)
+        out = out * string(bars[Int(floor(h))])
+    end
+    return out * "\n"
+end
+
+tests = [ [2, 4, 6, 8, 10, 12, 10, 8, 6, 4, 2],
+    [0, 1, 19, 20], [0, 999, 4000, 4999, 7000, 7999] ]
+for test in tests
+    println(test, "\n")
+    println( sparkline(test))
+end
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ julia ./sparkline.jl
+[2, 4, 6, 8, 10, 12, 10, 8, 6, 4, 2]
+
+▁▂▄▅▇█▇▅▄▂▁
+
+[0, 1, 19, 20]
+
+▁▁██
+
+[0, 999, 4000, 4999, 7000, 7999]
+
+▁▁▅▅██
+</code></pre>
+
+<h3>Unicode Sparkline in Python</h3>
+
+<pre><code>def sparkline(test):
+  bars = [chr(bar) for bar in range(9601, 9608+1)]
+  minim = min(test)
+  maxim = max(test)
+  scale = maxim - minim
+  length = len(bars)
+  line = ""
+  for item in test:
+    line += bars[min(int((item-minim) / scale * length), length - 1)]
+  return line
+
+tests = [ [2, 4, 6, 8, 10, 12, 10, 8, 6, 4, 2], \
+  [0, 1, 19, 20], [0, 999, 4000, 4999, 7000, 7999] ]
+
+for test in tests:
+  print(test)
+  print(sparkline(test), "\n")
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>$ python3 sparkline.py
+[2, 4, 6, 8, 10, 12, 10, 8, 6, 4, 2]
+▁▂▄▅▇█▇▅▄▂▁
+
+[0, 1, 19, 20]
+▁▁██
+
+[0, 999, 4000, 4999, 7000, 7999]
+▁▁▅▅██
+</code></pre>
+
+<h3>Unicode Sparkline in Ruby</h3>
+
+<pre><code>bars = ('▁'..'█').to_a 
+tests = [ [1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1],
+    [0, 1, 19, 20], [0, 999, 4000, 4999, 7000, 7999] ]
+for test in tests
+    min, max = test.minmax
+    puts test.join(" ")
+    puts "min: %.2f; max: %.2f"% [min, max]
+    scale = (max - min) / (bars.size - 1)
+    line = ""
+    for item in test
+        h = bars.size * (item - min) / (max - min)
+        if h &gt;= bars.size
+            h = bars.size - 1
+        end
+        line += bars[h]
+    end
+    puts line
+    puts " "
+end
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>1 2 3 4 5 6 7 8 7 6 5 4 3 2 1
+min: 1.00; max: 8.00
+▁▂▃▄▅▆▇█▇▆▅▄▃▂▁
+
+0 1 19 20
+min: 0.00; max: 20.00
+▁▁██
+
+0 999 4000 4999 7000 7999
+min: 0.00; max: 7999.00
+▁▁▅▅██
+</code></pre>
+
+<h3>Unicode Sparkline in Scala</h3>
+
+<pre><code>object sparkLine extends App {
+
+  def sparkline(test: Array[Int]): String = {
+    val bars = ('\u2581' to '\u2588')
+    var outl = ""
+    for (item &lt;- test) {
+      var h = bars.length * (item - test.min) / (test.max - test.min)
+      if (h &gt;= bars.length) { h = bars.length - 1 }
+      outl = outl + bars(h)
+    }
+    return outl
+  }
+  val tests = Array(
+    Array(1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1),
+    Array(0, 1, 19, 20),
+    Array(0, 999, 4000, 4999, 7000, 7999)
+  )
+  for (test &lt;- tests) {
+    println(test.mkString(" "))
+    println("")
+    println(sparkline(test))
+    println("")
+  }
+}
+</code></pre>
+
+<p>Output:</p>
+
+<pre><code>1 2 3 4 5 6 7 8 7 6 5 4 3 2 1
+
+▁▂▃▄▅▆▇█▇▆▅▄▃▂▁
+
+0 1 19 20
+
+▁▁██
+
+0 999 4000 4999 7000 7999
+
+▁▁▅▅██
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on September 4, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>The Ordinal Sparkline</title>
     <link rel="alternate" href="https://dev.to/simongreennet/the-ordinal-sparkline-dn5" type="text/html"/>
