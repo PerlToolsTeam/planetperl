@@ -59,6 +59,136 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/create-a-daemon-in-perl-with-schedulecron-4pb6">Create a Daemon in Perl with Schedule::Cron</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Nicholas Hubbard
+ on Thursday 08 September 2022 01:20</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>A <a href="https://en.wikipedia.org/wiki/Daemon_(computing)">daemon</a> is a program that runs in the background for an indefinite period of time.</p>
+
+<p>An important daemon on Unix-like operating systems is the <a href="https://en.wikipedia.org/wiki/Cron">cron scheduler</a> that can be configured to perform tasks periodically. Though there are many different types of daemons, we will explore how to create a cron daemon.</p>
+
+<p>My favorite CPAN module for creating a daemon is <a href="https://metacpan.org/pod/Schedule::Cron">Schedule::Cron</a>, which allows us to create a daemon that dispatches Perl subroutines at preconfigured intervals. The reason I like <a href="https://metacpan.org/pod/Schedule::Cron">Schedule::Cron</a> is that it is easy to learn, easy to understand, and it works.</p>
+
+<p>This article is not a complete overview of everything that <a href="https://metacpan.org/pod/Schedule::Cron">Schedule::Cron</a> can do, so be sure to read the official documentation afterwards.</p>
+
+<p><a id="orga259ded"></a></p>
+
+<h1>
+  
+  
+  A Simple Daemon
+</h1>
+
+<p>Let's write a simple (and useless) daemon that logs the current time every 5 minutes, and rotates the log file every hour, keeping at most 4 old logs. The current logfile will be named <code>$HOME/times.txt</code>, and the old log files will be named <code>$HOME/times.txt.{1,2,3,4}</code>.</p>
+
+<p>First we need a function to write the time to the current log file.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">append_time</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$logfile</span> <span class="o">=</span> <span class="p">"</span><span class="si">$ENV</span><span class="s2">{HOME}/times.txt</span><span class="p">";</span>
+    <span class="nb">open</span> <span class="k">my</span> <span class="nv">$fh</span><span class="p">,</span> <span class="p">'</span><span class="s1">&gt;&gt;</span><span class="p">',</span> <span class="nv">$logfile</span> <span class="ow">or</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">cannot open file '</span><span class="si">$logfile</span><span class="s2">': $!</span><span class="p">";</span>
+    <span class="k">my</span> <span class="nv">$time</span> <span class="o">=</span> <span class="nb">localtime</span><span class="p">();</span>
+    <span class="k">print</span> <span class="nv">$fh</span> <span class="p">"</span><span class="si">$time</span><span class="se">\n</span><span class="p">";</span>
+    <span class="nb">close</span> <span class="nv">$fh</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Next we need a function to rotate the old log files.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">File::</span><span class="nv">Copy</span> <span class="p">'</span><span class="s1">move</span><span class="p">';</span>
+
+<span class="k">sub </span><span class="nf">rotate_time_log</span> <span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$logfile</span>      <span class="o">=</span> <span class="p">"</span><span class="si">$ENV</span><span class="s2">{HOME}/times.txt</span><span class="p">";</span>
+    <span class="k">my</span> <span class="nv">@old_logfiles</span> <span class="o">=</span> <span class="nb">grep</span> <span class="sr">/^$ENV{HOME}\/times\.txt\.\d+$/</span><span class="p">,</span> <span class="nb">glob</span> <span class="p">"</span><span class="si">$ENV</span><span class="s2">{HOME}/*</span><span class="p">";</span>
+    <span class="c1"># We don't need to rotate unless we have more than 4 old logfiles</span>
+    <span class="k">return</span> <span class="k">if</span> <span class="nv">@old_logfiles</span> <span class="o">&lt;=</span> <span class="mi">4</span><span class="p">;</span>
+    <span class="nb">unlink</span> <span class="p">"</span><span class="si">$logfile</span><span class="s2">.4</span><span class="p">";</span>
+    <span class="k">for</span> <span class="p">(</span><span class="k">my</span> <span class="nv">$i</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span> <span class="nv">$i</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">;</span> <span class="nv">$i</span><span class="o">--</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nv">move</span> <span class="nv">$old_logfiles</span><span class="p">[</span><span class="nv">$i</span><span class="p">],</span> <span class="nv">$logfile</span><span class="o">.</span><span class="nv">$i</span><span class="o">+</span><span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="nv">move</span> <span class="nv">$logfile</span><span class="p">,</span> <span class="p">"</span><span class="si">$logfile</span><span class="s2">.1</span><span class="p">";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Understanding how these functions work is not important for learning about <a href="https://metacpan.org/pod/Schedule::Cron">Schedule::Cron</a>.</p>
+
+<p>Now that we have our time logging functions, let's initialize our daemon object. To initialize the daemon object we will use the <a href="https://metacpan.org/pod/Schedule::Cron#%24cron-=-new-Schedule::Cron(%24dispatcher,%5Bextra-args%5D)">Schedule::Cron::new</a> function.</p>
+
+<p>The first argument to <a href="https://metacpan.org/pod/Schedule::Cron#%24cron-=-new-Schedule::Cron(%24dispatcher,%5Bextra-args%5D)">Schedule::Cron::new</a> must be a reference to a subroutine that will be used as a default if we add a cron entry without specifying the function we want to run. This is only useful if there is only one function we want our daemon to run. We won't be using this feature, so we just set it to a function that kills the program.</p>
+
+<p>There are many options we can pass to <a href="https://metacpan.org/pod/Schedule::Cron#%24cron-=-new-Schedule::Cron(%24dispatcher,%5Bextra-args%5D)">Schedule::Cron::new</a>, the only one we will use is <a href="https://metacpan.org/pod/Schedule::Cron#processprefix-=%3E-%3Cname%3E">processprefix</a> which is used to give a prefix to the name of our daemon process.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">Schedule::</span><span class="nv">Cron</span><span class="p">;</span>
+
+<span class="k">my</span> <span class="nv">$cron_daemon</span> <span class="o">=</span> <span class="nn">Schedule::</span><span class="nv">Cron</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
+    <span class="k">sub </span><span class="p">{</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">time-daemon: error: default Schedule::Cron function was called</span><span class="se">\n</span><span class="p">"</span> <span class="p">},</span>
+    <span class="s">processprefix</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">time-daemon</span><span class="p">'</span>
+<span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>The most important <a href="https://metacpan.org/pod/Schedule::Cron">Schedule::Cron</a> method is <a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Eadd_entry(%24timespec,%5Barguments%5D)">add_entry</a>, which takes a cron string and a coderef. When we eventually run the daemon it will schedule the coderef to be run at the interval specified by the cron string.</p>
+
+<p>Personally I can never remember the syntax for cron strings. I use the website <a href="https://crontab.guru/">crontab.guru</a> for getting an English translation of what my cron string means, which makes it easy to build my cron strings.</p>
+
+<p>Lets schedule our <code>&amp;append_time</code> subroutine to be run every 5 minutes, and our <code>&amp;rotate_time_log</code> subroutine to be run every hour.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">$cron_daemon</span><span class="o">-&gt;</span><span class="nv">add_entry</span><span class="p">(</span>
+    <span class="p">'</span><span class="s1">*/5 * * * *</span><span class="p">',</span>
+    <span class="o">\</span><span class="nv">&amp;append_time</span>
+<span class="p">);</span>
+
+<span class="nv">$cron_daemon</span><span class="o">-&gt;</span><span class="nv">add_entry</span><span class="p">(</span>
+    <span class="p">'</span><span class="s1">0 */1 * * *</span><span class="p">',</span>
+    <span class="o">\</span><span class="nv">&amp;rotate_time_log</span>
+<span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>We are now ready to start up the daemon using the <a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Erun(%5Boptions%5D)">Schedule::Cron::run</a> method. This method takes many options but the only one we will use is <a href="https://metacpan.org/pod/Schedule::Cron#detach">detach</a>, which will cause daemon process to detach itself from the current process.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">my</span> <span class="nv">$pid</span> <span class="o">=</span> <span class="nv">$cron_daemon</span><span class="o">-&gt;</span><span class="nv">run</span><span class="p">(</span><span class="s">detach</span> <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">);</span>
+
+<span class="k">print</span> <span class="p">"</span><span class="s2">started the time-daemon as pid </span><span class="si">$pid</span><span class="se">\n</span><span class="p">";</span>
+</code></pre>
+
+</div>
+
+
+
+<p>That's all there is to it! The basic recipe to follow is: initialize a <a href="https://metacpan.org/pod/Schedule::Cron">Schedule::Cron</a> object, schedule subroutines to be run with <a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Eadd_entry(%24timespec,%5Barguments%5D)">add_entry</a>, then start the daemon with the <a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Erun(%5Boptions%5D)">run</a> method.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-181-sentence-order-and-hot-day.html">Perl Weekly Challenge 181:  Sentence Order and Hot day</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -278,7 +408,7 @@ for my $record (sort {$a-&gt;[0] cmp $b-&gt;[0]} @daily_temps) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_july_2022">Maintaining Perl (Tony Cook) July 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -473,7 +603,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/09/the-progress-of-the-new-class-feature-of-perl.html">The progress of the new class feature of Perl</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -581,7 +711,7 @@ Closing this ticket. We won't do this for v1, but perhaps it will be revisited l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-070-of-ebirah-213n">Release 0.7.0 of Ebirah</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -641,7 +771,7 @@ Closing this ticket. We won't do this for v1, but perhaps it will be revisited l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -653,7 +783,7 @@ Closing this ticket. We won't do this for v1, but perhaps it will be revisited l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-030-of-my-perl-distzilla-github-action-25ig">Release 0.3.0 of my Perl Dist::Zilla GitHub Action</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -706,7 +836,7 @@ Closing this ticket. We won't do this for v1, but perhaps it will be revisited l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_sept_2022">Call for Grant Proposals: September 2022 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -744,7 +874,7 @@ Closing this ticket. We won't do this for v1, but perhaps it will be revisited l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/580.html">#580 - Perl Mentor</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -765,7 +895,7 @@ Closing this ticket. We won't do this for v1, but perhaps it will be revisited l
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/ansi-command-line-colors-with-perl">ANSI command line colors with Perl</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -784,7 +914,7 @@ How can you create such colorful output with Perl and how could you do it manual
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-174/">Colin Crain › Perl Weekly Review #174</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -798,7 +928,7 @@ Welcome to the Perl review pages for Week 174 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-180/">RECAP - The Weekly Challenge - 180</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -811,7 +941,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-181/">The Weekly Challenge - 181</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -825,7 +955,7 @@ Today, we are giving away Token #4 to Kueppo Wesley for the book, Learning Perl 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/08/perl-weekly-challenge-180-first-unique-character-and-trim-list.html">Perl Weekly Challenge 180:  First Unique Character and Trim List</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1642,7 +1772,7 @@ i: 4, nums: 9 0 6 2 3 8 5 =&gt; 9 6 8 5
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/04#pwc180">First Uniquely Trimmed Index</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1779,7 +1909,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-180-4mi5">Weekly Challenge 180</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1881,7 +2011,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/cdviii-23-great-cpan-modules-released.html">(cdviii) 23 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1893,7 +2023,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dxxi-metacpan-weekly-report-datadumper.html">(dxxi) metacpan weekly report - Data::Dumper</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1905,7 +2035,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dxlix-stackoverflow-perl-report.html">(dxlix) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1917,7 +2047,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/saif/2022/09/death-a-terminal-experience.html">Death: A Terminal Experience</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1952,7 +2082,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/aristotle/2022/09/reinterpolate.html">On interpolating stuff into pattern matches</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -2014,7 +2144,7 @@ cmpthese 0, {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/segregate-perl-projects-with-appplx-7oj">Segregate Perl Projects with App::plx</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2224,7 +2354,7 @@ checker, otherwise use the `perl' checker."</span>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-sessions">Dancer2: Sessions</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2239,7 +2369,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-09-02-distribution-auf-distzilla-umstellen">Distribution auf Dist::Zilla umstellen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2248,58 +2378,6 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
  on Friday 02 September 2022 10:00</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">In diesem Artikel zeige ich dir, wie du eine bestehende Distribution mit möglichst wenig Aufwand auf Dist::Zilla umstellen kannst.       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_24">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/jmeneghin/calculating-tetranucleotide-k-mer-frequencies-969">Calculating tetranucleotide (k-mer) frequencies</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Jennifer Meneghin
- on Thursday 01 September 2022 19:01</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Last week I posted about a Perl script I wrote that calculates %GC content for genome sequences. This week, I’m generalizing this idea to k-mers. In bioinformatics, <a href="https://en.wikipedia.org/wiki/K-mer">k-mers</a> are substrings of length k in biological sequences. </p>
-
-<p>In 2016 I wrote a Perl script for the Reysenbach lab that calculates k-mer frequencies, for all k-mers in a given sequence. It was made public soon after, and you can find get_kmer_frequencies.pl on <a href="https://github.com/jmeneghin/perl-for-reysenbach-lab">my Github page</a>.</p>
-
-<p>Typically, in the lab, we were interested in tetranucleotide frequencies. Tetranucleotides are k-mers of length four. Tetranucleotide frequencies have been used in the analysis of microbial genomes for many years [1], and they are often used in the process of binning contigs in metagenomics [2].</p>
-
-<p>Originally, I wrote a script called get_tetranucleotide_frequencies.pl that was used in this PhD dissertation:</p>
-
-<p><a href="https://researchonline.jcu.edu.au/52906/">Buerger, P. 2017. Viruses: contributors to and mitigators of black band disease in corals. James Cook University, Queensland, Australia.</a></p>
-
-<p>The newer get_kmer_frequencies.pl script was used to calculate tetranucleotide frequencies in this Master’s thesis:</p>
-
-<p><a href="https://pdxscholar.library.pdx.edu/open_access_etds/4939/">St. John, E. 2019. Symbiosis in Archaea: Functional and Phylogenetic Diversity of Marine and Terrestrial Nanoarchaeota and their Hosts.</a></p>
-
-<p>The new script allows you to calculate k-mers of any length. This script takes three parameters; a fasta file, k and a file name prefix:</p>
-
-<p><code>get_kmer_frequencies.pl infile.fasta k fileprefix</code></p>
-
-<p>It returns a tab delimited file called fileprefix_kmer.txt, where fileprefix is the prefix you specified in the parameters. The columns are fasta records, and rows are k-mer counts. Notice all k-mer counts are given here — so if your data contains any other symbols besides A, C, G, and T, those will be included in the k-mer combinations. Extra rows are an indication of dirty data, and I would remove these rows for analysis purposes.</p>
-
-<p>The newer get_kmer_frequencies.pl script also takes into consideration that reverse complimented k-mers should be summed together. </p>
-
-<p>"DNA occurs as a double strand where each A is paired with a T and vice versa, and each C is paired with a G and vice versa. The reverse complement of a DNA sequence is formed by reversing the letters, interchanging A and T and interchanging C and G. Thus the reverse complement of ACCTGAG is CTCAGGT.” <a href="https://www.bx.psu.edu/old/courses/bx-fall08/definitions.html">From A Computer Scientist’s Dictionary for Genomics</a></p>
-
-<p>The fasta sequences we look at on the computer only contain the nucleotides of a single strand of DNA, while actual DNA is double stranded. So, if our fasta sequence DNA has the k-mer AAAA 20 times, for example, then the other strand in actual reality should have TTTT 20 times. But, that second strand also contains AAAA, say 12 times for example, and then the first strand should also contain TTTT 12 times. So, in double stranded reality, AAAA/TTTT shows up 32 times on the double stranded string (for this example), sometimes with AAAA on the first strand, sometimes on the second strand. To take this into consideration, we sum the reverse complements.</p>
-
-<p>For tetranucleotides, this means instead of 256 possible combinations (4 to the 4th power — given there are 4 nucleotides and a k-mer sequence length of 4), there are actually only 136. Why not 128? Because 16 tetranucleotide sequences are reverse complements of themselves (e.g., AATT and CATG). So, we have (256-16)/2 = 120 tetranucleotides with reverse complements, and then we add back in the tetranucleotides without reverse complements to get 120+16 = 136 total tetranucleotides. </p>
-
-<p>These calculations are similar for any length k-mer. We only find k-mers with self-reverse-complements with even length k-mers. So, for length 3, we have 4 to the 3rd power divided by 2, or 64/2 = 32 possible 3-mers. For length 1, we have 4 to the 1st power divided by 2, or 2 1-mers, A/T and C/G. Bringing this full circle, if we express our 1-mers as a percentage, we only need to look at A/T or C/G. If we choose C/G, that’s what’s known as %GC content.</p>
-
-<p>In 2020 I rewrote several of my Perl scripts in Python, including get_kmer_frequencies.py, which can be run as follows. </p>
-
-<p><code>get_kmer_frequencies.py -i infile.fasta -k k -p fileprefix</code></p>
-
-<p>This script is available for download on <a href="https://github.com/jmeneghin/python-bioinformatics">my GitHub page</a>.  To test for speed, I ran these two scripts five times each with two different sequence examples; a full genome file containing one long fasta record, and a Metagenome Assembled Genome (MAG) file containing 1708 shorter fasta records. Python was 2.9 times faster than Perl for the full genome, and 2.1 times faster than Perl for the MAG. I’ve recently become aware of the optimizing compiler <a href="http://rperl.org">RPerl</a>, which allows Perl to be compiled into “ultra-fast and fully-compatible” C++, so I’m excited to try this out and see how the results compare to both Perl and Python. </p>
-
-<p>[1] Noble PA, Citek RW, Ogunseitan OA. Tetranucleotide frequencies in microbial genomes. Electrophoresis. 1998 Apr;19(4):528-35. doi: 10.1002/elps.1150190412. PMID: 9588798.</p>
-
-<p>[2] Kang DD, Li F, Kirton E, Thomas A, Egan R, An H, Wang Z. MetaBAT 2: an adaptive binning algorithm for robust and efficient genome reconstruction from metagenome assemblies. PeerJ. 2019 Jul 26;7:e7359. doi: 10.7717/peerj.7359. PMID: 31388474; PMCID: PMC6662567.</p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3252,7 +3330,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 08 September 2022 01:00 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 08 September 2022 05:07 UTC</address>
             </div>
           </div>
         </div><!-- container -->

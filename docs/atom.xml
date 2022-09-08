@@ -7,9 +7,139 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-09-08T01:00:35Z</updated>
+  <updated>2022-09-08T05:07:26Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Create a Daemon in Perl with Schedule::Cron</title>
+    <link rel="alternate" href="https://dev.to/nicholasbhubbard/create-a-daemon-in-perl-with-schedulecron-4pb6" type="text/html"/>
+    <content type="html">&lt;p&gt;A &lt;a href="https://en.wikipedia.org/wiki/Daemon_(computing)"&gt;daemon&lt;/a&gt; is a program that runs in the background for an indefinite period of time.&lt;/p&gt;
+
+&lt;p&gt;An important daemon on Unix-like operating systems is the &lt;a href="https://en.wikipedia.org/wiki/Cron"&gt;cron scheduler&lt;/a&gt; that can be configured to perform tasks periodically. Though there are many different types of daemons, we will explore how to create a cron daemon.&lt;/p&gt;
+
+&lt;p&gt;My favorite CPAN module for creating a daemon is &lt;a href="https://metacpan.org/pod/Schedule::Cron"&gt;Schedule::Cron&lt;/a&gt;, which allows us to create a daemon that dispatches Perl subroutines at preconfigured intervals. The reason I like &lt;a href="https://metacpan.org/pod/Schedule::Cron"&gt;Schedule::Cron&lt;/a&gt; is that it is easy to learn, easy to understand, and it works.&lt;/p&gt;
+
+&lt;p&gt;This article is not a complete overview of everything that &lt;a href="https://metacpan.org/pod/Schedule::Cron"&gt;Schedule::Cron&lt;/a&gt; can do, so be sure to read the official documentation afterwards.&lt;/p&gt;
+
+&lt;p&gt;&lt;a id="orga259ded"&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;h1&gt;
+  
+  
+  A Simple Daemon
+&lt;/h1&gt;
+
+&lt;p&gt;Let's write a simple (and useless) daemon that logs the current time every 5 minutes, and rotates the log file every hour, keeping at most 4 old logs. The current logfile will be named &lt;code&gt;$HOME/times.txt&lt;/code&gt;, and the old log files will be named &lt;code&gt;$HOME/times.txt.{1,2,3,4}&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;First we need a function to write the time to the current log file.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;append_time&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$logfile&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$ENV&lt;/span&gt;&lt;span class="s2"&gt;{HOME}/times.txt&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="nb"&gt;open&lt;/span&gt; &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$fh&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;&amp;gt;&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="nv"&gt;$logfile&lt;/span&gt; &lt;span class="ow"&gt;or&lt;/span&gt; &lt;span class="nb"&gt;die&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;cannot open file '&lt;/span&gt;&lt;span class="si"&gt;$logfile&lt;/span&gt;&lt;span class="s2"&gt;': $!&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$time&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;localtime&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+    &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="nv"&gt;$fh&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$time&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="nb"&gt;close&lt;/span&gt; &lt;span class="nv"&gt;$fh&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Next we need a function to rotate the old log files.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;File::&lt;/span&gt;&lt;span class="nv"&gt;Copy&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;move&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;rotate_time_log&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$logfile&lt;/span&gt;      &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$ENV&lt;/span&gt;&lt;span class="s2"&gt;{HOME}/times.txt&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;@old_logfiles&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;grep&lt;/span&gt; &lt;span class="sr"&gt;/^$ENV{HOME}\/times\.txt\.\d+$/&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;glob&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$ENV&lt;/span&gt;&lt;span class="s2"&gt;{HOME}/*&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="c1"&gt;# We don't need to rotate unless we have more than 4 old logfiles&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nv"&gt;@old_logfiles&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;=&lt;/span&gt; &lt;span class="mi"&gt;4&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="nb"&gt;unlink&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$logfile&lt;/span&gt;&lt;span class="s2"&gt;.4&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+    &lt;span class="k"&gt;for&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$i&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="mi"&gt;3&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;$i&lt;/span&gt; &lt;span class="o"&gt;&amp;gt;=&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nv"&gt;$i&lt;/span&gt;&lt;span class="o"&gt;--&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nv"&gt;move&lt;/span&gt; &lt;span class="nv"&gt;$old_logfiles&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nv"&gt;$i&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt; &lt;span class="nv"&gt;$logfile&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="nv"&gt;$i&lt;/span&gt;&lt;span class="o"&gt;+&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+    &lt;span class="nv"&gt;move&lt;/span&gt; &lt;span class="nv"&gt;$logfile&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="si"&gt;$logfile&lt;/span&gt;&lt;span class="s2"&gt;.1&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Understanding how these functions work is not important for learning about &lt;a href="https://metacpan.org/pod/Schedule::Cron"&gt;Schedule::Cron&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Now that we have our time logging functions, let's initialize our daemon object. To initialize the daemon object we will use the &lt;a href="https://metacpan.org/pod/Schedule::Cron#%24cron-=-new-Schedule::Cron(%24dispatcher,%5Bextra-args%5D)"&gt;Schedule::Cron::new&lt;/a&gt; function.&lt;/p&gt;
+
+&lt;p&gt;The first argument to &lt;a href="https://metacpan.org/pod/Schedule::Cron#%24cron-=-new-Schedule::Cron(%24dispatcher,%5Bextra-args%5D)"&gt;Schedule::Cron::new&lt;/a&gt; must be a reference to a subroutine that will be used as a default if we add a cron entry without specifying the function we want to run. This is only useful if there is only one function we want our daemon to run. We won't be using this feature, so we just set it to a function that kills the program.&lt;/p&gt;
+
+&lt;p&gt;There are many options we can pass to &lt;a href="https://metacpan.org/pod/Schedule::Cron#%24cron-=-new-Schedule::Cron(%24dispatcher,%5Bextra-args%5D)"&gt;Schedule::Cron::new&lt;/a&gt;, the only one we will use is &lt;a href="https://metacpan.org/pod/Schedule::Cron#processprefix-=%3E-%3Cname%3E"&gt;processprefix&lt;/a&gt; which is used to give a prefix to the name of our daemon process.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Schedule::&lt;/span&gt;&lt;span class="nv"&gt;Cron&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$cron_daemon&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nn"&gt;Schedule::&lt;/span&gt;&lt;span class="nv"&gt;Cron&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+    &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="nb"&gt;die&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;time-daemon: error: default Schedule::Cron function was called&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt;
+    &lt;span class="s"&gt;processprefix&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;time-daemon&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The most important &lt;a href="https://metacpan.org/pod/Schedule::Cron"&gt;Schedule::Cron&lt;/a&gt; method is &lt;a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Eadd_entry(%24timespec,%5Barguments%5D)"&gt;add_entry&lt;/a&gt;, which takes a cron string and a coderef. When we eventually run the daemon it will schedule the coderef to be run at the interval specified by the cron string.&lt;/p&gt;
+
+&lt;p&gt;Personally I can never remember the syntax for cron strings. I use the website &lt;a href="https://crontab.guru/"&gt;crontab.guru&lt;/a&gt; for getting an English translation of what my cron string means, which makes it easy to build my cron strings.&lt;/p&gt;
+
+&lt;p&gt;Lets schedule our &lt;code&gt;&amp;amp;append_time&lt;/code&gt; subroutine to be run every 5 minutes, and our &lt;code&gt;&amp;amp;rotate_time_log&lt;/code&gt; subroutine to be run every hour.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;$cron_daemon&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;add_entry&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+    &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;*/5 * * * *&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+    &lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;&amp;amp;append_time&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="nv"&gt;$cron_daemon&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;add_entry&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+    &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;0 */1 * * *&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+    &lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;&amp;amp;rotate_time_log&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We are now ready to start up the daemon using the &lt;a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Erun(%5Boptions%5D)"&gt;Schedule::Cron::run&lt;/a&gt; method. This method takes many options but the only one we will use is &lt;a href="https://metacpan.org/pod/Schedule::Cron#detach"&gt;detach&lt;/a&gt;, which will cause daemon process to detach itself from the current process.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$pid&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$cron_daemon&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;run&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;detach&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;started the time-daemon as pid &lt;/span&gt;&lt;span class="si"&gt;$pid&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;That's all there is to it! The basic recipe to follow is: initialize a &lt;a href="https://metacpan.org/pod/Schedule::Cron"&gt;Schedule::Cron&lt;/a&gt; object, schedule subroutines to be run with &lt;a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Eadd_entry(%24timespec,%5Barguments%5D)"&gt;add_entry&lt;/a&gt;, then start the daemon with the &lt;a href="https://metacpan.org/pod/Schedule::Cron#%24cron-%3Erun(%5Boptions%5D)"&gt;run&lt;/a&gt; method.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Nicholas Hubbard</name>
+    </author>
+    <id>https://dev.to/nicholasbhubbard/create-a-daemon-in-perl-with-schedulecron-4pb6</id>
+    <published>2022-09-08T01:20:36Z</published>
+    <updated>2022-09-08T01:20:36Z</updated>
+    <category term="perl"/>
+  </entry>
   <entry>
     <title>Perl Weekly Challenge 181:  Sentence Order and Hot day</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-181-sentence-order-and-hot-day.html"/>
@@ -2240,63 +2370,6 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
     <id>https://blog.perl-academy.de/2022-09-02-distribution-auf-distzilla-umstellen</id>
     <published>2022-09-02T10:00:00Z</published>
     <updated>2022-09-02T10:00:00Z</updated>
-  </entry>
-  <entry>
-    <title>Calculating tetranucleotide (k-mer) frequencies</title>
-    <link rel="alternate" href="https://dev.to/jmeneghin/calculating-tetranucleotide-k-mer-frequencies-969" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>Last week I posted about a Perl script I wrote that calculates %GC content for genome sequences. This week, I’m generalizing this idea to k-mers. In bioinformatics, <a href="https://en.wikipedia.org/wiki/K-mer">k-mers</a> are substrings of length k in biological sequences. </p>
-
-<p>In 2016 I wrote a Perl script for the Reysenbach lab that calculates k-mer frequencies, for all k-mers in a given sequence. It was made public soon after, and you can find get_kmer_frequencies.pl on <a href="https://github.com/jmeneghin/perl-for-reysenbach-lab">my Github page</a>.</p>
-
-<p>Typically, in the lab, we were interested in tetranucleotide frequencies. Tetranucleotides are k-mers of length four. Tetranucleotide frequencies have been used in the analysis of microbial genomes for many years [1], and they are often used in the process of binning contigs in metagenomics [2].</p>
-
-<p>Originally, I wrote a script called get_tetranucleotide_frequencies.pl that was used in this PhD dissertation:</p>
-
-<p><a href="https://researchonline.jcu.edu.au/52906/">Buerger, P. 2017. Viruses: contributors to and mitigators of black band disease in corals. James Cook University, Queensland, Australia.</a></p>
-
-<p>The newer get_kmer_frequencies.pl script was used to calculate tetranucleotide frequencies in this Master’s thesis:</p>
-
-<p><a href="https://pdxscholar.library.pdx.edu/open_access_etds/4939/">St. John, E. 2019. Symbiosis in Archaea: Functional and Phylogenetic Diversity of Marine and Terrestrial Nanoarchaeota and their Hosts.</a></p>
-
-<p>The new script allows you to calculate k-mers of any length. This script takes three parameters; a fasta file, k and a file name prefix:</p>
-
-<p><code>get_kmer_frequencies.pl infile.fasta k fileprefix</code></p>
-
-<p>It returns a tab delimited file called fileprefix_kmer.txt, where fileprefix is the prefix you specified in the parameters. The columns are fasta records, and rows are k-mer counts. Notice all k-mer counts are given here — so if your data contains any other symbols besides A, C, G, and T, those will be included in the k-mer combinations. Extra rows are an indication of dirty data, and I would remove these rows for analysis purposes.</p>
-
-<p>The newer get_kmer_frequencies.pl script also takes into consideration that reverse complimented k-mers should be summed together. </p>
-
-<p>"DNA occurs as a double strand where each A is paired with a T and vice versa, and each C is paired with a G and vice versa. The reverse complement of a DNA sequence is formed by reversing the letters, interchanging A and T and interchanging C and G. Thus the reverse complement of ACCTGAG is CTCAGGT.” <a href="https://www.bx.psu.edu/old/courses/bx-fall08/definitions.html">From A Computer Scientist’s Dictionary for Genomics</a></p>
-
-<p>The fasta sequences we look at on the computer only contain the nucleotides of a single strand of DNA, while actual DNA is double stranded. So, if our fasta sequence DNA has the k-mer AAAA 20 times, for example, then the other strand in actual reality should have TTTT 20 times. But, that second strand also contains AAAA, say 12 times for example, and then the first strand should also contain TTTT 12 times. So, in double stranded reality, AAAA/TTTT shows up 32 times on the double stranded string (for this example), sometimes with AAAA on the first strand, sometimes on the second strand. To take this into consideration, we sum the reverse complements.</p>
-
-<p>For tetranucleotides, this means instead of 256 possible combinations (4 to the 4th power — given there are 4 nucleotides and a k-mer sequence length of 4), there are actually only 136. Why not 128? Because 16 tetranucleotide sequences are reverse complements of themselves (e.g., AATT and CATG). So, we have (256-16)/2 = 120 tetranucleotides with reverse complements, and then we add back in the tetranucleotides without reverse complements to get 120+16 = 136 total tetranucleotides. </p>
-
-<p>These calculations are similar for any length k-mer. We only find k-mers with self-reverse-complements with even length k-mers. So, for length 3, we have 4 to the 3rd power divided by 2, or 64/2 = 32 possible 3-mers. For length 1, we have 4 to the 1st power divided by 2, or 2 1-mers, A/T and C/G. Bringing this full circle, if we express our 1-mers as a percentage, we only need to look at A/T or C/G. If we choose C/G, that’s what’s known as %GC content.</p>
-
-<p>In 2020 I rewrote several of my Perl scripts in Python, including get_kmer_frequencies.py, which can be run as follows. </p>
-
-<p><code>get_kmer_frequencies.py -i infile.fasta -k k -p fileprefix</code></p>
-
-<p>This script is available for download on <a href="https://github.com/jmeneghin/python-bioinformatics">my GitHub page</a>.  To test for speed, I ran these two scripts five times each with two different sequence examples; a full genome file containing one long fasta record, and a Metagenome Assembled Genome (MAG) file containing 1708 shorter fasta records. Python was 2.9 times faster than Perl for the full genome, and 2.1 times faster than Perl for the MAG. I’ve recently become aware of the optimizing compiler <a href="http://rperl.org">RPerl</a>, which allows Perl to be compiled into “ultra-fast and fully-compatible” C++, so I’m excited to try this out and see how the results compare to both Perl and Python. </p>
-
-<p>[1] Noble PA, Citek RW, Ogunseitan OA. Tetranucleotide frequencies in microbial genomes. Electrophoresis. 1998 Apr;19(4):528-35. doi: 10.1002/elps.1150190412. PMID: 9588798.</p>
-
-<p>[2] Kang DD, Li F, Kirton E, Thomas A, Egan R, An H, Wang Z. MetaBAT 2: an adaptive binning algorithm for robust and efficient genome reconstruction from metagenome assemblies. PeerJ. 2019 Jul 26;7:e7359. doi: 10.7717/peerj.7359. PMID: 31388474; PMCID: PMC6662567.</p>
-
-</div>
-    </content>
-    <author>
-      <name>Jennifer Meneghin</name>
-    </author>
-    <id>https://dev.to/jmeneghin/calculating-tetranucleotide-k-mer-frequencies-969</id>
-    <published>2022-09-01T19:01:02Z</published>
-    <updated>2022-09-01T19:01:02Z</updated>
-    <category term="perl"/>
-    <category term="python"/>
-    <category term="bioinformatics"/>
-    <category term="rperl"/>
   </entry>
   <entry>
     <title>List of new CPAN distributions – Aug 2022</title>
