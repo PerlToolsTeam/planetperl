@@ -7,9 +7,179 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-09-11T08:45:40Z</updated>
+  <updated>2022-09-11T12:54:17Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>These Sentences Are Getting Hot</title>
+    <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/11#pwc181" type="text/html"/>
+    <content type="html">
+&lt;p&gt;&lt;em&gt;The examples used here are from the weekly challenge problem statement and demonstrate 
+the working solution.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2&gt;Part 1&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;You are given a paragraph. Write a script to order each sentence alphanumerically and 
+print the whole paragraph.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use v5.36;
+use strict;
+use warnings;
+
+sub sort_paragraph{
+    my($paragraph) = @_;
+    my @sentences = split(/\./, $paragraph); 
+    for(my $i = 0; $i &lt; @sentences; $i++){
+        $sentences[$i] = join(" ", sort {uc($a) cmp uc($b)} split(/\s/, $sentences[$i]));
+    }
+    return join(".", @sentences);
+}
+
+MAIN:{
+    my $paragraph = do{
+        local $/;
+        &amp;lt;DATA&amp;gt;;
+    };
+    print sort_paragraph($paragraph);
+}
+
+__DATA__
+All he could think about was how it would all end. There was
+still a bit of uncertainty in the equation, but the basics
+were there for anyone to see. No matter how much he tried to
+see the positive, it wasn't anywhere to be seen. The end was
+coming and it wasn't going to be pretty.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-1.pl
+about All all could end he how it think was would. a anyone basics bit but equation, for in of see still the the There there to uncertainty was were. anywhere be he how it matter much No positive, see seen the to to tried wasn't. and be coming end going it pretty The to was wasn't&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;This code is fairly compact but not at all obfuscated, I would argue. First we take in the
+paragraph all at once. Then we split into sentences and begin the sorting.&lt;/p&gt;
+
+&lt;p&gt;The &lt;code&gt;sort&lt;/code&gt; is a little complicated looking at first because we want the words to be sorted 
+irrespective of letter case. One way to handle that is to compare only all uppercase 
+versions of the words. Lowercase would work too, of course!&lt;/p&gt;
+
+&lt;h2&gt;Part 2&lt;/h2&gt;
+
+&lt;p&gt;&lt;em&gt;You are given file with daily temperature record in random order. Write a script to find 
+out days hotter than previous day.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h3&gt;Solution&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="perl"&gt;
+use v5.36;
+use strict;
+use warnings;
+
+use DBI;
+use Text::CSV;
+use Time::Piece;
+
+sub hotter_than_previous{
+    my($data) = @_;
+    my @hotter;
+    my $csv_parser = Text::CSV-&gt;new();
+    my $dbh = DBI-&gt;connect(q/dbi:CSV:/, undef, undef, undef);
+    $dbh-&gt;do(q/CREATE TABLE hotter_than_previous_a(day INTEGER, temperature INTEGER)/);
+    $dbh-&gt;do(q/CREATE TABLE hotter_than_previous_b(day INTEGER, temperature INTEGER)/);
+    for my $line (@{$data}){
+        $line =~ tr/ //d;
+        $csv_parser-&gt;parse($line);
+        my($day, $temperature) = $csv_parser-&gt;fields();
+        $day = Time::Piece-&gt;strptime($day, q/%Y-%m-%d/);
+        $dbh-&gt;do(q/INSERT INTO hotter_than_previous_a VALUES(/ . $day-&gt;epoch . qq/, $temperature)/);
+        $dbh-&gt;do(q/INSERT INTO hotter_than_previous_b VALUES(/ . $day-&gt;epoch . qq/, $temperature)/);
+    }
+    my $statement = $dbh-&gt;prepare(q/SELECT day FROM hotter_than_previous_a A INNER JOIN  
+                                    hotter_than_previous_b B WHERE (A.day - B.day = 86400)                            
+                                    AND A.temperature &gt; B.temperature/);
+    $statement-&gt;execute();
+    while(my $row = $statement-&gt;fetchrow_hashref()){
+        push @hotter, $row-&gt;{day};
+    }
+    @hotter = map {Time::Piece-&gt;strptime($_, q/%s/)-&gt;strftime(q/%Y-%m-%d/)} sort @hotter;
+    unlink(q/hotter_than_previous_a/);
+    unlink(q/hotter_than_previous_b/);
+    return @hotter;
+}
+
+MAIN:{
+    my $data = do{
+        local $/;
+        &amp;lt;DATA&amp;gt;; 
+    };
+    my @hotter = hotter_than_previous([split(/\n/, $data)]);
+    say join(qq/\n/, @hotter);
+}
+
+__DATA__
+2022-08-01, 20
+2022-08-09, 10
+2022-08-03, 19
+2022-08-06, 24
+2022-08-05, 22
+2022-08-10, 28
+2022-08-07, 20
+2022-08-04, 18
+2022-08-08, 21
+2022-08-02, 25
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Sample Run&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class="shell"&gt;
+$ perl perl/ch-2.pl
+2022-08-02
+2022-08-05
+2022-08-06
+2022-08-08
+2022-08-10
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3&gt;Notes&lt;/h3&gt;
+
+&lt;p&gt;To be clear up front, this is an intentionally over engineered solution! I have been 
+intrigued by the idea of DBD::CSV since I first heard of it but never had a reason to use 
+it. So I invented a reason! &lt;/p&gt;
+
+&lt;p&gt;DBD::CSV provides a SQL interface to CSV data. That is, it allows you to write SQL queries
+against CSV data as if they were a more ordinary relational database. Very cool! Instead
+of solving this problem in Perl I am actually implementing the solution in SQL. Perl is
+providing the implementation of the SQL Engine and the quasi-database for the CSV data.&lt;/p&gt;
+
+&lt;p&gt;DBD::CSV is quite powerful but is not completely on par feature wise with what you'd get
+if you were using an ordinary database. Not all SQL data types are supported, for example.
+Work arounds can be constructed to do everything that we want and these sorts of trade 
+offs are to be expected. To store the dates we use &lt;code&gt;Time::Piece&lt;/code&gt; to compute UNIX epoch
+times which are stored as INTEGERs. Also, DBD::CSV expects data from files and so we can't
+use the data directly in memory, it has to be written to a file first. Actually, we find 
+out that we need to create two tables! Each hold exact copies of the same data.&lt;/p&gt;
+
+&lt;p&gt;The creation of two tables is due to a quirk of the underlying SQL Engine SQL::Statement.
+SQL::Statement will throw an error when doing a join on the same table. The way one would
+do this ordinarily is something like 
+&lt;code&gt;SELECT day FROM hotter_than_previous A, hotter_than_previous B ...&lt;/code&gt;. That join allows SQL 
+to iterate over all pairs of dates but this throws an error when done with SQL::Statement. 
+To work around this we instead we create two tables which works.&lt;/p&gt;
+
+&lt;h2&gt;References&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-181/"&gt;Challenge 181&lt;/a&gt;&lt;/p&gt;</content>
+    <id>http://www.rabbitfarm.com/cgi-bin/blosxom/perl/pwc181</id>
+    <published>2022-09-11T08:45:00-04:00</published>
+    <updated>2022-09-11T08:45:00-04:00</updated>
+    <category term="/perl"/>
+  </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-4852161199813789458</id>
     <published>2022-09-10T23:01:00.000+02:00</published>
