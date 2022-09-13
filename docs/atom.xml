@@ -7,9 +7,210 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-09-13T12:56:44Z</updated>
+  <updated>2022-09-13T16:53:32Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 182:  Max Index and Common Path</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-182-max-index-and-common-path.html"/>
+    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10893</id>
+    <published>2022-09-13T21:41:03Z</published>
+    <updated>2022-09-13T21:42:21Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 182 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-182/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on Sept. 18, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Max Index</h2>
+
+<p><em>You are given a list of integers.</em></p>
+
+<p><em>Write a script to find the index of the first biggest number in the list.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input: @n = (5, 2, 9, 1, 7, 6)
+Output: 2 (as 3rd element in the list is the biggest number)
+
+Input: @n = (4, 2, 3, 1, 5, 0)
+Output: 4 (as 5th element in the list is the biggest number)
+</code></pre>
+
+<h3>Max Index in Raku</h3>
+
+<p>The initial idea here was to to store the input data into a hash and to use the <a href="https://docs.raku.org/routine/max">max</a> routine to find the maximum value. The <code>max</code> documentation says:</p>
+
+<blockquote>
+  <p>Coerces the invocant to Iterable and returns the numerically largest element; in the case of Hashes, the Pair with the highest value.</p>
+</blockquote>
+
+<p>But that did not work properly in my tests: <code>max</code> consistently appeared to return the pair with the highest key, not the highest value. I tried to use the <a href="https://docs.raku.org/routine/maxpairs">maxpairs</a> routine, which, according to the documentation, </p>
+
+<blockquote>
+  <p>returns a Seq with all of the Pairs with maximum value. </p>
+</blockquote>
+
+<p>The <code>maxpairs</code> method works as expected. This leads to a very short program:</p>
+
+<pre><code>for (5, 2, 9, 1, 7, 6), (4, 2, 3, 1, 5, 0) -&gt; @test {
+    my %nums = @test.kv;
+    say "@test[] : ", %nums.maxpairs;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./max-index.raku
+5 2 9 1 7 6 : (2 =&gt; 9)
+4 2 3 1 5 0 : (4 =&gt; 5)
+</code></pre>
+
+<h3>Max Index in Perl</h3>
+
+<p>In Perl, we use a standard <code>for</code> loop to traverse the input list and find the index of the largest value:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature qw/say/;
+
+for my $test ([5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]) {
+    my @nums = @{$test};
+    my ($max_i, $max_n) = (0, 0);
+    for my $i (0..$#nums) {
+        if ($nums[$i] &gt; $max_n) {
+            $max_n = $nums[$i];
+            $max_i = $i;
+        }
+    }
+    say "@nums : $max_i =&gt; $max_n";
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./max-index.pl
+5 2 9 1 7 6 : 2 =&gt; 9
+4 2 3 1 5 0 : 4 =&gt; 5
+</code></pre>
+
+<h2>Task 2: Common Path</h2>
+
+<p><em>Given a list of absolute Linux file paths, determine the deepest path to the directory that contains all of them.</em></p>
+
+<p><em>Example:</em></p>
+
+<pre><code>Input:
+    /a/b/c/1/x.pl
+    /a/b/c/d/e/2/x.pl
+    /a/b/c/d/3/x.pl
+    /a/b/c/4/x.pl
+    /a/b/c/d/5/x.pl
+
+Ouput:
+    /a/b/c
+</code></pre>
+
+<h3>Common Path in Raku</h3>
+
+<p>This program converts the input into an array of arrays and then compares each item of the first line with the corresponding item of the other lines. The program stops as soon as a difference is found.</p>
+
+<pre><code>my @input = qw &lt;
+    /a/b/c/1/x.pl
+    /a/b/c/d/e/2/x.pl
+    /a/b/c/d/3/x.pl
+    /a/b/c/4/x.pl
+    /a/b/c/d/5/x.pl
+    &gt;;
+
+my @paths = gather {
+    for @input &lt;-&gt; $line {
+        $line ~~ s/^'/'//;
+        my @subpaths = split /'/'/, $line;
+        take @subpaths[0..*-2];
+    }
+}
+my $end = @paths.end;
+my $k = 0;
+OUTLOOP: for 0..(@paths[0].end) -&gt; $i {
+    for 0..$end -&gt; $j {
+        if @paths[$j][$i]:!exists or @paths[$j][$i] ne @paths[0][$i] {
+            $k = $i - 1;
+            last OUTLOOP;
+        }
+    }
+}
+say '/', join '/', @paths[0][0..$k];
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./common-path.raku
+/a/b/c
+</code></pre>
+
+<h3>Common Path in Perl</h3>
+
+<pre><code>use strict;
+use warnings;
+use feature qw/say/;
+
+my @input = qw &lt;
+    /a/b/c/1/x.pl
+    /a/b/c/d/e/2/x.pl
+    /a/b/c/d/3/x.pl
+    /a/b/c/4/x.pl
+    /a/b/c/d/5/x.pl
+    &gt;;
+
+my @paths;
+for my $line (@input) {
+    $line =~ s|^/||;
+    my @subpaths = split /\//, $line;
+    push @paths, [@subpaths[0..$#subpaths-1]];
+}
+
+my @first = @{$paths[0]};
+my $end = $#paths;
+my $k = 0;
+OUTLOOP: for my $i (0..$#first) {
+    for my $j (0..$end) {
+        if ((not exists $paths[$j][$i]) or $paths[$j][$i] ne $first[$i]) {
+            $k = $i - 1;
+            last OUTLOOP;
+        }
+    }
+}
+say '/', join '/', @first[0..$k];
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./common-path.pl
+/a/b/c
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on September 25, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
+  <entry>
+    <title>The Weekly Challenge - Guest Contributions</title>
+    <link rel="alternate" href="https://theweeklychallenge.org/blog/guest-contribution/" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fennel, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.</div>
+    </content>
+    <id>https://theweeklychallenge.org/blog/guest-contribution/</id>
+    <published>2022-09-13T00:00:00Z</published>
+    <updated>2022-09-13T00:00:00Z</updated>
+  </entry>
   <entry>
     <title>#581 - What to write about?</title>
     <link rel="alternate" href="https://perlweekly.com/archive/581.html" type="text/html"/>
@@ -740,16 +941,6 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
     </author>
 </entry>
   <entry>
-    <title>The Weekly Challenge - Guest Contributions</title>
-    <link rel="alternate" href="https://theweeklychallenge.org/blog/guest-contribution/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fennel, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.</div>
-    </content>
-    <id>https://theweeklychallenge.org/blog/guest-contribution/</id>
-    <published>2022-09-09T00:00:00Z</published>
-    <updated>2022-09-09T00:00:00Z</updated>
-  </entry>
-  <entry>
     <title>Create a Daemon in Perl with Schedule::Cron</title>
     <link rel="alternate" href="https://dev.to/nicholasbhubbard/create-a-daemon-in-perl-with-schedulecron-4pb6" type="text/html"/>
     <content type="html">&lt;p&gt;A &lt;a href="https://en.wikipedia.org/wiki/Daemon_(computing)"&gt;daemon&lt;/a&gt; is a program that runs in the background for an indefinite period of time.&lt;/p&gt;
@@ -1392,823 +1583,6 @@ How can you create such colorful output with Perl and how could you do it manual
     <author>
       <name>Gabor Szabo</name>
     </author>
-</entry>
-  <entry>
-    <title>Perl Weekly Challenge 180:  First Unique Character and Trim List</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/08/perl-weekly-challenge-180-first-unique-character-and-trim-list.html"/>
-    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10879</id>
-    <published>2022-08-29T22:35:30Z</published>
-    <updated>2022-09-04T21:39:29Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 180 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-180/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on Sept. 4, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1:  First Unique Character</h2>
-
-<p><em>You are given a string, <code>$s</code>.</em></p>
-
-<p><em>Write a script to find out the first unique character in the given string and print its index (0-based).</em></p>
-
-<p><em>Example 1</em></p>
-
-<pre><code>Input: $s = "Perl Weekly Challenge"
-Output: 0 as 'P' is the first unique character
-</code></pre>
-
-<p><em>Example 2</em></p>
-
-<pre><code>Input: $s = "Long Live Perl"
-Output: 1 as 'o' is the first unique character
-</code></pre>
-
-<h3>First Unique Character in Raku</h3>
-
-<p>This is a straight-forward, no-frills solution. I thought that I could write a better (or, at least, simpler) solution using features such as <a href="https://modules.raku.org/dist/ArrayHash">ArrayHash</a> or <a href="https://raku.land/zef:lizmat/Hash::Ordered">Hash::Ordered</a>, but this did not seem to simplify the syntax. Similarly, I initially wanted to use the built-in <a href="https://docs.raku.org/routine/first">first</a> routine, but it only made things more complicated. So, I ended up with a plain-vanilla solution using a hash (the <code>%h</code> letter histogram) and an array (the <code>@let</code> array) in parallel, and a hand-made loop to look for the first unique letter. </p>
-
-<pre><code>for "Perl Weekly Challenge", "Long Live Perl" -&gt; $test {
-    my @let = $test.comb;
-    my %h;      # histogram of letters
-    %h{$_}++ for @let;
-    say "$test: $_" and last if %h{@let[$_]} == 1 for 0..@let.end;
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ raku ./first_unique.raku
-Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h3>First Unique Character in Perl</h3>
-
-<p>The good thing of having used a plain-vanilla solution in Raku is that it can be ported directly to Perl (and other languages) with only small changes. We&#8217;re using a hash (the <code>%h</code> letter histogram) and an array (the <code>@let</code> array) in parallel, and a hand-made loop to look for the first unique letter.</p>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-for my $test ("Perl Weekly Challenge", "Long Live Perl") {
-    my @let = split //, $test;
-    my %h;
-    $h{$_}++ for @let;
-    for my $i (0..$#let) {
-        say "$test: $i" and last if $h{$let[$i]} == 1;
-    }
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ perl ./first_unique.pl
-Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h3>First Unique Character in Other Languages</h3>
-
-<p>The following is a series of implementations of the First Unique Character task in 9 guest languages as follows:</p>
-
-<ul>
-<li>D</li>
-<li>Julia</li>
-<li>Javascript</li>
-<li>Kotlin</li>
-<li>Lua</li>
-<li>Python</li>
-<li>Ring</li>
-<li>Ruby</li>
-<li>Scala</li>
-</ul>
-
-<h4>First Unique Character in D</h4>
-
-<pre><code>import std.stdio;
-import std.array;
-
-void main() {
-    string[] tests = [ "Perl Weekly Challenge", "Long Live Perl" ];
-    foreach(test; tests) {
-        int[string] histo;
-        string[] chars = test.split("");
-        foreach (ch; chars) {
-            histo[ch]++;
-        }
-        for (int i = 0; i &lt; chars.length; i++) {
-            if (histo[chars[i]] == 1) {
-                writeln(test, ": ", i);
-                break;
-            } 
-        }
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h4>First Unique Character in Julia</h4>
-
-<p>Note, if you did not guess it, that the <code>only</code> function converts a one-letter string into a char. Also remember that Julia arrays start at index 1. The task asks us to provide the <em>0-based index</em> of the first unique character. This is unnatural in Julia, so we have to subtract 1 from the Julia index to get a 0-based index. </p>
-
-<pre><code>for test in [ "Perl Weekly Challenge", "Long Live Perl" ]
-    histo = Dict()
-    letters = split(test, "")
-    for ch in test
-        histo[ch] = if (haskey(histo, ch)) histo[ch]+1 else 1 end
-    end
-    for i in 1:length(letters)
-        if (histo[only(letters[i])] == 1)
-            println(test, ": ", i-1)
-            break
-        end
-    end
-end
-</code></pre>
-
-<p>Note that this construct:</p>
-
-<pre><code>histo[ch] = if (haskey(histo, ch)) histo[ch]+1 else 1 end
-</code></pre>
-
-<p>makes it possible to avoid the stylistically horrible <code>if ... else</code> five-code-line construct.</p>
-
-<p>Output:</p>
-
-<pre><code>$ julia ./first_unique.jl
-Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h4>First Unique Character in Javascript</h4>
-
-<pre><code>let tests = [ "Perl Weekly Challenge", "Long Live Perl" ]
-for  (let i = 0; i &lt; tests.length; i++) {
-    test = tests[i]
-    histo = new Map();
-    chars = test.split("")
-    chars.forEach( char =&gt; {
-        histo.set(char, histo.has(char) ? histo.get(char) + 1 : 1)
-    })
-    for (let i = 0; i &lt; chars.length; i++) {
-        if (histo.get(chars[i]) == 1) {
-            console.log(test, ": ", i)
-            break
-        }
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Perl Weekly Challenge :  0
-Long Live Perl :  1
-</code></pre>
-
-<h4>First Unique Character in Kotlin</h4>
-
-<pre><code>fun main() {
-    val tests  = arrayOf("Perl Weekly Challenge", "Long Live Perl")
-    for (test in tests) {
-        var his = mutableMapOf&lt;Char,Int&gt;() // letter histogram
-        val chars = test.toCharArray()
-        for (ch in chars) {
-            his[ch] = if (his.containsKey(ch)) his[ch]!! + 1 else 1
-        }
-        for (i in 0..chars.size) {
-            if (his[chars[i]] == 1) {
-                println(test + ": " + i)
-                break
-            }
-        }
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h4>First Unique Character in Lua</h4>
-
-<pre><code>for _, test in pairs{"Perl Weekly Challenge", "Long Live Perl"} do
-    local histo = {} -- letter histotogram
-    for ch in string.gmatch(test, ".") do
-        -- histo[ch] = histo[ch] == nil and 1 or histo[ch] + 1
-        histo[ch] = (histo[ch] or 0) + 1
-    end
-    i = 0
-    for ch in string.gmatch(test, ".") do
-        if histo[ch] == 1 then
-            print(test, ": ", i)
-            break
-        end
-        i = i + 1
-    end
-end
-</code></pre>
-
-<p>Note that we&#8217;re using here the <code>or</code> logical operator:</p>
-
-<pre><code>histo[ch] = (histo[ch] or 0) + 1
-</code></pre>
-
-<p>to avoid this stylistically horrible code where <code>histo[ch]</code> is repeated no less that four times:</p>
-
-<pre><code>if histo[ch] == nil then
-    histo[ch] = 1
-else
-    histo[ch] = histo[ch] + 1
-end
-</code></pre>
-
-<p>This works because in Lua, the <code>or</code> logical operator doesn&#8217;t return a Boolean value, but the value of the first expression if it evaluates to true, and the value of the second one otherwise.</p>
-
-<p>Output:</p>
-
-<pre><code>Perl Weekly Challenge   :   0
-Long Live Perl  :   1
-</code></pre>
-
-<h4>First Unique Character in Python</h4>
-
-<pre><code>"""Find the first unique character in the given string"""
-for test in ["Perl Weekly Challenge", "Long Live Perl"]:
-    histo = dict()
-    for char in test:
-        histo[char] = histo.get(char, 0) + 1
-    for i in range(0, len(test)):
-        if histo[test[i]] == 1:
-            print(test, ": ", i)
-            break
-</code></pre>
-
-<p>Note that using the <code>histo.get(char, 0)</code> expression provides a default 0 value when the key doesn&#8217;t exists, thereby avoiding an <code>if ... else</code> construct.</p>
-
-<p>Output:</p>
-
-<pre><code>$ python3 ./first_unique.py
-Perl Weekly Challenge :  0
-Long Live Perl :  1
-</code></pre>
-
-<h4>First Unique Character in Ring</h4>
-
-<pre><code>for test in [ "Perl Weekly Challenge", "Long Live Perl" ]
-    histo = []
-    for i = 1 to len(test)
-        histo[test[i]] = 0 + histo[test[i]] + 1
-    next
-    for i = 1 to len(test)
-        if histo[test[i]] = 1
-            see test + ": " + (i-1) + nl
-            exit
-        ok
-    next
-next
-</code></pre>
-
-<p>Note that a 0-based index is unnatural in Ring, so we have to subtract 1 from the looping variable <code>i</code>.</p>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./first_unique.ring
-Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h4>First Unique Character in Ruby</h4>
-
-<pre><code>for test in ["Perl Weekly Challenge", "Long Live Perl"]
-    chars = test.split("")
-    # with new(0), 0 becomes the default value when a key is absent
-    histo = Hash.new(0)
-    for char in chars
-        histo[char] += 1
-    end
-    for i in 0..chars.length - 1
-        if histo[chars[i]] == 1
-            print test, ": ", i, "\n"
-            break
-        end
-    end
-end
-</code></pre>
-
-<p>Here again, using the 0 parameter in the call to the constructor (<code>Hash.new(0)</code>) tells Ruby to return a 0 default value when the key is absent.</p>
-
-<p>Output:</p>
-
-<pre><code>Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h4>First Unique Character in Scala</h4>
-
-<pre><code>object firstUnique extends App {
-  import scala.collection.mutable.Map
-  val tests: List[String] =
-    List("Perl Weekly Challenge", "Long Live Perl")
-  for (test &lt;- tests) {
-    val chars = test.split("")
-    var histo: Map[String, Int] = Map()
-    for (ch &lt;- chars) {
-      if (histo.contains(ch)) {
-        histo(ch) = histo(ch) + 1
-      } else {
-        histo += (ch -&gt; 1)
-      }
-    }
-    var continue = true
-    var i = 0
-    while (continue) {
-      if (histo(chars(i)) == 1) {
-        println(test + ": " + i)
-        continue = false
-
-      }
-      i = i + 1
-    }
-  }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Perl Weekly Challenge: 0
-Long Live Perl: 1
-</code></pre>
-
-<h2>Task 2: Trim List</h2>
-
-<p><em>You are given list of numbers, <code>@n</code> and an integer <code>$i</code>.</em></p>
-
-<p><em>Write a script to trim the given list where element is less than or equal to the given integer.</em></p>
-
-<p><em>Example 1</em></p>
-
-<pre><code>Input: @n = (1,4,2,3,5) and $i = 3
-Output: (4,5)
-</code></pre>
-
-<p><em>Example 2</em></p>
-
-<pre><code>Input: @n = (9,0,6,2,3,8,5) and $i = 4
-Output: (9,6,8,5)
-</code></pre>
-
-<p>This is quite easy using the built-in <code>grep</code> function in Raku and Perl (or <code>filter</code> in Python or Scala).</p>
-
-<h3>Trim List in Raku</h3>
-
-<p>Rather than filtering out items which are less than or equal to the input integer, we keep numbers that are larger than the input integer.</p>
-
-<pre><code>for [3, [1,4,2,3,5]], [4, [9,0,6,2,3,8,5]] -&gt; $test {
-    my $i = $test[0];
-    my @nums = |$test[1];
-    say "i = $i; nums = @nums[] =&gt; ", grep { $_ &gt; $i }, @nums;
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ raku ./trim_list.raku
-i = 3; nums = 1 4 2 3 5 =&gt; (4 5)
-i = 4; nums = 9 0 6 2 3 8 5 =&gt; (9 6 8 5)
-</code></pre>
-
-<h3>Trim List in Perl</h3>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-for my $test ( [3, [1,4,2,3,5]], [4, [9,0,6,2,3,8,5]] ) {
-    my $i = $test-&gt;[0];
-    my @nums = @{$test-&gt;[1]};
-    say "i = $i, nums = @nums =&gt; ", join " ", grep $_ &gt; $i, @nums;
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ perl ./trim_list.pl
-i = 3, nums = 1 4 2 3 5 =&gt; 4 5
-i = 4, nums = 9 0 6 2 3 8 5 =&gt; 9 6 8 5
-</code></pre>
-
-<h3>Trim List in Other Languages</h3>
-
-<p>The following is a series of implementations of the Trim List task in 14 guest languages as follows:</p>
-
-<ul>
-<li>in Awk</li>
-<li>in C</li>
-<li>in D</li>
-<li>in Java</li>
-<li>in JavaScript</li>
-<li>in Julia</li>
-<li>in Go</li>
-<li>in Kotlin</li>
-<li>in Lua</li>
-<li>in Pascal</li>
-<li>in Python</li>
-<li>in Ring</li>
-<li>in Ruby</li>
-<li>in Scala</li>
-</ul>
-
-<h4>Trim List in Awk</h4>
-
-<p>Contrary to Raku and Perl, awk doesn&#8217;t have a <code>grep</code> or <code>filter</code> feature. So we implement a loop over the values and print out those that satisfy the condition. We&#8217;ll do that in several other languages. Also note that, since awk is essentially driven by external data, the data is passed by the shell to the awk script. On each line, the first item in the input integer to be compared the other values.</p>
-
-<pre><code># run for example as:
-# echo '3 1 4 2 3 5 
-#      4 9 0 6 2 3 85 ' | awk -f trim_list.awk
-
-{ 
-    i = $1
-    printf "Input = %-18s- i = %d   =&gt; result = ", $0, $1
-    for (j = 2; j &lt;= NF; j++) {
-        if ( $j &gt; i) {
-            printf "%d ", $j
-        }
-    }
-    print ""
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ echo '3 1 4 2 3 5
-4 9 0 6 2 3 8 5 ' | awk -f trim_list.awk
-Input = 3 1 4 2 3 5       - i = 3   =&gt; result = 4 5
-Input = 4 9 0 6 2 3 8 5   - i = 4   =&gt; result = 9 6 8 5
-</code></pre>
-
-<h4>Trim List in C</h4>
-
-<p>C doesn&#8217;t have a built-in <code>grep</code> or <code>filter</code> feature. So we implement a loop over the values and print out those that satisfy the condition. On each test line, the first item in the input integer to be compared the other values.</p>
-
-<pre><code>#include &lt;stdio.h&gt;
-#include &lt;string.h&gt;
-
-int main() {
-    const char tests[2][10] = {
-            { 3, 1, 4, 2, 3, 5 },
-            { 4, 9, 0, 6, 2, 3, 8, 5 }
-        };
-    for (int j = 0; j &lt;=1; j++) {
-        char test[10];
-        memcpy(test, tests[j],  sizeof(tests[j]));
-        int i = test[0];
-        printf("i = %d; nums = ", i);
-        /* printing input test array */
-        for (char k = 1; k &lt; sizeof(test); k++) {
-            printf("%d ", test[k]);
-        }
-        printf("  =&gt;  ");
-        /* printing the result */
-        for (char k = 1; k &lt; sizeof(test); k++) {
-            if (test[k] &gt; i) {
-                printf("%d ", test[k]);
-            }
-        }
-        printf("%s\n", "");
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ./a.out
-i = 3; nums = 1 4 2 3 5 0 0 0 0   =&gt;  4 5
-i = 4; nums = 9 0 6 2 3 8 5 0 0   =&gt;  9 6 8 5
-</code></pre>
-
-<h4>Trim List in D</h4>
-
-<pre><code>import std.stdio;
-
-void main() {
-    int[][][] tests = [[[3], [1,4,2,3,5]], [[4], [9,0,6,2,3,8,5]]];
-    foreach(test; tests) {
-        int i = test[0][0];
-        int[] nums = test[1];
-        write(i, " ", nums, "  =&gt;  ");
-        for (int j = 0; j &lt; nums.length; j++) {
-            if (nums[j] &gt; i) {
-                printf("%d ", nums[j]);
-            }
-        }
-    writeln("");
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>3 [1, 4, 2, 3, 5]  =&gt;  4 5 
-4 [9, 0, 6, 2, 3, 8, 5]  =&gt;  9 6 8 5
-</code></pre>
-
-<h4>Trim List in Java</h4>
-
-<pre><code>import java.util.Arrays;
-
-public class TrimList {
-    private static final int[][][] tests =
-        {{{3}, {1,4,2,3,5}}, {{4}, {9,0,6,2,3,8,5}}};
-    public static void main(String[] args) {
-        for (int j = 0; j &lt; tests.length; j++) {
-            int i = tests[j][0][0];
-            int[] nums = tests[j][1];
-            System.out.printf("i = %d; nums = %s =&gt; ", 
-                i, Arrays.toString(nums));
-            for (int k = 0; k &lt; nums.length; k++) {
-                if (nums[k] &gt; i) {
-                    System.out.printf("%d ", nums[k]);
-                }
-            }
-        System.out.printf("%s", "\n");
-        }
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>i = 3; nums = [1, 4, 2, 3, 5] =&gt; 4 5 
-i = 4; nums = [9, 0, 6, 2, 3, 8, 5] =&gt; 9 6 8 5
-</code></pre>
-
-<h4>Trim List in JavaScript</h4>
-
-<pre><code>tests = [[[3], [1,4,2,3,5]], [[4], [9,0,6,2,3,8,5]]];
-for(let j = 0; j &lt; tests.length; j++) {
-    let i = tests[j][0][0]
-    let nums = tests[j][1]
-    process.stdout.write("i= " + i + " nums= " + nums + "  =&gt;  ")
-    for (let k = 0; k &lt; nums.length; k++) {
-        if ( nums[k] &gt; i) {
-            process.stdout.write(nums[k] + " ")
-        }
-    }
-    process.stdout.write("\n")
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>i= 3 nums= 1,4,2,3,5  =&gt;  4 5 
-i= 4 nums= 9,0,6,2,3,8,5  =&gt;  9 6 8 5
-</code></pre>
-
-<h4>Trim List in Julia</h4>
-
-<p>In my humble opinion, Julia is the best language used in this blog post after Raku and Perl. Just consider how concise and clear this implementation is, compared to most other languages. And it has very nice functional programming capabilities (e.g. the <code>filter</code> built-in function below with its lambda). In addition, Julia runs fast. Its only drawback in my view is that the error messages emitted by the compiler or the runtime are really not clear (like most languages that compile to Java code).</p>
-
-<pre><code>for test in [[3, [1,4,2,3,5]], [4, [9,0,6,2,3,8,5]]]
-    i = test[1]
-    nums = test[2]
-    println( "i = $i, num = $nums =&gt; ", filter((x) -&gt; x &gt; i, nums))
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ julia ./trim_list.jl
-i = 3, num = [1, 4, 2, 3, 5]: [4, 5]
-i = 4, num = [9, 0, 6, 2, 3, 8, 5]: [9, 6, 8, 5]
-</code></pre>
-
-<h4>Trim List in Go</h4>
-
-<pre><code>package main
-
-import "fmt"
-
-func main() {
-    tests := [2][2][8]int{{{3}, {1, 4, 2, 3, 5}}, 
-                          {{4}, {9, 0, 6, 2, 3, 8, 5}}
-                         }
-    for j := 0; j &lt; len(tests); j++ {
-        i := tests[j][0][0]
-        fmt.Printf("i = %d; nums = ", i)
-        nums := tests[j][1]
-        fmt.Print(nums, "; =&gt; ")
-        for k := 0; k &lt; len(nums); k++ {
-            if nums[k] &gt; i {
-                fmt.Printf("%d ", nums[k])
-            }
-        }
-        fmt.Println("")
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>i = 3; nums = [1 4 2 3 5 0 0 0]; =&gt; 4 5 
-i = 4; nums = [9 0 6 2 3 8 5 0]; =&gt; 9 6 8 5
-</code></pre>
-
-<h4>Trim List in Kotlin</h4>
-
-<p>Declaring a multidimensional array in Kotlin is a pain in the neck (as well as in Scala, and it is even worse in Nim). Besides that, the implementation is quite straight forward.</p>
-
-<pre><code>import java.util.Arrays
-
-fun main() {
-    val tests  = arrayOf(arrayOf(intArrayOf(3,), 
-                                 intArrayOf(1,4,2,3,5)),
-                         arrayOf(intArrayOf(4,), 
-                                 intArrayOf(9,0,6,2,3,8,5))
-                        )
-
-    for (test in tests) {
-        print(Arrays.deepToString(test) + "  =&gt;  ")
-        var i = test[0][0]
-        var nums = test[1];
-        for (j in nums) {
-            if (j &gt; i) {
-                print(j.toString() + " ")
-            }
-        }
-        println("")
-
-    }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>[[3], [1, 4, 2, 3, 5]]  =&gt;  4 5 
-[[4], [9, 0, 6, 2, 3, 8, 5]]  =&gt;  9 6 8 5
-</code></pre>
-
-<h4>Trim List in Lua</h4>
-
-<pre><code>tests = {{{3}, {1,4,2,3,5}}, {{4}, {9,0,6,2,3,8,5}}}
-for _, test in ipairs(tests) do
-    local i = test[1][1]
-    local nums = test[2]
-    io.write("i= ", i, "; nums= ", table.concat(nums, " "), " =&gt; ")
-    for _, j in ipairs(nums) do
-        if j &gt; i then
-            io.write(j, " ")
-        end
-    end
-    print("")
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>i= 3; nums= 1 4 2 3 5 =&gt; 4 5 
-i= 4; nums= 9 0 6 2 3 8 5 =&gt; 9 6 8 5
-</code></pre>
-
-<h4>Trim List in Pascal</h4>
-
-<p>In Pascal, since I declared the third dimension of the <code>tests</code> array to be <code>0..6</code>, I had to fill the empty slots with zeroes. If there is a better way, I do not know it (I learned and used Pascal about 33 years ago and almost did not use it since, please forgive my ignorance). It not, then it is a major weakness of the language. Otherwise, the syntax is a bit verbose, but very clear.</p>
-
-<pre><code>program TrimList;
-
-const tests : array[0..1,0..1,0..6] of integer =
-    (((3,0,0,0,0,0,0), (1,4,2,3,5,0,0)), ((4,0,0,0,0,0,0), (9,0,6,2,3,8,5)));
-
-var
-    i, j, k: integer;
-    nums: array of integer;
-
-begin
-    for j := 0 to length(tests) - 1 do
-    begin
-        i := tests[j][0][0];
-        write('i = ', i, '; nums = ');
-        nums := tests[j][1];
-        for k := 0 to length(nums) - 1 do
-        begin
-            write(nums[k], ' ');
-        end;
-        write(' =&gt; ');
-        for k := 0 to length(nums) - 1 do
-        begin
-            if nums[k] &gt; i then
-                write(nums[k], ' ');
-        end;
-        writeln('')
-    end;
-end.
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>i = 3; nums = 1 4 2 3 5 0 0  =&gt; 4 5 
-i = 4; nums = 9 0 6 2 3 8 5  =&gt; 9 6 8 5
-</code></pre>
-
-<h4>Trim List in Python</h4>
-
-<p>About 19 years ago, I took up Perl and stopped writing in Python (my favorite language for a few years at that point), because I felt Perl was superior. I still think so, but I must admit Python is fairly expressive and concise.</p>
-
-<pre><code>for test in [3, [1,4,2,3,5]], [4, [9,0,6,2,3,8,5]]:
-  i = test[0]
-  nums = test[1]
-  print(i, nums, " =&gt; ", list(filter(lambda n: n&gt;i, nums)))
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ python3 ./trim_list.py
-3 [1, 4, 2, 3, 5]  =&gt;  [4, 5]
-4 [9, 0, 6, 2, 3, 8, 5]  =&gt;  [9, 6, 8, 5]
-</code></pre>
-
-<h4>Trim List in Ring</h4>
-
-<pre><code>for test in [[3, [1,4,2,3,5]], [4, [9,0,6,2,3,8,5]]]
-    i = test[1]
-    nums = test[2]
-    see "i = " + i + " ; nums = " 
-    for j in nums
-        see "" + j + " "
-    next
-    see " =&gt; "
-    for j in nums
-        if j &gt; i
-            see "" + j + " "
-        ok
-    next
-    see " " +nl
-next
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring  ./trim_list.ring
-i = 3 ; nums = 1 4 2 3 5  =&gt; 4 5
-i = 4 ; nums = 9 0 6 2 3 8 5  =&gt; 9 6 8 5
-</code></pre>
-
-<h4>Trim List in Ruby</h4>
-
-<pre><code>for test in [ [3, [1,4,2,3,5]], [4, [9,0,6,2,3,8,5]] ]
-    i = test[0]
-    nums = test[1]
-    print "i = #{i}, nums = #{nums} =&gt; ", nums.select {|n| n &gt; i}
-    puts " "
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>i = 3, nums = [1, 4, 2, 3, 5] =&gt; [4, 5] 
-i = 4, nums = [9, 0, 6, 2, 3, 8, 5] =&gt; [9, 6, 8, 5]
-</code></pre>
-
-<h4>Trim List in Scala</h4>
-
-<p>As I said above, declaring multidimensional arrays is a pain in the neck in Scala. And its typing system can be a straitjacket. It&#8217;s a pity because Scala has very nice features in terms of combining object-oriented and functional programming paradigms.</p>
-
-<pre><code>object trimList extends App {
-  val tests: List[List[List[Int]]] = List(
-    List(List(3), List(1, 4, 2, 3, 5)),
-    List(List(4), List(9, 0, 6, 2, 3, 8, 5))
-  )
-  for (test &lt;- tests) {
-    val i = test(0)(0)
-    val nums = test(1)
-    print(s"i: $i, nums: " + nums.mkString(" "))
-    println(" =&gt; " + nums.filter(_ &gt; i).mkString(" "))
-  }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>i: 3, nums: 1 4 2 3 5 =&gt; 4 5
-i: 4, nums: 9 0 6 2 3 8 5 =&gt; 9 6 8 5
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on September 11, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
-    </content>
 </entry>
   <entry>
     <title>First Uniquely Trimmed Index</title>
