@@ -59,6 +59,254 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/taw/open-source-adventures-episode-81-exploring-raku-regular-expression-api-id2">Open Source Adventures: Episode 81: Exploring Raku Regular Expression API</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Tomasz Wegrzanowski
+ on Wednesday 14 September 2022 15:08</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>In previous three episodes I explored regular expression APIs of Ruby, Crystal, and Python, so let's finish this by doing the same exercise in Raku.</p>
+
+<p>The problem is the same - there's multiple date formats, and we want to extract information from whichever one matches.</p>
+
+<p>I'm doing it with just 3 regular expressions, but in real world there could be hundreds. Doing it naively with a list of regular expressions would require massive code duplication, and a lot of calls to regular expression engine, which is generally dramatically slower than just matching <code>a|b|c|...</code> once.</p>
+
+<h3>
+  
+  
+  The Problem
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/env raku
+
+use JSON::Fast;
+
+for qw[2015-05-25 2016/06/26 27/07/2017] {
+  say to-json(parse_date($_), :!pretty)
+}
+</code></pre>
+
+</div>
+
+
+
+<p>And expected output is:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>[2015,5,25]
+[2016,6,26]
+[2017,7,27]
+</code></pre>
+
+</div>
+
+
+
+<h3>
+  
+  
+  Solution 1
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub parse_date($s) {
+  if $s ~~ /(\d\d\d\d)\-(\d\d)\-(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif $s ~~ /(\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif $s ~~ /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+</code></pre>
+
+</div>
+
+
+
+<p>The first way is to just list every possible regular expression sequentially.</p>
+
+<p>In case you're not familiar with Raku, here's a few minor things to notice:</p>
+
+<ul>
+<li>match groups are numbered from <code>$0</code> not from <code>$1</code>
+</li>
+<li>these variables aren't <code>String</code> type like in other languages, they're <code>Match</code>
+</li>
+<li>we can't <code>to-json</code> a <code>Match</code> object without some kind of conversion, either to string or ot number, so returning <code>[$0, $1, $2]</code> would just crash</li>
+<li>
+<code>+</code> converts to a number</li>
+<li>match operator is <code>~~</code>, not <code>=~</code>
+</li>
+<li>
+<code>\d</code> is Unicode digit, not just <code>0</code> to <code>9</code>
+</li>
+</ul>
+
+<p>There's also a bigger thing to consider - in other languages, unknown punctuation like <code>/</code> or <code>-</code> can be used in regular expression literally. In retrospect this was a mistake, as it prevents adding new regular expression syntax without breaking backwards compatibility. Raku forces escaping every such punctuation, even currently unused, so at some point in the future it can make <code>-</code> or <code>/</code> have some meaning.</p>
+
+<p>Anyway, just like solution 1 in other languages, this suffers from both problems - code duplication, and poor performance due to sequential match.</p>
+
+<h3>
+  
+  
+  Solution 2
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+</code></pre>
+
+</div>
+
+
+
+<p>Just like in Perl, we don't need to use <code>~~</code>, if we use regular expression in boolean context it will automatically match <code>$_</code>.</p>
+
+<h3>
+  
+  
+  Solution 3
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d)/ or /(\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+</code></pre>
+
+</div>
+
+
+
+<p>We can reduce code duplication if groups are in the same order.</p>
+
+<h3>
+  
+  
+  Solution 4
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d) | (\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+</code></pre>
+
+</div>
+
+
+
+<p>What's going on here? In Raku <code>$0</code>, <code>$1</code>, <code>$2</code> don't mean the Nth match group in the expression, it means Nth match group that actually matched (at least for <code>|</code> alternatives, the full story is more complicated)!</p>
+
+<p>This is great as we can put as many expressions as we want without any nonsense like <code>+($0 or $3 or $6)</code>.</p>
+
+<p>On the other hand, this means we have no way to do alternative if they're in a different order.</p>
+
+<h3>
+  
+  
+  Solution 5
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d) |
+      (\d\d\d\d)\/(\d\d)\/(\d\d) |
+      (\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$0, +$1, +$2]
+  }
+}
+</code></pre>
+
+</div>
+
+
+
+<p>This doesn't actually work. The block can't tell which branch matched, so it doesn't know if the groups are in YMD or DMY order.</p>
+
+<h3>
+  
+  
+  Solution 6
+</h3>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>sub parse_date($_) {
+  if /
+    $&lt;y&gt;=(\d\d\d\d) \- $&lt;m&gt;=(\d\d) \- $&lt;d&gt;=(\d\d) |
+    $&lt;y&gt;=(\d\d\d\d) \/ $&lt;m&gt;=(\d\d) \/ $&lt;d&gt;=(\d\d) |
+    $&lt;d&gt;=(\d\d) \/ $&lt;m&gt;=(\d\d) \/ $&lt;y&gt;=(\d\d\d\d)
+    / {
+    [+$&lt;y&gt;, +$&lt;m&gt;, +$&lt;d&gt;]
+  }
+}
+</code></pre>
+
+</div>
+
+
+
+<p>We can solve this with named captures, and it works great.</p>
+
+<h3>
+  
+  
+  Story so far
+</h3>
+
+<p>The syntax and API are both very different from traditional regular expressions, but in the end we got everything we needed.</p>
+
+<p><a href="https://github.com/taw/open-source-adventures">All the code is on GitHub</a>.</p>
+
+<h3>
+  
+  
+  Coming next
+</h3>
+
+<p>I was planning to write another post on how we could improve regular expression APIs, but it turns out the APIs we explored (except Python's disappointingly limited one) actually have features that cover most of what I wanted to say, even if they're rarely used in the real world yet.</p>
+
+<p>So the next episode will be about something completely different.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/lichtkind/2022/09/an-artistic-tool-for-programmers.html">An artistic tool for programmers.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -78,7 +326,19 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
+<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
+
+              <p class="text-right"><small>Published
+ on Wednesday 14 September 2022 00:00</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fennel, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-182-max-index-and-common-path.html">Perl Weekly Challenge 182:  Max Index and Common Path</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -269,19 +529,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
-<a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
-
-              <p class="text-right"><small>Published
- on Tuesday 13 September 2022 00:00</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fennel, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/581.html">#581 - What to write about?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -301,7 +549,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/09/how-does-spvm-resolve-perl-numeric-operation-problems.html">How does SPVM resolve the problems of Perl numeric operations?</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -356,7 +604,7 @@ warn "@$array_out";<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/den/2022/09/saving-perl-packages-local.html">Saving Perl packages through local</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -416,7 +664,7 @@ print @A::x, @{ *A::x{ARRAY} }, @{ *{ $A::{x} }{ARRAY} };
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-175/">Colin Crain › Perl Weekly Review #175</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -430,7 +678,7 @@ Welcome to the Perl review pages for Week 175 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/meet-the-champion-2022-08/">Meet The Champion: August 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -446,7 +694,7 @@ Stephen: I am a non-CS academic, mostly teaching-focused these days.       </div
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-181/">RECAP - The Weekly Challenge - 181</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -459,7 +707,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-182/">The Weekly Challenge - 182</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -472,7 +720,7 @@ Today, we are giving away Token #5 to Solathian for the book, Learning Perl Exer
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-181-sentence-order-and-hot-day.html">Perl Weekly Challenge 181:  Sentence Order and Hot day</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -774,7 +1022,7 @@ for line in lines:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/11#pwc181">These Sentences Are Getting Hot</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -947,7 +1195,7 @@ To work around this we instead we create two tables which works.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/cdix-11-great-cpan-modules-released.html">(cdix) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -959,7 +1207,7 @@ To work around this we instead we create two tables which works.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dxxii-metacpan-weekly-report.html">(dxxii) metacpan weekly report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -971,7 +1219,7 @@ To work around this we instead we create two tables which works.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dl-stackoverflow-perl-report.html">(dl) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -983,7 +1231,7 @@ To work around this we instead we create two tables which works.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-return-json">Dancer2: Return JSON</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -998,7 +1246,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/create-a-daemon-in-perl-with-schedulecron-4pb6">Create a Daemon in Perl with Schedule::Cron</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1128,7 +1376,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_july_2022">Maintaining Perl (Tony Cook) July 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1323,7 +1571,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-070-of-ebirah-213n">Release 0.7.0 of Ebirah</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1383,7 +1631,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-030-of-my-perl-distzilla-github-action-25ig">Release 0.3.0 of my Perl Dist::Zilla GitHub Action</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1436,7 +1684,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_sept_2022">Call for Grant Proposals: September 2022 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1474,7 +1722,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/580.html">#580 - Perl Mentor</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1495,7 +1743,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/ansi-command-line-colors-with-perl">ANSI command line colors with Perl</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1514,7 +1762,7 @@ How can you create such colorful output with Perl and how could you do it manual
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/04#pwc180">First Uniquely Trimmed Index</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1651,7 +1899,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-180-4mi5">Weekly Challenge 180</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1753,7 +2001,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/cdviii-23-great-cpan-modules-released.html">(cdviii) 23 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1765,7 +2013,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dxxi-metacpan-weekly-report-datadumper.html">(dxxi) metacpan weekly report - Data::Dumper</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1774,216 +2022,6 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
  on Saturday 03 September 2022 22:31</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>This is the weekly favourites list of CPAN distributions. Votes count: 73</p><p>Week's winners (+3):<b>&nbsp;<a href="https://metacpan.org/module/Data::Dumper">Data::Dumper</a></b></p><p>Build date: 2022/09/03 20:28:59 GMT</p><br /><p>Clicked for <u>first time</u>:</p><ul><li><a href="https://metacpan.org/module/Acme::Dot" target="_blank">Acme::Dot</a> - Call methods with the dot operator</li><li><a href="https://metacpan.org/module/Date::Darian::Mars" target="_blank">Date::Darian::Mars</a> - the Darian calendar for Mars</li><li><a href="https://metacpan.org/module/FTN::Packet" target="_blank">FTN::Packet</a> - Reading or writing Fidonet Technology Networks (FTN) packets.</li><li><a href="https://metacpan.org/module/Hydrogen" target="_blank">Hydrogen</a> - utilities for the simplest elements of Perl</li><li><a href="https://metacpan.org/module/Test::HTTP::MockServer::Once" target="_blank">Test::HTTP::MockServer::Once</a> - Implement a one shot mock HTTP server for use in tests</li><li><a href="https://metacpan.org/module/Unicode::SetAutomaton" target="_blank">Unicode::SetAutomaton</a> - UTF-8 based DFAs and Regexps from Unicode sets</li></ul><br /><p><u>Increasing</u> its reputation:</p><ul><li><a href="https://metacpan.org/module/app::paperback" target="_blank">app::paperback</a> (+2=2)</li><li><a href="https://metacpan.org/module/App::perlbrew" target="_blank">App::perlbrew</a> (+1=171)</li><li><a href="https://metacpan.org/module/App::Sqitch" target="_blank">App::Sqitch</a> (+1=41)</li><li><a href="https://metacpan.org/module/Badger" target="_blank">Badger</a> (+1=3)</li><li><a href="https://metacpan.org/module/Bible::OBML" target="_blank">Bible::OBML</a> (+1=2)</li><li><a href="https://metacpan.org/module/Carp" target="_blank">Carp</a> (+1=68)</li><li><a href="https://metacpan.org/module/Compress::LZW" target="_blank">Compress::LZW</a> (+1=3)</li><li><a href="https://metacpan.org/module/Config::Tiny" target="_blank">Config::Tiny</a> (+1=32)</li><li><a href="https://metacpan.org/module/Data::Dumper" target="_blank">Data::Dumper</a> (+3=98)</li><li><a href="https://metacpan.org/module/DateTime" target="_blank">DateTime</a> (+1=206)</li><li><a href="https://metacpan.org/module/DBD::CSV" target="_blank">DBD::CSV</a> (+1=23)</li><li><a href="https://metacpan.org/module/Devel::Kit" target="_blank">Devel::Kit</a> (+1=6)</li><li><a href="https://metacpan.org/module/Devel::KYTProf" target="_blank">Devel::KYTProf</a> (+1=7)</li><li><a href="https://metacpan.org/module/Devel::REPL" target="_blank">Devel::REPL</a> (+1=63)</li><li><a href="https://metacpan.org/module/Encoding::FixLatin" target="_blank">Encoding::FixLatin</a> (+1=4)</li><li><a href="https://metacpan.org/module/Encoding::FixLatin::XS" target="_blank">Encoding::FixLatin::XS</a> (+1=2)</li><li><a href="https://metacpan.org/module/English::Script" target="_blank">English::Script</a> (+1=2)</li><li><a href="https://metacpan.org/module/FFmpeg" target="_blank">FFmpeg</a> (+1=2)</li><li><a href="https://metacpan.org/module/File::Path" target="_blank">File::Path</a> (+1=44)</li><li><a href="https://metacpan.org/module/File::Temp" target="_blank">File::Temp</a> (+1=58)</li><li><a href="https://metacpan.org/module/File::Util" target="_blank">File::Util</a> (+1=3)</li><li><a href="https://metacpan.org/module/Filesys::DiskUsage" target="_blank">Filesys::DiskUsage</a> (+1=3)</li><li><a href="https://metacpan.org/module/Forks::Queue" target="_blank">Forks::Queue</a> (+1=3)</li><li><a href="https://metacpan.org/module/Forks::Super" target="_blank">Forks::Super</a> (+1=11)</li><li><a href="https://metacpan.org/module/Gantry" target="_blank">Gantry</a> (+1=2)</li><li><a href="https://metacpan.org/module/IO::Tty" target="_blank">IO::Tty</a> (+1=6)</li><li><a href="https://metacpan.org/module/JSON::Path" target="_blank">JSON::Path</a> (+1=10)</li><li><a href="https://metacpan.org/module/libnet" target="_blank">libnet</a> (+1=28)</li><li><a href="https://metacpan.org/module/Log::Log4perl" target="_blank">Log::Log4perl</a> (+1=95)</li><li><a href="https://metacpan.org/module/Log::Minimal" target="_blank">Log::Minimal</a> (+1=12)</li><li><a href="https://metacpan.org/module/Math::AnyNum" target="_blank">Math::AnyNum</a> (+1=7)</li><li><a href="https://metacpan.org/module/Math::Complex" target="_blank">Math::Complex</a> (+1=9)</li><li><a href="https://metacpan.org/module/Minilla" target="_blank">Minilla</a> (+1=57)</li><li><a href="https://metacpan.org/module/Moose" target="_blank">Moose</a> (+1=321)</li><li><a href="https://metacpan.org/module/Net::CLI::Interact" target="_blank">Net::CLI::Interact</a> (+1=6)</li><li><a href="https://metacpan.org/module/Net::OpenSSH" target="_blank">Net::OpenSSH</a> (+1=39)</li><li><a href="https://metacpan.org/module/Net::Ping" target="_blank">Net::Ping</a> (+1=13)</li><li><a href="https://metacpan.org/module/Net::Wireless::802_11::WPA::CLI" target="_blank">Net::Wireless::802_11::WPA::CLI</a> (+1=2)</li><li><a href="https://metacpan.org/module/Object::Remote" target="_blank">Object::Remote</a> (+2=20)</li><li><a href="https://metacpan.org/module/PAR::Packer" target="_blank">PAR::Packer</a> (+1=41)</li><li><a href="https://metacpan.org/module/PLS" target="_blank">PLS</a> (+1=12)</li><li><a href="https://metacpan.org/module/Pod::Markdown" target="_blank">Pod::Markdown</a> (+1=32)</li><li><a href="https://metacpan.org/module/Regexp::Util" target="_blank">Regexp::Util</a> (+1=8)</li><li><a href="https://metacpan.org/module/Search::Tools" target="_blank">Search::Tools</a> (+1=7)</li><li><a href="https://metacpan.org/module/Sereal" target="_blank">Sereal</a> (+1=60)</li><li><a href="https://metacpan.org/module/Sereal::Decoder" target="_blank">Sereal::Decoder</a> (+1=22)</li><li><a href="https://metacpan.org/module/Sereal::Encoder" target="_blank">Sereal::Encoder</a> (+1=21)</li><li><a href="https://metacpan.org/module/Smart::Comments" target="_blank">Smart::Comments</a> (+1=42)</li><li><a href="https://metacpan.org/module/Sub::Override" target="_blank">Sub::Override</a> (+1=13)</li><li><a href="https://metacpan.org/module/Sys::Syslog" target="_blank">Sys::Syslog</a> (+1=7)</li><li><a href="https://metacpan.org/module/Test::Most" target="_blank">Test::Most</a> (+1=38)</li><li><a href="https://metacpan.org/module/Text::CSV_XS" target="_blank">Text::CSV_XS</a> (+1=96)</li><li><a href="https://metacpan.org/module/Tie::Simple" target="_blank">Tie::Simple</a> (+1=2)</li><li><a href="https://metacpan.org/module/Time::HiRes" target="_blank">Time::HiRes</a> (+1=60)</li><li><a href="https://metacpan.org/module/ToolSet" target="_blank">ToolSet</a> (+1=8)</li><li><a href="https://metacpan.org/module/Try::Tiny" target="_blank">Try::Tiny</a> (+1=170)</li><li><a href="https://metacpan.org/module/Type::Tiny" target="_blank">Type::Tiny</a> (+1=131)</li><li><a href="https://metacpan.org/module/Unicode::Normalize" target="_blank">Unicode::Normalize</a> (+1=9)</li><li><a href="https://metacpan.org/module/Unicode::UTF8" target="_blank">Unicode::UTF8</a> (+1=20)</li><li><a href="https://metacpan.org/module/URI::Router" target="_blank">URI::Router</a> (+1=3)</li><li><a href="https://metacpan.org/module/VideoLAN::LibVLC" target="_blank">VideoLAN::LibVLC</a> (+1=2)</li><li><a href="https://metacpan.org/module/Vlc::Engine" target="_blank">Vlc::Engine</a> (+1=2)</li><li><a href="https://metacpan.org/module/WebService::Dropbox" target="_blank">WebService::Dropbox</a> (+1=7)</li></ul>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_28">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/segregate-perl-projects-with-appplx-7oj">Segregate Perl Projects with App::plx</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Nicholas Hubbard
- on Saturday 03 September 2022 00:09</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p><a href="https://metacpan.org/pod/App::plx">App::plx</a> (Plx) is a tool for configuring per-project Perl development environments.</p>
-
-<p>Plx is not difficult to use and has very clear documentation. In this post I will give a brief overview of some of the problems that it solves and how to get started using it.</p>
-
-<p>This is not a complete overview on everything that Plx can do.</p>
-
-<p><a id="orgbd602ea"></a></p>
-
-<h1>
-  
-  
-  Why Plx?
-</h1>
-
-<p>Imagine you have a project that depends on a Perl version greater than that of your systems built-in Perl. You will need to install the correct version of Perl and figure out how to get your project to use this Perl instead of the system's Perl.</p>
-
-<p>Next imagine a scenario where you are working on two different Perl projects that depend on a different version of the same CPAN module. You will need to figure out how to install both versions into different locations, and then you will need to figure out how to locate the correct version from the two different projects.</p>
-
-<p>These are two important problems that Plx solves.</p>
-
-<p><a id="org87e7c16"></a></p>
-
-<h1>
-  
-  
-  Installation
-</h1>
-
-<p>Before you can use Plx you must install Plx.</p>
-
-<p>If you already have a CPAN installer, such as <a href="https://metacpan.org/pod/App::cpanminus">cpanminus</a>, then you should probably just use that to install Plx.</p>
-
-<p>Plx can also be bootstrapped into a self contained script like so:</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ mkdir "$HOME/bin"
-$ wget https://raw.githubusercontent.com/shadowcat-mst/plx/master/bin/plx-packed -O "$HOME/bin/plx"
-$ chmod +x "$HOME/bin/plx"
-</code></pre>
-
-</div>
-
-<p>You can install Plx into any directory, I just chose "$HOME/bin" for simplicity. Just make sure you pick a directory in your <a href="https://en.wikipedia.org/wiki/PATH_(variable)">PATH</a>.</p>
-
-<p><a id="orgd968283"></a></p>
-
-<h1>
-  
-  
-  Initialization
-</h1>
-
-<p>If you want to use Plx for your Perl project, you must first initialize the project to use Plx. To do this we must <code>cd</code> into the root directory of the project and then execute Plx with the <code>--init</code> flag.</p>
-
-<p>The <code>--init</code> flag behaves differently depending on its argument.</p>
-
-<p>When <code>--init</code> is called with a file path, it assumes it is a path to a Perl interpreter and sets up Plx to use it.</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ plx --init /path/to/some/perl
-</code></pre>
-
-</div>
-
-<p>When called with <code>perl</code> as the argument it sets up Plx to use the first Perl in your <a href="https://en.wikipedia.org/wiki/PATH_(variable)">PATH</a>.</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ plx --init perl
-</code></pre>
-
-</div>
-
-<p>The final and most exciting way to call <code>--init</code> is with a Perl version number. When called with a version number, Plx will look for a Perl of the given version first in your <a href="https://en.wikipedia.org/wiki/PATH_(variable)">PATH</a> and otherwise via <a href="https://perlbrew.pl/">Perlbrew</a>.</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ plx --init 5.36.0
-</code></pre>
-
-</div>
-
-<p>After initializing Plx you can execute your project code with a command like <code>$ plx /path/to/project/script.pl</code>, and Plx will execute the script with the Perl interpreter you specified with the <code>plx --init</code> command.</p>
-
-<p>This is how Plx solves the problem of needing to use a different Perl than your systems built-in Perl.</p>
-
-<p><a id="org124c9de"></a></p>
-
-<h1>
-  
-  
-  Installing CPAN Modules
-</h1>
-
-<p>My favorite feature of Plx is that it allows you to install modules off of CPAN into a <a href="https://metacpan.org/pod/local::lib">local::lib</a> using <a href="https://metacpan.org/pod/App::cpanminus">cpanminus</a>. This allows you to segregate your CPAN modules dependencies on a per-project basis.</p>
-
-<p>To do this we must <code>cd</code> into the root directory of our project and run the following command.</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ plx --cpanm -Llocal Some::Module
-</code></pre>
-
-</div>
-
-<p>This will install <code>Some::Module</code> into a project-local library located in a directory named <code>local/lib</code> at the root of the project.</p>
-
-<p>This solves the problem of two projects requiring different versions of the same CPAN module. If both projects use Plx they can simply install their desired version into a <a href="https://metacpan.org/pod/local::lib">local::lib</a>.</p>
-
-<p><a id="org9b2111c"></a></p>
-
-<h1>
-  
-  
-  Userstrap
-</h1>
-
-<p>What if you want to use your own Perl interpreter and a <a href="https://metacpan.org/pod/local::lib">local::lib</a> when you are working outside of a dedicated Plx project?</p>
-
-<p>Plx has a <code>--userstrap</code> flag that will set this up for you automatically.</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$ plx --userstrap /path/to/some/perl
-</code></pre>
-
-</div>
-
-<p>Calling <code>--userstrap</code> essentially sets up your <code>$HOME</code> to be a Plx project and sets up a <a href="https://metacpan.org/pod/local::lib">local::lib</a> in <code>$HOME/perl5</code>, installs <a href="https://metacpan.org/pod/App::plx">App::plx</a> and <a href="https://metacpan.org/pod/App::cpanminus">App::cpanminus</a> into the local::lib, and adds a line to your <code>$HOME/.bashrc</code> that sets up Plx for your Bash shell.</p>
-
-<p>Now when you run Plx from outside a dedicated Plx project it will use <code>$HOME</code> as a sort of default Plx project. You can use <code>--userstrap</code> to prevent needing to use your system Perl, so you and can instead always use Plx.</p>
-
-<p>Note that <code>--userstrap</code> requires that you use a Bash shell.</p>
-
-<p><a id="org285989d"></a></p>
-
-<h1>
-  
-  
-  Plx is For Everybody
-</h1>
-
-<p>Plx is designed to not only provide a nice experience for Perl developers, but also to be usable by a sysadmin that isn't a Perl expert. Therefore Plx is configured through simple text files that can be manipulated by hand, and allows multiple commands to be run in a single Plx invocation via the <code>--multi</code> flag, which makes scripting Plx cleaner.</p>
-
-<p><a id="orgdee387b"></a></p>
-
-<h1>
-  
-  
-  Synopsis
-</h1>
-
-<p>Plx is a tool for creating per-project virtual Perl environments. Plx lets us avoid a lot of headaches that come with developing multiple Perl projects on the same system.</p>
-
-<p>A lot of what Plx does can be done by combining features of other CPAN modules, but Plx brings together these functionalities in a way that is easy to use and understand.</p>
-
-<p>This blog post is only a brief introduction to Plx. Please go on to read the manual for more a more detailed overview of its features.</p>
-
-<p><a id="orgef3ab18"></a></p>
-
-<h1>
-  
-  
-  Bonus Tip for Emacs Users
-</h1>
-
-<p>If you lint your Perl code with the Perl interpreter using Flycheck, you will need to determine if the buffer is part of a Plx project so it runs the Perl interpreter through Plx.</p>
-
-<p>Use the following code to do this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight common_lisp"><code><span class="p">(</span><span class="nb">require</span> <span class="ss">'flycheck</span><span class="p">)</span>
-<span class="p">(</span><span class="nb">require</span> <span class="ss">'projectile</span><span class="p">)</span>
-
-<span class="p">(</span><span class="nv">add-hook</span> <span class="ss">'cperl-mode-hook</span> <span class="ss">'flycheck-mode</span><span class="p">)</span>
-<span class="p">(</span><span class="nv">add-hook</span> <span class="ss">'cperl-mode-hook</span> <span class="ss">'my/cperl-select-correct-flycheck-checker</span><span class="p">)</span>
-
-<span class="p">(</span><span class="nv">flycheck-define-checker</span> <span class="nv">my/perl-plx</span>
-  <span class="ss">:command</span> <span class="p">(</span><span class="s">"plx"</span> <span class="s">"-w"</span> <span class="s">"-c"</span>
-            <span class="p">(</span><span class="nv">option-list</span> <span class="s">"-I"</span> <span class="nv">flycheck-perl-include-path</span><span class="p">)</span>
-            <span class="p">(</span><span class="nv">option-list</span> <span class="s">"-M"</span> <span class="nv">flycheck-perl-module-list</span> <span class="nv">concat</span><span class="p">))</span>
-  <span class="ss">:standard-input</span> <span class="no">t</span>
-  <span class="ss">:error-patterns</span>
-  <span class="p">((</span><span class="nb">error</span> <span class="nv">line-start</span> <span class="p">(</span><span class="nv">minimal-match</span> <span class="p">(</span><span class="nv">message</span><span class="p">))</span>
-          <span class="s">" at - line "</span> <span class="nv">line</span>
-          <span class="p">(</span><span class="nb">or</span> <span class="s">"."</span> <span class="p">(</span><span class="nb">and</span> <span class="s">", "</span> <span class="p">(</span><span class="nv">zero-or-more</span> <span class="nv">not-newline</span><span class="p">)))</span> <span class="nv">line-end</span><span class="p">))</span>
-  <span class="ss">:modes</span> <span class="p">(</span><span class="nv">perl-mode</span> <span class="nv">cperl-mode</span><span class="p">))</span>
-
-<span class="p">(</span><span class="nb">defun</span> <span class="nv">my/cperl-select-correct-flycheck-checker</span> <span class="p">()</span>
-  <span class="s">"If the current buffer is part of a plx project then use the `my/perl-plx'
-checker, otherwise use the `perl' checker."</span>
-  <span class="p">(</span><span class="k">let</span> <span class="p">((</span><span class="nv">proj-root</span> <span class="p">(</span><span class="nv">projectile-project-root</span><span class="p">)))</span>
-    <span class="p">(</span><span class="k">if</span> <span class="p">(</span><span class="nb">and</span> <span class="nv">proj-root</span> <span class="p">(</span><span class="nv">file-directory-p</span> <span class="p">(</span><span class="nv">concat</span> <span class="nv">proj-root</span> <span class="s">".plx"</span><span class="p">)))</span>
-        <span class="p">(</span><span class="nv">flycheck-select-checker</span> <span class="ss">'my/perl-plx</span><span class="p">)</span>
-      <span class="p">(</span><span class="nv">flycheck-select-checker</span> <span class="ss">'perl</span><span class="p">))))</span>
-</code></pre>
-
-</div>
-
-
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2894,7 +2932,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 14 September 2022 12:57 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 14 September 2022 16:53 UTC</address>
             </div>
           </div>
         </div><!-- container -->

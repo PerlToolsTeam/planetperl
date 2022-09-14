@@ -7,9 +7,259 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-09-14T12:57:02Z</updated>
+  <updated>2022-09-14T16:53:25Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Open Source Adventures: Episode 81: Exploring Raku Regular Expression API</title>
+    <link rel="alternate" href="https://dev.to/taw/open-source-adventures-episode-81-exploring-raku-regular-expression-api-id2" type="text/html"/>
+    <content type="html">&lt;p&gt;In previous three episodes I explored regular expression APIs of Ruby, Crystal, and Python, so let's finish this by doing the same exercise in Raku.&lt;/p&gt;
+
+&lt;p&gt;The problem is the same - there's multiple date formats, and we want to extract information from whichever one matches.&lt;/p&gt;
+
+&lt;p&gt;I'm doing it with just 3 regular expressions, but in real world there could be hundreds. Doing it naively with a list of regular expressions would require massive code duplication, and a lot of calls to regular expression engine, which is generally dramatically slower than just matching &lt;code&gt;a|b|c|...&lt;/code&gt; once.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  The Problem
+&lt;/h3&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;#!/usr/bin/env raku
+
+use JSON::Fast;
+
+for qw[2015-05-25 2016/06/26 27/07/2017] {
+  say to-json(parse_date($_), :!pretty)
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And expected output is:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;[2015,5,25]
+[2016,6,26]
+[2017,7,27]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h3&gt;
+  
+  
+  Solution 1
+&lt;/h3&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub parse_date($s) {
+  if $s ~~ /(\d\d\d\d)\-(\d\d)\-(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif $s ~~ /(\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif $s ~~ /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The first way is to just list every possible regular expression sequentially.&lt;/p&gt;
+
+&lt;p&gt;In case you're not familiar with Raku, here's a few minor things to notice:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;match groups are numbered from &lt;code&gt;$0&lt;/code&gt; not from &lt;code&gt;$1&lt;/code&gt;
+&lt;/li&gt;
+&lt;li&gt;these variables aren't &lt;code&gt;String&lt;/code&gt; type like in other languages, they're &lt;code&gt;Match&lt;/code&gt;
+&lt;/li&gt;
+&lt;li&gt;we can't &lt;code&gt;to-json&lt;/code&gt; a &lt;code&gt;Match&lt;/code&gt; object without some kind of conversion, either to string or ot number, so returning &lt;code&gt;[$0, $1, $2]&lt;/code&gt; would just crash&lt;/li&gt;
+&lt;li&gt;
+&lt;code&gt;+&lt;/code&gt; converts to a number&lt;/li&gt;
+&lt;li&gt;match operator is &lt;code&gt;~~&lt;/code&gt;, not &lt;code&gt;=~&lt;/code&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;code&gt;\d&lt;/code&gt; is Unicode digit, not just &lt;code&gt;0&lt;/code&gt; to &lt;code&gt;9&lt;/code&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;There's also a bigger thing to consider - in other languages, unknown punctuation like &lt;code&gt;/&lt;/code&gt; or &lt;code&gt;-&lt;/code&gt; can be used in regular expression literally. In retrospect this was a mistake, as it prevents adding new regular expression syntax without breaking backwards compatibility. Raku forces escaping every such punctuation, even currently unused, so at some point in the future it can make &lt;code&gt;-&lt;/code&gt; or &lt;code&gt;/&lt;/code&gt; have some meaning.&lt;/p&gt;
+
+&lt;p&gt;Anyway, just like solution 1 in other languages, this suffers from both problems - code duplication, and poor performance due to sequential match.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  Solution 2
+&lt;/h3&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Just like in Perl, we don't need to use &lt;code&gt;~~&lt;/code&gt;, if we use regular expression in boolean context it will automatically match &lt;code&gt;$_&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  Solution 3
+&lt;/h3&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d)/ or /(\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We can reduce code duplication if groups are in the same order.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  Solution 4
+&lt;/h3&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d) | (\d\d\d\d)\/(\d\d)\/(\d\d)/ {
+    [+$0, +$1, +$2]
+  } elsif /(\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$2, +$1, +$0]
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;What's going on here? In Raku &lt;code&gt;$0&lt;/code&gt;, &lt;code&gt;$1&lt;/code&gt;, &lt;code&gt;$2&lt;/code&gt; don't mean the Nth match group in the expression, it means Nth match group that actually matched (at least for &lt;code&gt;|&lt;/code&gt; alternatives, the full story is more complicated)!&lt;/p&gt;
+
+&lt;p&gt;This is great as we can put as many expressions as we want without any nonsense like &lt;code&gt;+($0 or $3 or $6)&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;On the other hand, this means we have no way to do alternative if they're in a different order.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  Solution 5
+&lt;/h3&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub parse_date($_) {
+  if /(\d\d\d\d)\-(\d\d)\-(\d\d) |
+      (\d\d\d\d)\/(\d\d)\/(\d\d) |
+      (\d\d)\/(\d\d)\/(\d\d\d\d)/ {
+    [+$0, +$1, +$2]
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This doesn't actually work. The block can't tell which branch matched, so it doesn't know if the groups are in YMD or DMY order.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  Solution 6
+&lt;/h3&gt;
+
+
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sub parse_date($_) {
+  if /
+    $&amp;lt;y&amp;gt;=(\d\d\d\d) \- $&amp;lt;m&amp;gt;=(\d\d) \- $&amp;lt;d&amp;gt;=(\d\d) |
+    $&amp;lt;y&amp;gt;=(\d\d\d\d) \/ $&amp;lt;m&amp;gt;=(\d\d) \/ $&amp;lt;d&amp;gt;=(\d\d) |
+    $&amp;lt;d&amp;gt;=(\d\d) \/ $&amp;lt;m&amp;gt;=(\d\d) \/ $&amp;lt;y&amp;gt;=(\d\d\d\d)
+    / {
+    [+$&amp;lt;y&amp;gt;, +$&amp;lt;m&amp;gt;, +$&amp;lt;d&amp;gt;]
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;We can solve this with named captures, and it works great.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  Story so far
+&lt;/h3&gt;
+
+&lt;p&gt;The syntax and API are both very different from traditional regular expressions, but in the end we got everything we needed.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://github.com/taw/open-source-adventures"&gt;All the code is on GitHub&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h3&gt;
+  
+  
+  Coming next
+&lt;/h3&gt;
+
+&lt;p&gt;I was planning to write another post on how we could improve regular expression APIs, but it turns out the APIs we explored (except Python's disappointingly limited one) actually have features that cover most of what I wanted to say, even if they're rarely used in the real world yet.&lt;/p&gt;
+
+&lt;p&gt;So the next episode will be about something completely different.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Tomasz Wegrzanowski</name>
+    </author>
+    <id>https://dev.to/taw/open-source-adventures-episode-81-exploring-raku-regular-expression-api-id2</id>
+    <published>2022-09-14T15:08:30Z</published>
+    <updated>2022-09-14T15:08:30Z</updated>
+    <category term="raku"/>
+    <category term="perl"/>
+    <category term="regex"/>
+  </entry>
   <entry>
     <title>An artistic tool for programmers.</title>
     <link rel="alternate" href="http://blogs.perl.org/users/lichtkind/2022/09/an-artistic-tool-for-programmers.html"/>
@@ -32,6 +282,16 @@
         
     </content>
 </entry>
+  <entry>
+    <title>The Weekly Challenge - Guest Contributions</title>
+    <link rel="alternate" href="https://theweeklychallenge.org/blog/guest-contribution/" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fennel, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.</div>
+    </content>
+    <id>https://theweeklychallenge.org/blog/guest-contribution/</id>
+    <published>2022-09-14T00:00:00Z</published>
+    <updated>2022-09-14T00:00:00Z</updated>
+  </entry>
   <entry>
     <title>Perl Weekly Challenge 182:  Max Index and Common Path</title>
     <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-182-max-index-and-common-path.html"/>
@@ -223,16 +483,6 @@ say '/', join '/', @first[0..$k];
 
     </content>
 </entry>
-  <entry>
-    <title>The Weekly Challenge - Guest Contributions</title>
-    <link rel="alternate" href="https://theweeklychallenge.org/blog/guest-contribution/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml">As you know, The Weekly Challenge, primarily focus on Perl and Raku. During the Week #018, we received solutions to The Weekly Challenge - 018 by Orestis Zekai in Python. It was pleasant surprise to receive solutions in something other than Perl and Raku. Ever since regular team members also started contributing in other languages like Ada, APL, Awk, BASIC, Bash, Bc, Befunge-93, Bourne Shell, BQN, Brainfuck, C3, C, CESIL, Chef, COBOL, Coconut, C Shell, C++, Clojure, Crystal, D, Dart, Dc, Elixir, Elm, Emacs Lisp, Erlang, Excel VBA, Fennel, Fish, Forth, Fortran, Gembase, GNAT, Go, Haskell, Haxe, HTML, Idris, IO, J, Janet, Java, JavaScript, Julia, Kotlin, Lisp, Logo, Lua, M4, Miranda, Modula 3, MMIX, Mumps, Myrddin, Nim, Nix, Node.</div>
-    </content>
-    <id>https://theweeklychallenge.org/blog/guest-contribution/</id>
-    <published>2022-09-13T00:00:00Z</published>
-    <updated>2022-09-13T00:00:00Z</updated>
-  </entry>
   <entry>
     <title>#581 - What to write about?</title>
     <link rel="alternate" href="https://perlweekly.com/archive/581.html" type="text/html"/>
@@ -1779,216 +2029,6 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
       <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
     </author>
     <thr:total>0</thr:total>
-  </entry>
-  <entry>
-    <title>Segregate Perl Projects with App::plx</title>
-    <link rel="alternate" href="https://dev.to/nicholasbhubbard/segregate-perl-projects-with-appplx-7oj" type="text/html"/>
-    <content type="html">&lt;p&gt;&lt;a href="https://metacpan.org/pod/App::plx"&gt;App::plx&lt;/a&gt; (Plx) is a tool for configuring per-project Perl development environments.&lt;/p&gt;
-
-&lt;p&gt;Plx is not difficult to use and has very clear documentation. In this post I will give a brief overview of some of the problems that it solves and how to get started using it.&lt;/p&gt;
-
-&lt;p&gt;This is not a complete overview on everything that Plx can do.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="orgbd602ea"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Why Plx?
-&lt;/h1&gt;
-
-&lt;p&gt;Imagine you have a project that depends on a Perl version greater than that of your systems built-in Perl. You will need to install the correct version of Perl and figure out how to get your project to use this Perl instead of the system's Perl.&lt;/p&gt;
-
-&lt;p&gt;Next imagine a scenario where you are working on two different Perl projects that depend on a different version of the same CPAN module. You will need to figure out how to install both versions into different locations, and then you will need to figure out how to locate the correct version from the two different projects.&lt;/p&gt;
-
-&lt;p&gt;These are two important problems that Plx solves.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="org87e7c16"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Installation
-&lt;/h1&gt;
-
-&lt;p&gt;Before you can use Plx you must install Plx.&lt;/p&gt;
-
-&lt;p&gt;If you already have a CPAN installer, such as &lt;a href="https://metacpan.org/pod/App::cpanminus"&gt;cpanminus&lt;/a&gt;, then you should probably just use that to install Plx.&lt;/p&gt;
-
-&lt;p&gt;Plx can also be bootstrapped into a self contained script like so:&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ mkdir "$HOME/bin"
-$ wget https://raw.githubusercontent.com/shadowcat-mst/plx/master/bin/plx-packed -O "$HOME/bin/plx"
-$ chmod +x "$HOME/bin/plx"
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-&lt;p&gt;You can install Plx into any directory, I just chose "$HOME/bin" for simplicity. Just make sure you pick a directory in your &lt;a href="https://en.wikipedia.org/wiki/PATH_(variable)"&gt;PATH&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="orgd968283"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Initialization
-&lt;/h1&gt;
-
-&lt;p&gt;If you want to use Plx for your Perl project, you must first initialize the project to use Plx. To do this we must &lt;code&gt;cd&lt;/code&gt; into the root directory of the project and then execute Plx with the &lt;code&gt;--init&lt;/code&gt; flag.&lt;/p&gt;
-
-&lt;p&gt;The &lt;code&gt;--init&lt;/code&gt; flag behaves differently depending on its argument.&lt;/p&gt;
-
-&lt;p&gt;When &lt;code&gt;--init&lt;/code&gt; is called with a file path, it assumes it is a path to a Perl interpreter and sets up Plx to use it.&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ plx --init /path/to/some/perl
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-&lt;p&gt;When called with &lt;code&gt;perl&lt;/code&gt; as the argument it sets up Plx to use the first Perl in your &lt;a href="https://en.wikipedia.org/wiki/PATH_(variable)"&gt;PATH&lt;/a&gt;.&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ plx --init perl
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-&lt;p&gt;The final and most exciting way to call &lt;code&gt;--init&lt;/code&gt; is with a Perl version number. When called with a version number, Plx will look for a Perl of the given version first in your &lt;a href="https://en.wikipedia.org/wiki/PATH_(variable)"&gt;PATH&lt;/a&gt; and otherwise via &lt;a href="https://perlbrew.pl/"&gt;Perlbrew&lt;/a&gt;.&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ plx --init 5.36.0
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-&lt;p&gt;After initializing Plx you can execute your project code with a command like &lt;code&gt;$ plx /path/to/project/script.pl&lt;/code&gt;, and Plx will execute the script with the Perl interpreter you specified with the &lt;code&gt;plx --init&lt;/code&gt; command.&lt;/p&gt;
-
-&lt;p&gt;This is how Plx solves the problem of needing to use a different Perl than your systems built-in Perl.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="org124c9de"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Installing CPAN Modules
-&lt;/h1&gt;
-
-&lt;p&gt;My favorite feature of Plx is that it allows you to install modules off of CPAN into a &lt;a href="https://metacpan.org/pod/local::lib"&gt;local::lib&lt;/a&gt; using &lt;a href="https://metacpan.org/pod/App::cpanminus"&gt;cpanminus&lt;/a&gt;. This allows you to segregate your CPAN modules dependencies on a per-project basis.&lt;/p&gt;
-
-&lt;p&gt;To do this we must &lt;code&gt;cd&lt;/code&gt; into the root directory of our project and run the following command.&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ plx --cpanm -Llocal Some::Module
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-&lt;p&gt;This will install &lt;code&gt;Some::Module&lt;/code&gt; into a project-local library located in a directory named &lt;code&gt;local/lib&lt;/code&gt; at the root of the project.&lt;/p&gt;
-
-&lt;p&gt;This solves the problem of two projects requiring different versions of the same CPAN module. If both projects use Plx they can simply install their desired version into a &lt;a href="https://metacpan.org/pod/local::lib"&gt;local::lib&lt;/a&gt;.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="org9b2111c"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Userstrap
-&lt;/h1&gt;
-
-&lt;p&gt;What if you want to use your own Perl interpreter and a &lt;a href="https://metacpan.org/pod/local::lib"&gt;local::lib&lt;/a&gt; when you are working outside of a dedicated Plx project?&lt;/p&gt;
-
-&lt;p&gt;Plx has a &lt;code&gt;--userstrap&lt;/code&gt; flag that will set this up for you automatically.&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;$ plx --userstrap /path/to/some/perl
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-&lt;p&gt;Calling &lt;code&gt;--userstrap&lt;/code&gt; essentially sets up your &lt;code&gt;$HOME&lt;/code&gt; to be a Plx project and sets up a &lt;a href="https://metacpan.org/pod/local::lib"&gt;local::lib&lt;/a&gt; in &lt;code&gt;$HOME/perl5&lt;/code&gt;, installs &lt;a href="https://metacpan.org/pod/App::plx"&gt;App::plx&lt;/a&gt; and &lt;a href="https://metacpan.org/pod/App::cpanminus"&gt;App::cpanminus&lt;/a&gt; into the local::lib, and adds a line to your &lt;code&gt;$HOME/.bashrc&lt;/code&gt; that sets up Plx for your Bash shell.&lt;/p&gt;
-
-&lt;p&gt;Now when you run Plx from outside a dedicated Plx project it will use &lt;code&gt;$HOME&lt;/code&gt; as a sort of default Plx project. You can use &lt;code&gt;--userstrap&lt;/code&gt; to prevent needing to use your system Perl, so you and can instead always use Plx.&lt;/p&gt;
-
-&lt;p&gt;Note that &lt;code&gt;--userstrap&lt;/code&gt; requires that you use a Bash shell.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="org285989d"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Plx is For Everybody
-&lt;/h1&gt;
-
-&lt;p&gt;Plx is designed to not only provide a nice experience for Perl developers, but also to be usable by a sysadmin that isn't a Perl expert. Therefore Plx is configured through simple text files that can be manipulated by hand, and allows multiple commands to be run in a single Plx invocation via the &lt;code&gt;--multi&lt;/code&gt; flag, which makes scripting Plx cleaner.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="orgdee387b"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Synopsis
-&lt;/h1&gt;
-
-&lt;p&gt;Plx is a tool for creating per-project virtual Perl environments. Plx lets us avoid a lot of headaches that come with developing multiple Perl projects on the same system.&lt;/p&gt;
-
-&lt;p&gt;A lot of what Plx does can be done by combining features of other CPAN modules, but Plx brings together these functionalities in a way that is easy to use and understand.&lt;/p&gt;
-
-&lt;p&gt;This blog post is only a brief introduction to Plx. Please go on to read the manual for more a more detailed overview of its features.&lt;/p&gt;
-
-&lt;p&gt;&lt;a id="orgef3ab18"&gt;&lt;/a&gt;&lt;/p&gt;
-
-&lt;h1&gt;
-  
-  
-  Bonus Tip for Emacs Users
-&lt;/h1&gt;
-
-&lt;p&gt;If you lint your Perl code with the Perl interpreter using Flycheck, you will need to determine if the buffer is part of a Plx project so it runs the Perl interpreter through Plx.&lt;/p&gt;
-
-&lt;p&gt;Use the following code to do this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight common_lisp"&gt;&lt;code&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;require&lt;/span&gt; &lt;span class="ss"&gt;'flycheck&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
-&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;require&lt;/span&gt; &lt;span class="ss"&gt;'projectile&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
-
-&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;add-hook&lt;/span&gt; &lt;span class="ss"&gt;'cperl-mode-hook&lt;/span&gt; &lt;span class="ss"&gt;'flycheck-mode&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
-&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;add-hook&lt;/span&gt; &lt;span class="ss"&gt;'cperl-mode-hook&lt;/span&gt; &lt;span class="ss"&gt;'my/cperl-select-correct-flycheck-checker&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
-
-&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;flycheck-define-checker&lt;/span&gt; &lt;span class="nv"&gt;my/perl-plx&lt;/span&gt;
-  &lt;span class="ss"&gt;:command&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s"&gt;"plx"&lt;/span&gt; &lt;span class="s"&gt;"-w"&lt;/span&gt; &lt;span class="s"&gt;"-c"&lt;/span&gt;
-            &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;option-list&lt;/span&gt; &lt;span class="s"&gt;"-I"&lt;/span&gt; &lt;span class="nv"&gt;flycheck-perl-include-path&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
-            &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;option-list&lt;/span&gt; &lt;span class="s"&gt;"-M"&lt;/span&gt; &lt;span class="nv"&gt;flycheck-perl-module-list&lt;/span&gt; &lt;span class="nv"&gt;concat&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
-  &lt;span class="ss"&gt;:standard-input&lt;/span&gt; &lt;span class="no"&gt;t&lt;/span&gt;
-  &lt;span class="ss"&gt;:error-patterns&lt;/span&gt;
-  &lt;span class="p"&gt;((&lt;/span&gt;&lt;span class="nb"&gt;error&lt;/span&gt; &lt;span class="nv"&gt;line-start&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;minimal-match&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;message&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
-          &lt;span class="s"&gt;" at - line "&lt;/span&gt; &lt;span class="nv"&gt;line&lt;/span&gt;
-          &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;or&lt;/span&gt; &lt;span class="s"&gt;"."&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;and&lt;/span&gt; &lt;span class="s"&gt;", "&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;zero-or-more&lt;/span&gt; &lt;span class="nv"&gt;not-newline&lt;/span&gt;&lt;span class="p"&gt;)))&lt;/span&gt; &lt;span class="nv"&gt;line-end&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
-  &lt;span class="ss"&gt;:modes&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;perl-mode&lt;/span&gt; &lt;span class="nv"&gt;cperl-mode&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
-
-&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;defun&lt;/span&gt; &lt;span class="nv"&gt;my/cperl-select-correct-flycheck-checker&lt;/span&gt; &lt;span class="p"&gt;()&lt;/span&gt;
-  &lt;span class="s"&gt;"If the current buffer is part of a plx project then use the `my/perl-plx'
-checker, otherwise use the `perl' checker."&lt;/span&gt;
-  &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;let&lt;/span&gt; &lt;span class="p"&gt;((&lt;/span&gt;&lt;span class="nv"&gt;proj-root&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;projectile-project-root&lt;/span&gt;&lt;span class="p"&gt;)))&lt;/span&gt;
-    &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;and&lt;/span&gt; &lt;span class="nv"&gt;proj-root&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;file-directory-p&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;concat&lt;/span&gt; &lt;span class="nv"&gt;proj-root&lt;/span&gt; &lt;span class="s"&gt;".plx"&lt;/span&gt;&lt;span class="p"&gt;)))&lt;/span&gt;
-        &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;flycheck-select-checker&lt;/span&gt; &lt;span class="ss"&gt;'my/perl-plx&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
-      &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;flycheck-select-checker&lt;/span&gt; &lt;span class="ss"&gt;'perl&lt;/span&gt;&lt;span class="p"&gt;))))&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-</content>
-    <author>
-      <name>Nicholas Hubbard</name>
-    </author>
-    <id>https://dev.to/nicholasbhubbard/segregate-perl-projects-with-appplx-7oj</id>
-    <published>2022-09-03T00:09:10Z</published>
-    <updated>2022-09-03T00:09:10Z</updated>
-    <category term="perl"/>
   </entry>
   <entry>
   <title>Dancer2: Sessions</title>
