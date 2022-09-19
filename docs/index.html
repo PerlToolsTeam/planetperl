@@ -59,6 +59,1249 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/al_newkirk/2022/09/types-objects-and-systems-oh-my.html">Types, Objects, and Systems, Oh my!</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by awncorp
+ on Tuesday 20 September 2022 01:25</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <h2>Inextricably bound</h2>
+
+<p>Perl isn't a strongly typed language, and its built-in types are limited and not generally accessible to the engineer, however, Perl supports various classes of data and in recent years has flirted with various ways of enabling runtime type checking.</p>
+
+<p>In a strongly typed language the tl;dr; case for declaring data types is memory management, compile-time code optimization, and correctness. To this day I'm both impressed and horrified by the number of errors caught when I implement some kind of type checking in my programs. When it comes to runtime type checking we're only concerned with enforcing correctness.</p>
+
+<p>Types, values, objects, signatures, and the systems that tie these all together, are all inextricably bound. They are necessarily interdependent in order to present/provide a cohesive and consistent system. Peeling back the layers a bit, types are merely classifications of data. Any given piece of data can be classified as belonging to a particular type whether implicit or explicit.</p>
+
+<p>Types are instantiated (i.e. have concrete representations, i.e. instances) whenever data is created and/or declared as conforming to the type's criteria.  Runtime types are arbitrary. A value of <code>1</code> can be said to be of type number where the value <code>"1"</code> can be said to be of the type string. Also in Perl, an object is a specific kind of reference; a reference tied to a particular namespace.</p>
+
+<h2>Runtime type libraries</h2>
+
+<p>Currently, as per the CPAN, there are a few different ways to declare and use runtime type checking in your application. The three most popular libraries, in no particular order, are, <a href="https://metacpan.org/pod/MooseX::Types">MooseX::Types</a>, <a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a>, and <a href="https://metacpan.org/pod/Specio">Specio</a>. All of these type libraries have Moo/se compatibility as their stated goal.</p>
+
+<p>MooseX::Types (2009) was designed to address the Moose global registry (and type conflict) problem.</p>
+
+<pre><code>package MyLibrary;
+
+use MooseX::Types -declare =&gt; [
+  'PositiveInt',
+  'NegativeInt',
+];
+
+use MooseX::Types::Moose 'Int';
+
+subtype PositiveInt,
+  as Int,
+  where { $_ &gt; 0 },
+  message { "Int is not larger than 0" };
+
+subtype NegativeInt,
+  as Int,
+  where { $_ &lt; 0 },
+  message { "Int is not smaller than 0" };
+
+1;
+</code></pre>
+
+<p>Type::Tiny (2013), inspired by MooseX::Types, was designed to have a small footprint, a single non-core dependency, a set of "core" types as a standard library, and to have first-class support for use with Moo.</p>
+
+<pre><code>package MyLibrary;
+
+use Type::Library -base;
+use Type::Utils -all;
+
+BEGIN { extends "Types::Standard" };
+
+declare 'PositiveInt',
+  as 'Int',
+  where { $_ &gt; 0 },
+  message { "Int is not larger than 0" };
+
+declare 'NegativeInt',
+  as 'Int',
+  where { $_ &lt; 0 },
+  message { "Int is not smaller than 0" };
+
+1;
+</code></pre>
+
+<p>Specio (2013) is meant to be a replacement for Moose's built-in types, MooseX::Types, and the Moose global registry (and type conflict) problem.</p>
+
+<pre><code>package MyLibrary;
+
+use Specio::Declare;
+use Specio::Library::Builtins;
+
+declare(
+  'PositiveInt',
+  parent =&gt; t('Int'),
+  where  =&gt; sub { $_[0] &gt; 0 },
+  message_generator =&gt; sub { "Int is not larger than 0" },
+);
+
+declare(
+  'NegativeInt',
+  parent =&gt; t('Int'),
+  where  =&gt; sub { $_[0] &lt; 0 },
+  message_generator =&gt; sub { "Int is not smaller than 0" },
+);
+
+1;
+</code></pre>
+
+<p>What these libraries have in common is the concept of declaring custom types using a DSL and organizing and exporting types from one or more registries.  They also (in practice) produce registries that act as exporters that litter the calling package with use-once functions which require namespace::autoclean to get rid of. To be fair, both Type-Tiny and Specio have object-oriented interfaces that allow you to build types and registries without using the DSL.</p>
+
+<h2>Introducing Venus::Assert</h2>
+
+<p>Meet Venus::Assert, a simple data type assertion class that could serve as the foundation for a future object-oriented type assertion and coercion system for Perl 5.</p>
+
+<p>Venus, the non-core object-oriented standard library, by necessity needs to be able to distinguish between different types of data. It's how the library is capable of distinguishing between the number <code>1</code>, the string <code>1</code>, and the conventional boolean <code>1</code>.</p>
+
+<p>Venus::Assert wraps that know-how in an intuitive utility class that behaves in the tradition of its siblings and provides the foundations for a future Venus-based unified type checking system.</p>
+
+<p>Because Venus::Assert is a Venus utility class it can, without any additional code, complexity, or effort, throw itself, catch itself, try itself, etc.</p>
+
+<p><strong>Throws itself</strong></p>
+
+<pre><code>Venus::Assert-&gt;new('PositiveNum')-&gt;number(sub{$_-&gt;value &gt; 0})-&gt;throw;
+</code></pre>
+
+<p><strong>Catches itself</strong></p>
+
+<pre><code>my ($result, $error) = Venus::Assert-&gt;new('NegativeNum')-&gt;number(sub{$_-&gt;value &lt; 0})-&gt;catch('validate', $value);
+</code></pre>
+
+<p><strong>Tries itself</strong></p>
+
+<pre><code>my $tryable = Venus::Assert-&gt;new('PositiveNum')-&gt;number(sub{$_-&gt;value &gt; 0})-&gt;try('validate', $value);
+</code></pre>
+
+<p>Venus::Assert doesn't have a DSL, doesn't support or encourage type registries, doesn't concern itself with inlining, and doesn't declare parent types to be extended. Venus::Assert instances are simple code-convertible objects built on Venus::Match for powerful object-oriented case/switch operations. Code-convertible custom types can be declared as plain ole packages which conform to a particular interface:</p>
+
+<pre><code>package MyApp::Type::PositiveNumber;
+
+use base 'Venus::Assert';
+
+sub conditions {
+  my ($self) = @_;
+
+  $self-&gt;number(sub{$_-&gt;value &gt; 0});
+}
+
+1;
+</code></pre>
+
+<p>Extending custom types with proper names and explanations (on failure) by doing something like the following:</p>
+
+<pre><code>package MyApp::Type::PositiveNumber;
+
+use base 'Venus::Assert';
+
+sub name {
+  my ($self) = @_;
+  return $self-&gt;class;
+}
+
+sub message {
+  my ($self) = @_;
+  return 'Type assertion (%s) failed, expects a number &gt; 0, received (%s)';
+}
+
+sub conditions {
+  my ($self) = @_;
+  return $self-&gt;number(sub{$_-&gt;value &gt; 0});
+}
+</code></pre>
+
+<h2>Types::Standard via Venus::Assert</h2>
+
+<p>We could easily use Venus::Assert to approximate 90% of what the Type::Tiny Types::Standard library does, with a few lines of code. For example:</p>
+
+<p><strong>Any</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;any
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new(on_none =&gt; sub{true})
+</code></pre>
+
+<p><strong>Bool</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;boolean
+</code></pre>
+
+<p><strong>Maybe[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;maybe($a)
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;maybe-&gt;$a
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;undef-&gt;$a
+</code></pre>
+
+<p><strong>Undef</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;undef
+</code></pre>
+
+<p><strong>Defined</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;defined
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;when(sub{defined $_-&gt;value})-&gt;then(sub{true})
+</code></pre>
+
+<p><strong>Value</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;value
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;when(sub{defined $_-&gt;value &amp;&amp; !ref $_-&gt;value})-&gt;then(sub{true})
+</code></pre>
+
+<p><strong>Str</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;string
+</code></pre>
+
+<p><strong>Num</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;number
+</code></pre>
+
+<p><strong>ClassName</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;package
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;string-&gt;constraints-&gt;where-&gt;defined(sub{
+  Venus::Space-&gt;new($_-&gt;value)-&gt;loaded
+})
+</code></pre>
+
+<p><strong>Ref[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;reference
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;defined(sub{
+  ref($_-&gt;value) eq $a
+})
+</code></pre>
+
+<p><strong>ScalarRef[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;scalar
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;scalar(sub{
+  Venus::Assert-&gt;new-&gt;$a-&gt;check($_-&gt;value)
+});
+</code></pre>
+
+<p><strong>ArrayRef[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;array
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;array(sub{
+  Venus::Assert-&gt;new-&gt;$a-&gt;check($_-&gt;value)
+});
+</code></pre>
+
+<p><strong>HashRef[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;hash
+</code></pre>
+
+<p>... or</p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;array(sub{
+  Venus::Assert-&gt;new-&gt;$a-&gt;check($_-&gt;value)
+});
+</code></pre>
+
+<p><strong>CodeRef</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;code
+</code></pre>
+
+<p><strong>RegexpRef</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;regexp
+</code></pre>
+
+<p><strong>GlobRef</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;reference(sub{ref $_-&gt;value eq 'GLOB'})
+</code></pre>
+
+<p><strong>Object</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;object
+</code></pre>
+
+<p><strong>Tuple[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;tuple(@a)
+</code></pre>
+
+<p><strong>InstanceOf[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;identity($a)
+</code></pre>
+
+<p><strong>ConsumerOf[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;consumes($a)
+</code></pre>
+
+<p><strong>HasMethods[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;routines(@a)
+</code></pre>
+
+<p><strong>StrMatch[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;string(sub{
+  $_-&gt;deduce-&gt;contains($a)
+})
+</code></pre>
+
+<p><strong>Enum[a]</strong></p>
+
+<pre><code>Venus::Assert-&gt;new-&gt;enum(@a)
+</code></pre>
+
+<h2>The state of the art</h2>
+
+<p>Again, types, objects, signatures, and systems, are inextricably bound which means that a good system will provide both architecture and abstractions to support interoperability, or at least declare its way as the one true way. What we have today is an assortment of libraries that tackle a particular aspect of the "runtime type checking" system. Your mileage may vary with regard to interoperability.</p>
+
+<p>Moo/se allows you to type constrain class attributes using MooseX::Types, Type::Tiny, and/or Specio, etc. Moose (last time I check) uses a single global type registry and isn't designed to play nice with others. Moo, to its credit, provides a simple system-agnostic interface, i.e. accepts code-convertible values, which Type::Tiny takes full advantage of. Type::Tiny goes through some pains (IMHO) to make itself Moose-aware and interoperable. None of these libraries prescribed a methodology for reusing the declared types in function/method signatures. Method::Signatures provides function and method signatures but only supports Moose types (as per its global registry).  Function::Parameters goes a bit further and does provide an abstraction for hooking into the type resolution mechanism as well as the ability to use local functions in signature type notations.</p>
+
+<p>The Perl "signatures" feature provided bare-bones untyped/untypable signatures, and is little more than syntactic sugar for argument unpacking. The registry/routines pragmas attempt to bring together Function::Parameters and Type::Tiny to provide a unified system for runtime type checking. All of the type libraries support parameterized type declarations, and yet none of the signature pragmas/parsers do.</p>
+
+<h2>The future, hopefully</h2>
+
+<p>To have proper compile-time types (which are extendable), they need to be built into the language, in which case you'll likely end up with something like Raku.</p>
+
+<p>To have proper runtime types which feel natural and legit in Perl 5 we need to nail the interoperability problem, and to do that we need to devise a standard that allows systems to cooperate.</p>
+
+<p>We need package fields, objects, properties, values, and subroutine signatures to be capable of using the same vocabulary and type notation to declare type constraints, thus recognizing and accepting the same types and data.</p>
+
+<p><strong>Here's an idea</strong></p>
+
+<p>Simple architecture:</p>
+
+<ul>
+<li>A type is simply a package with "check" and "make" routines</li>
+<li>The "check" routine accepts any value and returns a tuple, i.e. (valid?, explanation)</li>
+<li>The "make" routine accepts any value and returns the value (possibly modified) and the result of the "check" routine, i.e. a tuple of (value, valid?, explanation)</li>
+<li>A "types" statement, appends the currently scoped <code>@TYPES</code> global, allowing the use of shortnames when referring to types</li>
+<li>The "type" function accepts a string-based type expression, and any value, resolving the type expression and executing the type's "make" function</li>
+</ul>
+
+<p><strong>Declare custom type</strong></p>
+
+<pre><code>package MyApp::Type::String;
+
+sub check {
+  my ($value) = @_;
+  (false, 'Not a string')
+}
+
+sub make {
+  my ($value) = @_
+  ($value, check($value));
+}
+
+1;
+</code></pre>
+
+<p><strong>Resolve custom type</strong></p>
+
+<pre><code>package MyApp;
+
+use the-idea-materialized;
+
+types 'MyApp::Type';
+
+my ($value) = type('String', 'hello');
+
+1;
+</code></pre>
+
+<p>Governance rules and notation:</p>
+
+<ul>
+<li>No parameterized types</li>
+<li>Type resolution fallback to some "core" namespace if local <code>@TYPES</code> global is empty</li>
+</ul>
+
+<h2>Sources</h2>
+
+<p><strong>Object-systems</strong></p>
+
+<p><a href="https://metacpan.org/pod/Moo">Moo</a></p>
+
+<p><a href="https://metacpan.org/pod/Moose">Moose</a></p>
+
+<p><strong>Type libraries</strong></p>
+
+<p><a href="https://metacpan.org/pod/MooseX::Types">MooseX::Types</a></p>
+
+<p><a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a></p>
+
+<p><a href="https://metacpan.org/pod/Specio">Specio</a></p>
+
+<p><a href="https://metacpan.org/pod/Type::Library">Type::Library</a></p>
+
+<p><a href="https://metacpan.org/pod/Types::Standard">Types::Standard</a></p>
+
+<p><strong>Subroutine signatures</strong></p>
+
+<p><a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a></p>
+
+<p><a href="https://metacpan.org/pod/Method::Signatures">Method::Signatures</a></p>
+
+<p><a href="https://metacpan.org/pod/routines">registry/routines</a></p>
+
+<h2>End Quote</h2>
+
+<p>"Check yo' self before you wreck yo' self" - Ice Cube</p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/iamalnewkirk/types-objects-and-systems-oh-my-27hk">Types, Objects, and Systems, Oh my!</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Al Newkirk
+ on Monday 19 September 2022 20:12</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h2>
+  
+  
+  Inextricably bound
+</h2>
+
+<p>Perl isn't a strongly typed language, and its built-in types are limited and not generally accessible to the engineer, however, Perl supports various classes of data and in recent years has flirted with various ways of enabling runtime type checking.</p>
+
+<p>In a strongly typed language the tl;dr; case for declaring data types is memory management, compile-time code optimization, and correctness. To this day I'm both impressed and horrified by the number of errors caught when I implement some kind of type checking in my programs. When it comes to runtime type checking we're only concerned with enforcing correctness.</p>
+
+<p>Types, values, objects, signatures, and the systems that tie these all together, are all inextricably bound. They are necessarily interdependent in order to present/provide a cohesive and consistent system. Peeling back the layers a bit, types are merely classifications of data. Any given piece of data can be classified as belonging to a particular type whether implicit or explicit.</p>
+
+<p>Types are instantiated (i.e. have concrete representations, i.e. instances) whenever data is created and/or declared as conforming to the type's criteria.  Runtime types are arbitrary. A value of <code>1</code> can be said to be of type number where the value <code>"1"</code> can be said to be of the type string. Also in Perl, an object is a specific kind of reference; a reference tied to a particular namespace.</p>
+
+<h2>
+  
+  
+  Runtime type libraries
+</h2>
+
+<p>Currently, as per the CPAN, there are a few different ways to declare and use runtime type checking in your application. The three most popular libraries, in no particular order, are, <a href="https://metacpan.org/pod/MooseX::Types">MooseX::Types</a>, <a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a>, and <a href="https://metacpan.org/pod/Specio">Specio</a>. All of these type libraries have Moo/se compatibility as their stated goal.</p>
+
+<p>MooseX::Types (2009) was designed to address the Moose global registry (and type conflict) problem.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">MyLibrary</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nn">MooseX::</span><span class="nv">Types</span> <span class="o">-</span><span class="s">declare</span> <span class="o">=&gt;</span> <span class="p">[</span>
+  <span class="p">'</span><span class="s1">PositiveInt</span><span class="p">',</span>
+  <span class="p">'</span><span class="s1">NegativeInt</span><span class="p">',</span>
+<span class="p">];</span>
+
+<span class="k">use</span> <span class="nn">MooseX::Types::</span><span class="nv">Moose</span> <span class="p">'</span><span class="s1">Int</span><span class="p">';</span>
+
+<span class="nv">subtype</span> <span class="nv">PositiveInt</span><span class="p">,</span>
+  <span class="nv">as</span> <span class="nv">Int</span><span class="p">,</span>
+  <span class="nv">where</span> <span class="p">{</span> <span class="vg">$_</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="p">},</span>
+  <span class="nv">message</span> <span class="p">{</span> <span class="p">"</span><span class="s2">Int is not larger than 0</span><span class="p">"</span> <span class="p">};</span>
+
+<span class="nv">subtype</span> <span class="nv">NegativeInt</span><span class="p">,</span>
+  <span class="nv">as</span> <span class="nv">Int</span><span class="p">,</span>
+  <span class="nv">where</span> <span class="p">{</span> <span class="vg">$_</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="p">},</span>
+  <span class="nv">message</span> <span class="p">{</span> <span class="p">"</span><span class="s2">Int is not smaller than 0</span><span class="p">"</span> <span class="p">};</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Type::Tiny (2013), inspired by MooseX::Types, was designed to have a small footprint, a single non-core dependency, a set of "core" types as a standard library, and to have first-class support for use with Moo.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">MyLibrary</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nn">Type::</span><span class="nv">Library</span> <span class="o">-</span><span class="nv">base</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Type::</span><span class="nv">Utils</span> <span class="o">-</span><span class="nv">all</span><span class="p">;</span>
+
+<span class="k">BEGIN</span> <span class="p">{</span> <span class="nv">extends</span> <span class="p">"</span><span class="s2">Types::Standard</span><span class="p">"</span> <span class="p">};</span>
+
+<span class="nv">declare</span> <span class="p">'</span><span class="s1">PositiveInt</span><span class="p">',</span>
+  <span class="nv">as</span> <span class="p">'</span><span class="s1">Int</span><span class="p">',</span>
+  <span class="nv">where</span> <span class="p">{</span> <span class="vg">$_</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="p">},</span>
+  <span class="nv">message</span> <span class="p">{</span> <span class="p">"</span><span class="s2">Int is not larger than 0</span><span class="p">"</span> <span class="p">};</span>
+
+<span class="nv">declare</span> <span class="p">'</span><span class="s1">NegativeInt</span><span class="p">',</span>
+  <span class="nv">as</span> <span class="p">'</span><span class="s1">Int</span><span class="p">',</span>
+  <span class="nv">where</span> <span class="p">{</span> <span class="vg">$_</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="p">},</span>
+  <span class="nv">message</span> <span class="p">{</span> <span class="p">"</span><span class="s2">Int is not smaller than 0</span><span class="p">"</span> <span class="p">};</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Specio (2013) is meant to be a replacement for Moose's built-in types, MooseX::Types, and the Moose global registry (and type conflict) problem.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">MyLibrary</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nn">Specio::</span><span class="nv">Declare</span><span class="p">;</span>
+<span class="k">use</span> <span class="nn">Specio::Library::</span><span class="nv">Builtins</span><span class="p">;</span>
+
+<span class="nv">declare</span><span class="p">(</span>
+  <span class="p">'</span><span class="s1">PositiveInt</span><span class="p">',</span>
+  <span class="s">parent</span> <span class="o">=&gt;</span> <span class="nv">t</span><span class="p">('</span><span class="s1">Int</span><span class="p">'),</span>
+  <span class="s">where</span>  <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> <span class="vg">$_</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="p">},</span>
+  <span class="s">message_generator</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> <span class="p">"</span><span class="s2">Int is not larger than 0</span><span class="p">"</span> <span class="p">},</span>
+<span class="p">);</span>
+
+<span class="nv">declare</span><span class="p">(</span>
+  <span class="p">'</span><span class="s1">NegativeInt</span><span class="p">',</span>
+  <span class="s">parent</span> <span class="o">=&gt;</span> <span class="nv">t</span><span class="p">('</span><span class="s1">Int</span><span class="p">'),</span>
+  <span class="s">where</span>  <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> <span class="vg">$_</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="p">},</span>
+  <span class="s">message_generator</span> <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> <span class="p">"</span><span class="s2">Int is not smaller than 0</span><span class="p">"</span> <span class="p">},</span>
+<span class="p">);</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>What these libraries have in common is the concept of declaring custom types using a DSL and organizing and exporting types from one or more registries.  They also (in practice) produce registries that act as exporters that litter the calling package with use-once functions which require namespace::autoclean to get rid of. To be fair, both Type-Tiny and Specio have object-oriented interfaces that allow you to build types and registries without using the DSL.</p>
+
+<h2>
+  
+  
+  Introducing Venus::Assert
+</h2>
+
+<p>Meet Venus::Assert, a simple data type assertion class that could serve as the foundation for a future object-oriented type assertion and coercion system for Perl 5.</p>
+
+<p>Venus, the non-core object-oriented standard library, by necessity needs to be able to distinguish between different types of data. It's how the library is capable of distinguishing between the number <code>1</code>, the string <code>1</code>, and the conventional boolean <code>1</code>.</p>
+
+<p>Venus::Assert wraps that know-how in an intuitive utility class that behaves in the tradition of its siblings and provides the foundations for a future Venus-based unified type checking system.</p>
+
+<p>Because Venus::Assert is a Venus utility class it can, without any additional code, complexity, or effort, throw itself, catch itself, try itself, etc.</p>
+
+<p><strong>Throws itself</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">('</span><span class="s1">PositiveNum</span><span class="p">')</span><span class="o">-&gt;</span><span class="nv">number</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">})</span><span class="o">-&gt;</span><span class="nv">throw</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Catches itself</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">my</span> <span class="p">(</span><span class="nv">$result</span><span class="p">,</span> <span class="nv">$error</span><span class="p">)</span> <span class="o">=</span> <span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">('</span><span class="s1">NegativeNum</span><span class="p">')</span><span class="o">-&gt;</span><span class="nv">number</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">})</span><span class="o">-&gt;</span><span class="nv">catch</span><span class="p">('</span><span class="s1">validate</span><span class="p">',</span> <span class="nv">$value</span><span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Tries itself</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">my</span> <span class="nv">$tryable</span> <span class="o">=</span> <span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">('</span><span class="s1">PositiveNum</span><span class="p">')</span><span class="o">-&gt;</span><span class="nv">number</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">})</span><span class="o">-&gt;</span><span class="nv">try</span><span class="p">('</span><span class="s1">validate</span><span class="p">',</span> <span class="nv">$value</span><span class="p">);</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Venus::Assert doesn't have a DSL, doesn't support or encourage type registries, doesn't concern itself with inlining, and doesn't declare parent types to be extended. Venus::Assert instances are simple code-convertible objects built on Venus::Match for powerful object-oriented case/switch operations. Code-convertible custom types can be declared as plain ole packages which conform to a particular interface:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">MyApp::Type::</span><span class="nv">PositiveNumber</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">base</span> <span class="p">'</span><span class="s1">Venus::Assert</span><span class="p">';</span>
+
+<span class="k">sub </span><span class="nf">conditions</span> <span class="p">{</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+
+  <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">number</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">});</span>
+<span class="p">}</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Extending custom types with proper names and explanations (on failure) by doing something like the following:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">MyApp::Type::</span><span class="nv">PositiveNumber</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">base</span> <span class="p">'</span><span class="s1">Venus::Assert</span><span class="p">';</span>
+
+<span class="k">sub </span><span class="nf">name</span> <span class="p">{</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+  <span class="k">return</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">class</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">message</span> <span class="p">{</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+  <span class="k">return</span> <span class="p">'</span><span class="s1">Type assertion (%s) failed, expects a number &gt; 0, received (%s)</span><span class="p">';</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">conditions</span> <span class="p">{</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$self</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+  <span class="k">return</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">number</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">});</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  Types::Standard via Venus::Assert
+</h2>
+
+<p>We could easily use Venus::Assert to approximate 90% of what the Type::Tiny Types::Standard library does, with a few lines of code. For example:</p>
+
+<p><strong>Any</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">any</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="s">on_none</span> <span class="o">=&gt;</span> <span class="nv">sub</span><span class="p">{</span><span class="nv">true</span><span class="p">})</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Bool</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">boolean</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Maybe[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">maybe</span><span class="p">(</span><span class="nv">$a</span><span class="p">)</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">maybe</span><span class="o">-&gt;</span><span class="nv">$a</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nb">undef</span><span class="o">-&gt;</span><span class="nv">$a</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Undef</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nb">undef</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Defined</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nb">defined</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">when</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="nb">defined</span> <span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span><span class="p">})</span><span class="o">-&gt;</span><span class="k">then</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="nv">true</span><span class="p">})</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Value</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">value</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">when</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="nb">defined</span> <span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="nb">ref</span> <span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span><span class="p">})</span><span class="o">-&gt;</span><span class="k">then</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="nv">true</span><span class="p">})</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Str</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">string</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Num</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">number</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>ClassName</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nb">package</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">string</span><span class="o">-&gt;</span><span class="nv">constraints</span><span class="o">-&gt;</span><span class="nv">where</span><span class="o">-&gt;</span><span class="nb">defined</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span>
+  <span class="nn">Venus::</span><span class="nv">Space</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span><span class="p">)</span><span class="o">-&gt;</span><span class="nv">loaded</span>
+<span class="p">})</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Ref[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">reference</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nb">defined</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span>
+  <span class="nb">ref</span><span class="p">(</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span><span class="p">)</span> <span class="ow">eq</span> <span class="nv">$a</span>
+<span class="p">})</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>ScalarRef[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nb">scalar</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nb">scalar</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span>
+  <span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">$a</span><span class="o">-&gt;</span><span class="nv">check</span><span class="p">(</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span><span class="p">)</span>
+<span class="p">});</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>ArrayRef[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">array</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">array</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span>
+  <span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">$a</span><span class="o">-&gt;</span><span class="nv">check</span><span class="p">(</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span><span class="p">)</span>
+<span class="p">});</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>HashRef[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">hash</span>
+</code></pre>
+
+</div>
+
+
+
+<p>... or<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">array</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span>
+  <span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">$a</span><span class="o">-&gt;</span><span class="nv">check</span><span class="p">(</span><span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span><span class="p">)</span>
+<span class="p">});</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>CodeRef</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">code</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>RegexpRef</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">regexp</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>GlobRef</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">reference</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span><span class="nb">ref</span> <span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">value</span> <span class="ow">eq</span> <span class="p">'</span><span class="s1">GLOB</span><span class="p">'})</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Object</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">object</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Tuple[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">tuple</span><span class="p">(</span><span class="nv">@a</span><span class="p">)</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>InstanceOf[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">identity</span><span class="p">(</span><span class="nv">$a</span><span class="p">)</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>ConsumerOf[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">consumes</span><span class="p">(</span><span class="nv">$a</span><span class="p">)</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>HasMethods[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">routines</span><span class="p">(</span><span class="nv">@a</span><span class="p">)</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>StrMatch[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">string</span><span class="p">(</span><span class="nv">sub</span><span class="p">{</span>
+  <span class="vg">$_</span><span class="o">-&gt;</span><span class="nv">deduce</span><span class="o">-&gt;</span><span class="nv">contains</span><span class="p">(</span><span class="nv">$a</span><span class="p">)</span>
+<span class="p">})</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Enum[a]</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nn">Venus::</span><span class="nv">Assert</span><span class="o">-&gt;</span><span class="k">new</span><span class="o">-&gt;</span><span class="nv">enum</span><span class="p">(</span><span class="nv">@a</span><span class="p">)</span>
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  The state of the art
+</h2>
+
+<p>Again, types, objects, signatures, and systems, are inextricably bound which means that a good system will provide both architecture and abstractions to support interoperability, or at least declare its way as the one true way. What we have today is an assortment of libraries that tackle a particular aspect of the "runtime type checking" system. Your mileage may vary with regard to interoperability.</p>
+
+<p>Moo/se allows you to type constrain class attributes using MooseX::Types, Type::Tiny, and/or Specio, etc. Moose (last time I check) uses a single global type registry and isn't designed to play nice with others. Moo, to its credit, provides a simple system-agnostic interface, i.e. accepts code-convertible values, which Type::Tiny takes full advantage of. Type::Tiny goes through some pains (IMHO) to make itself Moose-aware and interoperable. None of these libraries prescribed a methodology for reusing the declared types in function/method signatures. Method::Signatures provides function and method signatures but only supports Moose types (as per its global registry).  Function::Parameters goes a bit further and does provide an abstraction for hooking into the type resolution mechanism as well as the ability to use local functions in signature type notations.</p>
+
+<p>The Perl "signatures" feature provided bare-bones untyped/untypable signatures, and is little more than syntactic sugar for argument unpacking. The registry/routines pragmas attempt to bring together Function::Parameters and Type::Tiny to provide a unified system for runtime type checking. All of the type libraries support parameterized type declarations, and yet none of the signature pragmas/parsers do.</p>
+
+<h2>
+  
+  
+  The future, hopefully
+</h2>
+
+<p>To have proper compile-time types (which are extendable), they need to be built into the language, in which case you'll likely end up with something like Raku.</p>
+
+<p>To have proper runtime types which feel natural and legit in Perl 5 we need to nail the interoperability problem, and to do that we need to devise a standard that allows systems to cooperate.</p>
+
+<p>We need package fields, objects, properties, values, and subroutine signatures to be capable of using the same vocabulary and type notation to declare type constraints, thus recognizing and accepting the same types and data.</p>
+
+<p><strong>Here's an idea</strong></p>
+
+<p>Simple architecture:</p>
+
+<ul>
+<li>A type is simply a package with "check" and "make" routines</li>
+<li>The "check" routine accepts any value and returns a tuple, i.e. (valid?, explanation)</li>
+<li>The "make" routine accepts any value and returns the value (possibly modified) and the result of the "check" routine, i.e. a tuple of (value, valid?, explanation)</li>
+<li>A "types" statement, appends the currently scoped <code>@TYPES</code> global, allowing the use of shortnames when referring to types</li>
+<li>The "type" function accepts a string-based type expression, and any value, resolving the type expression and executing the type's "make" function</li>
+</ul>
+
+<p><strong>Declare custom type</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nn">MyApp::Type::</span><span class="nv">String</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">check</span> <span class="p">{</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$value</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+  <span class="p">(</span><span class="nv">false</span><span class="p">,</span> <span class="p">'</span><span class="s1">Not a string</span><span class="p">')</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">make</span> <span class="p">{</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$value</span><span class="p">)</span> <span class="o">=</span> <span class="err">@</span><span class="nv">_</span>
+  <span class="p">(</span><span class="nv">$value</span><span class="p">,</span> <span class="nv">check</span><span class="p">(</span><span class="nv">$value</span><span class="p">));</span>
+<span class="p">}</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p><strong>Resolve custom type</strong><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nb">package</span> <span class="nv">MyApp</span><span class="p">;</span>
+
+<span class="k">use</span> <span class="nv">the</span><span class="o">-</span><span class="nv">idea</span><span class="o">-</span><span class="nv">materialized</span><span class="p">;</span>
+
+<span class="nv">types</span> <span class="p">'</span><span class="s1">MyApp::Type</span><span class="p">';</span>
+
+<span class="k">my</span> <span class="p">(</span><span class="nv">$value</span><span class="p">)</span> <span class="o">=</span> <span class="nv">type</span><span class="p">('</span><span class="s1">String</span><span class="p">',</span> <span class="p">'</span><span class="s1">hello</span><span class="p">');</span>
+
+<span class="mi">1</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Governance rules and notation:</p>
+
+<ul>
+<li>No parameterized types</li>
+<li>Type resolution fallback to some "core" namespace if local <code>@TYPES</code> global is empty</li>
+</ul>
+
+<h2>
+  
+  
+  Sources
+</h2>
+
+<p><strong>Object-systems</strong></p>
+
+<p><a href="https://metacpan.org/pod/Moo">Moo</a></p>
+
+<p><a href="https://metacpan.org/pod/Moose">Moose</a></p>
+
+<p><strong>Type libraries</strong></p>
+
+<p><a href="https://metacpan.org/pod/MooseX::Types">MooseX::Types</a></p>
+
+<p><a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a></p>
+
+<p><a href="https://metacpan.org/pod/Specio">Specio</a></p>
+
+<p><a href="https://metacpan.org/pod/Type::Library">Type::Library</a></p>
+
+<p><a href="https://metacpan.org/pod/Types::Standard">Types::Standard</a></p>
+
+<p><strong>Subroutine signatures</strong></p>
+
+<p><a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a></p>
+
+<p><a href="https://metacpan.org/pod/Method::Signatures">Method::Signatures</a></p>
+
+<p><a href="https://metacpan.org/pod/routines">registry/routines</a></p>
+
+<h2>
+  
+  
+  End Quote
+</h2>
+
+<p>"Check yo' self before you wreck yo' self" - Ice Cube</p>
+
+<h2>
+  
+  
+  Authors
+</h2>
+
+<p>Awncorp, <code>awncorp@cpan.org</code></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://domm.plix.at/perl/2022_09_things_i_learned_at_pgday.html">Things I learned at PGDay Austria</a></h2>
+<a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
+
+              <p class="text-right"><small>Published
+ on Monday 19 September 2022 16:42</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>On Friday 16th the third <a href="https://pgday.at"><span class="caps">PGD</span>ay Austria</a> took place in Vienna. PGday is a single day PostgreSQL conference with a German and an English track. As I'm using Postgres as my preferred database engine, and also on our <a href="https://balloon-events.com/">most recent project</a> I decided (on rather short notice) to attend.</p>
+
+<p>Here's what I learned:</p>
+
+<ul>
+<li>Everybody suffers from the <a href="https://pgday.at/talks/solving-the-knapsack-problem/">knapsack problem</a>, even if you don't know what it is<ul>
+<li>Francesco Tisiot used this problem (i.e. packing stuff into your backpack) to give a nice introduction to recursive queries</li>
+<li>He has been "fighting against the Excel lobby" for too long (I hear you!)</li>
+<li>Besides the hand-drawn images I found it amusing how the font size of the <span class="caps">SQL </span>got smaller during the talk</li>
+<li>Postgres 14 has a few nice optimisations (<code>SEARCH</code>, <code>CYCLE</code>)</li>
+</ul>
+</li>
+<li>There are a lot of <a href="https://pgday.at/talks/sinnvolle-postgresql-extensions/">useful Postgres extensions</a> already in contrib (so no need to install extra stuff)<ul>
+<li>Even after 20 years of giving talks, Hans-Jürgen Schönig is not safe from projector problems. But having some experience makes it less stressful for the speaker and fun for the audience...</li>
+<li><code>pg_stat_statements</code> is a must-have</li>
+<li>"The reason for performance problems is always a query" (so logging query stats helps!)</li>
+<li>Use <code>citext</code> for case insensitive searches with very little overhead. But: "a little overhead is still better than no result"</li>
+<li><code>pg_trgrm</code> for similarity matching using trigrams. Can also be indexed (<code>... USING GIST(col gist_trgm_ops)</code>)</li>
+<li><code>copy from program</code> seems nice (though dangerous)</li>
+<li>More to check out: <code>pgstattuple</code>, <code>pg_qualstats</code></li>
+</ul>
+</li>
+<li>There is a lot of Open Data available<ul>
+<li>Unfortunately a lot if it is in not very usable formats, lacking docs, or can currently only be understood by humans</li>
+<li>Karen Jex is working on a way to <a href="https://pgday.at/talks/unlocking-open-data/">Unlock Open Data using an Open Source Database</a></li>
+<li>There is a site called <a href="https://findaphd.com">findaphd.com</a> (not I have anything to do with academia)</li>
+<li>It's pity we have to spend so much time on figuring out what each open data set means. If only the authors would have spend a little more time to properly document / annotate the data...</li>
+</ul>
+</li>
+<li>One can use <a href="https://pgday.at/talks/pg-hint-plan/">pg_hint_plan</a> for further insights into and hints to the query planer<ul>
+<li>I haven't had any need for that yet.</li>
+<li>But it's nice that you can use unicode characters for table aliases: <code>select 🍎.name,🍌.price from apple as 🍎 left join banana as 🍌 ...</code><br />
+*Postgres has a some / a lot <a href="https://pgday.at/talks/postgres-pitfalls/">pitfalls</a></li>
+<li><code>schema public</code> is quite public, so (for postgres &lt; 15) do <code>revoke all on schema public from public;</code></li>
+<li>the <code>hba</code> in <code>pg_hba.conf</code> stands for Host Based Access (I was wondering about that for a long time, but always to lazy to look it up..)</li>
+<li>better use <code>scram-sha-256</code> than <code>md5</code> in that file</li>
+<li><code>bigserial</code> probably makes more sense than <code>serial</code> (IIRC we were using <code>bigserial</code> in a rather old project, but I stopped using it for recent ones, no idea why..)</li>
+</ul>
+</li>
+<li>The <a href="https://pgday.at/talks/strategies-for-optimizing-materialized-views/">Strategies for optimizing materialized views for speed and timeliness</a> seem to mostly apply to <a href="https://www.timescale.com/">TimescaleDB</a><ul>
+<li>which looks interesting and I wanted to check it out for some time now</li>
+<li><code>REFRESH MATERIALIZED VIEW CONCURRENTLY</code> will probably still be useful.</li>
+<li>Another interesting extension: <code>pg_cron</code></li>
+</ul>
+</li>
+<li>I did not find the keynotes especially interesting<ul>
+<li>They where mostly sponsor presentations, not the weird masterpieces of talks I'm used to from Perl conferences.</li>
+<li>But still, fair enough to give the sponsors some time to present themselves</li>
+</ul>
+</li>
+<li>I did not like the hat in the goodie bag (seems a bit wasteful, and the design will prevent any non-ironic use)</li>
+<li>Besides that it was another very nice conference!</li>
+</ul>
+
+<p>Thanks to the orgas, speakers, sponsors and attendees!</p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_4">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/timlegge/netsaml2-060-trial-released-m81">Net::SAML2 0.60 TRIAL Released</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -108,7 +1351,7 @@ As this is an helper function that is meant to allow you to pass the cert to ano
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-hooks">Dancer2: Before and After Hooks</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -123,7 +1366,7 @@ Part of the <a href="/dancer">Dancer2 video course</a>.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/582.html">#582 - Grandfather’s Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -139,7 +1382,7 @@ Part of the <a href="/dancer">Dancer2 video course</a>.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/18#pwc182">Deepest Common Index</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -281,7 +1524,7 @@ trailing <code>/</code>). Done!
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-176/">Colin Crain › Perl Weekly Review #176</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -295,7 +1538,7 @@ Welcome to the Perl review pages for Week 176 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-182/">RECAP - The Weekly Challenge - 182</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -308,7 +1551,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-183/">The Weekly Challenge - 183</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -321,7 +1564,7 @@ Today, we are giving away Token #6 to Dario Mazzeo for the book, Learning Perl E
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -333,7 +1576,7 @@ Today, we are giving away Token #6 to Dario Mazzeo for the book, Learning Perl E
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-182-max-index-and-common-path.html">Perl Weekly Challenge 182:  Max Index and Common Path</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -710,7 +1953,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/cdx-9-great-cpan-modules-released-last.html">(cdx) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -722,7 +1965,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dxxiii-metacpan-weekly-report.html">(dxxiii) metacpan weekly report - app::paperback</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -734,7 +1977,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dli-stackoverflow-perl-report.html">(dli) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -746,7 +1989,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/toby_inkster/2022/09/typetiny-v2-is-coming.html">Type::Tiny v2 is Coming</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -925,7 +2168,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/itcharlie/2022/09/hacktoberfest-2022-is-near.html">Hacktoberfest 2022 is near!</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -948,7 +2191,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/tobyink/typetiny-v2-is-coming-4171">Type::Tiny v2 is Coming</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1309,7 +2552,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/grant_proposals_sept_2022">Grant Proposals: September 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1331,7 +2574,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/taw/open-source-adventures-episode-81-exploring-raku-regular-expression-api-id2">Open Source Adventures: Episode 81: Exploring Raku Regular Expression API</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1579,7 +2822,7 @@ for qw[2015-05-25 2016/06/26 27/07/2017] {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/lichtkind/2022/09/an-artistic-tool-for-programmers.html">An artistic tool for programmers.</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1600,7 +2843,7 @@ for qw[2015-05-25 2016/06/26 27/07/2017] {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/581.html">#581 - What to write about?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1620,62 +2863,7 @@ for qw[2015-05-25 2016/06/26 27/07/2017] {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/09/how-does-spvm-resolve-perl-numeric-operation-problems.html">How does SPVM resolve the problems of Perl numeric operations?</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Yuki Kimoto
- on Monday 12 September 2022 03:02</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>How does SPVM resolve the problems of Perl numeric operations?</p>
-
-<p>I hear Perl have the problems of numeric operation.</p>
-
-<p>I realized this problems, and try to resolve them using <a href="https://metacpan.org/pod/SPVM">SPVM</a>. (SPVM is yet experimental release).</p>
-
-<h2>What is SPVM?</h2>
-
-<p>SPVM is a programing language to provide fast static-typed numeric operation and array operations into Perl.</p>
-
-<p>I'm writing <a href="https://metacpan.org/dist/SPVM/view/lib/SPVM/Document/Language.pm">SPVM Language Specification</a> now.</p>
-
-<p>Do you want to use static typed numeric arrays(byte[], short[], int[], long[], float[], double[]) in Perl? You can write these using SPVM.</p>
-
-<pre>
-# lib/SPVM/MyArray.spvm
-class MyArray {
-  static method array_add_int : int[] ($array1 : int[], $array2 : int[]) {
-    my $array_length = @$array1;
-    my $array_out = new int[$array_length];
-    
-    for (my $i = 0; $i < $array_length; $i++) {
-      $array_out->[$i] = $array1->[$i] + $array2->[$i];
-    }
-    return $array_out;
-  }
-}
-</pre>
-
-<pre>
-# my_array.pl
-
-<p>use FindBin;<br />
-use lib "$FindBin::Bin/lib";<br />
-use SPVM 'MyArray';</p>
-
-<p>my $array_out = SPVM::MyArray->array_add_int([1, 2, 3], [4, 5, 6]);</p>
-
-<p># 5, 7, 9<br />
-warn "@$array_out";<br />
-</pre></p>
-        
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-175/">Colin Crain › Perl Weekly Review #175</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1689,7 +2877,7 @@ Welcome to the Perl review pages for Week 175 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/11#pwc181">These Sentences Are Getting Hot</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1862,7 +3050,7 @@ To work around this we instead we create two tables which works.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/cdix-11-great-cpan-modules-released.html">(cdix) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1874,7 +3062,7 @@ To work around this we instead we create two tables which works.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dxxii-metacpan-weekly-report.html">(dxxii) metacpan weekly report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1886,7 +3074,7 @@ To work around this we instead we create two tables which works.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-return-json">Dancer2: Return JSON</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1901,7 +3089,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/create-a-daemon-in-perl-with-schedulecron-4pb6">Create a Daemon in Perl with Schedule::Cron</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2031,7 +3219,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_july_2022">Maintaining Perl (Tony Cook) July 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -2226,67 +3414,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_28">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/jonasbn/release-070-of-ebirah-213n">Release 0.7.0 of Ebirah</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by jonasbn
- on Wednesday 07 September 2022 05:36</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>As mentioned in <a href="https://dev.to/jonasbn/release-030-of-my-perl-distzilla-github-action-25ig">my announcement</a> on my release 0.3.0 of my Perl Dist::Zilla GitHub Action, <a href="https://github.com/jonasbn/ebirah">Ebirah</a>, which is the base image has also been updated to release 0.7.0.</p>
-
-<p>The release contains a minor improvement from Alceu Rodrigues de Freitas Junior aka <a href="https://github.com/glasswalk3r">glasswalk3r</a>, whom also contributed to <a href="https://github.com/jonasbn/github-action-perl-dist-zilla">github-action-perl-dist-zilla</a>.</p>
-
-<p>His contribution here was an improvement and a step in the right direction to minimizing the Ebirah Docker image, this is still <em>work in progress</em> and hopefully more will come.</p>
-
-<p>An on the topic of more to come, no releases have been made in two years, but the base image on which Ebirah is based has been updated 3 times since the last release (4 times if you count the latest update to Perl 5.36.0), so more releases could have seen the light.</p>
-
-<p>With the release of Ebirah 0.7.0 and via the usage of the GitHub Action building on Ebirah, my CI jobs have demonstrated that more work needs to be done. Apparently parts of the utilized tool chain requires updating and even Dist::Zilla could do with an update, so at the time of writing I am already working on release 0.8.0. This will of course also trigger a release of <a href="https://github.com/jonasbn/github-action-perl-dist-zilla">github-action-perl-dist-zilla</a>, but more on this when I can see that all the tests are passing and the final details are in place.</p>
-
-<p>Thanks to glasswalk3r for his contribution.</p>
-
-<p>Finally I want to mention that Ebirah has sort of gotten a mascot. I was given permission by the <a href="https://www.deviantart.com/">Deviant Art</a> user and artist <a href="https://www.deviantart.com/zappazee">ZappaZee</a> to use his rendition of Ebirah - one of the <a href="https://en.wikipedia.org/wiki/Kaiju">Kaiju</a> of Godzilla fame.</p>
-
-<p>I am most grateful for this, not that I believe that all projects should have mascot, but for Ebirah I like the idea that it has a graphical representation.</p>
-
-<p>Thanks to ZappaZee for the permission to use his artwork.</p>
-
-<p>The collected release notes are included below.</p>
-
-<h2>
-  
-  
-  0.7.0 2022-09-03 Maintenance release, update not required
-</h2>
-
-<ul>
-<li><p>Improvements to Docker image generation, reducing size via contribution and PR <a href="https://github.com/jonasbn/ebirah/pull/46">#46</a> from @glasswalk3r</p></li>
-<li>
-<p>The base image has been updated several times without releases, the are listed below for information. With this version the image is bumped up to Perl 5.36.0, which should be the latest at the time of writing</p>
-
-<ul>
-<li>Renovate updated perl in <code>Dockerfile</code> from 5.34.1 to 5.36.0 via PR <a href="https://github.com/jonasbn/ebirah/pull/42">#42</a>
-</li>
-<li>Dependabot updated perl in <code>Dockerfile</code> from 5.34.0 to 5.34.1 via PR <a href="https://github.com/jonasbn/ebirah/pull/31">#31</a>
-</li>
-<li>Dependabot updated perl in <code>Dockerfile</code> from 5.32.1 to 5.34.0 via PR <a href="https://github.com/jonasbn/ebirah/pull/18">#18</a>
-</li>
-<li>Dependabot updated perl in <code>Dockerfile</code> from 5.32.0 to 5.32.1 via PR <a href="https://github.com/jonasbn/ebirah/pull/14">#14</a>
-</li>
-</ul>
-
-
-</li>
-</ul>
-
-<p>REF: <a href="https://github.com/jonasbn/ebirah/releases/tag/0.7.0">GitHub</a></p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_29">
+          <div class="card" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/call_for_grants_sept_2022">Call for Grant Proposals: September 2022 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -2324,7 +3452,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_30">
+          <div class="card" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/580.html">#580 - Perl Mentor</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2345,7 +3473,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_31">
+          <div class="card" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/ansi-command-line-colors-with-perl">ANSI command line colors with Perl</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2364,7 +3492,7 @@ How can you create such colorful output with Perl and how could you do it manual
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_32">
+          <div class="card" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/04#pwc180">First Uniquely Trimmed Index</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2501,7 +3629,7 @@ or, preferably, <code>goto __SUB__</code> in order to take advantage of Perl sty
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_33">
+          <div class="card" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-sessions">Dancer2: Sessions</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2516,7 +3644,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_34">
+          <div class="card" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blog.perl-academy.de/2022-09-02-distribution-auf-distzilla-umstellen">Distribution auf Dist::Zilla umstellen</a></h2>
 <a href="https://blog.perl-academy.de/" class="badge badge-primary" style="float: left">Perl-Academy.de</a>
@@ -2528,7 +3656,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_35">
+          <div class="card" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/09/01/list-of-new-cpan-distributions-aug-2022/">List of new CPAN distributions – Aug 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -3177,7 +4305,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_36">
+          <div class="card" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/579.html">#579 - Looking for that motivation</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -3195,7 +4323,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_37">
+          <div class="card" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-configuration">Dancer2: Configuration</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -3210,7 +4338,7 @@ Part of the Dancer2 video course available both to <a href="/pro">Pro</a> subscr
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_38">
+          <div class="card" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/578.html">#578 - Corinna MVP</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -3249,7 +4377,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 19 September 2022 16:52 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 19 September 2022 20:45 UTC</address>
             </div>
           </div>
         </div><!-- container -->
