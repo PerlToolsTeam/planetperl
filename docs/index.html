@@ -59,6 +59,385 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/al_newkirk/2022/09/my-perl-weekly-challenge.html">My Perl Weekly Challenge</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by awncorp
+ on Friday 23 September 2022 18:59</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <h2>Really, how hard could it be?</h2>
+
+<p>All this talk about <a href="https://dev.to/iamalnewkirk/types-objects-and-systems-oh-my-27hk">types, objects, and systems</a>, got me to thinking, <em>"what would it take to create a 100% backwards-compatible pure Perl proof-of-concept for optionally typable subroutine signatures"</em>. I mean really, how hard could it be? So I started sketching out some ideas and here's what I came up with:</p>
+
+<pre><code>use typing;
+
+sub greet :Function(string, number) :Return() {
+  my ($name, $count) = &amp;_;
+
+  print "Hi $name, you have $count messages waiting ...\n";
+}
+</code></pre>
+
+<p>This final sketch felt very Perlish and I had an inkling that I might be able to tie all the concepts being used together, and I did. It actually works, and it's fast. Let's break down what's actually happening here.</p>
+
+<pre><code>use typing;
+</code></pre>
+
+<p>I don't particularly like or care about the name, I had to call it something, the code is about resolving types, so I called it <em>"typing"</em>. When you import the package the framework installs two magic symbols. Oh, yes, btw, once I made it all work, I decided to extend it so that any type or object system could hook into it to allow the resolution of their own types using this system, so yes, it's a framework.</p>
+
+<pre><code>sub greet :Function(string, number) :Return();
+</code></pre>
+
+<p>The <em>"greet"</em> subroutine is just a plain ole subroutine. No source filter, no Perl keyword API, no XS, no high-magic. Here we're using old school "attributes" to annotate the subroutine and denote whether it's a function or method, and whether it has a return value or not.</p>
+
+<pre><code>sub greet :Method(object, string) :Return(object);
+</code></pre>
+
+<p>Declaring a subroutine as a method doesn't do anything special. No automagic unpacking, no implied/inferred first argument. The same is true for the <em>"return"</em> declaration. In fact, the annotations aren't involved in the execution of your program unless to you use the magic <em>"unpacker"</em> function.</p>
+
+<pre><code># use this ...
+my ($name, $count) = &amp;_;
+
+# instead of this ...
+my ($name, $count) = @_;
+</code></pre>
+
+<p>This works due to a little-known Perl trick that only the most neck-beardiest of Perl hackers understand, and me, which is what happens when you call a subroutine using the ampersand without any arguments, i.e. you can operate on the caller's argument list. By naming the function <code>_</code>, and requiring the use of the ampersand, we've created a cute little synonym for the <code>@_</code> variable.</p>
+
+<pre><code>sub greet :Function(string, number) :Return() {
+  my ($name, $count) = &amp;_;
+  # ...
+}
+</code></pre>
+
+<p>Here's what's happening. The <em>"unpacker"</em> function gets the typed argument list for the calling subroutine, i.e. it gets its signature, then it iterates over the arguments calling the configured validator for each type expression specified at each position in the argument list.</p>
+
+<pre><code>greet() # error
+greet({}) # error
+greet('bob') # error
+greet('bob', 2) # sweet :)
+</code></pre>
+
+<p>But what happens if you provide more arguments than the signature has type expressions for? The system is designed to use the last type specified to validate all out-of-bounds arguments, which means <code>greet('bob', 2..10)</code> works and passes the type checks, but <code>greet('bob', 2, 'bob', 2)</code> doesn't because the second <code>'bob'</code> isn't a number. Make sense? Right, but what about the framework bit? First, let's see what it looks like to hook into the framework as a one-off:</p>
+
+<pre><code>use typing;
+
+typing::set_spaces('main', 'main');
+
+sub main::string::make {
+  # must return (value, valid?, explanation)
+  ($_[0], 1, '')
+}
+
+sub greet :Function(string) {
+  my ($name) = &amp;_;
+  print "Hi $name\n";
+}
+</code></pre>
+
+<p>This example is one of the simplest hooks. The <code>set_spaces</code> function says, the caller is the "main" package, and we should look for types under the <em>"main"</em> namespace by prefixing the type name with <em>"main"</em> and looking for a subroutine called "make". The <em>"make"</em> subroutine must return a list in the form of <code>(value, valid?, explanation)</code>. This approach expects each type to correspond to a package (with a <em>"make"</em> routine), but maybe you like the type library/registry approach. Another way to hook into the system is to bring your own resolver:</p>
+
+<pre><code>use typing;
+
+typing::set_resolver('main', ['main', 'resolver']);
+
+sub resolver {
+  # accepts (package, type-expr, value)
+  # returns (value, valid?, explanation)
+  # maybe you'll do something like $registry-&gt;get(type-expr)-&gt;validate(value)
+  ($_[0], 1, '')
+}
+
+sub greet :Function(string) {
+  my ($name) = &amp;_;
+  print "Hi $name\n";
+}
+</code></pre>
+
+<p>This example uses the <code>set_resolver</code> function and says, the caller is the <em>"main"</em> package, and we should resolve <strong>all</strong> types in the <em>"main"</em> package using the <code>main::resolver</code> subroutine. The resolver must return a list in the form of <code>(value, valid?, explanation)</code>. But wait, there's more, ... we can use the framework's API to get the subroutine metadata to further automate our programs, for example:</p>
+
+<pre><code>use typing;
+
+typing::retrieve('main', 'method', 'greet')
+# [
+#   'MyApp::Object',
+#   'string',
+#   'number'
+# ]
+
+typing::retrieve('main', 'return', 'greet')
+# [
+#   'MyApp::Object'
+# ]
+
+sub greet :Function(MyApp::Object, string, number) :Return(MyApp::Object) {
+  # ...
+}
+</code></pre>
+
+<p>I'm supposed to be working on a completely different project right now, but this idea captivated me and so I lost a couple of days of productivity. Maybe others will find this idea interesting. <a href="https://github.com/awncorp/typing">If you're interested in the source code for this concept you can find it here!</a></p>
+
+<h2>Sources</h2>
+
+<p><strong>Type libraries</strong></p>
+
+<p><a href="https://metacpan.org/pod/MooseX::Types">MooseX::Types</a></p>
+
+<p><a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a></p>
+
+<p><a href="https://metacpan.org/pod/Specio">Specio</a></p>
+
+<p><strong>Subroutine signatures</strong></p>
+
+<p><a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a></p>
+
+<p><a href="https://metacpan.org/pod/Method::Signatures">Method::Signatures</a></p>
+
+<p><a href="https://metacpan.org/pod/routines">registry/routines</a></p>
+
+<h2>End Quote</h2>
+
+<p>"Software is like art and the only justification you need for creating it is, 'because I felt like it'" - Andy Wardley</p>
+
+<h2>Authors</h2>
+
+<p>Awncorp, <code>awncorp@cpan.org</code></p>
+
+        
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/iamalnewkirk/my-perl-weekly-challenge-3dan">My Perl Weekly Challenge</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Al Newkirk
+ on Friday 23 September 2022 13:49</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h2>
+  
+  
+  Really, how hard could it be?
+</h2>
+
+<p>All this talk about <a href="https://dev.to/iamalnewkirk/types-objects-and-systems-oh-my-27hk">types, objects, and systems</a>, got me to thinking, <em>"what would it take to create a 100% backwards-compatible pure Perl proof-of-concept for optionally typable subroutine signatures"</em>. I mean really, how hard could it be? So I started sketching out some ideas and here's what I came up with:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">typing</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">greet</span> <span class="p">:Function(string, number) :Return() {</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$name</span><span class="p">,</span> <span class="nv">$count</span><span class="p">)</span> <span class="o">=</span> <span class="nv">&amp;_</span><span class="p">;</span>
+
+  <span class="k">print</span> <span class="p">"</span><span class="s2">Hi </span><span class="si">$name</span><span class="s2">, you have </span><span class="si">$count</span><span class="s2"> messages waiting ...</span><span class="se">\n</span><span class="p">";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This final sketch felt very Perlish and I had an inkling that I might be able to tie all the concepts being used together, and I did. It actually works, and it's fast. Let's break down what's actually happening here.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">typing</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>I don't particularly like or care about the name, I had to call it something, the code is about resolving types, so I called it <em>"typing"</em>. When you import the package the framework installs two magic symbols. Oh, yes, btw, once I made it all work, I decided to extend it so that any type or object system could hook into it to allow the resolution of their own types using this system, so yes, it's a framework.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">greet</span> <span class="err">:</span><span class="nf">Function</span><span class="err">(</span><span class="nf">string</span><span class="err">,</span> <span class="nf">number</span><span class="err">)</span> <span class="err">:</span><span class="nf">Return</span><span class="p">();</span>
+</code></pre>
+
+</div>
+
+
+
+<p>The <em>"greet"</em> subroutine is just a plain ole subroutine. No source filter, no Perl keyword API, no XS, no high-magic. Here we're using old school "attributes" to annotate the subroutine and denote whether it's a function or method, and whether it has a return value or not.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">greet</span> <span class="err">:</span><span class="nf">Method</span><span class="err">(</span><span class="nf">object</span><span class="err">,</span> <span class="nf">string</span><span class="err">)</span> <span class="err">:</span><span class="nf">Return</span><span class="err">(</span><span class="nf">object</span><span class="err">)</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Declaring a subroutine as a method doesn't do anything special. No automagic unpacking, no implied/inferred first argument. The same is true for the <em>"return"</em> declaration. In fact, the annotations aren't involved in the execution of your program unless to you use the magic <em>"unpacker"</em> function.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="c1"># use this ...</span>
+<span class="k">my</span> <span class="p">(</span><span class="nv">$name</span><span class="p">,</span> <span class="nv">$count</span><span class="p">)</span> <span class="o">=</span> <span class="nv">&amp;_</span><span class="p">;</span>
+
+<span class="c1"># instead of this ...</span>
+<span class="k">my</span> <span class="p">(</span><span class="nv">$name</span><span class="p">,</span> <span class="nv">$count</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This works due to a little-known Perl trick that only the most neck-beardiest of Perl hackers understand, and me, which is what happens when you call a subroutine using the ampersand without any arguments, i.e. you can operate on the caller's argument list. By naming the function <code>_</code>, and requiring the use of the ampersand, we've created a cute little synonym for the <code>@_</code> variable.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">greet</span> <span class="p">:Function(string, number) :Return() {</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$name</span><span class="p">,</span> <span class="nv">$count</span><span class="p">)</span> <span class="o">=</span> <span class="nv">&amp;_</span><span class="p">;</span>
+  <span class="c1"># ...</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Here's what's happening. The <em>"unpacker"</em> function gets the typed argument list for the calling subroutine, i.e. it gets its signature, then it iterates over the arguments calling the configured validator for each type expression specified at each position in the argument list.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="nv">greet</span><span class="p">()</span> <span class="c1"># error</span>
+<span class="nv">greet</span><span class="p">({})</span> <span class="c1"># error</span>
+<span class="nv">greet</span><span class="p">('</span><span class="s1">bob</span><span class="p">')</span> <span class="c1"># error</span>
+<span class="nv">greet</span><span class="p">('</span><span class="s1">bob</span><span class="p">',</span> <span class="mi">2</span><span class="p">)</span> <span class="c1"># sweet :)</span>
+</code></pre>
+
+</div>
+
+
+
+<p>But what happens if you provide more arguments than the signature has type expressions for? The system is designed to use the last type specified to validate all out-of-bounds arguments, which means <code>greet('bob', 2..10)</code> works and passes the type checks, but <code>greet('bob', 2, 'bob', 2)</code> doesn't because the second <code>'bob'</code> isn't a number. Make sense? Right, but what about the framework bit? First, let's see what it looks like to hook into the framework as a one-off:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">typing</span><span class="p">;</span>
+
+<span class="nn">typing::</span><span class="nv">set_spaces</span><span class="p">('</span><span class="s1">main</span><span class="p">',</span> <span class="p">'</span><span class="s1">main</span><span class="p">');</span>
+
+<span class="k">sub </span><span class="nf">main</span><span class="p">::string::make {</span>
+  <span class="c1"># must return (value, valid?, explanation)</span>
+  <span class="p">(</span><span class="vg">$_</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="p">'')</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">greet</span> <span class="p">:Function(string) {</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$name</span><span class="p">)</span> <span class="o">=</span> <span class="nv">&amp;_</span><span class="p">;</span>
+  <span class="k">print</span> <span class="p">"</span><span class="s2">Hi </span><span class="si">$name</span><span class="se">\n</span><span class="p">";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This example is one of the simplest hooks. The <code>set_spaces</code> function says, the caller is the "main" package, and we should look for types under the <em>"main"</em> namespace by prefixing the type name with <em>"main"</em> and looking for a subroutine called "make". The <em>"make"</em> subroutine must return a list in the form of <code>(value, valid?, explanation)</code>. This approach expects each type to correspond to a package (with a <em>"make"</em> routine), but maybe you like the type library/registry approach. Another way to hook into the system is to bring your own resolver:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">typing</span><span class="p">;</span>
+
+<span class="nn">typing::</span><span class="nv">set_resolver</span><span class="p">('</span><span class="s1">main</span><span class="p">',</span> <span class="p">['</span><span class="s1">main</span><span class="p">',</span> <span class="p">'</span><span class="s1">resolver</span><span class="p">']);</span>
+
+<span class="k">sub </span><span class="nf">resolver</span> <span class="p">{</span>
+  <span class="c1"># accepts (package, type-expr, value)</span>
+  <span class="c1"># returns (value, valid?, explanation)</span>
+  <span class="c1"># maybe you'll do something like $registry-&gt;get(type-expr)-&gt;validate(value)</span>
+  <span class="p">(</span><span class="vg">$_</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">,</span> <span class="p">'')</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">greet</span> <span class="p">:Function(string) {</span>
+  <span class="k">my</span> <span class="p">(</span><span class="nv">$name</span><span class="p">)</span> <span class="o">=</span> <span class="nv">&amp;_</span><span class="p">;</span>
+  <span class="k">print</span> <span class="p">"</span><span class="s2">Hi </span><span class="si">$name</span><span class="se">\n</span><span class="p">";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This example uses the <code>set_resolver</code> function and says, the caller is the <em>"main"</em> package, and we should resolve <strong>all</strong> types in the <em>"main"</em> package using the <code>main::resolver</code> subroutine. The resolver must return a list in the form of <code>(value, valid?, explanation)</code>. But wait, there's more, ... we can use the framework's API to get the subroutine metadata to further automate our programs, for example:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">use</span> <span class="nv">typing</span><span class="p">;</span>
+
+<span class="nn">typing::</span><span class="nv">retrieve</span><span class="p">('</span><span class="s1">main</span><span class="p">',</span> <span class="p">'</span><span class="s1">method</span><span class="p">',</span> <span class="p">'</span><span class="s1">greet</span><span class="p">')</span>
+<span class="c1"># [</span>
+<span class="c1">#   'MyApp::Object',</span>
+<span class="c1">#   'string',</span>
+<span class="c1">#   'number'</span>
+<span class="c1"># ]</span>
+
+<span class="nn">typing::</span><span class="nv">retrieve</span><span class="p">('</span><span class="s1">main</span><span class="p">',</span> <span class="p">'</span><span class="s1">return</span><span class="p">',</span> <span class="p">'</span><span class="s1">greet</span><span class="p">')</span>
+<span class="c1"># [</span>
+<span class="c1">#   'MyApp::Object'</span>
+<span class="c1"># ]</span>
+
+<span class="k">sub </span><span class="nf">greet</span> <span class="p">:Function(MyApp::Object, string, number) :Return(MyApp::Object) {</span>
+  <span class="c1"># ...</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>I'm supposed to be working on a completely different project right now, but this idea captivated me and so I lost a couple of days of productivity. Maybe others will find this idea interesting. <a href="https://github.com/awncorp/typing">If you're interested in the source code for this concept you can find it here!</a></p>
+
+<h2>
+  
+  
+  Sources
+</h2>
+
+<p><strong>Type libraries</strong></p>
+
+<p><a href="https://metacpan.org/pod/MooseX::Types">MooseX::Types</a></p>
+
+<p><a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a></p>
+
+<p><a href="https://metacpan.org/pod/Specio">Specio</a></p>
+
+<p><strong>Subroutine signatures</strong></p>
+
+<p><a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a></p>
+
+<p><a href="https://metacpan.org/pod/Method::Signatures">Method::Signatures</a></p>
+
+<p><a href="https://metacpan.org/pod/routines">registry/routines</a></p>
+
+<h2>
+  
+  
+  End Quote
+</h2>
+
+<p>"Software is like art and the only justification you need for creating it is, 'because I felt like it'" - Andy Wardley</p>
+
+<h2>
+  
+  
+  Authors
+</h2>
+
+<p>Awncorp, <code>awncorp@cpan.org</code></p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_3">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-exercise-3">Dancer2: Exercise 3 - Simple Single-user TODO list AP</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
 
@@ -72,7 +451,7 @@ Part of the <a href="/dancer">Dancer2 video course</a>.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tpf-merch-store">TPF launches merch store</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -97,7 +476,7 @@ Part of the <a href="/dancer">Dancer2 video course</a>.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/yuki_kimoto/2022/09/classplain---a-class-syntax-for-the-hash-based-perl-oo.html">Class::Plain - Class Syntax for Hash-Based Perl OO</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -219,7 +598,7 @@ $point3d->describe;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/classplain-class-syntax-for-hash-based-perl-oo-4j6a">Class::Plain - Class Syntax for Hash-Based Perl OO</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -310,7 +689,7 @@ $point-&gt;describe;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/lpw/2022/09/london-perl-workshop-status-update-2023.html">London Perl Workshop: Status Update &amp; 2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -342,7 +721,7 @@ $point-&gt;describe;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/thank-you-jpa">Thank you Japan Perl Association</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -366,7 +745,7 @@ $point-&gt;describe;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/saif/2022/09/perls-before-splines.html">Casting Perls before Splines</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -433,7 +812,7 @@ print $Logo;         # print result
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/named-subroutine-arguments-in-perl-2a3h">Named Subroutine Arguments in Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -634,7 +1013,7 @@ print $Logo;         # print result
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -646,7 +1025,7 @@ print $Logo;         # print result
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_august_2022">Maintaining Perl (Tony Cook) August 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -888,7 +1267,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/read-section-of-a-file">Read section of a file</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -906,7 +1285,7 @@ So here is a quick script I put together.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/al_newkirk/2022/09/types-objects-and-systems-oh-my.html">Types, Objects, and Systems, Oh my!</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1347,7 +1726,7 @@ my ($value) = type('String', 'hello');
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/iamalnewkirk/types-objects-and-systems-oh-my-27hk">Types, Objects, and Systems, Oh my!</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2083,7 +2462,7 @@ my ($value) = type('String', 'hello');
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://domm.plix.at/perl/2022_09_things_i_learned_at_pgday.html">Things I learned at PGDay Austria</a></h2>
 <a href="https://domm.plix.at/perl.html" class="badge badge-primary" style="float: left">domm (Perl and other tech)</a>
@@ -2151,7 +2530,7 @@ my ($value) = type('String', 'hello');
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/timlegge/netsaml2-060-trial-released-m81">Net::SAML2 0.60 TRIAL Released</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2202,7 +2581,7 @@ As this is an helper function that is meant to allow you to pass the cert to ano
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/dancer2-hooks">Dancer2: Before and After Hooks</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -2217,7 +2596,7 @@ Part of the <a href="/dancer">Dancer2 video course</a>.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/582.html">#582 - Grandfather’s Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -2233,7 +2612,7 @@ Part of the <a href="/dancer">Dancer2 video course</a>.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/09/18#pwc182">Deepest Common Index</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2375,7 +2754,7 @@ trailing <code>/</code>). Done!
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-176/">Colin Crain › Perl Weekly Review #176</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2389,7 +2768,7 @@ Welcome to the Perl review pages for Week 176 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-182/">RECAP - The Weekly Challenge - 182</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2402,7 +2781,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-183/">The Weekly Challenge - 183</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2415,384 +2794,7 @@ Today, we are giving away Token #6 to Dario Mazzeo for the book, Learning Perl E
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-182-max-index-and-common-path.html">Perl Weekly Challenge 182:  Max Index and Common Path</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Sunday 18 September 2022 21:12</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 182 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-182/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on Sept. 18, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Max Index</h2>
-
-<p><em>You are given a list of integers.</em></p>
-
-<p><em>Write a script to find the index of the first biggest number in the list.</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>Input: @n = (5, 2, 9, 1, 7, 6)
-Output: 2 (as 3rd element in the list is the biggest number)
-
-Input: @n = (4, 2, 3, 1, 5, 0)
-Output: 4 (as 5th element in the list is the biggest number)
-</code></pre>
-
-<h3>Max Index in Raku</h3>
-
-<p>The initial idea here was to to store the input data into a hash and to use the <a href="https://docs.raku.org/routine/max">max</a> routine to find the maximum value. The <code>max</code> documentation says:</p>
-
-<blockquote>
-  <p>Coerces the invocant to Iterable and returns the numerically largest element; in the case of Hashes, the Pair with the highest value.</p>
-</blockquote>
-
-<p>But that did not work properly in my tests: <code>max</code> consistently appeared to return the pair with the highest key, not the highest value. I tried to use the <a href="https://docs.raku.org/routine/maxpairs">maxpairs</a> routine, which, according to the documentation, </p>
-
-<blockquote>
-  <p>returns a Seq with all of the Pairs with maximum value. </p>
-</blockquote>
-
-<p>The <code>maxpairs</code> method works as expected. This leads to a very short program:</p>
-
-<pre><code>for (5, 2, 9, 1, 7, 6), (4, 2, 3, 1, 5, 0) -&gt; @test {
-    my %nums = @test.kv;
-    say "@test[] : ", %nums.maxpairs;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./max-index.raku
-5 2 9 1 7 6 : (2 =&gt; 9)
-4 2 3 1 5 0 : (4 =&gt; 5)
-</code></pre>
-
-<h3>Max Index in Perl</h3>
-
-<p>In Perl, we use a standard <code>for</code> loop to traverse the input list and find the index of the largest value:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-for my $test ([5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]) {
-    my @nums = @{$test};
-    my ($max_i, $max_n) = (0, 0);
-    for my $i (0..$#nums) {
-        if ($nums[$i] &gt; $max_n) {
-            $max_n = $nums[$i];
-            $max_i = $i;
-        }
-    }
-    say "@nums : $max_i =&gt; $max_n";
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./max-index.pl
-5 2 9 1 7 6 : 2 =&gt; 9
-4 2 3 1 5 0 : 4 =&gt; 5
-</code></pre>
-
-<h3>Max Index in 7 Other Languages</h3>
-
-<p>We have now implementations of the max index task in 7 languages as follows:</p>
-
-<ul>
-<li>Awk</li>
-<li>JavaScript</li>
-<li>Julia</li>
-<li>Python</li>
-<li>Ring</li>
-<li>Ruby</li>
-<li>Scala</li>
-</ul>
-
-<h4>Max Index in Awk</h4>
-
-<p>In awk, the data is normally passed as standard input. So we use a Unix pipe to pass the data to the program.</p>
-
-<pre><code># run for example as:
-# echo '5 2 9 1 7 6
-# 4 2 3 1 5 0' | awk -f ./max-index.awk
-
-function find_max() {
-    max_i = 0
-    max_n = $1
-    for (i = 2; i &lt; NF; i++) {
-        if ($i &gt; max_n) {
-            max_i = i
-            max_n = $i
-        }
-    }
-    printf("Max index for %s: %d =&gt; %d\n", $0, max_i - 1, max_n)
-}
-{
-    find_max()
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ echo '5 2 9 1 7 6
-4 2 3 1 5 0' | awk -f ./max-index.awk
-Max index for 5 2 9 1 7 6: 2 =&gt; 9
-Max index for 4 2 3 1 5 0: 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in JavaScript</h4>
-
-<pre><code>let tests = [ [5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0] ]
-for  (let j = 0; j &lt; tests.length; j++) {
-    let test = tests[j]
-    let max_i = 0
-    let max_n = test[0]
-    for (let i = 1; i &lt;= test.length; i++) {
-        if (test[i] &gt; max_n) {
-            max_n = test[i]
-            max_i = i
-        }
-    }
-    console.log("Max index for " + test + ": " + max_i + " =&gt; " + max_n)
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Max index for 5,2,9,1,7,6: 2 =&gt; 9
-Max index for 4,2,3,1,5,0: 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in Julia</h4>
-
-<p>Note that Julia indexes start at 1. So we need to subtract 1 from the <code>max_i</code> variable to get a result consistent with other (0-based index) languages. </p>
-
-<pre><code>for test in [[5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]]
-    max_i = 1
-    max_n = test[1]
-    for i in 2:length(test)
-        if (test[i] &gt; max_n)
-            max_n = test[i]
-            max_i = i
-        end
-    end
-    println("Max index for $test: $(max_i - 1) =&gt; $max_n)")
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ julia ./max-index.jl
-Max index for [5, 2, 9, 1, 7, 6]: 2 =&gt; 9)
-Max index for [4, 2, 3, 1, 5, 0]: 4 =&gt; 5)
-</code></pre>
-
-<h4>Max Index in Python</h4>
-
-<pre><code>for test in [5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]:
-  max_i = 0
-  max_n = test[0]
-  for i in range(1, len(test)):
-    if test[i] &gt; max_n:
-      max_n = test[i]
-      max_i = i
-  print("Max index for ", test, ": ", max_i, " =&gt; ", max_n)
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ python3 ./max-index.py
-Max index for  [5, 2, 9, 1, 7, 6] :  2  =&gt;  9
-Max index for  [4, 2, 3, 1, 5, 0] :  4  =&gt;  5
-</code></pre>
-
-<h4>Max Index in Ring</h4>
-
-<p>Note that Ring indexes start at 1 (like Julia indexes). So we need to subtract 1 from the max_i variable to get a result consistent with other (0-based index) languages.</p>
-
-<pre><code>for test in [[5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]]
-    max_i = 1
-    max_n = test[1]
-    str = ""
-    for i = 1 to len(test)
-        str = str + test[i] + " "
-        if test[i] &gt; max_n
-            max_n = test[i]
-            max_i = i
-        ok
-    next
-    see "Max index for " + str + ": " +
-        (max_i - 1) + " =&gt; " + max_n + nl
-next
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./max-index.ring
-Max index for 5 2 9 1 7 6 : 2 =&gt; 9
-Max index for 4 2 3 1 5 0 : 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in Ruby</h4>
-
-<pre><code>for test in [[5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]]
-    max_i = 0
-    max_n = test[0]
-    for i in 1..(test.length - 1)
-        if test[i] &gt; max_n
-            max_n = test[i]
-            max_i = i
-        end
-    end
-    printf("Max index for %s: %d =&gt; %d\n", test.to_s, max_i, max_n)
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Max index for [5, 2, 9, 1, 7, 6]: 2 =&gt; 9
-Max index for [4, 2, 3, 1, 5, 0]: 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in Scala</h4>
-
-<pre><code>object fraction_tree extends App {
-
-  val tests: List[List[Int]] =
-    List(List(5, 2, 9, 1, 7, 6), List(4, 2, 3, 1, 5, 0))
-  for (test &lt;- tests) {
-    var max_i = 0
-    var max_n = test(max_i)
-    for (i &lt;- 1 to test.length - 1) {
-      if (test(i) &gt; max_n) {
-        max_n = test(i)
-        max_i = i
-      }
-    }
-    println("Max index for " + test.mkString(" ") + s": $max_i =&gt; $max_n")
-  }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Max index for 5 2 9 1 7 6: 2 =&gt; 9
-Max index for 4 2 3 1 5 0: 4 =&gt; 5
-</code></pre>
-
-<h2>Task 2: Common Path</h2>
-
-<p><em>Given a list of absolute Linux file paths, determine the deepest path to the directory that contains all of them.</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>Input:
-    /a/b/c/1/x.pl
-    /a/b/c/d/e/2/x.pl
-    /a/b/c/d/3/x.pl
-    /a/b/c/4/x.pl
-    /a/b/c/d/5/x.pl
-
-Ouput:
-    /a/b/c
-</code></pre>
-
-<h3>Common Path in Raku</h3>
-
-<p>This program converts the input into an array of arrays and then compares each item of the first line with the corresponding item of the other lines. The program stops as soon as a difference is found.</p>
-
-<pre><code>my @input = qw &lt;
-    /a/b/c/1/x.pl
-    /a/b/c/d/e/2/x.pl
-    /a/b/c/d/3/x.pl
-    /a/b/c/4/x.pl
-    /a/b/c/d/5/x.pl
-    &gt;;
-
-my @paths = gather {
-    for @input &lt;-&gt; $line {
-        $line ~~ s/^'/'//;
-        my @subpaths = split /'/'/, $line;
-        take @subpaths[0..*-2];
-    }
-}
-my $end = @paths.end;
-my $k = 0;
-OUTLOOP: for 0..(@paths[0].end) -&gt; $i {
-    for 0..$end -&gt; $j {
-        if @paths[$j][$i]:!exists or @paths[$j][$i] ne @paths[0][$i] {
-            $k = $i - 1;
-            last OUTLOOP;
-        }
-    }
-}
-say '/', join '/', @paths[0][0..$k];
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./common-path.raku
-/a/b/c
-</code></pre>
-
-<h3>Common Path in Perl</h3>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-my @input = qw &lt;
-    /a/b/c/1/x.pl
-    /a/b/c/d/e/2/x.pl
-    /a/b/c/d/3/x.pl
-    /a/b/c/4/x.pl
-    /a/b/c/d/5/x.pl
-    &gt;;
-
-my @paths;
-for my $line (@input) {
-    $line =~ s|^/||;
-    my @subpaths = split /\//, $line;
-    push @paths, [@subpaths[0..$#subpaths-1]];
-}
-
-my @first = @{$paths[0]};
-my $end = $#paths;
-my $k = 0;
-OUTLOOP: for my $i (0..$#first) {
-    for my $j (0..$end) {
-        if ((not exists $paths[$j][$i]) or $paths[$j][$i] ne $first[$i]) {
-            $k = $i - 1;
-            last OUTLOOP;
-        }
-    }
-}
-say '/', join '/', @first[0..$k];
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./common-path.pl
-/a/b/c
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on September 25, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/cdx-9-great-cpan-modules-released-last.html">(cdx) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2804,7 +2806,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dxxiii-metacpan-weekly-report.html">(dxxiii) metacpan weekly report - app::paperback</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2816,7 +2818,7 @@ say '/', join '/', @first[0..$k];
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/09/dli-stackoverflow-perl-report.html">(dli) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -2825,367 +2827,6 @@ say '/', join '/', @first[0..$k];
  on Saturday 17 September 2022 22:17</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>These are the five most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br/>Between brackets: [<b>question score</b> / answers count]<br/>Build date: 2022-09-17 20:17:22 GMT</p><hr/><ol><li><a href="http://stackoverflow.com/questions/73720178" target="_blank">Is anything inside the string changed after binding operations?</a> - [<b>4</b>/1]</li><li><a href="http://stackoverflow.com/questions/73696901" target="_blank">Parsing time stamps and calculating difference</a> - [<b>3</b>/2]</li><li><a href="http://stackoverflow.com/questions/73721907" target="_blank">How do I call a named parameter Python function from Perl?</a> - [<b>2</b>/3]</li><li><a href="http://stackoverflow.com/questions/73721284" target="_blank">Perl :: Accessing Members of an Object with `use strict` Set?</a> - [<b>2</b>/2]</li><li><a href="http://stackoverflow.com/questions/73704264" target="_blank">Read from process before write with open3 in perl</a> - [<b>2</b>/1]</li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_26">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/tobyink/typetiny-v2-is-coming-4171">Type::Tiny v2 is Coming</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Toby Inkster
- on Friday 16 September 2022 15:11</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Eagle-eyed watchers of CPAN may have noticed that I've recently been releasing Type::Tiny development releases with version numbers 1.999_XYZ.</p>
-
-<p>Type::Tiny v2 is intended to be compatible with Type::Tiny v1. If you've used Type::Tiny v1, you shouldn't need to change any code, but Type::Tiny v2 has a few new features which may make your code simpler, more maintainable, and more readable if you adopt them.</p>
-
-<h2>
-  
-  
-  Type::Params v2 API
-</h2>
-
-<p>Type::Params can be used to provide typed subroutine signatures:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw( state )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Type::</span><span class="nv">Params</span> <span class="sx">qw( compile )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw( Num )</span><span class="p">;</span>
-
-   <span class="k">sub </span><span class="nf">add_numbers</span> <span class="p">{</span>
-      <span class="nv">state</span> <span class="nv">$signature</span> <span class="o">=</span> <span class="nv">compile</span><span class="p">(</span> <span class="nv">Num</span><span class="p">,</span> <span class="nv">Num</span> <span class="p">);</span>
-      <span class="k">my</span> <span class="p">(</span> <span class="nv">$x</span><span class="p">,</span> <span class="nv">$y</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">$signature</span><span class="o">-&gt;</span><span class="p">(</span> <span class="err">@</span><span class="nv">_</span> <span class="p">);</span>
-
-      <span class="k">return</span> <span class="nv">$x</span> <span class="o">+</span> <span class="nv">$y</span><span class="p">;</span>
-   <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>However, things like named paramaters, catering for <code>$self</code> in methods, etc felt like afterthoughts. Here is how you'd write the same signature in version 1 as a method call using named parameters:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw( state )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Type::</span><span class="nv">Params</span> <span class="sx">qw( compile_named_oo )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw( Num )</span><span class="p">;</span>
-
-   <span class="k">sub </span><span class="nf">add_numbers</span> <span class="p">{</span>
-      <span class="nv">state</span> <span class="nv">$signature</span> <span class="o">=</span> <span class="nv">compile_named_oo</span><span class="p">(</span>
-         <span class="p">{</span> <span class="s">head</span> <span class="o">=&gt;</span> <span class="p">[</span> <span class="nv">Any</span> <span class="p">]</span> <span class="p">},</span>
-         <span class="p">'</span><span class="s1">x</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="nv">Num</span><span class="p">,</span>
-         <span class="p">'</span><span class="s1">y</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="nv">Num</span><span class="p">,</span>
-      <span class="p">);</span>
-      <span class="k">my</span> <span class="p">(</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$arg</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">$signature</span><span class="o">-&gt;</span><span class="p">(</span> <span class="err">@</span><span class="nv">_</span> <span class="p">);</span>
-
-      <span class="k">return</span> <span class="nv">$arg</span><span class="o">-&gt;</span><span class="nv">x</span> <span class="o">+</span> <span class="nv">$arg</span><span class="o">-&gt;</span><span class="nv">y</span><span class="p">;</span>
-   <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>While the old API is still supported, Type::Params v2 has two new functions, <code>signature</code> and <code>signature_for</code>, which I feel provide a more powerful and more consistent interface.</p>
-
-<p><code>signature</code> works much the same as <code>compile</code>, but takes a top-level hash of options, allowing it to cater for both positional and named parameters.</p>
-
-<p>Here is an example for positional parameters:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw( state )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Type::</span><span class="nv">Params</span> <span class="sx">qw( signature )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw( Num )</span><span class="p">;</span>
-
-   <span class="k">sub </span><span class="nf">add_numbers</span> <span class="p">{</span>
-      <span class="nv">state</span> <span class="nv">$signature</span> <span class="o">=</span> <span class="nv">signature</span><span class="p">(</span>
-         <span class="s">method</span>     <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span>
-         <span class="s">positional</span> <span class="o">=&gt;</span> <span class="p">[</span> <span class="nv">Num</span><span class="p">,</span> <span class="nv">Num</span> <span class="p">],</span>
-      <span class="p">);</span>
-      <span class="k">my</span> <span class="p">(</span> <span class="nv">$x</span><span class="p">,</span> <span class="nv">$y</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">$signature</span><span class="o">-&gt;</span><span class="p">(</span> <span class="err">@</span><span class="nv">_</span> <span class="p">);</span>
-
-      <span class="k">return</span> <span class="nv">$x</span> <span class="o">+</span> <span class="nv">$y</span><span class="p">;</span>
-   <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Here is an example for named parameters:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nv">feature</span> <span class="sx">qw( state )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Type::</span><span class="nv">Params</span> <span class="sx">qw( signature )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw( Num )</span><span class="p">;</span>
-
-   <span class="k">sub </span><span class="nf">add_numbers</span> <span class="p">{</span>
-      <span class="nv">state</span> <span class="nv">$signature</span> <span class="o">=</span> <span class="nv">signature</span><span class="p">(</span>
-         <span class="s">method</span>     <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
-         <span class="s">named</span>      <span class="o">=&gt;</span> <span class="p">[</span> <span class="p">'</span><span class="s1">x</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="nv">Num</span><span class="p">,</span> <span class="p">'</span><span class="s1">y</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="nv">Num</span> <span class="p">],</span>
-      <span class="p">);</span>
-      <span class="k">my</span> <span class="p">(</span> <span class="nv">$self</span><span class="p">,</span> <span class="nv">$arg</span> <span class="p">)</span> <span class="o">=</span> <span class="nv">$signature</span><span class="o">-&gt;</span><span class="p">(</span> <span class="err">@</span><span class="nv">_</span> <span class="p">);</span>
-
-      <span class="k">return</span> <span class="nv">$arg</span><span class="o">-&gt;</span><span class="nv">x</span> <span class="o">+</span> <span class="nv">$arg</span><span class="o">-&gt;</span><span class="nv">y</span><span class="p">;</span>
-   <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>And <code>signature_for</code> allows you to turn that definition inside-out.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nv">experimental</span> <span class="sx">qw( signatures )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Type::</span><span class="nv">Params</span> <span class="sx">qw( signature_for )</span><span class="p">;</span>
-   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Standard</span> <span class="sx">qw( Num )</span><span class="p">;</span>
-
-   <span class="nv">signature_for</span> <span class="s">add_numbers</span> <span class="o">=&gt;</span> <span class="p">(</span>
-      <span class="s">method</span>     <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
-      <span class="s">named</span>      <span class="o">=&gt;</span> <span class="p">[</span> <span class="p">'</span><span class="s1">x</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="nv">Num</span><span class="p">,</span> <span class="p">'</span><span class="s1">y</span><span class="p">'</span> <span class="o">=&gt;</span> <span class="nv">Num</span> <span class="p">],</span>
-   <span class="p">);</span>
-
-   <span class="k">sub </span><span class="nf">add_numbers</span> <span class="p">( $self, $arg ) {</span>
-      <span class="k">return</span> <span class="nv">$arg</span><span class="o">-&gt;</span><span class="nv">x</span> <span class="o">+</span> <span class="nv">$arg</span><span class="o">-&gt;</span><span class="nv">y</span><span class="p">;</span>
-   <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  
-  
-  Handy import shortcuts
-</h2>
-
-<p>A handy way to define an <strong>Enum</strong> type in Type::Tiny 2 is:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nn">Type::Tiny::</span><span class="nv">Enum</span> <span class="s">Size</span> <span class="o">=&gt;</span> <span class="p">[</span> <span class="sx">qw( S M L XL )</span> <span class="p">];</span>
-</code></pre>
-
-</div>
-
-
-
-<p>You can use this in a class like:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="nb">package</span> <span class="nn">Local::</span><span class="nv">TShirt</span> <span class="p">{</span>
-      <span class="k">use</span> <span class="nv">Moose</span><span class="p">;</span>
-      <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Common</span> <span class="o">-</span><span class="nv">types</span><span class="p">;</span>
-      <span class="k">use</span> <span class="nn">Type::Tiny::</span><span class="nv">Enum</span> <span class="s">Size</span> <span class="o">=&gt;</span> <span class="p">[</span> <span class="sx">qw( S M L XL )</span> <span class="p">];</span>
-      <span class="k">use</span> <span class="nn">namespace::</span><span class="nv">autoclean</span><span class="p">;</span>
-
-      <span class="nv">has</span> <span class="s">size</span> <span class="o">=&gt;</span> <span class="p">(</span>
-         <span class="s">is</span>        <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
-         <span class="s">isa</span>       <span class="o">=&gt;</span> <span class="nv">Size</span><span class="p">,</span>
-         <span class="s">required</span>  <span class="o">=&gt;</span> <span class="mi">1</span><span class="p">,</span>
-      <span class="p">);</span>
-
-      <span class="k">sub </span><span class="nf">price</span> <span class="p">{</span>
-         <span class="k">my</span> <span class="nv">$self</span> <span class="o">=</span> <span class="nb">shift</span><span class="p">;</span>
-         <span class="k">my</span> <span class="nv">$size</span> <span class="o">=</span> <span class="nv">$self</span><span class="o">-&gt;</span><span class="nv">size</span><span class="p">;</span>
-
-         <span class="k">if</span> <span class="p">(</span> <span class="nv">$size</span> <span class="ow">eq</span> <span class="nv">SIZE_XL</span> <span class="p">)</span> <span class="p">{</span>
-            <span class="k">return</span> <span class="mf">10.99</span><span class="p">;</span>
-         <span class="p">}</span>
-         <span class="k">elsif</span> <span class="p">(</span> <span class="nv">$size</span> <span class="ow">eq</span> <span class="nv">SIZE_L</span> <span class="p">)</span> <span class="p">{</span>
-            <span class="k">return</span> <span class="mf">9.99</span><span class="p">;</span>
-         <span class="p">}</span>
-         <span class="k">else</span> <span class="p">{</span>
-            <span class="k">return</span> <span class="mf">8.99</span><span class="p">;</span>
-         <span class="p">}</span>
-      <span class="p">}</span>
-   <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Yes, <strong>Enum</strong> type constraints now provide constants like <code>SIZE_XL</code> above.</p>
-
-<p><em>Type::Tiny::Class</em> provides a similar shortcut:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">sub </span><span class="nf">post_data</span> <span class="p">( $url, $data, $ua=undef ) {</span>
-
-      <span class="k">use</span> <span class="nn">Type::Tiny::</span><span class="nv">Class</span> <span class="o">-</span><span class="nv">lexical</span><span class="p">,</span> <span class="p">'</span><span class="s1">HTTP::Tiny</span><span class="p">';</span>
-
-      <span class="nv">$ua</span> <span class="o">=</span> <span class="nv">HTTPTiny</span><span class="o">-&gt;</span><span class="k">new</span> <span class="k">unless</span> <span class="nv">is_HTTPTiny</span> <span class="nv">$ua</span><span class="p">;</span>
-      <span class="nv">$ua</span><span class="o">-&gt;</span><span class="nv">post</span><span class="p">(</span> <span class="nv">$url</span><span class="p">,</span> <span class="nv">$data</span> <span class="p">);</span>
-   <span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p><em>Type::Tiny::Role</em> and <em>Type::Tiny::Duck</em> also provide shortcuts.</p>
-
-<h2>
-  
-  
-  Types::Common
-</h2>
-
-<p>Having checked out a lot of modules which use Type::Tiny, I've noticed that the most common modules people import from are <em>Types::Standard</em>, <em>Type::Params</em>, <em>Types::Common::Numeric</em>, and <em>Types::Common::String</em>.</p>
-
-<p><em>Types::Common</em> is a new module that combines all of the above. For quick scripts and one-liners, something like this may save a bit of typing:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Common</span> <span class="o">-</span><span class="nv">all</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Though like always, you can list imports explicitly:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Common</span> <span class="sx">qw( signature_for Num NonEmptyStr )</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<p>If you have a bleeding-edge Perl installed, you can import functions lexically:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="k">use</span> <span class="nn">Types::</span><span class="nv">Common</span> <span class="o">-</span><span class="nv">lexical</span><span class="p">,</span> <span class="o">-</span><span class="nv">all</span><span class="p">;</span>
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  
-  
-  A type divided against itself shall stand
-</h2>
-
-<p>You can now divide a type constraint by another:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="nv">has</span> <span class="s">lucky_numbers</span> <span class="o">=&gt;</span> <span class="p">(</span>
-      <span class="s">is</span>    <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
-      <span class="s">isa</span>   <span class="o">=&gt;</span> <span class="nv">ArrayRef</span><span class="p">[</span> <span class="nv">Num</span> <span class="o">/</span> <span class="nv">Any</span> <span class="p">],</span>
-   <span class="p">);</span>
-</code></pre>
-
-</div>
-
-
-
-<p>What does this mean?</p>
-
-<p>Under normal circumstances, <strong>Num/Any</strong> evaluates to just <strong>Any</strong>. <strong>Num</strong> is basically just documentation, so you're documenting that <code>lucky_numbers</code> is intended to be an arrayref of numbers, but as a speed boost, the attribute will just check that it's an arrayref of anything.</p>
-
-<p>When the <code>EXTENDED_TESTING</code> environment variable is switched on though, <strong>Num/Any</strong> will evaluate to <strong>Num</strong>, so stricter type checks will kick in.</p>
-
-<h2>
-  
-  
-  Type defaults
-</h2>
-
-<p>Instead of this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="nv">has</span> <span class="s">output_list</span> <span class="o">=&gt;</span> <span class="p">(</span>
-      <span class="s">is</span>        <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
-      <span class="s">isa</span>       <span class="o">=&gt;</span> <span class="nv">ArrayRef</span><span class="p">,</span>
-      <span class="s">default</span>   <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span> <span class="o">[]</span> <span class="p">},</span>
-   <span class="p">);</span>
-</code></pre>
-
-</div>
-
-
-
-<p>You can now write this:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="nv">has</span> <span class="s">output_list</span> <span class="o">=&gt;</span> <span class="p">(</span>
-      <span class="s">is</span>        <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
-      <span class="s">isa</span>       <span class="o">=&gt;</span> <span class="nv">ArrayRef</span><span class="p">,</span>
-      <span class="s">default</span>   <span class="o">=&gt;</span> <span class="nv">ArrayRef</span><span class="o">-&gt;</span><span class="nv">type_default</span><span class="p">,</span>
-   <span class="p">);</span>
-</code></pre>
-
-</div>
-
-
-
-<p>This is more typing, so why do this? Well, for <strong>ArrayRef</strong> it might be more typing, but in this case:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code>   <span class="nv">has</span> <span class="s">colour_scheme</span> <span class="o">=&gt;</span> <span class="p">(</span>
-      <span class="s">is</span>        <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">ro</span><span class="p">',</span>
-      <span class="s">isa</span>       <span class="o">=&gt;</span> <span class="nv">ColourScheme</span><span class="p">,</span>
-      <span class="s">default</span>   <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
-         <span class="k">my</span> <span class="nv">%colours</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="s">foreground</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">black</span><span class="p">',</span>
-            <span class="s">background</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">white</span><span class="p">',</span>
-            <span class="s">links</span>      <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">blue</span><span class="p">',</span>
-            <span class="s">highlight</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">red</span><span class="p">',</span>
-         <span class="p">);</span>
-         <span class="k">return</span> <span class="o">\</span><span class="nv">%colours</span><span class="p">;</span>
-      <span class="p">},</span>
-   <span class="p">);</span>
-</code></pre>
-
-</div>
-
-
-
-<p>It might be neater to include the default in the definition of your <strong>ColourScheme</strong> type.</p>
-
-<h2>
-  
-  
-  The new <strong>DelimitedStr</strong> type
-</h2>
-
-<p><em>Types::Common::String</em> now has a <strong>DelimitedStr</strong> type.</p>
-
-<p>This allows <strong>DelimitedStr[ "|", Int ]</strong> to accept strings like <code>"12|34|-99|0|1"</code>.</p>
-
-<h2>
-  
-  
-  Internals
-</h2>
-
-<p>There have been numerous internal refactorings in Type::Tiny v2, so if you're using Type::Tiny and its related modules in more unorthodox ways, it may be worth explicitly testing your code still runs on the new version.</p>
-
-<p>However, I have taken care to avoid breaking any documented APIs. The vast majority of the Type:Tiny v1 test suite still passes with Type::Tiny v2, with test cases that inspect the exact text of error messages being the only real change.</p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -4528,7 +4169,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 23 September 2022 12:57 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 23 September 2022 16:53 UTC</address>
             </div>
           </div>
         </div><!-- container -->

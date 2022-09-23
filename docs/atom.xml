@@ -7,9 +7,396 @@
     <name>Dave Cross</name>
     <email></email>
   </author>
-  <updated>2022-09-23T12:57:22Z</updated>
+  <updated>2022-09-23T16:53:27Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>My Perl Weekly Challenge</title>
+    <link rel="alternate" href="http://blogs.perl.org/users/al_newkirk/2022/09/my-perl-weekly-challenge.html"/>
+    <id>tag:blogs.perl.org,2022:/users/al_newkirk//829.10902</id>
+    <published>2022-09-23T18:58:40Z</published>
+    <updated>2022-09-23T18:59:47Z</updated>
+    <author>
+        <name>awncorp</name>
+        
+    </author>
+    <category term="functional" label="functional" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="objectoriented" label="object-oriented" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="perl" label="perl" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="perl5" label="perl5" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <category term="signatures" label="signatures" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/al_newkirk/">
+        <![CDATA[<h2>Really, how hard could it be?</h2>
+
+<p>All this talk about <a href="https://dev.to/iamalnewkirk/types-objects-and-systems-oh-my-27hk">types, objects, and systems</a>, got me to thinking, <em>"what would it take to create a 100% backwards-compatible pure Perl proof-of-concept for optionally typable subroutine signatures"</em>. I mean really, how hard could it be? So I started sketching out some ideas and here's what I came up with:</p>
+
+<pre><code>use typing;
+
+sub greet :Function(string, number) :Return() {
+  my ($name, $count) = &amp;_;
+
+  print "Hi $name, you have $count messages waiting ...\n";
+}
+</code></pre>
+
+<p>This final sketch felt very Perlish and I had an inkling that I might be able to tie all the concepts being used together, and I did. It actually works, and it's fast. Let's break down what's actually happening here.</p>
+
+<pre><code>use typing;
+</code></pre>
+
+<p>I don't particularly like or care about the name, I had to call it something, the code is about resolving types, so I called it <em>"typing"</em>. When you import the package the framework installs two magic symbols. Oh, yes, btw, once I made it all work, I decided to extend it so that any type or object system could hook into it to allow the resolution of their own types using this system, so yes, it's a framework.</p>
+
+<pre><code>sub greet :Function(string, number) :Return();
+</code></pre>
+
+<p>The <em>"greet"</em> subroutine is just a plain ole subroutine. No source filter, no Perl keyword API, no XS, no high-magic. Here we're using old school "attributes" to annotate the subroutine and denote whether it's a function or method, and whether it has a return value or not.</p>
+
+<pre><code>sub greet :Method(object, string) :Return(object);
+</code></pre>
+
+<p>Declaring a subroutine as a method doesn't do anything special. No automagic unpacking, no implied/inferred first argument. The same is true for the <em>"return"</em> declaration. In fact, the annotations aren't involved in the execution of your program unless to you use the magic <em>"unpacker"</em> function.</p>
+
+<pre><code># use this ...
+my ($name, $count) = &amp;_;
+
+# instead of this ...
+my ($name, $count) = @_;
+</code></pre>
+
+<p>This works due to a little-known Perl trick that only the most neck-beardiest of Perl hackers understand, and me, which is what happens when you call a subroutine using the ampersand without any arguments, i.e. you can operate on the caller's argument list. By naming the function <code>_</code>, and requiring the use of the ampersand, we've created a cute little synonym for the <code>@_</code> variable.</p>
+
+<pre><code>sub greet :Function(string, number) :Return() {
+  my ($name, $count) = &amp;_;
+  # ...
+}
+</code></pre>
+
+<p>Here's what's happening. The <em>"unpacker"</em> function gets the typed argument list for the calling subroutine, i.e. it gets its signature, then it iterates over the arguments calling the configured validator for each type expression specified at each position in the argument list.</p>
+
+<pre><code>greet() # error
+greet({}) # error
+greet('bob') # error
+greet('bob', 2) # sweet :)
+</code></pre>
+
+<p>But what happens if you provide more arguments than the signature has type expressions for? The system is designed to use the last type specified to validate all out-of-bounds arguments, which means <code>greet('bob', 2..10)</code> works and passes the type checks, but <code>greet('bob', 2, 'bob', 2)</code> doesn't because the second <code>'bob'</code> isn't a number. Make sense? Right, but what about the framework bit? First, let's see what it looks like to hook into the framework as a one-off:</p>
+
+<pre><code>use typing;
+
+typing::set_spaces('main', 'main');
+
+sub main::string::make {
+  # must return (value, valid?, explanation)
+  ($_[0], 1, '')
+}
+
+sub greet :Function(string) {
+  my ($name) = &amp;_;
+  print "Hi $name\n";
+}
+</code></pre>
+
+<p>This example is one of the simplest hooks. The <code>set_spaces</code> function says, the caller is the "main" package, and we should look for types under the <em>"main"</em> namespace by prefixing the type name with <em>"main"</em> and looking for a subroutine called "make". The <em>"make"</em> subroutine must return a list in the form of <code>(value, valid?, explanation)</code>. This approach expects each type to correspond to a package (with a <em>"make"</em> routine), but maybe you like the type library/registry approach. Another way to hook into the system is to bring your own resolver:</p>
+
+<pre><code>use typing;
+
+typing::set_resolver('main', ['main', 'resolver']);
+
+sub resolver {
+  # accepts (package, type-expr, value)
+  # returns (value, valid?, explanation)
+  # maybe you'll do something like $registry-&gt;get(type-expr)-&gt;validate(value)
+  ($_[0], 1, '')
+}
+
+sub greet :Function(string) {
+  my ($name) = &amp;_;
+  print "Hi $name\n";
+}
+</code></pre>
+
+<p>This example uses the <code>set_resolver</code> function and says, the caller is the <em>"main"</em> package, and we should resolve <strong>all</strong> types in the <em>"main"</em> package using the <code>main::resolver</code> subroutine. The resolver must return a list in the form of <code>(value, valid?, explanation)</code>. But wait, there's more, ... we can use the framework's API to get the subroutine metadata to further automate our programs, for example:</p>
+
+<pre><code>use typing;
+
+typing::retrieve('main', 'method', 'greet')
+# [
+#   'MyApp::Object',
+#   'string',
+#   'number'
+# ]
+
+typing::retrieve('main', 'return', 'greet')
+# [
+#   'MyApp::Object'
+# ]
+
+sub greet :Function(MyApp::Object, string, number) :Return(MyApp::Object) {
+  # ...
+}
+</code></pre>
+
+<p>I'm supposed to be working on a completely different project right now, but this idea captivated me and so I lost a couple of days of productivity. Maybe others will find this idea interesting. <a href="https://github.com/awncorp/typing">If you're interested in the source code for this concept you can find it here!</a></p>
+
+<h2>Sources</h2>
+
+<p><strong>Type libraries</strong></p>
+
+<p><a href="https://metacpan.org/pod/MooseX::Types">MooseX::Types</a></p>
+
+<p><a href="https://metacpan.org/pod/Type::Tiny">Type::Tiny</a></p>
+
+<p><a href="https://metacpan.org/pod/Specio">Specio</a></p>
+
+<p><strong>Subroutine signatures</strong></p>
+
+<p><a href="https://metacpan.org/pod/Function::Parameters">Function::Parameters</a></p>
+
+<p><a href="https://metacpan.org/pod/Method::Signatures">Method::Signatures</a></p>
+
+<p><a href="https://metacpan.org/pod/routines">registry/routines</a></p>
+
+<h2>End Quote</h2>
+
+<p>"Software is like art and the only justification you need for creating it is, 'because I felt like it'" - Andy Wardley</p>
+
+<h2>Authors</h2>
+
+<p>Awncorp, <code>awncorp@cpan.org</code></p>
+]]>
+        
+
+    </content>
+</entry>
+  <entry>
+    <title>My Perl Weekly Challenge</title>
+    <link rel="alternate" href="https://dev.to/iamalnewkirk/my-perl-weekly-challenge-3dan" type="text/html"/>
+    <content type="html">&lt;h2&gt;
+  
+  
+  Really, how hard could it be?
+&lt;/h2&gt;
+
+&lt;p&gt;All this talk about &lt;a href="https://dev.to/iamalnewkirk/types-objects-and-systems-oh-my-27hk"&gt;types, objects, and systems&lt;/a&gt;, got me to thinking, &lt;em&gt;"what would it take to create a 100% backwards-compatible pure Perl proof-of-concept for optionally typable subroutine signatures"&lt;/em&gt;. I mean really, how hard could it be? So I started sketching out some ideas and here's what I came up with:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;typing&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;greet&lt;/span&gt; &lt;span class="p"&gt;:Function(string, number) :Return() {&lt;/span&gt;
+  &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$name&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$count&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;&amp;amp;_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+  &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Hi &lt;/span&gt;&lt;span class="si"&gt;$name&lt;/span&gt;&lt;span class="s2"&gt;, you have &lt;/span&gt;&lt;span class="si"&gt;$count&lt;/span&gt;&lt;span class="s2"&gt; messages waiting ...&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This final sketch felt very Perlish and I had an inkling that I might be able to tie all the concepts being used together, and I did. It actually works, and it's fast. Let's break down what's actually happening here.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;typing&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;I don't particularly like or care about the name, I had to call it something, the code is about resolving types, so I called it &lt;em&gt;"typing"&lt;/em&gt;. When you import the package the framework installs two magic symbols. Oh, yes, btw, once I made it all work, I decided to extend it so that any type or object system could hook into it to allow the resolution of their own types using this system, so yes, it's a framework.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;greet&lt;/span&gt; &lt;span class="err"&gt;:&lt;/span&gt;&lt;span class="nf"&gt;Function&lt;/span&gt;&lt;span class="err"&gt;(&lt;/span&gt;&lt;span class="nf"&gt;string&lt;/span&gt;&lt;span class="err"&gt;,&lt;/span&gt; &lt;span class="nf"&gt;number&lt;/span&gt;&lt;span class="err"&gt;)&lt;/span&gt; &lt;span class="err"&gt;:&lt;/span&gt;&lt;span class="nf"&gt;Return&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The &lt;em&gt;"greet"&lt;/em&gt; subroutine is just a plain ole subroutine. No source filter, no Perl keyword API, no XS, no high-magic. Here we're using old school "attributes" to annotate the subroutine and denote whether it's a function or method, and whether it has a return value or not.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;greet&lt;/span&gt; &lt;span class="err"&gt;:&lt;/span&gt;&lt;span class="nf"&gt;Method&lt;/span&gt;&lt;span class="err"&gt;(&lt;/span&gt;&lt;span class="nf"&gt;object&lt;/span&gt;&lt;span class="err"&gt;,&lt;/span&gt; &lt;span class="nf"&gt;string&lt;/span&gt;&lt;span class="err"&gt;)&lt;/span&gt; &lt;span class="err"&gt;:&lt;/span&gt;&lt;span class="nf"&gt;Return&lt;/span&gt;&lt;span class="err"&gt;(&lt;/span&gt;&lt;span class="nf"&gt;object&lt;/span&gt;&lt;span class="err"&gt;)&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Declaring a subroutine as a method doesn't do anything special. No automagic unpacking, no implied/inferred first argument. The same is true for the &lt;em&gt;"return"&lt;/em&gt; declaration. In fact, the annotations aren't involved in the execution of your program unless to you use the magic &lt;em&gt;"unpacker"&lt;/em&gt; function.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;# use this ...&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$name&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$count&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;&amp;amp;_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="c1"&gt;# instead of this ...&lt;/span&gt;
+&lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$name&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$count&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;@_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This works due to a little-known Perl trick that only the most neck-beardiest of Perl hackers understand, and me, which is what happens when you call a subroutine using the ampersand without any arguments, i.e. you can operate on the caller's argument list. By naming the function &lt;code&gt;_&lt;/code&gt;, and requiring the use of the ampersand, we've created a cute little synonym for the &lt;code&gt;@_&lt;/code&gt; variable.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;greet&lt;/span&gt; &lt;span class="p"&gt;:Function(string, number) :Return() {&lt;/span&gt;
+  &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$name&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$count&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;&amp;amp;_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="c1"&gt;# ...&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Here's what's happening. The &lt;em&gt;"unpacker"&lt;/em&gt; function gets the typed argument list for the calling subroutine, i.e. it gets its signature, then it iterates over the arguments calling the configured validator for each type expression specified at each position in the argument list.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="nv"&gt;greet&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="c1"&gt;# error&lt;/span&gt;
+&lt;span class="nv"&gt;greet&lt;/span&gt;&lt;span class="p"&gt;({})&lt;/span&gt; &lt;span class="c1"&gt;# error&lt;/span&gt;
+&lt;span class="nv"&gt;greet&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;bob&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt; &lt;span class="c1"&gt;# error&lt;/span&gt;
+&lt;span class="nv"&gt;greet&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;bob&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="c1"&gt;# sweet :)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;But what happens if you provide more arguments than the signature has type expressions for? The system is designed to use the last type specified to validate all out-of-bounds arguments, which means &lt;code&gt;greet('bob', 2..10)&lt;/code&gt; works and passes the type checks, but &lt;code&gt;greet('bob', 2, 'bob', 2)&lt;/code&gt; doesn't because the second &lt;code&gt;'bob'&lt;/code&gt; isn't a number. Make sense? Right, but what about the framework bit? First, let's see what it looks like to hook into the framework as a one-off:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;typing&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="nn"&gt;typing::&lt;/span&gt;&lt;span class="nv"&gt;set_spaces&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;main&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;main&lt;/span&gt;&lt;span class="p"&gt;');&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;main&lt;/span&gt;&lt;span class="p"&gt;::string::make {&lt;/span&gt;
+  &lt;span class="c1"&gt;# must return (value, valid?, explanation)&lt;/span&gt;
+  &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'')&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;greet&lt;/span&gt; &lt;span class="p"&gt;:Function(string) {&lt;/span&gt;
+  &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$name&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;&amp;amp;_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Hi &lt;/span&gt;&lt;span class="si"&gt;$name&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This example is one of the simplest hooks. The &lt;code&gt;set_spaces&lt;/code&gt; function says, the caller is the "main" package, and we should look for types under the &lt;em&gt;"main"&lt;/em&gt; namespace by prefixing the type name with &lt;em&gt;"main"&lt;/em&gt; and looking for a subroutine called "make". The &lt;em&gt;"make"&lt;/em&gt; subroutine must return a list in the form of &lt;code&gt;(value, valid?, explanation)&lt;/code&gt;. This approach expects each type to correspond to a package (with a &lt;em&gt;"make"&lt;/em&gt; routine), but maybe you like the type library/registry approach. Another way to hook into the system is to bring your own resolver:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;typing&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="nn"&gt;typing::&lt;/span&gt;&lt;span class="nv"&gt;set_resolver&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;main&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;['&lt;/span&gt;&lt;span class="s1"&gt;main&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;resolver&lt;/span&gt;&lt;span class="p"&gt;']);&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;resolver&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+  &lt;span class="c1"&gt;# accepts (package, type-expr, value)&lt;/span&gt;
+  &lt;span class="c1"&gt;# returns (value, valid?, explanation)&lt;/span&gt;
+  &lt;span class="c1"&gt;# maybe you'll do something like $registry-&amp;gt;get(type-expr)-&amp;gt;validate(value)&lt;/span&gt;
+  &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="vg"&gt;$_&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'')&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;greet&lt;/span&gt; &lt;span class="p"&gt;:Function(string) {&lt;/span&gt;
+  &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;$name&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;&amp;amp;_&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="k"&gt;print&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;Hi &lt;/span&gt;&lt;span class="si"&gt;$name&lt;/span&gt;&lt;span class="se"&gt;\n&lt;/span&gt;&lt;span class="p"&gt;";&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;This example uses the &lt;code&gt;set_resolver&lt;/code&gt; function and says, the caller is the &lt;em&gt;"main"&lt;/em&gt; package, and we should resolve &lt;strong&gt;all&lt;/strong&gt; types in the &lt;em&gt;"main"&lt;/em&gt; package using the &lt;code&gt;main::resolver&lt;/code&gt; subroutine. The resolver must return a list in the form of &lt;code&gt;(value, valid?, explanation)&lt;/code&gt;. But wait, there's more, ... we can use the framework's API to get the subroutine metadata to further automate our programs, for example:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;typing&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="nn"&gt;typing::&lt;/span&gt;&lt;span class="nv"&gt;retrieve&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;main&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;method&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;greet&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt;
+&lt;span class="c1"&gt;# [&lt;/span&gt;
+&lt;span class="c1"&gt;#   'MyApp::Object',&lt;/span&gt;
+&lt;span class="c1"&gt;#   'string',&lt;/span&gt;
+&lt;span class="c1"&gt;#   'number'&lt;/span&gt;
+&lt;span class="c1"&gt;# ]&lt;/span&gt;
+
+&lt;span class="nn"&gt;typing::&lt;/span&gt;&lt;span class="nv"&gt;retrieve&lt;/span&gt;&lt;span class="p"&gt;('&lt;/span&gt;&lt;span class="s1"&gt;main&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;return&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;greet&lt;/span&gt;&lt;span class="p"&gt;')&lt;/span&gt;
+&lt;span class="c1"&gt;# [&lt;/span&gt;
+&lt;span class="c1"&gt;#   'MyApp::Object'&lt;/span&gt;
+&lt;span class="c1"&gt;# ]&lt;/span&gt;
+
+&lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;greet&lt;/span&gt; &lt;span class="p"&gt;:Function(MyApp::Object, string, number) :Return(MyApp::Object) {&lt;/span&gt;
+  &lt;span class="c1"&gt;# ...&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;I'm supposed to be working on a completely different project right now, but this idea captivated me and so I lost a couple of days of productivity. Maybe others will find this idea interesting. &lt;a href="https://github.com/awncorp/typing"&gt;If you're interested in the source code for this concept you can find it here!&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  Sources
+&lt;/h2&gt;
+
+&lt;p&gt;&lt;strong&gt;Type libraries&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/MooseX::Types"&gt;MooseX::Types&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/Type::Tiny"&gt;Type::Tiny&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/Specio"&gt;Specio&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Subroutine signatures&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/Function::Parameters"&gt;Function::Parameters&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/Method::Signatures"&gt;Method::Signatures&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/routines"&gt;registry/routines&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  End Quote
+&lt;/h2&gt;
+
+&lt;p&gt;"Software is like art and the only justification you need for creating it is, 'because I felt like it'" - Andy Wardley&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  Authors
+&lt;/h2&gt;
+
+&lt;p&gt;Awncorp, &lt;code&gt;awncorp@cpan.org&lt;/code&gt;&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Al Newkirk</name>
+    </author>
+    <id>https://dev.to/iamalnewkirk/my-perl-weekly-challenge-3dan</id>
+    <published>2022-09-23T13:49:15Z</published>
+    <updated>2022-09-23T13:49:15Z</updated>
+    <category term="perl"/>
+    <category term="oop"/>
+    <category term="functional"/>
+    <category term="programming"/>
+  </entry>
   <entry>
   <title>Dancer2: Exercise 3 - Simple Single-user TODO list AP</title>
   <summary type="html"><![CDATA[<p>
@@ -2382,383 +2769,6 @@ Today, we are giving away Token #6 to Dario Mazzeo for the book, Learning Perl E
     <published>2022-09-19T00:00:00Z</published>
     <updated>2022-09-19T00:00:00Z</updated>
   </entry>
-  <entry>
-    <title>Perl Weekly Challenge 182:  Max Index and Common Path</title>
-    <link rel="alternate" href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-182-max-index-and-common-path.html"/>
-    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10893</id>
-    <published>2022-09-13T21:41:03Z</published>
-    <updated>2022-09-18T21:12:39Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="http://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 182 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-182/">Perl Weekly Challenge</a> organized by <a href="http://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few of days from now (on Sept. 18, 2022 at 23:59). This blog post offers some solutions to this challenge, please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Max Index</h2>
-
-<p><em>You are given a list of integers.</em></p>
-
-<p><em>Write a script to find the index of the first biggest number in the list.</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>Input: @n = (5, 2, 9, 1, 7, 6)
-Output: 2 (as 3rd element in the list is the biggest number)
-
-Input: @n = (4, 2, 3, 1, 5, 0)
-Output: 4 (as 5th element in the list is the biggest number)
-</code></pre>
-
-<h3>Max Index in Raku</h3>
-
-<p>The initial idea here was to to store the input data into a hash and to use the <a href="https://docs.raku.org/routine/max">max</a> routine to find the maximum value. The <code>max</code> documentation says:</p>
-
-<blockquote>
-  <p>Coerces the invocant to Iterable and returns the numerically largest element; in the case of Hashes, the Pair with the highest value.</p>
-</blockquote>
-
-<p>But that did not work properly in my tests: <code>max</code> consistently appeared to return the pair with the highest key, not the highest value. I tried to use the <a href="https://docs.raku.org/routine/maxpairs">maxpairs</a> routine, which, according to the documentation, </p>
-
-<blockquote>
-  <p>returns a Seq with all of the Pairs with maximum value. </p>
-</blockquote>
-
-<p>The <code>maxpairs</code> method works as expected. This leads to a very short program:</p>
-
-<pre><code>for (5, 2, 9, 1, 7, 6), (4, 2, 3, 1, 5, 0) -&gt; @test {
-    my %nums = @test.kv;
-    say "@test[] : ", %nums.maxpairs;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./max-index.raku
-5 2 9 1 7 6 : (2 =&gt; 9)
-4 2 3 1 5 0 : (4 =&gt; 5)
-</code></pre>
-
-<h3>Max Index in Perl</h3>
-
-<p>In Perl, we use a standard <code>for</code> loop to traverse the input list and find the index of the largest value:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-for my $test ([5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]) {
-    my @nums = @{$test};
-    my ($max_i, $max_n) = (0, 0);
-    for my $i (0..$#nums) {
-        if ($nums[$i] &gt; $max_n) {
-            $max_n = $nums[$i];
-            $max_i = $i;
-        }
-    }
-    say "@nums : $max_i =&gt; $max_n";
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./max-index.pl
-5 2 9 1 7 6 : 2 =&gt; 9
-4 2 3 1 5 0 : 4 =&gt; 5
-</code></pre>
-
-<h3>Max Index in 7 Other Languages</h3>
-
-<p>We have now implementations of the max index task in 7 languages as follows:</p>
-
-<ul>
-<li>Awk</li>
-<li>JavaScript</li>
-<li>Julia</li>
-<li>Python</li>
-<li>Ring</li>
-<li>Ruby</li>
-<li>Scala</li>
-</ul>
-
-<h4>Max Index in Awk</h4>
-
-<p>In awk, the data is normally passed as standard input. So we use a Unix pipe to pass the data to the program.</p>
-
-<pre><code># run for example as:
-# echo '5 2 9 1 7 6
-# 4 2 3 1 5 0' | awk -f ./max-index.awk
-
-function find_max() {
-    max_i = 0
-    max_n = $1
-    for (i = 2; i &lt; NF; i++) {
-        if ($i &gt; max_n) {
-            max_i = i
-            max_n = $i
-        }
-    }
-    printf("Max index for %s: %d =&gt; %d\n", $0, max_i - 1, max_n)
-}
-{
-    find_max()
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ echo '5 2 9 1 7 6
-4 2 3 1 5 0' | awk -f ./max-index.awk
-Max index for 5 2 9 1 7 6: 2 =&gt; 9
-Max index for 4 2 3 1 5 0: 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in JavaScript</h4>
-
-<pre><code>let tests = [ [5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0] ]
-for  (let j = 0; j &lt; tests.length; j++) {
-    let test = tests[j]
-    let max_i = 0
-    let max_n = test[0]
-    for (let i = 1; i &lt;= test.length; i++) {
-        if (test[i] &gt; max_n) {
-            max_n = test[i]
-            max_i = i
-        }
-    }
-    console.log("Max index for " + test + ": " + max_i + " =&gt; " + max_n)
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Max index for 5,2,9,1,7,6: 2 =&gt; 9
-Max index for 4,2,3,1,5,0: 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in Julia</h4>
-
-<p>Note that Julia indexes start at 1. So we need to subtract 1 from the <code>max_i</code> variable to get a result consistent with other (0-based index) languages. </p>
-
-<pre><code>for test in [[5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]]
-    max_i = 1
-    max_n = test[1]
-    for i in 2:length(test)
-        if (test[i] &gt; max_n)
-            max_n = test[i]
-            max_i = i
-        end
-    end
-    println("Max index for $test: $(max_i - 1) =&gt; $max_n)")
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ julia ./max-index.jl
-Max index for [5, 2, 9, 1, 7, 6]: 2 =&gt; 9)
-Max index for [4, 2, 3, 1, 5, 0]: 4 =&gt; 5)
-</code></pre>
-
-<h4>Max Index in Python</h4>
-
-<pre><code>for test in [5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]:
-  max_i = 0
-  max_n = test[0]
-  for i in range(1, len(test)):
-    if test[i] &gt; max_n:
-      max_n = test[i]
-      max_i = i
-  print("Max index for ", test, ": ", max_i, " =&gt; ", max_n)
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ python3 ./max-index.py
-Max index for  [5, 2, 9, 1, 7, 6] :  2  =&gt;  9
-Max index for  [4, 2, 3, 1, 5, 0] :  4  =&gt;  5
-</code></pre>
-
-<h4>Max Index in Ring</h4>
-
-<p>Note that Ring indexes start at 1 (like Julia indexes). So we need to subtract 1 from the max_i variable to get a result consistent with other (0-based index) languages.</p>
-
-<pre><code>for test in [[5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]]
-    max_i = 1
-    max_n = test[1]
-    str = ""
-    for i = 1 to len(test)
-        str = str + test[i] + " "
-        if test[i] &gt; max_n
-            max_n = test[i]
-            max_i = i
-        ok
-    next
-    see "Max index for " + str + ": " +
-        (max_i - 1) + " =&gt; " + max_n + nl
-next
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>$ ring ./max-index.ring
-Max index for 5 2 9 1 7 6 : 2 =&gt; 9
-Max index for 4 2 3 1 5 0 : 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in Ruby</h4>
-
-<pre><code>for test in [[5, 2, 9, 1, 7, 6], [4, 2, 3, 1, 5, 0]]
-    max_i = 0
-    max_n = test[0]
-    for i in 1..(test.length - 1)
-        if test[i] &gt; max_n
-            max_n = test[i]
-            max_i = i
-        end
-    end
-    printf("Max index for %s: %d =&gt; %d\n", test.to_s, max_i, max_n)
-end
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Max index for [5, 2, 9, 1, 7, 6]: 2 =&gt; 9
-Max index for [4, 2, 3, 1, 5, 0]: 4 =&gt; 5
-</code></pre>
-
-<h4>Max Index in Scala</h4>
-
-<pre><code>object fraction_tree extends App {
-
-  val tests: List[List[Int]] =
-    List(List(5, 2, 9, 1, 7, 6), List(4, 2, 3, 1, 5, 0))
-  for (test &lt;- tests) {
-    var max_i = 0
-    var max_n = test(max_i)
-    for (i &lt;- 1 to test.length - 1) {
-      if (test(i) &gt; max_n) {
-        max_n = test(i)
-        max_i = i
-      }
-    }
-    println("Max index for " + test.mkString(" ") + s": $max_i =&gt; $max_n")
-  }
-}
-</code></pre>
-
-<p>Output:</p>
-
-<pre><code>Max index for 5 2 9 1 7 6: 2 =&gt; 9
-Max index for 4 2 3 1 5 0: 4 =&gt; 5
-</code></pre>
-
-<h2>Task 2: Common Path</h2>
-
-<p><em>Given a list of absolute Linux file paths, determine the deepest path to the directory that contains all of them.</em></p>
-
-<p><em>Example:</em></p>
-
-<pre><code>Input:
-    /a/b/c/1/x.pl
-    /a/b/c/d/e/2/x.pl
-    /a/b/c/d/3/x.pl
-    /a/b/c/4/x.pl
-    /a/b/c/d/5/x.pl
-
-Ouput:
-    /a/b/c
-</code></pre>
-
-<h3>Common Path in Raku</h3>
-
-<p>This program converts the input into an array of arrays and then compares each item of the first line with the corresponding item of the other lines. The program stops as soon as a difference is found.</p>
-
-<pre><code>my @input = qw &lt;
-    /a/b/c/1/x.pl
-    /a/b/c/d/e/2/x.pl
-    /a/b/c/d/3/x.pl
-    /a/b/c/4/x.pl
-    /a/b/c/d/5/x.pl
-    &gt;;
-
-my @paths = gather {
-    for @input &lt;-&gt; $line {
-        $line ~~ s/^'/'//;
-        my @subpaths = split /'/'/, $line;
-        take @subpaths[0..*-2];
-    }
-}
-my $end = @paths.end;
-my $k = 0;
-OUTLOOP: for 0..(@paths[0].end) -&gt; $i {
-    for 0..$end -&gt; $j {
-        if @paths[$j][$i]:!exists or @paths[$j][$i] ne @paths[0][$i] {
-            $k = $i - 1;
-            last OUTLOOP;
-        }
-    }
-}
-say '/', join '/', @paths[0][0..$k];
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./common-path.raku
-/a/b/c
-</code></pre>
-
-<h3>Common Path in Perl</h3>
-
-<pre><code>use strict;
-use warnings;
-use feature qw/say/;
-
-my @input = qw &lt;
-    /a/b/c/1/x.pl
-    /a/b/c/d/e/2/x.pl
-    /a/b/c/d/3/x.pl
-    /a/b/c/4/x.pl
-    /a/b/c/d/5/x.pl
-    &gt;;
-
-my @paths;
-for my $line (@input) {
-    $line =~ s|^/||;
-    my @subpaths = split /\//, $line;
-    push @paths, [@subpaths[0..$#subpaths-1]];
-}
-
-my @first = @{$paths[0]};
-my $end = $#paths;
-my $k = 0;
-OUTLOOP: for my $i (0..$#first) {
-    for my $j (0..$end) {
-        if ((not exists $paths[$j][$i]) or $paths[$j][$i] ne $first[$i]) {
-            $k = $i - 1;
-            last OUTLOOP;
-        }
-    }
-}
-say '/', join '/', @first[0..$k];
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl ./common-path.pl
-/a/b/c
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on September 25, 2022. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
-    </content>
-</entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-48001363750799679</id>
     <published>2022-09-17T22:22:00.000+02:00</published>
@@ -2818,369 +2828,6 @@ say '/', join '/', @first[0..$k];
       <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
     </author>
     <thr:total>0</thr:total>
-  </entry>
-  <entry>
-    <title>Type::Tiny v2 is Coming</title>
-    <link rel="alternate" href="https://dev.to/tobyink/typetiny-v2-is-coming-4171" type="text/html"/>
-    <content type="html">&lt;p&gt;Eagle-eyed watchers of CPAN may have noticed that I've recently been releasing Type::Tiny development releases with version numbers 1.999_XYZ.&lt;/p&gt;
-
-&lt;p&gt;Type::Tiny v2 is intended to be compatible with Type::Tiny v1. If you've used Type::Tiny v1, you shouldn't need to change any code, but Type::Tiny v2 has a few new features which may make your code simpler, more maintainable, and more readable if you adopt them.&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Type::Params v2 API
-&lt;/h2&gt;
-
-&lt;p&gt;Type::Params can be used to provide typed subroutine signatures:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="sx"&gt;qw( state )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::&lt;/span&gt;&lt;span class="nv"&gt;Params&lt;/span&gt; &lt;span class="sx"&gt;qw( compile )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Standard&lt;/span&gt; &lt;span class="sx"&gt;qw( Num )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-   &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;add_numbers&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-      &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;compile&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-      &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$x&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$y&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="err"&gt;@&lt;/span&gt;&lt;span class="nv"&gt;_&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-
-      &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$x&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;$y&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;However, things like named paramaters, catering for &lt;code&gt;$self&lt;/code&gt; in methods, etc felt like afterthoughts. Here is how you'd write the same signature in version 1 as a method call using named parameters:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="sx"&gt;qw( state )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::&lt;/span&gt;&lt;span class="nv"&gt;Params&lt;/span&gt; &lt;span class="sx"&gt;qw( compile_named_oo )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Standard&lt;/span&gt; &lt;span class="sx"&gt;qw( Num )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-   &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;add_numbers&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-      &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;compile_named_oo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
-         &lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="s"&gt;head&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="nv"&gt;Any&lt;/span&gt; &lt;span class="p"&gt;]&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt;
-         &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;x&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-         &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;y&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="p"&gt;);&lt;/span&gt;
-      &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="err"&gt;@&lt;/span&gt;&lt;span class="nv"&gt;_&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-
-      &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;y&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;While the old API is still supported, Type::Params v2 has two new functions, &lt;code&gt;signature&lt;/code&gt; and &lt;code&gt;signature_for&lt;/code&gt;, which I feel provide a more powerful and more consistent interface.&lt;/p&gt;
-
-&lt;p&gt;&lt;code&gt;signature&lt;/code&gt; works much the same as &lt;code&gt;compile&lt;/code&gt;, but takes a top-level hash of options, allowing it to cater for both positional and named parameters.&lt;/p&gt;
-
-&lt;p&gt;Here is an example for positional parameters:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="sx"&gt;qw( state )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::&lt;/span&gt;&lt;span class="nv"&gt;Params&lt;/span&gt; &lt;span class="sx"&gt;qw( signature )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Standard&lt;/span&gt; &lt;span class="sx"&gt;qw( Num )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-   &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;add_numbers&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-      &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;signature&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
-         &lt;span class="s"&gt;method&lt;/span&gt;     &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-         &lt;span class="s"&gt;positional&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt; &lt;span class="p"&gt;],&lt;/span&gt;
-      &lt;span class="p"&gt;);&lt;/span&gt;
-      &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$x&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$y&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="err"&gt;@&lt;/span&gt;&lt;span class="nv"&gt;_&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-
-      &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$x&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;$y&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Here is an example for named parameters:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;feature&lt;/span&gt; &lt;span class="sx"&gt;qw( state )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::&lt;/span&gt;&lt;span class="nv"&gt;Params&lt;/span&gt; &lt;span class="sx"&gt;qw( signature )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Standard&lt;/span&gt; &lt;span class="sx"&gt;qw( Num )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-   &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;add_numbers&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-      &lt;span class="nv"&gt;state&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;signature&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
-         &lt;span class="s"&gt;method&lt;/span&gt;     &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-         &lt;span class="s"&gt;named&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;x&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;y&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt; &lt;span class="p"&gt;],&lt;/span&gt;
-      &lt;span class="p"&gt;);&lt;/span&gt;
-      &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$signature&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="err"&gt;@&lt;/span&gt;&lt;span class="nv"&gt;_&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-
-      &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;y&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;And &lt;code&gt;signature_for&lt;/code&gt; allows you to turn that definition inside-out.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;experimental&lt;/span&gt; &lt;span class="sx"&gt;qw( signatures )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::&lt;/span&gt;&lt;span class="nv"&gt;Params&lt;/span&gt; &lt;span class="sx"&gt;qw( signature_for )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Standard&lt;/span&gt; &lt;span class="sx"&gt;qw( Num )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-   &lt;span class="nv"&gt;signature_for&lt;/span&gt; &lt;span class="s"&gt;add_numbers&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-      &lt;span class="s"&gt;method&lt;/span&gt;     &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="s"&gt;named&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;x&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;y&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt; &lt;span class="p"&gt;],&lt;/span&gt;
-   &lt;span class="p"&gt;);&lt;/span&gt;
-
-   &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;add_numbers&lt;/span&gt; &lt;span class="p"&gt;( $self, $arg ) {&lt;/span&gt;
-      &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="nv"&gt;$arg&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;y&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-   &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h2&gt;
-  
-  
-  Handy import shortcuts
-&lt;/h2&gt;
-
-&lt;p&gt;A handy way to define an &lt;strong&gt;Enum&lt;/strong&gt; type in Type::Tiny 2 is:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::Tiny::&lt;/span&gt;&lt;span class="nv"&gt;Enum&lt;/span&gt; &lt;span class="s"&gt;Size&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="sx"&gt;qw( S M L XL )&lt;/span&gt; &lt;span class="p"&gt;];&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;You can use this in a class like:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="nb"&gt;package&lt;/span&gt; &lt;span class="nn"&gt;Local::&lt;/span&gt;&lt;span class="nv"&gt;TShirt&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-      &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nv"&gt;Moose&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-      &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Common&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;types&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-      &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::Tiny::&lt;/span&gt;&lt;span class="nv"&gt;Enum&lt;/span&gt; &lt;span class="s"&gt;Size&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="sx"&gt;qw( S M L XL )&lt;/span&gt; &lt;span class="p"&gt;];&lt;/span&gt;
-      &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;namespace::&lt;/span&gt;&lt;span class="nv"&gt;autoclean&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-      &lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;size&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-         &lt;span class="s"&gt;is&lt;/span&gt;        &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ro&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-         &lt;span class="s"&gt;isa&lt;/span&gt;       &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;Size&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-         &lt;span class="s"&gt;required&lt;/span&gt;  &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="p"&gt;);&lt;/span&gt;
-
-      &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;price&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-         &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;shift&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-         &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;$size&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$self&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;size&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-
-         &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$size&lt;/span&gt; &lt;span class="ow"&gt;eq&lt;/span&gt; &lt;span class="nv"&gt;SIZE_XL&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mf"&gt;10.99&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-         &lt;span class="p"&gt;}&lt;/span&gt;
-         &lt;span class="k"&gt;elsif&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$size&lt;/span&gt; &lt;span class="ow"&gt;eq&lt;/span&gt; &lt;span class="nv"&gt;SIZE_L&lt;/span&gt; &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mf"&gt;9.99&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-         &lt;span class="p"&gt;}&lt;/span&gt;
-         &lt;span class="k"&gt;else&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
-            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mf"&gt;8.99&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-         &lt;span class="p"&gt;}&lt;/span&gt;
-      &lt;span class="p"&gt;}&lt;/span&gt;
-   &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Yes, &lt;strong&gt;Enum&lt;/strong&gt; type constraints now provide constants like &lt;code&gt;SIZE_XL&lt;/code&gt; above.&lt;/p&gt;
-
-&lt;p&gt;&lt;em&gt;Type::Tiny::Class&lt;/em&gt; provides a similar shortcut:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="nf"&gt;post_data&lt;/span&gt; &lt;span class="p"&gt;( $url, $data, $ua=undef ) {&lt;/span&gt;
-
-      &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Type::Tiny::&lt;/span&gt;&lt;span class="nv"&gt;Class&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;lexical&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;HTTP::Tiny&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
-
-      &lt;span class="nv"&gt;$ua&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;HTTPTiny&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="k"&gt;unless&lt;/span&gt; &lt;span class="nv"&gt;is_HTTPTiny&lt;/span&gt; &lt;span class="nv"&gt;$ua&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-      &lt;span class="nv"&gt;$ua&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;post&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$url&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$data&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
-   &lt;span class="p"&gt;}&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;&lt;em&gt;Type::Tiny::Role&lt;/em&gt; and &lt;em&gt;Type::Tiny::Duck&lt;/em&gt; also provide shortcuts.&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Types::Common
-&lt;/h2&gt;
-
-&lt;p&gt;Having checked out a lot of modules which use Type::Tiny, I've noticed that the most common modules people import from are &lt;em&gt;Types::Standard&lt;/em&gt;, &lt;em&gt;Type::Params&lt;/em&gt;, &lt;em&gt;Types::Common::Numeric&lt;/em&gt;, and &lt;em&gt;Types::Common::String&lt;/em&gt;.&lt;/p&gt;
-
-&lt;p&gt;&lt;em&gt;Types::Common&lt;/em&gt; is a new module that combines all of the above. For quick scripts and one-liners, something like this may save a bit of typing:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Common&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;all&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Though like always, you can list imports explicitly:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Common&lt;/span&gt; &lt;span class="sx"&gt;qw( signature_for Num NonEmptyStr )&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;If you have a bleeding-edge Perl installed, you can import functions lexically:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Types::&lt;/span&gt;&lt;span class="nv"&gt;Common&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;lexical&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="nv"&gt;all&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h2&gt;
-  
-  
-  A type divided against itself shall stand
-&lt;/h2&gt;
-
-&lt;p&gt;You can now divide a type constraint by another:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;lucky_numbers&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-      &lt;span class="s"&gt;is&lt;/span&gt;    &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ro&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-      &lt;span class="s"&gt;isa&lt;/span&gt;   &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;ArrayRef&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt; &lt;span class="nv"&gt;Num&lt;/span&gt; &lt;span class="o"&gt;/&lt;/span&gt; &lt;span class="nv"&gt;Any&lt;/span&gt; &lt;span class="p"&gt;],&lt;/span&gt;
-   &lt;span class="p"&gt;);&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;What does this mean?&lt;/p&gt;
-
-&lt;p&gt;Under normal circumstances, &lt;strong&gt;Num/Any&lt;/strong&gt; evaluates to just &lt;strong&gt;Any&lt;/strong&gt;. &lt;strong&gt;Num&lt;/strong&gt; is basically just documentation, so you're documenting that &lt;code&gt;lucky_numbers&lt;/code&gt; is intended to be an arrayref of numbers, but as a speed boost, the attribute will just check that it's an arrayref of anything.&lt;/p&gt;
-
-&lt;p&gt;When the &lt;code&gt;EXTENDED_TESTING&lt;/code&gt; environment variable is switched on though, &lt;strong&gt;Num/Any&lt;/strong&gt; will evaluate to &lt;strong&gt;Num&lt;/strong&gt;, so stricter type checks will kick in.&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Type defaults
-&lt;/h2&gt;
-
-&lt;p&gt;Instead of this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;output_list&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-      &lt;span class="s"&gt;is&lt;/span&gt;        &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ro&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-      &lt;span class="s"&gt;isa&lt;/span&gt;       &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;ArrayRef&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="s"&gt;default&lt;/span&gt;   &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt; &lt;span class="o"&gt;[]&lt;/span&gt; &lt;span class="p"&gt;},&lt;/span&gt;
-   &lt;span class="p"&gt;);&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;You can now write this:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;output_list&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-      &lt;span class="s"&gt;is&lt;/span&gt;        &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ro&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-      &lt;span class="s"&gt;isa&lt;/span&gt;       &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;ArrayRef&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="s"&gt;default&lt;/span&gt;   &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;ArrayRef&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;type_default&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-   &lt;span class="p"&gt;);&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;This is more typing, so why do this? Well, for &lt;strong&gt;ArrayRef&lt;/strong&gt; it might be more typing, but in this case:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight perl"&gt;&lt;code&gt;   &lt;span class="nv"&gt;has&lt;/span&gt; &lt;span class="s"&gt;colour_scheme&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-      &lt;span class="s"&gt;is&lt;/span&gt;        &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ro&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-      &lt;span class="s"&gt;isa&lt;/span&gt;       &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;ColourScheme&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
-      &lt;span class="s"&gt;default&lt;/span&gt;   &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
-         &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="nv"&gt;%colours&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
-            &lt;span class="s"&gt;foreground&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;black&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-            &lt;span class="s"&gt;background&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;white&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-            &lt;span class="s"&gt;links&lt;/span&gt;      &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;blue&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-            &lt;span class="s"&gt;highlight&lt;/span&gt;  &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;red&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
-         &lt;span class="p"&gt;);&lt;/span&gt;
-         &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="o"&gt;\&lt;/span&gt;&lt;span class="nv"&gt;%colours&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
-      &lt;span class="p"&gt;},&lt;/span&gt;
-   &lt;span class="p"&gt;);&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;It might be neater to include the default in the definition of your &lt;strong&gt;ColourScheme&lt;/strong&gt; type.&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  The new &lt;strong&gt;DelimitedStr&lt;/strong&gt; type
-&lt;/h2&gt;
-
-&lt;p&gt;&lt;em&gt;Types::Common::String&lt;/em&gt; now has a &lt;strong&gt;DelimitedStr&lt;/strong&gt; type.&lt;/p&gt;
-
-&lt;p&gt;This allows &lt;strong&gt;DelimitedStr[ "|", Int ]&lt;/strong&gt; to accept strings like &lt;code&gt;"12|34|-99|0|1"&lt;/code&gt;.&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Internals
-&lt;/h2&gt;
-
-&lt;p&gt;There have been numerous internal refactorings in Type::Tiny v2, so if you're using Type::Tiny and its related modules in more unorthodox ways, it may be worth explicitly testing your code still runs on the new version.&lt;/p&gt;
-
-&lt;p&gt;However, I have taken care to avoid breaking any documented APIs. The vast majority of the Type:Tiny v1 test suite still passes with Type::Tiny v2, with test cases that inspect the exact text of error messages being the only real change.&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Toby Inkster</name>
-    </author>
-    <id>https://dev.to/tobyink/typetiny-v2-is-coming-4171</id>
-    <published>2022-09-16T15:11:07Z</published>
-    <updated>2022-09-16T15:11:07Z</updated>
-    <category term="perl"/>
-    <category term="news"/>
-    <category term="announcements"/>
   </entry>
   <entry>
   <title>Grant Proposals: September 2022</title>
