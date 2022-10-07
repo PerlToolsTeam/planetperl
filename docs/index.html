@@ -59,6 +59,232 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/how-i-use-yabsm-to-manage-my-btrfs-snapshots-19a3">How I use Yabsm to Manage my Btrfs Snapshots</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Nicholas Hubbard
+ on Thursday 06 October 2022 23:02</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>I am the author of <a href="https://metacpan.org/dist/App-Yabsm/view/bin/yabsm">Yabsm (yet another btrfs snapshot manager)</a>, which is <a href="https://metacpan.org/dist/App-Yabsm/source/bin/yabsm">written in Perl</a>, and I will explain how I use Yabsm to manage my Btrfs snapshots.</p>
+
+<p>This article is meant to supplement the official documentation linked above, and assumes a basic understanding of Linux's <a href="https://en.wikipedia.org/wiki/Btrfs">Btrfs</a> filesystem.</p>
+
+<p>Please note that Yabsm can be configured to suit many different use cases other than the one described here.</p>
+
+<p><a id="orgfe91a36"></a></p>
+
+<h1>
+  
+  
+  Snapshots vs Backups
+</h1>
+
+<p>Before we go on, lets clear up the difference between a snapshot and a backup.</p>
+
+<p>A snapshot is a read-only nested <a href="https://btrfs.readthedocs.io/en/latest/Subvolumes.html">subvolume</a> created with a command such as <code>btrfs subvolume snapshot -r $SUBVOLUME $DEST</code>. <strong>SNAPSHOTS ARE NOT RELIABLE BACKUPS!</strong> If a subvolume is corrupted then all snapshots of that subvolume will also be corrupted.</p>
+
+<p>A backup is an <a href="https://btrfs.wiki.kernel.org/index.php/Incremental_Backup">incremental backup</a> sent to some location via Btrfs's <a href="https://btrfs.readthedocs.io/en/latest/Send-receive.html">send/receive</a> commands. These backups will not be corrupted if the subvolume being backed up is corrupted.</p>
+
+<p><a id="org449a345"></a></p>
+
+<h1>
+  
+  
+  My Btrfs Filesystem
+</h1>
+
+<p>I like to have just one top-level Btrfs subvolume mounted at <code>/</code>. This allows me to snapshot my entire system (excluding nested subvolumes) by running <code>btrfs subvolume snapshot -r / $DEST</code>.</p>
+
+<p><a id="org028bea9"></a></p>
+
+<h1>
+  
+  
+  My Yabsm Config
+</h1>
+
+<p>My configuration is based on the philosophy that because snapshots are both valuable and cheap, it makes sense to take a lot of snapshots.</p>
+
+<p>Here is my <code>/etc/yabsm.conf</code>:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>yabsm_dir=/.snapshots/yabsm
+
+subvol root_subvol {
+    mountpoint=/
+}
+
+snap root {
+    subvol=root_subvol
+
+    timeframes=5minute,hourly,daily
+    5minute_keep=36
+    hourly_keep=72
+    daily_times=15:00,23:59
+    daily_keep=62
+}
+
+ssh_backup slackmac {
+    subvol=root_subvol
+    ssh_dest=slackmac
+    dir=/.snapshots/yabsm-slacktop
+
+    timeframes=daily
+    daily_times=23:59
+    daily_keep=365
+}
+
+local_backup easystore {
+    subvol=root_subvol
+    dir=/mnt/easystore/backups/yabsm-slacktop
+
+    timeframes=daily
+    daily_times=23:59
+    daily_keep=365
+}
+</code></pre>
+
+</div>
+
+<p><a id="orga0d51da"></a></p>
+
+<h3>
+  
+  
+  Yabsm Dir
+</h3>
+
+<p>I use the traditional <code>/.snapshots/yabsm</code> directory as my <code>yabsm_dir</code>, which is the location that my snapshots will reside. Yabsm will also use this directory for storing data necessary for performing SSH and local backups.</p>
+
+<p><a id="org40ab1c1"></a></p>
+
+<h3>
+  
+  
+  Subvol
+</h3>
+
+<p>As I mentioned earlier, I only have one top-level Btrfs subvolume, so I only need to define one <code>subvol</code> in my Yabsm config, which I name <code>root_subvol</code>.</p>
+
+<p><a id="org77c9f84"></a></p>
+
+<h3>
+  
+  
+  Snap
+</h3>
+
+<p>I define one <a href="https://metacpan.org/dist/App-Yabsm/view/bin/yabsm#Snaps">snap</a> named <em>root</em> that tells Yabsm I want to take snapshots of <code>root_subvol</code> in the <em>5minute</em>, <em>hourly</em>, and <em>daily</em> <a href="https://metacpan.org/dist/App-Yabsm/view/bin/yabsm#Timeframes">timeframe categories</a>.</p>
+
+<p>In the <em>5minute</em> timeframe category I keep 36 snapshots. This lets me go to any state of my machine in the last 3 hours in 5 minute increments. I use the <em>5minute</em> category because it gives me a valuable safety net. How many times have you broken your code that was working 20 minutes ago? If you take <em>5minute</em> snapshots then you can easily go back to the state of that code 20 minutes ago.</p>
+
+<p>In the <em>hourly</em> timeframe I keep 72 snapshots, which allows me to go back 3 days in hourly increments. How many times have you broken code that was working 2 days ago? If you take <em>hourly</em> snapshots (and keep enough of them), you can go back through the state of your machine from 2 days ago, in 1 hour increments.</p>
+
+<p>In the <em>daily</em> timeframe category I keep 62 snapshots taken at midnight (23:59) and midafternoon (15:00). This gives me two snapshots per day in the last month.</p>
+
+<p>Please note that there is also a <code>weekly</code> and <code>monthly</code> timeframe category.</p>
+
+<p><a id="org41e4eb4"></a></p>
+
+<h3>
+  
+  
+  SSH Backup
+</h3>
+
+<p>I define one <a href="https://metacpan.org/dist/App-Yabsm/view/bin/yabsm#SSH-Backups">ssh_backup</a> named <em>slackmac</em> that backs up my system to my old MacBook running Slackware.</p>
+
+<p>The <em>ssh_dest</em> value is set to <em>slackmac</em>, which is a host defined in the <em>yabsm</em> user's <code>$HOME/.ssh/config</code> file. (Yabsm runs as a daemon process, using the special username <code>yabsm</code>.)</p>
+
+<p>The <em>dir</em> value is set to the directory on <em>slackmac</em> where the backups will be located.</p>
+
+<p>I perform this <em>ssh_backup</em> only in the <em>daily</em> timeframe category, backing up every night at midnight. I keep 365 of these backups so I can go back an entire year.</p>
+
+<p><a id="orgc5909cb"></a></p>
+
+<h3>
+  
+  
+  Local Backup
+</h3>
+
+<p>I define one <a href="https://metacpan.org/dist/App-Yabsm/view/bin/yabsm#Local-Backups">local_backup</a> named <code>easystore</code> that backs up my system to my EasyStore external hard drive.</p>
+
+<p>The hard drive is mounted at <code>/mnt/easystore</code>, and I keep my backups in the <code>/backups/yabsm-slacktop</code> directory on the hard drive.</p>
+
+<p>Just like my <code>slackmac</code> <em>ssh_backup</em>, I perform my <em>local_backup</em> only in the <code>daily</code> timeframe category, every night at midnight.</p>
+
+<p><a id="orgb9f813e"></a></p>
+
+<h1>
+  
+  
+  Finding Snapshots
+</h1>
+
+<p>Yabsm provides the <a href="https://metacpan.org/dist/App-Yabsm/view/bin/yabsm#Finding-Snapshots">find</a> command that I use to jump around to different snapshots and backups. The <em>find</em> command takes two arguments, the first is the name of any of your <em>snaps</em>, <em>ssh_backups</em>, or <em>local_backups</em>. The second argument is a query. The different kinds of queries are all documented in the link above.</p>
+
+<p>Instead of repeating the documentation, let's break down a practical example of the <em>find</em> command's usage.</p>
+
+<p>How many times have you broken code that worked 30 minutes ago? Because I take <em>5minute</em> snapshots I can easily get back the state of the code 30 minutes ago.</p>
+
+<p>An example:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$ diff "$(yabsm find root back-30-mins)/$HOME/projects/foo/script.sh" $HOME/projects/foo/foo.sh
+</code></pre>
+
+</div>
+
+<p>This command will show the <code>diff</code> output of the <code>$HOME/projects/foo/foo.sh</code> file with this same file that was snapshotted 30 minutes ago. We can use this output to help figure out what we messed up.</p>
+
+<p>The command <code>yabsm find root back-30-mins</code> will output the path to a snapshot for the <em>snap</em> named <em>root</em> that was taken 30 minutes ago. In the example we use our shell's <a href="https://www.gnu.org/software/bash/manual/html_node/Shell-Parameter-Expansion.html">parameter expansion</a> feature to create a string that appends the path to <code>foo.sh</code> to the output of the <code>yabsm find</code> command. This is a powerful pattern!</p>
+
+<p>The find command can do more than find a snapshot taken N units ago, it can also:</p>
+
+<ul>
+<li>  Find the newest or oldest snapshot/backup.</li>
+<li>  Find a snapshot/backup taken on a specific day and time.</li>
+<li>  Find all the snapshots/backups taken before or after a certain time.</li>
+<li>  Find all the snapshots/backups taken between two times.</li>
+<li>  Find all snapshots/backups.</li>
+</ul>
+
+<p>The output of <code>yabsm find --help</code> shows some examples:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>usage: yabsm &lt;find|f&gt; [--help] [&lt;SNAP|SSH_BACKUP|LOCAL_BACKUP&gt; &lt;QUERY&gt;]
+
+see the section "Finding Snapshots" in 'man yabsm' for a detailed explanation on
+how to find snapshots and backups.
+
+examples:
+    yabsm find home_snap back-10-hours
+    yabsm f root_ssh_backup newest
+    yabsm f home_local_backup oldest
+    yabsm f home_snap 'between b-10-mins 15:45'
+    yabsm f root_snap 'after back-2-days'
+    yabsm f root_local_backup 'before b-14-d'
+</code></pre>
+
+</div>
+
+<p><a id="orgdac6334"></a></p>
+
+<h1>
+  
+  
+  Synopsis
+</h1>
+
+<p>Yabsm is a powerful tool for managing your Btrfs snapshots. If you are interested in using Yabsm, then I recommend you consult the <a href="https://metacpan.org/release/NHUBBARD/App-Yabsm-3.12/view/bin/yabsm">official documentation</a>.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlhacks.com/2022/10/building-a-perlanet-container/">Building a Perlanet Container</a></h2>
 <a href="https://perlhacks.com/" class="badge badge-primary" style="float: left">Perl Hacks</a>
 
@@ -89,7 +315,7 @@ RUN apt-get update &amp;&amp; \
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/adding-github-actions-to-test2-harness-ui">Adding GitHub Actions to Test2::Harness::UI</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -108,7 +334,7 @@ On GitHub it is usually GitHub Actions.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -120,7 +346,7 @@ On GitHub it is usually GitHub Actions.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/lichtkind/2022/10/look-mom-i-invented-colors.html">Look mom I invented colors</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -161,7 +387,7 @@ of course you get "black". I think you got the idea by now. </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/using-ci-to-locate-missing-test-dependencies-in-dist-zilla-perlsrvde">Using GitHub Actions (CI) to locate missing test dependencies in Dist::Zilla::PERLSRVDE</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -179,7 +405,7 @@ I found out that the command I used to install the dependencies did not install 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/os">OS</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -194,7 +420,7 @@ Videos on contributing to Open Source Perl projects.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/add-github-actions-to-graphics-toolkit-color">Add GitHub Actions (CI) to Graphics-Toolkit-Color Perl module</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -211,7 +437,7 @@ project to which we added a GitHub Actions configuration file to enable Continuo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/feature-release-of-dateholidays-perl-distribution-402h">Feature release 1.32 of Date::Holidays Perl distribution</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -350,7 +576,7 @@ project to which we added a GitHub Actions configuration file to enable Continuo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/cpan-digger-and-hacktoberfest">CPAN Digger and the Hacktoberfest</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -367,7 +593,7 @@ You can use the <a href="https://cpan-digger.perlmaven.com/">CPAN Digger</a> to 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/nominate-2022-white-camel">Nominate heroes for the 2022 White Camel Awards</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -391,7 +617,7 @@ You can use the <a href="https://cpan-digger.perlmaven.com/">CPAN Digger</a> to 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-040-of-my-perl-distzilla-github-action-4e4a">Release 0.4.0 of my Perl Dist::Zilla GitHub Action</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -420,7 +646,7 @@ You can use the <a href="https://cpan-digger.perlmaven.com/">CPAN Digger</a> to 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/584.html">#584 - Hacktoberfest &amp; Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -439,7 +665,7 @@ You can use the <a href="https://cpan-digger.perlmaven.com/">CPAN Digger</a> to 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/review-challenge-178/">Colin Crain › Perl Weekly Review #178</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -453,7 +679,7 @@ Welcome to the Perl review pages for Week 178 of The Weekly Challenge! Here we w
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-184/">RECAP - The Weekly Challenge - 184</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -466,7 +692,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-185/">The Weekly Challenge - 185</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -479,7 +705,7 @@ Today, we are giving away Token #8 to Kjetil Skotheim for the book, Learning Per
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/release-080-of-ebirah-596m">Release 0.8.0 of Ebirah</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -510,7 +736,7 @@ Today, we are giving away Token #8 to Kjetil Skotheim for the book, Learning Per
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/stefan_adams/2022/10/meet-jp.html">Meet jp</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -562,7 +788,7 @@ $ ./jp -S -U -p -r '/markers/\d' -E '$_-&gt;sort(sub{$a-&gt;jp("/location/0", "/
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/10/cdxii-13-great-cpan-modules-released.html">(cdxii) 13 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -574,7 +800,7 @@ $ ./jp -S -U -p -r '/markers/\d' -E '$_-&gt;sort(sub{$a-&gt;jp("/location/0", "/
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/10/dxxv-metacpan-weekly-report.html">(dxxv) metacpan weekly report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -586,7 +812,7 @@ $ ./jp -S -U -p -r '/markers/\d' -E '$_-&gt;sort(sub{$a-&gt;jp("/location/0", "/
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/10/dliii-stackoverflow-perl-report.html">(dliii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -598,7 +824,7 @@ $ ./jp -S -U -p -r '/markers/\d' -E '$_-&gt;sort(sub{$a-&gt;jp("/location/0", "/
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jonasbn/bug-fix-release-161-of-perl-workflow-and-then-some-4bee">Bug fix release 1.61 of perl-workflow and then some</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -670,7 +896,7 @@ $ ./jp -S -U -p -r '/markers/\d' -E '$_-&gt;sort(sub{$a-&gt;jp("/location/0", "/
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/den/2022/09/sending-simple-email.html">Sending a simple email</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -705,7 +931,7 @@ $ ./jp -S -U -p -r '/markers/\d' -E '$_-&gt;sort(sub{$a-&gt;jp("/location/0", "/
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/09/perl-weekly-challenge-184-sequence-number-and-split-array.html">Perl Weekly Challenge 184:  Sequence Number and Split Array</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -863,7 +1089,7 @@ p q r s t
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/10/01/list-of-new-cpan-distributions-sep-2022/">List of new CPAN distributions – Sep 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
@@ -1537,163 +1763,6 @@ p q r s t
 <td>1</td>
 </tr>
 </table>
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_25">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/create-a-lock-file-in-perl-with-filetemp-h68">Create a Lock File in Perl with File::Temp</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Nicholas Hubbard
- on Thursday 29 September 2022 20:17</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>A <a href="https://en.wikipedia.org/wiki/Lock_(computer_science)">lock</a> can serve many purposes in regards to avoiding <a href="https://en.wikipedia.org/wiki/Race_condition">race conditions</a>. In this article we will explore how to implement a lock using Perl's built-in <a href="https://perldoc.perl.org/File::Temp">File::Temp</a> module.</p>
-
-<p><a id="org43fe6db"></a></p>
-
-<h1>
-  
-  
-  The Problem
-</h1>
-
-<p>We will write a program called "duckduckperl" that has the following usage:</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>usage: duckduckperl [retrieve] [print]
-</code></pre>
-
-</div>
-
-<p>The <code>retrieve</code> command retrieves the HTML of a DuckDuckGo search for the word "perl", and writes it to <code>$HOME/duckduckperl.html</code>, overwriting this file if it already exists.</p>
-
-<p>The <code>print</code> command prints the content of <code>$HOME/duckduckperl.html</code>.</p>
-
-<p>Here is a version of the program that has a potential race condition:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="c1">#!/usr/bin/env perl</span>
-
-<span class="k">use</span> <span class="nv">strict</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-
-<span class="k">my</span> <span class="nv">$OUTPUT_FILE</span> <span class="o">=</span> <span class="p">"</span><span class="si">$ENV</span><span class="s2">{HOME}/duckduckperl.html</span><span class="p">";</span>
-
-<span class="k">my</span> <span class="nv">$USAGE</span> <span class="o">=</span> <span class="p">'</span><span class="s1">usage: duckduckperl [retrieve] [print]</span><span class="p">'</span> <span class="o">.</span> <span class="p">"</span><span class="se">\n</span><span class="p">";</span>
-
-<span class="p">(</span><span class="nv">@ARGV</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">die</span> <span class="nv">$USAGE</span><span class="p">;</span>
-
-<span class="k">my</span> <span class="nv">$ARG</span> <span class="o">=</span> <span class="nv">$ARGV</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
-
-<span class="k">if</span>    <span class="p">(</span><span class="nv">$ARG</span> <span class="ow">eq</span> <span class="p">'</span><span class="s1">retrieve</span><span class="p">')</span> <span class="p">{</span> <span class="nv">retrieve_html</span><span class="p">()</span> <span class="p">}</span>
-<span class="k">elsif</span> <span class="p">(</span><span class="nv">$ARG</span> <span class="ow">eq</span> <span class="p">'</span><span class="s1">print</span><span class="p">'</span>   <span class="p">)</span> <span class="p">{</span> <span class="nv">print_html</span><span class="p">()</span>    <span class="p">}</span>
-<span class="k">else</span>                       <span class="p">{</span> <span class="nb">die</span> <span class="nv">$USAGE</span>      <span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">retrieve_html</span> <span class="p">{</span>
-
-    <span class="k">my</span> <span class="nv">$html</span> <span class="o">=</span> <span class="p">`</span><span class="sb">curl --silent https://duckduckgo.com/?q=perl</span><span class="p">`;</span>
-
-    <span class="k">unless</span> <span class="p">(</span><span class="vg">$?</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-        <span class="nb">die</span> <span class="p">"</span><span class="s2">duckduckperl: curl command exited with status $?</span><span class="se">\n</span><span class="p">";</span>
-    <span class="p">}</span>
-
-    <span class="nb">open</span> <span class="k">my</span> <span class="nv">$fh</span><span class="p">,</span> <span class="p">'</span><span class="s1">&gt;</span><span class="p">',</span> <span class="nv">$OUTPUT_FILE</span>
-      <span class="ow">or</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">duckduckperl: error: cannot open </span><span class="si">$OUTPUT_FILE</span><span class="s2">: $!</span><span class="se">\n</span><span class="p">";</span>
-
-    <span class="k">print</span> <span class="nv">$fh</span> <span class="nv">$html</span><span class="p">;</span>
-
-    <span class="nb">close</span> <span class="nv">$fh</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">print_html</span> <span class="p">{</span>
-
-    <span class="o">-</span><span class="nv">f</span> <span class="nv">$OUTPUT_FILE</span>
-      <span class="ow">or</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">duckduckperl: error: cannot find file </span><span class="si">$OUTPUT_FILE</span><span class="se">\n</span><span class="p">";</span>
-
-    <span class="nb">open</span> <span class="k">my</span> <span class="nv">$fh</span><span class="p">,</span> <span class="p">'</span><span class="s1">&lt;</span><span class="p">',</span> <span class="nv">$OUTPUT_FILE</span>
-      <span class="ow">or</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">duckduckperl: error: cannot open </span><span class="si">$OUTPUT_FILE</span><span class="s2">: $!</span><span class="se">\n</span><span class="p">";</span>
-
-    <span class="k">my</span> <span class="nv">$html</span> <span class="o">=</span> <span class="o">&lt;</span><span class="nv">$fh</span><span class="o">&gt;</span><span class="p">;</span>
-
-    <span class="nb">close</span> <span class="nv">$fh</span><span class="p">;</span>
-
-    <span class="k">print</span> <span class="nv">$html</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>The only part of this code that is important to understand is the <code>&amp;retrieve_html</code> subroutine, because this is where the potential race condition comes from. This subroutine <code>curl</code>'s the URL that represents a DuckDuckGo search of the word "perl", and dies if it fails. If the <code>curl</code> command succeeds it writes the outputted HTML <code>$HOME/duckduckperl.html</code>, overwriting any data already in the file.</p>
-
-<p>Imagine if we call <code>duckduckperl retrieve</code> twice, and for whatever (network related) reason the second instance finishes first. When we go to call <code>duckduckperl print</code>, we will get the output of the first call instead of the second call, which probably is not expected.</p>
-
-<p><a id="orgbeeef69"></a></p>
-
-<h1>
-  
-  
-  The Solution
-</h1>
-
-<p>To avoid this problem we will write <code>&amp;retrieve_html</code> to first check for the existence of a lock file, and if it exists waits for it to be deleted before continuing. If the lock file doesn't exist then it creates it before retrieving and writing the HTML, and deletes it afterwards. This guarantees that multiple<br>
-instances of <code>duckduckperl retrieve</code> terminate in the order they were called.</p>
-
-<p>Perl's built-in <a href="https://perldoc.perl.org/File::Temp">File::Temp</a> module provides useful features for creating a lock file. The most important feature that we will use is automatic deletion of the lock file when the File::Temp object is destroyed (garbage collected). This feature is available if we use <a href="https://perldoc.perl.org/File::Temp#OBJECT-ORIENTED-INTERFACE">File::Temp's OO interface</a>.</p>
-
-<p>Here is the updated version of <code>&amp;retrieve_html</code> that uses a lock file:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">use</span> <span class="nn">File::</span><span class="nv">Temp</span><span class="p">;</span>
-
-<span class="k">sub </span><span class="nf">retrieve_html</span> <span class="p">{</span>
-
-    <span class="k">my</span> <span class="nv">$seconds</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-    <span class="k">while</span> <span class="p">(</span><span class="nb">grep</span> <span class="sr">/DUCKDUCKPERLLOCK$/</span><span class="p">,</span> <span class="nb">glob</span><span class="p">('</span><span class="s1">/tmp/*</span><span class="p">'))</span> <span class="p">{</span>
-        <span class="k">if</span> <span class="p">(</span><span class="nv">$seconds</span> <span class="o">&gt;</span> <span class="mi">120</span><span class="p">)</span> <span class="p">{</span>
-            <span class="nb">die</span> <span class="p">'</span><span class="s1">duckduckperl: error: aborting after waiting 2 minutes for lock file to be deleted</span><span class="p">'</span> <span class="o">.</span> <span class="p">"</span><span class="se">\n</span><span class="p">";</span>
-        <span class="p">}</span>
-        <span class="nb">sleep</span> <span class="mi">1</span><span class="p">;</span>
-        <span class="nv">$seconds</span><span class="o">++</span><span class="p">;</span>
-    <span class="p">}</span>
-
-    <span class="k">my</span> <span class="nv">$lock_fh</span> <span class="o">=</span> <span class="nn">File::</span><span class="nv">Temp</span><span class="o">-&gt;</span><span class="k">new</span><span class="p">(</span>
-        <span class="s">DIR</span>      <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">/tmp</span><span class="p">',</span>
-        <span class="s">TEMPLATE</span> <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">XXXX</span><span class="p">',</span>
-        <span class="s">SUFFIX</span>   <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">.DUCKDUCKPERLLOCK</span><span class="p">',</span>
-        <span class="s">UNLINK</span>   <span class="o">=&gt;</span> <span class="mi">1</span>
-    <span class="p">);</span>
-
-    <span class="nb">open</span> <span class="k">my</span> <span class="nv">$fh</span><span class="p">,</span> <span class="p">'</span><span class="s1">&gt;</span><span class="p">',</span> <span class="nv">$OUTPUT_FILE</span>
-      <span class="ow">or</span> <span class="nb">die</span> <span class="p">"</span><span class="s2">duckduckperl: error: cannot open </span><span class="si">$OUTPUT_FILE</span><span class="s2">: $!</span><span class="se">\n</span><span class="p">";</span>
-
-    <span class="k">my</span> <span class="nv">$html</span> <span class="o">=</span> <span class="p">`</span><span class="sb">curl --silent https://duckduckgo.com/?q=perl</span><span class="p">`;</span>
-
-    <span class="k">unless</span> <span class="p">(</span><span class="vg">$?</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-        <span class="nb">die</span> <span class="p">"</span><span class="s2">duckduckperl: curl command exited with status $?</span><span class="se">\n</span><span class="p">";</span>
-    <span class="p">}</span>
-
-    <span class="k">print</span> <span class="nv">$fh</span> <span class="nv">$html</span><span class="p">;</span>
-
-    <span class="nb">close</span> <span class="nv">$fh</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>The first part of the subroutine checks for the lock file, which is a file in the <code>/tmp</code> directory matching the regex <code>/DUCKDUCKPERLLOCK$/</code>. If this file exists, we check every second for the next 2 minutes to see if it is deleted, before giving up and exiting the program. If the lock file does not exist, then we create it using <a href="https://perldoc.perl.org/File::Temp#new">File::Temp::new</a>.</p>
-
-<p>We configure our File::Temp object with 4 options. The <code>DIR</code> option specifies the directory that we want to place the file in. The <code>TEMPLATE</code> option specifies the template to be used for naming the file. The <code>X</code>'s represents random characters that File::Temp will fill in to guarantee the file it creates has a unique name. The <code>SUFFIX</code> option gives the file name a suffix, which we set to <code>.DUCKDUCKPERLLOCK</code>. We use this suffix to identify the lock file when checking for its existence. Finally, the <code>UNLINK</code> option specifies that we want to delete the file when the File::Temp object is destroyed (garbage collected). Conveniently, even if the <code>curl</code> command fails and we make the program die, the File::Temp object is still destroyed, and the lock file is deleted.</p>
-
-<p>Using this version of <code>&amp;retrieve_html</code>, we can rest assured knowing that multiple instances of <code>duckduckperl retrieve</code> will terminate in the order they were invoked.</p>
-
        </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
@@ -2452,7 +2521,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 06 October 2022 20:44 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 07 October 2022 00:58 UTC</address>
             </div>
           </div>
         </div><!-- container -->
