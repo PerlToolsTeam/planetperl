@@ -59,6 +59,332 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="http://blogs.perl.org/users/bruce_gray/2022/11/twc-189-saving-your-degree-by-great-character.html">TWC 189: Saving your Degree by Great Character!</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Bruce Gray
+ on Sunday 27 November 2022 19:28</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>In which we achieve Single Pass and Single Expression, respectively.</p>
+
+<p>Next door to the Haunted Mansion.</p>
+
+        <p>Note: Both of my Perl solutions <code>use v5.36</code>, because it <a href="https://rjbs.cloud/blog/2022/05/perl-5.36/">auto-enables</a> <code>strict</code>, <code>warnings</code>, and <code>signatures</code>.</p>
+
+<p>The Raku solutions are registered as mind-altering substances.</p>
+
+<p>Produced in a facility that may have contained peanuts, tree nuts, or <a href="https://en.wikipedia.org/wiki/Samhain">Halloween</a>.</p>
+
+<hr />
+
+<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-189/#TASK1">Greater Character</a></h1>
+
+<h2>Fixing the Task</h2>
+
+<p>This task has a mis-match between the description and the examples. 
+"...smallest character in the given array lexicographically greater than the target character"
+implies an <code>undef</code>ined answer if <em>nothing</em> in the array is <code>gt</code> the target.
+However, the 5th example expects the <em>target</em> to be returned in that null case.
+I chose to code to match the examples, because it was a more interesting problem.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-189/bruce-gray/perl/ch-1.pl">Perl</a></h2>
+
+<p>Final answer:</p>
+
+<pre><code>use v5.36;
+use List::Util qw&lt;minstr&gt;;
+
+sub task1 ( $aref, $target ) {
+    my @gt = grep { $_ gt $target } @{$aref};
+
+    return @gt ? minstr(@gt) : $target;
+}
+</code></pre>
+
+<p><code>List::Util::minstr</code> has the useful property of returning <code>undef</code> from an empty list, which allows this shorter version that I had wanted in Raku:</p>
+
+<pre><code>    return minstr( grep { $_ gt $target } @{$aref} )
+            // $target;
+</code></pre>
+
+<p>I decided against that single-statement version, because: <br />
+1. it requires knowledge that minstr returns undef when given an empty list, and <br />
+2. compared to the two-statement form, <code>//</code> deemphasizes the ill-defined part of the task.</p>
+
+<p>I also considered <em>increasing</em> the emphasis by splitting the solution into two subs along the fault-line of the contention:</p>
+
+<pre><code>sub smallest_gt_target ($a, $t) { minstr grep { $_ gt $t } @{$a} }
+sub task1              ($a, $t) { smallest_gt_target($a, $t) // $t }
+</code></pre>
+
+<p>What do you think, would that increase in emphasis be worth the loss in D.R.Y.ness?</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-189/bruce-gray/raku/ch-1.raku">Raku</a></h2>
+
+<p>Final answer:</p>
+
+<pre><code>sub task1 ( @a, Str $target --&gt; Str ) {
+
+    return .elems ?? .min !! $target given @a.grep( * gt $target );
+</code></pre>
+
+<p>I could have used <code>.so</code> instead of <code>.elems</code>, but weighed <code>.so</code> as less well-known.</p>
+
+<p>Similar:</p>
+
+<pre><code>return $_ eq 'Inf' ?? $target !! $_ given @a.grep(* gt $target).min;
+</code></pre>
+
+<p>I rejected it because:</p>
+
+<ul>
+<li>You must know that <code>.min</code> returns <code>Inf</code> when called on an empty list.</li>
+<li>I have to use the literal <code>$_</code> two times, instead of zero times (.elems, .min) in the final answer.</li>
+<li>Converting a potential <code>Inf</code> to string in order to compare with 'Inf' via <code>eq</code> felt icky for a Numeric.</li>
+<li>(Related) I mis-remembered that <code>Inf</code> does not <code>==</code> itself; I was confusing its behavior with <code>NaN</code>, which indeed does <em>not</em> equal itself.</li>
+</ul>
+
+<p>Single-pass too-clever alternative:</p>
+
+<pre><code>sub task1 ( @a, Str $target --&gt; Str ) {
+
+    return @a.min({ $_ !gt $target, $_ }) max $target;
+</code></pre>
+
+<p>BWAHAHAHAHA!</p>
+
+<p>How does that work?</p>
+
+<ul>
+<li>The methods <code>.min</code>, <code>.max</code>, <code>.minmax</code>, and <code>.sort</code> all default to using <code>cmp</code> as the comparator.</li>
+<li>When comparing two <a href="https://docs.raku.org/type/List#infix_cmp">List</a>s, <code>cmp</code> is run on the first element (<code>.[0]</code>) of each List, and if they are <code>Order::Same</code>, proceeds to <code>cmp</code> the second elements, and so on until the tie is broken or the lists are exhausted.</li>
+<li>False is "less" than True; <code>(True,False).sort</code> would return (Bool::False, Bool::True).</li>
+<li>The <code>!gt</code> operator is the same as <code>le</code>, but used in its negative form here to keep the "greater than" from the original wording and make the "greater than target" values "<code>sort</code>" (really the more efficient <code>min</code>) to the top, so we can only get a minimum value <code>le</code> target if <em>no</em> value is <code>gt</code> target.</li>
+<li>If <code>@a</code> contained anything <code>gt</code> target, <code>.min</code> returns it, and it <em>always</em> wins in the fight against <code>max $target</code>, so the result is the intended value.</li>
+<li>If <code>@a</code> contained  nothing <code>gt</code> target, <code>.min</code> returns the lowest value in the whole array, and it <em>must</em> always lose in the fight against <code>max $target</code>, so the result is the specified target.</li>
+</ul>
+
+<p>Even though I am writing Raku documentation compare&amp;contrast <code>sort</code> versus <code>min</code>/<code>max</code>/<code>minmax</code>, <em>and</em> I wrote this code myself, I find this code hard to grok after being away for 5 minutes.
+It is particularly egregious "clever code", because it swallows the original problem requirements into its cleverness. You can't read that (uncommented) code and infer the spec. So, we don't really do such things in real life. Really!</p>
+
+<hr />
+
+<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-189/#TASK2">Array Degree</a></h1>
+
+<h2>Fixing the examples</h2>
+
+<p>This task will involve keeping track of element counts and slice lengths and start indexes and end indexes; all of these are non-negative integers that the developer will be scrutinizing and staring at, past the midnight hour. And yet, even though the problem is exactly the same with arrays filled with any-old-thing, the task specifies non-negative integers for the array contents, and indeed, every example contains nothing but non-negative integers. Non-negative integers everywhere! It is enough to make a person... non-positive.</p>
+
+<p>So, while I have <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-189/bruce-gray/perl/ch-2.pl#L30">kept the original</a> <a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-189/bruce-gray/raku/ch-2.raku#L13">examples intact</a>, I commented them out during development. Just below them, you will see exact equivalent letter transpositions: <br />
+1 => A, 2 => B, etc. Thus, I kept my sanity. (But seem to have increased my verbosity?)</p>
+
+<h2>Key insight:</h2>
+
+<p>The <strong>positions</strong> of the element(s) contributing to the <code>degree</code> are <strong>all</strong> that matter.</p>
+
+<p>If <code>@a</code> is 1000 elements, each a single capital letter, and the array's Degree is 99 (due to having 99 <code>B</code>, 99 <code>F</code>, 99 <code>Y</code>, and the other letters 98-or-less each),
+then our final slice of <code>@a</code> must include all the <code>B</code>'s or all the <code>F</code>'s or all the <code>Y</code>'s. Otherwise, we have reduced the degree.
+Also, whichever of (<code>B</code>|<code>F</code>|<code>Y</code>) we choose, the slice must start and end with that letter. Otherwise, the slice is not as small as it could be.</p>
+
+<p>Raku has the <code>Bag</code> type, which can concisely give us the array Degree with <code>@a.Bag.values.max</code>, but it will turn out that knowledge of the array Degree will not be useful enough to be worth calculating early!</p>
+
+<p>For each element that exists in the array, we only need to know:</p>
+
+<ul>
+<li>Count of occurrences</li>
+<li>First position seen</li>
+<li>Last position seen</li>
+<li>Span (<code>last_position - first_position + 1</code>)</li>
+</ul>
+
+<p>Once we have that information, of all the elements with maximum count (Degree), find which has the minimum span, and maybe use first position as a tie-breaker.
+For that element, make a Range of the first and last positions, and return a slice of <code>@a[ $first .. $last ]</code>.</p>
+
+<p>Raku (built-in) and Perl (module) have concise methods to "group" the array indexes by the elements found there. You will see code that does, and does not use them.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-189/bruce-gray/perl/ch-2.pl">Perl</a></h2>
+
+<p>Raku's <code>min</code>/<code>max</code> do take <code>&amp;by</code> parameters, but do not return a list when there are ties.  </p>
+
+<p>Raku's <code>minpairs</code>/<code>maxpairs</code> do return a list when there are ties, but do not take <code>&amp;by</code> parameters.</p>
+
+<p>The Perl module <a href="https://metacpan.org/pod/List::UtilsBy">List::UtilsBy</a> does both, and is a great fit for this problem.</p>
+
+<p>Final answer:</p>
+
+<pre><code>#!/usr/bin/env perl
+use v5.36;
+use experimental     qw&lt;for_list builtin&gt;;
+use builtin          qw&lt;indexed&gt;;
+use List::UtilsBy    qw&lt;max_by min_by&gt;;
+
+sub task2 ( @a ) {
+    my %h;
+    for my ($k, $v) (indexed @a) {
+        my $href = ( $h{$v} //= {} );
+
+        $href-&gt;{KEY  }   = $v;
+        $href-&gt;{COUNT}  +=  1;
+        $href-&gt;{FIRST} //= $k;
+        $href-&gt;{LAST }   = $k;
+    }
+    $_-&gt;{SPAN} = $_-&gt;{LAST} - $_-&gt;{FIRST} + 1 for values %h;
+
+    my $best = min_by { $_-&gt;{FIRST} }
+               min_by { $_-&gt;{SPAN } }
+               max_by { $_-&gt;{COUNT} }
+               values %h;
+
+   return [ @a[ $best-&gt;{FIRST} .. $best-&gt;{LAST} ] ];
+}
+</code></pre>
+
+<p>A few tricks used here:</p>
+
+<ul>
+<li><a href="https://rjbs.cloud/blog/2022/05/perl-5.36/">Perl v5.36's</a> <code>for_list</code> and <code>indexed</code> are combined to have the same effect as Raku's <code>for @a.kv -&gt; $k,$v {...}</code>.</li>
+<li><code>my $href = ( $h{$v} //= {} );</code> just grabs a reference when the sub-hash already exists in <code>%h</code>. Otherwise it <em>creates</em> the sub-hash in <code>%h</code> just before taking the reference. This is a well-known idiom here, but I should have split it into two lines for expository code.</li>
+<li>The sub-hashes are each a Record, achieved in Perl by only using a fixed set of keys. (Perl's hashes serve the purpose of other languages' Dictionaries,Sets,Bags,Mixes,Records just by how we use them. Perl's arrays similarly act as Stacks or Queues by only coding push&amp;pop or push&amp;shift.)</li>
+<li>COUNT is auto-vivified and interpreted as zero for <code>+=</code>, so adding 1 gives us a running total of the times the element has been seen.</li>
+<li>FIRST will only be undef the first time each element is seen, so <code>//=</code> only populates it once.</li>
+<li>LAST is simply assigned to, so it keeps getting over-written; when we exit the loop, it will hold the last index where that element was seen.</li>
+<li>SPAN would be awkward to calculate (and have to be recalculated on each loop), so a postfix <code>for</code> can populate it concisely and efficiently with the size of the slice reaching from first index where the element was seen to the last such index.</li>
+<li>The array element is kept in the KEY slot, just to help with debugging. It gets overwritten on each loop, but always with the same value, so no problem. Now that I write that, I see that it could also use <code>//=</code> for efficiency.</li>
+<li><code>max_by</code> and <code>min_by</code> receive lists, and are called in list context until the last <code>min_by</code>, so ties are passed through. The last one cannot be a tie, because only one element could have any particular FIRST.</li>
+<li>The chain of <code>max_by</code> and <code>min_by</code> act as tie-breakers; if only one element makes up the array's Degree, then it will be the only hashref emitted by <code>max_by</code>, and the two <code>min_by</code> will just pass it through without needing to do other work. If more than one element create the same maximum Degree, then the lowest SPAN is found, and so on.</li>
+</ul>
+
+<hr />
+
+<p>I also wrote a version that collapsed (most of) the building of <code>%h</code> into a single line using <a href="https://metacpan.org/pod/List::Categorize">List::Categorize</a>:</p>
+
+<pre><code>use List::Categorize qw&lt;categorize&gt;;
+sub task2 ( @a ) {
+    my %h = categorize { $a[$_] } keys @a;
+
+    my $best = min_by { $_-&gt;[0]                } # First
+               min_by { $_-&gt;[-1] - $_-&gt;[0] + 1 } # Span
+               max_by { 0+@{$_}                } # Count
+               values %h;
+
+    my ($head, $tail) = @{$best}[0,-1];
+    return [ @a[ $head .. $tail ] ];
+}
+</code></pre>
+
+<p>This may be less efficient than the earlier version; <code>categorize</code> (like <code>.classify</code> later in the Raku code) will keep <em>all</em> of the locations where each element is found, which is much more info than we strictly need.
+More important to me is that hand-rolling <code>%h</code> allows me to NAME the slots in each href. The <code>%h</code> that <code>categorize</code> populates requires comments to clarify the <code>min_by</code> and <code>max_by</code> code blocks.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-189/bruce-gray/raku/ch-2.raku">Raku</a></h2>
+
+<p>Final answer:</p>
+
+<pre><code>sub task2 ( @a ) {
+    my $best =
+        @a.pairs
+        .classify( {.value}, :as{.key} )
+        .map({ .value })
+        .max({ .elems, -(.tail - .head + 1), -.head });
+
+    return @a[ $best.head .. $best.tail ];
+}
+</code></pre>
+
+<p>How does that work? Well, let's look at <em>almost</em> the same code, with intermediate variables for each line, like the Raku REPL could demonstrate:</p>
+
+<pre><code>my @a = &lt;A B C B D A B D A&gt;;
+       # 0 1 2 3 4 5 6 7 8 are the indexes.
+
+
+my @b = @a.pairs;
+    [0 =&gt; A  1 =&gt; B  2 =&gt; C  3 =&gt; B
+     4 =&gt; D  5 =&gt; A  6 =&gt; B  7 =&gt; D  8 =&gt; A]
+
+
+my @c = @b.classify( {.value}, :as{.key} );
+    [A =&gt; [0 5 8] D =&gt; [4 7] C =&gt; [2] B =&gt; [1 3 6]]
+
+
+my @d = @c.map({ .value });
+    [[0 5 8] [4 7] [2] [1 3 6]]
+</code></pre>
+
+<p>(Without the <code>map</code> of <code>.value</code>, we would have to precede many methods with <code>.value</code> in the lines below. Surprisingly, we do not need the <code>.key</code> at all any more!)</p>
+
+<p>Here we will diverge from the actual code, so you can see the values that <code>.max</code> will operate on in the real code.</p>
+
+<pre><code>my @e = @d.map: {
+    my $r = .head .. .tail;
+    (.elems, -$r.elems, -.head, $r);
+};
+
+
+say @e.sort.reverse; # For illustration only; we will really
+                     # use `max` instead of `sort.reverse`.
+                     # Note that Span and First will be negated.
+
+   Count = Number of times it occured
+   |
+   |  Span = size of the range from first to last occurance
+   |  |
+   |  |  First position found
+   |  |  |
+   |  |  |  Range of first..last positions found
+   |  |  |  |
+   v  v  v  v
+( (3 -6 -1 1..6)   # 'B' 3 times, span=6, first in pos 1, over 1..6
+  (3 -9  0 0..8)   # 'A' 3 times, span=9, first in pos 0, over 0..8
+  (2 -4 -4 4..7)   # 'D' twice, is less than the degree of A or B
+  (1 -1 -2 2..2) ) # 'C' once , is less than the degree of A or B
+
+
+my $best = @e.max;
+    (3 -6 -1 1..6)
+
+
+return @a[ $best[3].list ]; # Expand the Range 1..6
+                            # to allow the slicing.
+</code></pre>
+
+<p>We are relying on the <code>max</code>/<code>min</code>/<code>cmp</code> action on List that we used in Task#1.</p>
+
+<p>The black-cat-level sneakiness here is that we can get the <code>min</code> of numbers by scanning for the <code>max</code> of their negated values.</p>
+
+<p>So, we don't really need that big <code>.map</code> to build the List of sorting fields; we can specify them inline as the <code>&amp;by</code> argument to <code>.max</code>:</p>
+
+<pre><code>.max({ .elems, -(.tail - .head + 1), -.head });
+</code></pre>
+
+<p>Now <code>$best</code> is the full list of indexes of the winning element, and we need the full range from the first place that element was found, to the last, even including other intervening elements (or it wouldn't be a "slice").</p>
+
+<pre><code>return @a[ $best.head .. $best.tail ];
+</code></pre>
+
+<p>By the way, these three produce the same result Pairs. Which do you like better?</p>
+
+<pre><code>@a.keys  .classify( { @a[$_] }              )
+@a.pairs .classify( { .value }, :as{ .key } )
+@a       .classify( { $_     }, :as{ $++  } )
+</code></pre>
+
+<hr />
+
+<blockquote>
+  <p>I'm fixing a hole where the rain gets in <br />
+And stops my mind from wandering <br />
+Where it will go <br />
+(La la la la la) <br />
+-- Fixing a Hole, by The Beatles <br />
+(<a href="https://www.youtube.com/watch?v=IC0q8OEfM7g">as covered by George Burns, after being re-arranged by the Bee Gees.</a> BWAHAHAHAHAHA!)</p>
+</blockquote>
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mikenakis/why-do-you-prefer-using-a-scripting-language-4f4b">Why do you prefer using a scripting language?</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -67,7 +393,9 @@
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>Scripting languages have seen tremendous growth in recent years. CodingNomads ran some stats on job postings on Linkedin (see cover image) and found that from the top-10 programming languages in highest demand in 2022, six of them are scripting languages.</p>
 
-<p>Why do you (yes, YOU) choose to program in a scripting language rather than in a real programming language? Please tell us your reasons.</p>
+<p>Why do <strong><em>you</em></strong> choose to program in a scripting language rather than in a real programming language? </p>
+
+<p>Please tell us your reasons.</p>
 
 <p>To help you get started, here are some ready-made options:</p>
 
@@ -89,7 +417,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-192-30a6">Weekly Challenge 192</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -216,7 +544,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/11/cdxx-11-great-cpan-modules-released.html">(cdxx) 11 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -228,7 +556,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/11/dxxxiii-metacpan-weekly-report.html">(dxxxiii) metacpan weekly report - Perl::Critic</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -240,7 +568,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/11/dlxi-stackoverflow-perl-report.html">(dlxi) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -252,7 +580,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -264,7 +592,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/dean/2022/11/an-objective-criteria-for-deprecating-community-platforms.html">An objective criteria for deprecating community platforms</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -317,7 +645,7 @@ Which includes more than:</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/lichtkind/2022/11/kephra-select-all.html">Kephra: Select All</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -346,7 +674,7 @@ Which includes more than:</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/psc/2022/11/this-week-in-psc-088.html">This Week in PSC (088)</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -367,7 +695,7 @@ Which includes more than:</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/perl-dancer-3-hello-world-3ikg">Perl Dancer #3 - Hello World</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -700,7 +1028,7 @@ because this is a statement and not just a block.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://blogs.perl.org/users/laurent_r/2022/11/perl-weekly-challenge-192-binary-flip-and-equal-distribution.html">Perl Weekly Challenge 192:  Binary Flip and Equal Distribution</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -967,7 +1295,7 @@ for my $test ([&lt;1 0 5&gt;], [&lt;0 2 0&gt;], [&lt;0 3 0&gt;],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/rakuadvent">Raku Advent Calendar submission deadline approaching!</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -998,7 +1326,7 @@ anyway and reach out about when you can submit a post – it's likely that we ca
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/thibaultduponchelle/5-cool-perlprogramming-links-1da6">5 cool Perl/Programming links</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1042,7 +1370,7 @@ anyway and reach out about when you can submit a post – it's likely that we ca
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/q-what-is-pythondjango-testintg-frame-work-for-perl-2nd6">Q. What is Python/Django testintg frame work for Perl?</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1088,7 +1416,7 @@ done_testing();
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_october_2022">Maintaining Perl (Tony Cook) October 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1309,7 +1637,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlmaven.com/read-dates-from-excel">Read dates from Excel file using Perl</a></h2>
 <a href="https://perlmaven.com/" class="badge badge-primary" style="float: left">Perl Maven</a>
@@ -1322,32 +1650,6 @@ There are several modules on CPAN that help your <a href="/read-an-excel-file-in
 In this article we'll look at handling dates that are in Excel files.
 <p>
        </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_17">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://blogs.perl.org/users/lichtkind/2022/11/return-of-kephra.html">Return of Kephra</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by lichtkind
- on Tuesday 22 November 2022 05:39</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Juhuu, released Kephra 0.401 in the spirit release early - release often. It is the start of a complete rewrite. So it's back to zero: now it can only edit one file at a time and has only Perl highlighting and UTF-8 or ASCII encoding. But some of you will still want to use it (beside vi, emacs, VStudio or atom - I know) because of the comfort in basic editing it provides. The following article explains what I mean by that.</p>
-        <p>Basic editing  means writing, crafting, forming a text without big IDE features like refactoring, linting and such. It  is surprising how deficient, especially big IDE are in that field, where a little coding and much attention to details works wonders.</p>
-
-<p>It starts with tiny things like: in Perl $ @ % are word character because part of an identifier. And when you navigate the next you want skip a whole var at once or select it, without additional key twiddling. You want also navigate between matching braces, from block to block or from sub so sub or just easily return to place you just wrote something (Ctrl+E).<br />
-All that by just holding Ctrl for minimal finger movement.</p>
-
-<p>Speaking of selecting. Sometimes its not even needed, because many functions like copy take in Kephra the current line if nothing is selected instead of doing nothing (what a waste of key mapping space). But if you want to select something, just press Ctrl+A. The selection will grow from word to line to block to document. But while doing that it will also select quoted strings, expressions or loops. You know all the hassle and navigation just to select something specific to copy paste and adapt indention. Why not right away move a block with the cursor keys (including page up and page down) and while on it adjust indention with left and right.</p>
-
-<p>When putting something in quotes or braces: why not select first and write the first brace char. Auto-indention, brace highlight including brace bad light for braces without partner. Easily duplicate lines or words, but that's pretty standard nowadays. rectangular editing. Smart commenting of blocks that is immune to regular commenting. Such things add up and when combined and used strategically - programming becomes a lot faster.</p>
-
-<p>Then we have a full featured search bar that expands to a replace bar (never hides any document text). It has some nice extras, including navigating the finds with up and down (as one more option). But if you prefer you can do almost all his functionality without entering the bar. F3 just hops to the next occurrence of the selected text.</p>
-
-<p>And the cherry on top : talk to me - maybe it can implemented in several minutes or hack you favorite featureit yourself in Perl and make a pull request.</p>
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3525,7 +3827,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 27 November 2022 12:48 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 27 November 2022 16:44 UTC</address>
             </div>
           </div>
         </div><!-- container -->
