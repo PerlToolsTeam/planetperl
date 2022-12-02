@@ -171,6 +171,142 @@ EOD<br />
           </div><!-- card -->
           <div class="card" id="card_5">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/szabgab/day-2-add-github-action-ci-to-the-net-async-redis-xs-perl-module-9oo">Day 2: Add GitHub Action CI to the Net-Async-Redis-XS Perl module</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Gabor Szabo
+ on Thursday 01 December 2022 12:39</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>For the second day of the <a href="https://dev.to/szabgab/the-2022-december-ci-challenge-5dof">2022 December CI Challenge</a> I wanted to have a Perl module. Partially because I have working on adding CI to Perl modules for a while.</p>
+
+<p>I looked at <a href="https://cpan-digger.perlmaven.com/">CPAN Digger</a> where some Perl script collects and analyses the most recent uploads to CPAN, the central web site of of the Perl packages and <a href="https://metacpan.org/">MetaCPAN</a> is the user-friendly place to view the content of all the packages.</p>
+
+<p>When I looked at CPAN::Digger the first package that had a link to its GitHub repository but did not have CI<br>
+was the <a href="https://metacpan.org/dist/Net-Async-Redis-XS">Net-Async-Redis-XS</a> distribution.</p>
+
+<p>I thought that could be a nice challenge as it will probably require having Redis installed on the CI server.</p>
+<h2>
+  
+  
+  Background work - preparations
+</h2>
+
+<p>Before I could start working on this project I wanted to create an example GitHub Action configuration where we have a Redis server and it is being access by <code>curl</code>. I wasted a lot of time on this and thought I should try to do something simpler that I can experiment with on my own computer and I don't need to send it to GitHub and wait for it do run my code.</p>
+
+<p>So I started to work on a Docker Compose configuration where I had two containers. One is a Redis service and the other one is a simple client. Here to I failed to use <code>curl</code> as the client. However, I could make it work using the official Redis client called <strong>redis-cli</strong>. I added the example to my <a href="https://code-maven.com/slides/docker/docker-compose-redis-server-and-client">Docker slides</a>.</p>
+
+<p>Once I managed to create the Docker Compose configuration, creating the one running on GitHub Actions was easier. You can find my example in <a href="https://github.com/szabgab/github-actions-redis/">this repository</a>.</p>
+
+<p>I 08 2-3 hours on the preparations, but I also created the examples so people will be able to base their work on these examples.</p>
+<h2>
+  
+  
+  Creating the GitHub Action using Redis
+</h2>
+
+<p>Once I had the Redis configuration the work on the Perl module was not that hard. I made a few typos and missed the fact that the repository has a <code>Makefile.PL</code> so at first I tried to use <code>Dist::Zilla</code>.</p>
+
+<p>I also had to include the installation of a few Perl modules in the GitHub Action configuration. I am not sure why is that.<br>
+Are they really missing from the list of dependencies of the module? If yes, how does it even get installed by users?<br>
+Did I miss a step that would have installed them?</p>
+
+<p>I'll leave the discussion about this for later, after the initial version of the CI is enabled.</p>
+<h2>
+  
+  
+  Supported versions of Redis and Perl
+</h2>
+
+<p>I added 3 versions of Redis to the matrix and tried a number of versions of Perl, but it worked only with Perl 5.36.</p>
+
+<p>Also I only tried this inside a Linux-based Docker container. Not on Windows and not on Mac OSX. I don't know if the module<br>
+is even intended to support those platforms.</p>
+<h2>
+  
+  
+  GitHub Actions configuration file
+</h2>
+
+<p>I've included here the configuration file for future reference as the one in the project, if it even gets accepted, will probably change.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="na">name</span><span class="pi">:</span> <span class="s">CI</span>
+
+<span class="na">on</span><span class="pi">:</span>
+  <span class="na">push</span><span class="pi">:</span>
+  <span class="na">pull_request</span><span class="pi">:</span>
+  <span class="na">workflow_dispatch</span><span class="pi">:</span>
+  <span class="na">schedule</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">cron</span><span class="pi">:</span> <span class="s1">'</span><span class="s">42</span><span class="nv"> </span><span class="s">5</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*'</span>
+
+<span class="na">jobs</span><span class="pi">:</span>
+  <span class="na">test</span><span class="pi">:</span>
+    <span class="na">strategy</span><span class="pi">:</span>
+      <span class="na">fail-fast</span><span class="pi">:</span> <span class="no">false</span>
+      <span class="na">matrix</span><span class="pi">:</span>
+        <span class="c1"># Perl 5.30, 5.32., 5.34 all failed with all 3 versions of Redis</span>
+        <span class="na">perl</span><span class="pi">:</span> <span class="pi">[</span> <span class="s1">'</span><span class="s">5.36'</span> <span class="pi">]</span>
+        <span class="na">redis</span><span class="pi">:</span> <span class="pi">[</span><span class="s1">'</span><span class="s">6.0'</span><span class="pi">,</span> <span class="s1">'</span><span class="s">7.0'</span><span class="pi">,</span> <span class="s1">'</span><span class="s">latest'</span><span class="pi">]</span>
+        <span class="c1">#redis: ['latest']</span>
+
+    <span class="na">services</span><span class="pi">:</span>
+      <span class="na">redis</span><span class="pi">:</span>
+        <span class="na">image</span><span class="pi">:</span> <span class="s">redis:${{matrix.redis}}</span>
+
+    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">ubuntu-latest</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">Perl ${{matrix.perl}} Redis ${{matrix.redis}}</span>
+    <span class="na">container</span><span class="pi">:</span> <span class="s">perl:${{matrix.perl}}</span>
+
+    <span class="na">steps</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Checkout</span>
+      <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v3</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Perl Version</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">perl -v</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install Modules</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">cpanm --installdeps .</span>
+        <span class="s">cpanm Test::Fatal</span>
+        <span class="s">cpanm Net::Async::Redis</span>
+        <span class="s">cpanm Test::MemoryGrowth</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Errors on Ubuntu</span>
+      <span class="na">if</span><span class="pi">:</span>  <span class="s">${{ failure() &amp;&amp; matrix.runner == 'ubuntu-latest' }}</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+         <span class="s">cat /home/runner/.cpanm/work/*/build.log</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Run tests</span>
+      <span class="na">env</span><span class="pi">:</span>
+        <span class="na">AUTHOR_TESTING</span><span class="pi">:</span> <span class="m">1</span>
+        <span class="na">RELEASE_TESTING</span><span class="pi">:</span> <span class="m">1</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">perl Makefile.PL</span>
+        <span class="s">make</span>
+        <span class="s">make test</span>
+        <span class="s">prove -b xt/</span>
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  Pull-Request
+</h2>
+
+<p>I sent the <a href="https://github.com/team-at-cpan/Net-Async-Redis-XS/pull/1">Pull-Request</a>. Let's see if it gets commented on or accepted.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_6">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2022/12/01/list-of-new-cpan-distributions-nov-2022/">List of new CPAN distributions – Nov 2022</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge badge-primary" style="float: left">Perlancar</a>
 
@@ -850,7 +986,7 @@ EOD<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-01/">Advent Calendar - December 1, 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -863,7 +999,7 @@ EOD<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/spvm-09664-is-released-4032">SPVM 0.9664 is released</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -906,7 +1042,7 @@ EOD<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/max_maischein/2022/11/german-perlraku-workshop-2023-call-for-papers.html">German Perl/Raku Workshop 2023 Call for Papers</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -927,7 +1063,7 @@ EOD<br />
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2022/11/perl-weekly-challenge-193-binary-string-and-odd-string.html">Perl Weekly Challenge 193:  Binary String and Odd String</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1130,7 +1266,7 @@ aaa bob ccc ddd -&gt; bob
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/meta/2022/11/https-support.html">New feature: HTTPS support</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1147,7 +1283,7 @@ aaa bob ccc ddd -&gt; bob
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/spvm-09663-is-released-3o8n">SPVM 0.9663 is released</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1263,7 +1399,7 @@ aaa bob ccc ddd -&gt; bob
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/592.html">#592 - Perl Blogging?</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1281,7 +1417,7 @@ aaa bob ccc ddd -&gt; bob
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/perl-weekly-592-perl-blogging-725">Perl Weekly #592 - Perl Blogging?</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1719,7 +1855,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/bruce_gray/2022/11/twc-192-frosting-a-cake-without-flipping-the-spatula.html">TWC 192: Frosting a cake without flipping the spatula</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1992,7 +2128,7 @@ I am <a href="https://github.com/rust-lang/rust/issues/68371">not</a> <a href="h
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/11/27#pwc192">Flipping to Redistribute</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -2130,7 +2266,7 @@ until all values in the list are the same. </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-192/">RECAP - The Weekly Challenge - 192</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -2143,7 +2279,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/mikenakis/why-do-you-prefer-using-a-scripting-language-4f4b">Why do you prefer using a scripting language?</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -2172,133 +2308,6 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
 <li>It is easy to find a job doing it.</li>
 <li>I have not learned any real programming language.</li>
 </ul>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_18">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-192-30a6">Weekly Challenge 192</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Simon Green
- on Sunday 27 November 2022 09:30</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-192/">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-192/sgreen">My solutions</a></p>
-
-<h2>
-  
-  
-  Task 1: Binary Flip
-</h2>
-
-<h3>
-  
-  
-  Task
-</h3>
-
-<p>You are given a positive integer, <code>$n</code>.</p>
-
-<p>Write a script to find the binary flip.</p>
-
-<h3>
-  
-  
-  My solution
-</h3>
-
-<p>So there are at least two ways you could take this task. The obvious option is to convert <code>$n</code> to a binary, use string.translate (or tr in Perl) to flip the bits, and convert this back to an integer number. And given that this is a one off with a very small number, that's a perfectly acceptable solution.</p>
-
-<p>The solution I chose was to find the next power of 2 higher than <code>$n</code>, and then subtract one less than that from the original number.</p>
-
-<p>As an example, the next power of 2 for the number 5 is 8 = 2³. One less than that is 7 (binary 111). Since we know that in subtraction that effectively will flip all the bits, we will have the correct solution.</p>
-
-<h3>
-  
-  
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>./ch-1.py 5
-2
-
-<span class="nv">$ </span>./ch-1.py 4
-3
-
-<span class="nv">$ </span>./ch-1.py 6
-1
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  
-  
-  Task 2: Equal Distribution
-</h2>
-
-<h3>
-  
-  
-  Task
-</h3>
-
-<p>You are given a list of integers greater than or equal to zero, <code>@list</code>.</p>
-
-<p>Write a script to distribute the number so that each members are same. If you succeed then print the total moves otherwise print -1.</p>
-
-<p>Please follow the rules:</p>
-
-<ol>
-<li>You can only move a value of '1' per move</li>
-<li>You are only allowed to move a value of '1' to a direct neighbor/adjacent cell</li>
-</ol>
-
-<h3>
-  
-  
-  My solution
-</h3>
-
-<p>Like most weeks, I wrote the code for this task on Monday evening (morning UK time). It was pretty straight forward (a couple of lines). Also like most weeks, I tend to write my blog on a Sunday evening. So I went to write this blog post and the rules have changed :)</p>
-
-<p>Which I don't really mind as the new rules makes the task more challenging. The original solution was just a simple calculation (the sum of all numbers greater than the average). I'm sure some cleverer Team PWC members were able to do the same with the new challenge, but in the end I took the approach of actually moving the numbers.</p>
-
-<p>We know that a solution is only possible if the sum of all numbers is even divisible by the number of numbers. If this isn't the case, I print <code>-1</code> and exit. If it is I store this as the <code>target</code> value.</p>
-
-<p>I then work through the list from left to right. If the number is less than the target, we know we need to take value away from a different number. This is the <code>needed</code> value. I then have an inner loop that also works from left to right to decide where to take the value from. The logic behind this is taking values from the leftmost item in the excess of the <code>target</code> will result in less moves.</p>
-
-<p>The value we can take is the minimum of <code>needed</code> or the excess value from the target, which I have called <code>take</code>. We take the value from one and give to another. The <code>needed</code> value is reduced, and we add the <code>take</code> value by the number of positions to the <code>moves</code> count. If the <code>needed</code> value is still not zero we continue this inner loop moving to the next leftmost number greater than the target.</p>
-
-<h3>
-  
-  
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>./ch-2.py 1 0 5
-4
-
-<span class="nv">$ </span>./ch-2.py 0 2 0
-<span class="nt">-1</span>
-
-<span class="nv">$ </span>./ch-2.py 0 3 0
-2
-</code></pre>
-
-</div>
-
-
 
        </div><!-- card-text -->     </div>
             <div class="card-footer">
@@ -3220,7 +3229,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 02 December 2022 08:40 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 02 December 2022 12:48 UTC</address>
             </div>
           </div>
         </div><!-- container -->
