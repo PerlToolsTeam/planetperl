@@ -7,9 +7,514 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2022-12-11T20:39:18Z</updated>
+  <updated>2022-12-12T00:56:56Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>TWC 194: Bag Time!</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/bruce_gray/2022/12/twc-194-bag-time.html"/>
+    <id>tag:blogs.perl.org,2022:/users/bruce_gray//532.10969</id>
+    <published>2022-12-12T02:18:17Z</published>
+    <updated>2022-12-12T03:52:49Z</updated>
+    <author>
+        <name>Bruce Gray</name>
+        <uri>https://github.com/Util/</uri>
+    </author>
+    <category term="Perl" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="Raku" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="TheWeeklyChallenge" scheme="http://www.sixapart.com/ns/types#category"/>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/bruce_gray/">
+        <![CDATA[<p>In which analysis speeds, and mis-leads.</p>
+]]>
+        <![CDATA[<p>(Still editing!)</p>
+
+<blockquote>
+  <p>Old Mr. Kringle is soon gonna jingle <br />
+The bells that'll tingle all your troubles away <br />
+Everybody's waitin' for the man with the bag <br />
+'cause Christmas is coming again
+-- <a href="https://www.youtube.com/watch?v=TF01VuvBfq8">The Brian Setzer Orchestra</a></p>
+</blockquote>
+
+<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#TASK1">Digital Clock</a></h1>
+
+<h2>Task</h2>
+
+<p>Given time in the format <code>hh:mm</code> with one missing digit, find the highest digit <code>0-9</code> that makes it a valid time.</p>
+
+<h2>Observations</h2>
+
+<p>Example #4 says <code>'2?:00'</code> should return <code>3</code>, which tells us that we should work with 24-hour time, and that <code>24:00</code> is not allowed as a alternate expression of <code>00:00 the-next-day</code>.</p>
+
+<ul>
+<li>Question mark in 4th digit place, the answer is 9.</li>
+<li>Question mark in 3th digit place, the answer is 5.</li>
+<li>Question mark in 2th digit place, the answer is 9 or 3, depending on whether the 1st digit is 0|1 or 2.</li>
+<li>Question mark in 1st digit place, the answer is 2 or 1, depending on whether the 2nd digit is 0..3 or 4..9.</li>
+</ul>
+
+<p>There are only 24<em>60=1440 possible times, but only (10</em>60)+( 3<em>60)+(24</em>10)+(24* 6) = 1164 possible (valid) inputs.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/raku/ch-1.raku">Raku</a></h2>
+
+<pre><code>sub is_time_valid ( Str $s --&gt; Bool ) {
+    constant $valid_times = ( ^24 X ^60 ).map( *.fmt('%02d', ':') ).Set;
+    return $s ∈ $valid_times;
+}
+sub task1 ( Str $s --&gt; UInt ) {
+    return (9…0).first: { $s.subst( '?', $_ ).&amp;is_time_valid };
+}
+</code></pre>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/perl/ch-1.pl">Perl</a></h2>
+
+<hr />
+
+<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#TASK2">Frequency Equalizer</a></h1>
+
+<h2>Task</h2>
+
+<p>Given a string, determine whether removing only one character can make the frequency of the remaining characters the same.</p>
+
+<h2>Observations</h2>
+
+<p>The test cases led many participants to shortcut the analysis and produce concise solutions that would fail one of these cases:</p>
+
+<ul>
+<li>'aaaaab', 1</li>
+</ul>
+
+<p>The count of <code>a</code> (<code>5</code>) is not within striking distance of the count of <code>b</code> (1), but because <code>b</code> is the only solo character, removing it would succeed.</p>
+
+<ul>
+<li>'aaabbbcc', 0</li>
+</ul>
+
+<p><code>3</code> can be reduced to <code>2</code> be removing <code>1</code>, but there are <em>two</em> letters that each have <code>3</code>, so the frequency cannot be made equal with just one character removed.</p>
+
+<p>Alternately, one of the groups has only one letter in it (<code>c</code>), and <code>abs(3-2) == 1</code>, but in the wrong direction; you would have to <em>add</em> a <code>c</code> to equalize.</p>
+
+<ul>
+<li>'abcd', 1</li>
+</ul>
+
+<p>Removing <em>any</em> of the letters leaves us with equal frequency.</p>
+
+<h3>Generating test cases</h3>
+
+<p>Of interest to me were methods to generate minimal sets of test cases:</p>
+
+<pre><code>raku -e 'my @a = "a".."e"; for ( [X] (@a xx 5) ) { say .join if [le] .list and (.join ~~ /^a+[b+[c+[d+[e+]?]?]?]?$/)}' | m
+aaaaa aaaab aaabb aaabc aabbb aabbc aabcc aabcd abbbb abbbc abbcc abbcd abccc abccd abcdd abcde
+</code></pre>
+
+<p>Longer code, but more efficient to run:</p>
+
+<pre><code>raku -e 'my $w = 5; my $f = "\%0{$w}b"; for ^(2 ** $w) { my @bin = .fmt($f).comb;
+my $c = "a";
+my $out = "a";
+for @bin {
+    $c++ if +$_;
+    $out ~= $c;
+}
+say $out;
+}'
+</code></pre>
+
+<p>The above is not fully minimal; it misses the nuance that <code>aabbc</code> and <code>aabcc</code> both are "two of two, and one of one". We need partitioning!</p>
+
+<pre><code>perl -MList::Util=zip -MInteger::Partition -wE 'my $i = Integer::Partition-&gt;new(shift); while (my $p = $i-&gt;next){say map { $_-&gt;[0] x $_-&gt;[1] } zip [("a".."z")[keys @$p]], $p}' 5
+aaaaa
+aaaab
+aaabb
+aaabc
+aabbc
+aabcd
+abcde
+</code></pre>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/raku/ch-2.raku">Raku</a></h2>
+
+<pre><code># Best compromise between performance, complexity, reducing chance to "get it wrong",
+# and likelihood of a maintenance programmer to reverse-engineer the original requirements.
+sub task2 ( Str $s --&gt; Bool ) {
+    my BagHash $b = $s.comb.BagHash;
+    my @k = $b.keys;
+
+    for @k -&gt; $k {
+        $b.remove: $k;
+        return True if $b.values.unique.elems == 0|1;
+        $b.add:    $k;
+    }
+    return False;
+}
+</code></pre>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/perl/ch-2.pl">Perl</a></h2>
+
+<p>Translation of my Raku solution, with <code>%h</code> as a improvised <code>Bag</code>.
+The code <code>grep { $_ != 0 }</code> is needed to adapt to the hash entry not disappearing when the value goes to <code>0</code>.</p>
+
+<pre><code>use v5.36;
+use List::Util qw&lt;uniq&gt;;
+sub task2 ($s) {
+    my %h;
+    $h{$_}++ for split '', $s;
+    my @k = keys %h;
+
+    for my $k (@k) {
+        $h{$k}--;
+
+        my $c = 0 + grep { $_ != 0 } uniq values %h;
+
+        return 1 if $c == 0
+                 or $c == 1;
+
+        $h{$k}++;
+    }
+    return 0;
+}
+</code></pre>
+
+<blockquote>
+  <p>He'll make this December the one you'll remember <br />
+The best and the merriest you ever did have <br />
+Everybody's waitin', they're all congregating <br />
+Waitin' for the man with the bag
+-- <a href="https://voctave.net/videos/2/">#Voctave</a> {A Cappella, and Breath-taking; We got to see them in concert last week!}</p>
+</blockquote>
+]]>
+    </content>
+</entry>
+  <entry>
+    <title>Github Actions for Perl Modules 2022-12-12 version</title>
+    <link rel="alternate" href="https://dev.to/yukikimoto/github-actions-for-perl-modules-2022-12-12-version-5f7k" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml"><p>Github Actions for Perl Modules 2022-12-12 version.</p>
+
+<ul>
+<li>Prereq is <a href="https://dev.to/yukikimoto/how-to-install-cpanm-using-httptiny-and-perl-oneliner-44el">cpanm</a>.</li>
+<li>latest-perl and Perl 5.8.9</li>
+<li>64bit and 32bit</li>
+<li>Ubuntu/Linux, Mac, Windows</li>
+</ul>
+
+<p>This example is used in SPVM::Sys.</p>
+
+<h2>
+  
+  
+  linux-ubuntu-latest
+</h2>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: linux-ubuntu-latest
+
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - run: perl -V
+      - run: perl -MConfig -MData::Dumper -e 'local $Data::Dumper::Sortkeys = 1;warn Dumper \%Config;'
+      - run: perl cpanm -L ~/mylib --installdeps .
+      - run: echo "PERL5LIB=$HOME/mylib/lib/perl5:$HOME/mylib/lib/perl5/"$(perl -MConfig -e 'print $Config{archname}') &gt;&gt; $GITHUB_ENV
+      - run: perl Makefile.PL
+      - run: make
+      - run: make disttest
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  linux-ubuntu-latest-32bit
+</h2>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: linux-ubuntu-latest-32bit
+
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: i386/ubuntu:latest
+    steps:
+      - run: |
+          apt update
+          apt install -y libperl-dev build-essential
+      - uses: actions/checkout@v1
+      - run: perl -V
+      - run: perl -MConfig -MData::Dumper -e 'local $Data::Dumper::Sortkeys = 1;warn Dumper \%Config;'
+      - run: perl cpanm -L ~/mylib --installdeps .
+      - run: echo "PERL5LIB=$HOME/mylib/lib/perl5:$HOME/mylib/lib/perl5/"$(perl -MConfig -e 'print $Config{archname}') &gt;&gt; $GITHUB_ENV
+      - run: perl Makefile.PL
+      - run: make
+      - run: make disttest
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  linux-ubuntu-latest-perl-5.8.9
+</h2>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: linux-ubuntu-latest-perl-5.8.9
+
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.8.9'
+      - run: perl -V
+      - run: perl -MConfig -MData::Dumper -e 'local $Data::Dumper::Sortkeys = 1;warn Dumper \%Config;'
+      - run: perl cpanm ExtUtils::CBuilder
+      - run: perl cpanm -L ~/mylib --installdeps .
+      - run: echo "PERL5LIB=$HOME/mylib/lib/perl5:$HOME/mylib/lib/perl5/"$(perl -MConfig -e 'print $Config{archname}') &gt;&gt; $GITHUB_ENV
+      - run: perl Makefile.PL
+      - run: make
+      - run: make disttest
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  macos-latest
+</h2>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: macos-latest
+
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v1
+      - run: brew install perl
+      - run: perl -V
+      - run: perl -MConfig -MData::Dumper -e 'local $Data::Dumper::Sortkeys = 1;warn Dumper \%Config;'
+      - run: perl cpanm -L ~/mylib --installdeps .
+      - run: echo "PERL5LIB=$HOME/mylib/lib/perl5:$HOME/mylib/lib/perl5/"$(perl -MConfig -e 'print $Config{archname}') &gt;&gt; $GITHUB_ENV
+      - run: perl Makefile.PL
+      - run: make
+      - run: make disttest
+
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  windows-latest
+</h2>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: windows-latest
+
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  perl:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@master
+      - run: perl -V
+      - run: perl -MConfig -MData::Dumper -e 'local $Data::Dumper::Sortkeys = 1;warn Dumper \%Config;'
+      - run: perl cpanm -L ~/mylib --installdeps .
+      - run: perl Makefile.PL
+      - run: gmake
+      - run: gmake disttest
+</code></pre>
+
+</div>
+
+
+
+</div>
+    </content>
+    <author>
+      <name>Yuki Kimoto - SPVM - Perl Club</name>
+    </author>
+    <id>https://dev.to/yukikimoto/github-actions-for-perl-modules-2022-12-12-version-5f7k</id>
+    <published>2022-12-12T00:40:40Z</published>
+    <updated>2022-12-12T00:40:40Z</updated>
+    <category term="perl"/>
+    <category term="github"/>
+    <category term="githubaction"/>
+    <category term="mac"/>
+  </entry>
+  <entry>
+    <title>How to install cpanm using HTTP::Tiny and Perl oneliner?</title>
+    <link rel="alternate" href="https://dev.to/yukikimoto/how-to-install-cpanm-using-httptiny-and-perl-oneliner-44el" type="text/html"/>
+    <content type="html">&lt;p&gt;How to install cpanm using HTTP::Tiny and Perl oneliner?&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;perl -MHTTP::Tiny -e 'print HTTP::Tiny-&amp;gt;new-&amp;gt;get("http://cpanmin.us/")-&amp;gt;{content};' &amp;gt; cpanm
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;Use cpanm in the portable way.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;perl cpanm -h
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+</content>
+    <author>
+      <name>Yuki Kimoto - SPVM - Perl Club</name>
+    </author>
+    <id>https://dev.to/yukikimoto/how-to-install-cpanm-using-httptiny-and-perl-oneliner-44el</id>
+    <published>2022-12-11T23:48:22Z</published>
+    <updated>2022-12-11T23:48:22Z</updated>
+    <category term="perl"/>
+    <category term="cpanm"/>
+    <category term="http"/>
+    <category term="oneliner"/>
+  </entry>
+  <entry>
+    <title>How To Install cpanm on Ubuntu 20.04?</title>
+    <link rel="alternate" href="https://dev.to/yukikimoto/how-to-install-cpanm-on-ubuntu-2004-1jnd" type="text/html"/>
+    <content type="html">&lt;p&gt;How To Install cpanm on Ubuntu 20.04?&lt;/p&gt;
+
+&lt;p&gt;Please see &lt;a href="https://installati.one/ubuntu/20.04/cpanminus/"&gt;How To Install cpanminus on Ubuntu 20.04 | Installati.one&lt;/a&gt;&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;sudo apt-get update
+sudo apt-get -y install cpanminus
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+</content>
+    <author>
+      <name>Yuki Kimoto - SPVM - Perl Club</name>
+    </author>
+    <id>https://dev.to/yukikimoto/how-to-install-cpanm-on-ubuntu-2004-1jnd</id>
+    <published>2022-12-11T23:36:04Z</published>
+    <updated>2022-12-11T23:36:04Z</updated>
+    <category term="perl"/>
+    <category term="cpanm"/>
+    <category term="ubuntu"/>
+    <category term="linux"/>
+  </entry>
+  <entry>
+    <title>How to create cpanfile by "perl Makefile.PL"?</title>
+    <link rel="alternate" href="https://dev.to/yukikimoto/how-to-create-cpanfile-by-perl-makefilepl-2cnl" type="text/html"/>
+    <content type="html">&lt;p&gt;How to create &lt;code&gt;cpanfile&lt;/code&gt; by "perl Makefile.PL"?&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/ExtUtils::MakeMaker::CPANfile"&gt;ExtUtils::MakeMaker::CPANfile&lt;/a&gt; makes it possible.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;&lt;span class="c1"&gt;# Makefile.PL&lt;/span&gt;
+&lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;ExtUtils::MakeMaker::&lt;/span&gt;&lt;span class="nv"&gt;CPANfile&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="nv"&gt;WriteMakefile&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="s"&gt;NAME&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Foo::Bar&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+  &lt;span class="s"&gt;AUTHOR&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;A.U.Thor &amp;lt;author@cpan.org&amp;gt;&lt;/span&gt;&lt;span class="p"&gt;',&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="c1"&gt;# cpanfile&lt;/span&gt;
+&lt;span class="nv"&gt;requires&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;ExtUtils::MakeMaker&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;6.17&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="nv"&gt;on&lt;/span&gt; &lt;span class="s"&gt;test&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+  &lt;span class="nv"&gt;requires&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Test::More&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;0.88&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+&lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+</content>
+    <author>
+      <name>Yuki Kimoto - SPVM - Perl Club</name>
+    </author>
+    <id>https://dev.to/yukikimoto/how-to-create-cpanfile-by-perl-makefilepl-2cnl</id>
+    <published>2022-12-11T23:04:16Z</published>
+    <updated>2022-12-11T23:04:16Z</updated>
+    <category term="perl"/>
+    <category term="cpanm"/>
+    <category term="cpanfile"/>
+    <category term="make"/>
+  </entry>
   <entry>
     <title>Digital frequency</title>
     <link rel="alternate" href="https://dev.to/simongreennet/digital-frequency-l56" type="text/html"/>
@@ -159,6 +664,33 @@
     <category term="theweeklychallenge"/>
   </entry>
   <entry>
+    <title>Advent Calendar - December 11, 2022</title>
+    <link rel="alternate" href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-11/" type="text/html"/>
+    <content type="text">Advent Calendar 2022 | Day 10 | Day 11 |  The gift is presented by Flavio Poletti. Today he is talking about his solution to &amp;ldquo;The Weekly Challenge - 153&amp;rdquo;. This is re-produced for Advent Calendar 2022 from the original post by him.
+ PWC153 - Factorions TL;DR On with TASK #2 from The Weekly Challenge #153. Enjoy!
+The challenge You are given an integer, $n.
+Write a script to figure out if the given integer is factorion.</content>
+    <id>https://theweeklychallenge.org/blog/advent-calendar-2022-12-11/</id>
+    <published>2022-12-11T00:00:00Z</published>
+    <updated>2022-12-11T00:00:00Z</updated>
+  </entry>
+  <entry>
+    <title>Advent Calendar 2022</title>
+    <link rel="alternate" href="https://theweeklychallenge.org/blog/advent-calendar-2022/" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">| 2019 | 2020 | 2021 | 2022 |  Welcome to our 4th Advent Calendar. I promise to present interesting topic every day contributed by esteemed members of Team PWC.                         MON
+ TUE
+ WED
+ THU
+ FRI
+ SAT
+ SUN</div>
+    </content>
+    <id>https://theweeklychallenge.org/blog/advent-calendar-2022/</id>
+    <published>2022-12-11T00:00:00Z</published>
+    <updated>2022-12-11T00:00:00Z</updated>
+  </entry>
+  <entry>
     <title>The Weekly Challenge - Guest Contributions</title>
     <link rel="alternate" href="https://theweeklychallenge.org/blog/guest-contribution/" type="text/html"/>
     <content type="xhtml">
@@ -226,99 +758,6 @@
     <author>
       <name>oodler</name>
     </author>
-  </entry>
-  <entry>
-    <title>Why not post Perl entries with me?</title>
-    <link rel="alternate" href="https://dev.to/yukikimoto/why-not-post-perl-entries-with-me-4fah" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>Why not post Perl articles to DEV Community with me?</p>
-
-<p>It will be great opportunity to improve your technical skills and find friends.</p>
-
-</div>
-    </content>
-    <author>
-      <name>Yuki Kimoto - SPVM - Perl Club</name>
-    </author>
-    <id>https://dev.to/yukikimoto/why-not-post-perl-entries-with-me-4fah</id>
-    <published>2022-12-10T23:10:01Z</published>
-    <updated>2022-12-10T23:10:01Z</updated>
-    <category term="perl"/>
-    <category term="beginners"/>
-  </entry>
-  <entry>
-    <title>How to parse cpanfile?</title>
-    <link rel="alternate" href="https://dev.to/yukikimoto/how-to-parse-cpanfile-8o4" type="text/html"/>
-    <content type="html">&lt;p&gt;How to parse cpanfile? &lt;a href="https://metacpan.org/pod/Module::CPANfile"&gt;Module::CPANfile&lt;/a&gt; makes it possible.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use Module::CPANfile;
-
-my $file = Module::CPANfile-&amp;gt;load("cpanfile");
-my $prereqs = $file-&amp;gt;prereqs; # CPAN::Meta::Prereqs object
-
-my @features = $file-&amp;gt;features; # CPAN::Meta::Feature objects
-my $merged_prereqs = $file-&amp;gt;prereqs_with(@identifiers); # CPAN::Meta::Prereqs
-
-$file-&amp;gt;merge_meta('MYMETA.json');
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-</content>
-    <author>
-      <name>Yuki Kimoto - SPVM - Perl Club</name>
-    </author>
-    <id>https://dev.to/yukikimoto/how-to-parse-cpanfile-8o4</id>
-    <published>2022-12-10T23:03:05Z</published>
-    <updated>2022-12-10T23:03:05Z</updated>
-    <category term="perl"/>
-    <category term="cpanm"/>
-    <category term="cpanfile"/>
-  </entry>
-  <entry>
-    <title>Improvment of Google Searching Result of metaCPAN</title>
-    <link rel="alternate" href="https://dev.to/yukikimoto/improvment-of-google-searching-result-of-cpan-42gl" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>I search <a href="https://www.google.com/search?q=SPVM%3A%3AResource%3A%3ASocketUtil&amp;sxsrf=ALiCzsaW94D_pp5no87985cDWnD5KnkZ3w%3A1670711741556&amp;ei=vQmVY5bKIZL2wAPsq7ToDQ&amp;ved=0ahUKEwjWnIKfjvD7AhUSO3AKHewVDd0Q4dUDCA8&amp;uact=5&amp;oq=SPVM%3A%3AResource%3A%3ASocketUtil&amp;gs_lcp=Cgxnd3Mtd2l6LXNlcnAQA0oECEEYAEoECEYYAFAAWABgqwJoAHAAeACAAXqIAXqSAQMwLjGYAQCgAQHAAQE&amp;sclient=gws-wiz-serp">SPVM::Resource::SocketUtil</a>. The top result is the <a href="https://metacpan.org/dist/SPVM-Resource-SocketUtil">page of the file list</a>.</p>
-
-<p>I often experience this by searching other CPAN modules.</p>
-
-<p>This should be <a href="https://metacpan.org/pod/SPVM::Resource::SocketUtil">the doc page</a>.</p>
-
-<p>This can be fixed by applying SEO to metaCPAN.</p>
-
-</div>
-    </content>
-    <author>
-      <name>Yuki Kimoto - SPVM - Perl Club</name>
-    </author>
-    <id>https://dev.to/yukikimoto/improvment-of-google-searching-result-of-cpan-42gl</id>
-    <published>2022-12-10T22:48:37Z</published>
-    <updated>2022-12-10T22:48:37Z</updated>
-    <category term="perl"/>
-    <category term="perlsuggestion"/>
-    <category term="google"/>
-  </entry>
-  <entry>
-    <title>Perl Sugesstions</title>
-    <link rel="alternate" href="https://dev.to/yukikimoto/perl-sugesstions-4ph3" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>I'm going to write suggestions about Perl in DEV Community using <a href="https://dev.to/t/perlsuggestion">perlsuggestion</a> tag.</p>
-
-</div>
-    </content>
-    <author>
-      <name>Yuki Kimoto - SPVM - Perl Club</name>
-    </author>
-    <id>https://dev.to/yukikimoto/perl-sugesstions-4ph3</id>
-    <published>2022-12-10T22:40:47Z</published>
-    <updated>2022-12-10T22:40:47Z</updated>
-    <category term="perl"/>
-    <category term="perlsuggestion"/>
   </entry>
   <entry>
     <title>Perl Weekly Challenge 194:  Digital Clock and Frequency Equalizer</title>
@@ -641,25 +1080,9 @@ xzxz       =&gt; 0
   <entry>
     <title>Advent Calendar - December 10, 2022</title>
     <link rel="alternate" href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-10/" type="text/html"/>
-    <content type="text">Advent Calendar 2022 | Day 9 | Day 10 |  The gift is presented by Bruce Gray. Today he is talking about his solution to &amp;ldquo;The Weekly Challenge - 154&amp;rdquo;. This is re-produced for Advent Calendar 2022 from the original post by him.
- In which we search for a needle in a lendee (or maybe a chatchka in a haystack), and delight in some lazy CPAN comfort.  TWC Task #1 - Missing Permutation Find all permutations missing from a list.</content>
+    <content type="text">Advent Calendar 2022 | Day 9 | Day 10 | Day 11 |  The gift is presented by Bruce Gray. Today he is talking about his solution to &amp;ldquo;The Weekly Challenge - 154&amp;rdquo;. This is re-produced for Advent Calendar 2022 from the original post by him.
+ In which we search for a needle in a lendee (or maybe a chatchka in a haystack), and delight in some lazy CPAN comfort.</content>
     <id>https://theweeklychallenge.org/blog/advent-calendar-2022-12-10/</id>
-    <published>2022-12-10T00:00:00Z</published>
-    <updated>2022-12-10T00:00:00Z</updated>
-  </entry>
-  <entry>
-    <title>Advent Calendar 2022</title>
-    <link rel="alternate" href="https://theweeklychallenge.org/blog/advent-calendar-2022/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml">| 2019 | 2020 | 2021 | 2022 |  Welcome to our 4th Advent Calendar. I promise to present interesting topic every day contributed by esteemed members of Team PWC.                         MON
- TUE
- WED
- THU
- FRI
- SAT
- SUN</div>
-    </content>
-    <id>https://theweeklychallenge.org/blog/advent-calendar-2022/</id>
     <published>2022-12-10T00:00:00Z</published>
     <updated>2022-12-10T00:00:00Z</updated>
   </entry>
@@ -803,15 +1226,6 @@ xzxz       =&gt; 0
     <author>
       <name>Bartosz Jarzyna</name>
     </author>
-  </entry>
-  <entry>
-    <title>Advent Calendar - December 8, 2022</title>
-    <link rel="alternate" href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-08/" type="text/html"/>
-    <content type="text">Advent Calendar 2022 | Day 7 | Day 8 | Day 9 |  The gift is presented by Cheok-Yin Fung. Today he is talking about his solution to &amp;ldquo;The Weekly Challenge - 156&amp;rdquo;. This is re-produced for Advent Calendar 2022 from the original post by him.
- CY&amp;rsquo;s Take on The Weekly Challenge #156 If you want to challenge yourself on programming, especially on Perl and/or Raku, go to https://theweeklychallenge.</content>
-    <id>https://theweeklychallenge.org/blog/advent-calendar-2022-12-08/</id>
-    <published>2022-12-08T00:00:00Z</published>
-    <updated>2022-12-08T00:00:00Z</updated>
   </entry>
   <entry>
     <title>A Perlmas Tree</title>
@@ -1004,196 +1418,6 @@ xzxz       =&gt; 0
     <updated>2022-12-05T10:00:00Z</updated>
     <category term="editorial"/>
   </entry>
-  <entry>
-    <title>TWC 193: Evens and Oddballs</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/bruce_gray/2022/12/twc-193-evens-and-oddballs.html"/>
-    <id>tag:blogs.perl.org,2022:/users/bruce_gray//532.10965</id>
-    <published>2022-12-04T23:42:48Z</published>
-    <updated>2022-12-05T04:06:14Z</updated>
-    <author>
-        <name>Bruce Gray</name>
-        <uri>https://github.com/Util/</uri>
-    </author>
-    <category term="Perl" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="Raku" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="TheWeeklyChallenge" scheme="http://www.sixapart.com/ns/types#category"/>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/bruce_gray/">
-        <![CDATA[<p>In which we revisit seventh grade, and sing in the key of "A".</p>
-]]>
-        <![CDATA[<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-193/#TASK1">Binary String</a></h1>
-
-<h2>Task</h2>
-
-<p>Calculate all possible binary numbers of size $n.</p>
-
-<h2>Observations</h2>
-
-<p>In 7th grade, I noticed that you can construct all the binary numbers by starting with 0 and 1, then prepending 0-and-1 to all the prior numbers, doubling the size of the calculated each time:</p>
-
-<pre><code>0
-1
-
-00
-01
-10
-11
-
-000
-001
-010
-011
-100
-101
-110
-111
-</code></pre>
-
-<p>I used this method in the Perl solution.</p>
-
-<p>Loosely related: This week, my 5-year-old granddaughter <br />
-showed us how she can count to <code>2_000_000</code> : <br />
-    Cora Kate: "<em>one</em> million, <em>two</em> million !!!"</p>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-193/bruce-gray/raku/ch-1.raku">Raku</a></h2>
-
-<p>I could have written:</p>
-
-<pre><code>sub task1 ( UInt $n ) { ^(2**$n) .fmt("\%0{$n}b") }
-</code></pre>
-
-<p>, but that gives the wrong answer when <code>$n</code> is <code>0</code>. So instead:</p>
-
-<pre><code>multi sub task1 (       1 ) {       &lt;0 1&gt;        }
-multi sub task1 ( UInt $n ) { [X~] (&lt;0 1&gt; xx $n) }
-</code></pre>
-
-<p>The <code>multi</code> is needed because the <code>X</code> cross-operator will operate on a solo <code>&lt;0 1&gt;</code> by unpacking it, translating to <code>'0' ~ '1'</code>, which is not what we want.</p>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-193/bruce-gray/perl/ch-1.pl">Perl</a></h2>
-
-<p>I could have written:</p>
-
-<pre><code>sub task1 ( $n ) { map { sprintf "%0${n}b", $_ } 0 .. (2**$n)-1 }
-</code></pre>
-
-<p>, but that gives the wrong answer when <code>$n</code> is <code>0</code>. (Sounds familiar.) So instead:</p>
-
-<pre><code>sub task1 ($n) {
-    my @r = ("");
-
-    @r = (  map("0$_", @r),
-            map("1$_", @r)  ) for 1..$n;
-
-    return @r;
-}
-</code></pre>
-
-<hr />
-
-<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-193/#TASK2">Odd String</a></h1>
-
-<h2>Task</h2>
-
-<p>All string elements of a given list will have the same "distance between adjacent characters", except one. Return that one string element.</p>
-
-<h2>Observations</h2>
-
-<p>This task is naturally broken into:</p>
-
-<ul>
-<li>Calculating the distance</li>
-<li>Grouping based on that distance</li>
-<li>Selecting the group with only one element</li>
-</ul>
-
-<p>The solution will probably be clearer if we keep those aspects separate.</p>
-
-<p>Changing <code>"be"</code> into <code>1,4</code> to get the difference of <code>3</code> can be replaced with <code>ord</code>, since the base values don't matter, only their relative distances.</p>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-193/bruce-gray/raku/ch-2.raku">Raku</a></h2>
-
-<p>I could have golfed this to:</p>
-
-<pre><code>@L.classify(~*.comb.rotor(2=&gt;-1).map({[-] $_».ord})).values.min(+*)
-</code></pre>
-
-<p>, but T'is the season of thankfulness and giving. Also, I am not happy with the assumptions that the task is making, so I structured it to better allow for warnings.</p>
-
-<pre><code>sub oddballs ( @list, &amp;matcher ) {
-    my %h = @list
-            .classify(&amp;matcher)
-            .values
-            .classify({ .elems == 1 ?? 'Oddball' !! 'Clique' });
-
-    warn "Multiple cliques exist" if %h&lt;Clique&gt;.elems &gt; 1;
-
-    return %h&lt;Oddball&gt;.list;
-}
-sub neighbor_distances ( Str $s --&gt; Str ) {
-    return $s.comb
-             .map(&amp;ord)
-             .rotor(2 =&gt; -1)
-             .map({ .[1] - .[0] })
-             .Str;
-}
-sub task2 (@list) {
-    die "Must have at least 3 to have an oddball" if @list.elems &lt; 3;
-
-    my @o = oddballs( @list, &amp;neighbor_distances );
-
-    warn "No oddballs found"     if not @o;
-    warn "More than one oddball" if @o.elems &gt; 1;
-
-    return @o.head;
-}
-</code></pre>
-
-<p>I want to point out that the "neighbor-difference after numeric translation" is a fine way to specify the desired grouping, but an alternative could also serve:</p>
-
-<pre><code>$s .= trans( ['b'..'z'] =&gt; ['a'..'y'] ) until $s.contains: 'a';
-</code></pre>
-
-<p>Reducing each letter along the alphabet until any of them is an <code>a</code> would produce the same results.</p>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-193/bruce-gray/perl/ch-2.pl">Perl</a></h2>
-
-<p>Using many modules, to better parallel the Raku solution:</p>
-
-<pre><code>use v5.36;
-use List::Util       qw&lt;mesh pairvalues&gt;;
-use List::MoreUtils  qw&lt;slide&gt;;
-use List::Categorize qw&lt;categorize&gt;;
-
-sub diffs ( $s ) {
-    state %A_N = mesh ['a'..'z'], [0..25];
-
-    return join ':',
-           slide { $b - $a }
-           @A_N{ split '', $s };
-}
-sub oddballs ( @s ) {
-    return grep { @{$_} == 1 } 
-           pairvalues
-           categorize { diffs($_) } @s;
-}
-sub task2 ( @s ) {
-    my @r = oddballs(@s);
-    warn if @r != 1;
-    return $r[0][0];
-}
-</code></pre>
-
-<ul>
-<li><code>mesh</code> is Raku's <code>Z</code>.</li>
-<li><code>slide</code> is Raku's <code>.rotor(2 =&gt; -1)</code>. </li>
-<li><code>categorize</code> is Raku's <code>.classify</code>.</li>
-<li><code>pairvalues</code> makes up for Raku's Pairs being true objects.</li>
-</ul>
-
-<p>I used the <code>@</code>-sigil on a hash to access Perl's "hash slicing", allowing <em>all</em> of the letters to be translated in one go.</p>
-]]>
-    </content>
-</entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-1808027491351841833</id>
     <published>2022-12-04T08:55:00.000+01:00</published>
