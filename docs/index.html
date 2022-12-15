@@ -60,6 +60,200 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/a-perl-pattern-for-read-only-configuration-access-2a9k">A Perl Pattern for Read-Only Configuration Access</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Nicholas Hubbard
+ on Wednesday 14 December 2022 21:04</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>Some programs have many subroutines that need access to some read-only configuration. Deciding how to provide access to this configuration in a safe way, that ensures no mutation will take place, is important to the reliability of the program.</p>
+
+<p>The simplest thing to do is to use a global variable. The problem with using a global variable is that you have to be careful to not mutate it, or else your program may behave mysteriously. If you trust yourself not to mess up, then using a global variable is fine. An improved way to implement global variables it to use <a href="https://metacpan.org/pod/Const::Fast">Const::Fast</a> from CPAN to make the variable truly read-only.</p>
+
+<p>In this article, however, we will explore an interesting pattern I came up with, which provides convenient access to a read-only configuration without the need for a global variable or any CPAN module.</p>
+
+<p>Here is the pattern:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="p">{</span>
+    <span class="k">my</span> <span class="nv">%config</span> <span class="o">=</span> <span class="nv">parse_user_config</span><span class="p">();</span>
+    <span class="k">sub </span><span class="nf">config</span> <span class="p">{</span> <span class="nv">%config</span> <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This pattern allows us to use the <code>&amp;config</code> subroutine as somewhat of a constant.</p>
+
+<p>Though seemingly simple, there is a lot to unpack in this piece of code.</p>
+
+<p><a id="orgcdab093"></a></p>
+
+<h1>
+  
+  
+  Blocks
+</h1>
+
+<p>Let us start with a brief explanation on Perl's <a href="https://perldoc.perl.org/perlsyn#Basic-BLOCKs">blocks</a>. A block, denoted by a set of curly braces, introduces a new <a href="https://en.wikipedia.org/wiki/Scope_(computer_science)#Lexical_scope">lexical scope</a>. Here is an example:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$v1</span> <span class="o">=</span> <span class="p">'</span><span class="s1">camel</span><span class="p">';</span>
+
+    <span class="p">{</span>
+        <span class="k">my</span> <span class="nv">$v2</span> <span class="o">=</span> <span class="p">"</span><span class="si">$v1</span><span class="s2"> onion</span><span class="p">";</span>
+
+        <span class="k">print</span> <span class="p">"</span><span class="s2">From inner block:</span><span class="se">\n</span><span class="s2">  </span><span class="se">\$</span><span class="s2">v2 = </span><span class="si">$v2</span><span class="se">\n</span><span class="p">";</span>
+    <span class="p">}</span>
+
+    <span class="k">print</span> <span class="p">"</span><span class="s2">From outer block:</span><span class="se">\n</span><span class="s2">  </span><span class="se">\$</span><span class="s2">v2 = </span><span class="si">$v2</span><span class="se">\n</span><span class="p">";</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>If we run this code without <a href="https://perldoc.perl.org/strict">strict</a> enabled, then we get the following output:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>From inner block:
+  $v2 = camel onion
+From outer block:
+  $v2 =
+</code></pre>
+
+</div>
+
+<p>You can think of a lexical scope as a container for lexical variables (declared with <a href="https://perldoc.perl.org/functions/my">my</a>). When you create a new lexical scope, all the lexical variables defined in outer scopes are available in the new scope. However, at the end of the scope, the variables are no longer available. In the example above we can see that the <code>$v1</code> variable is available in the inner block. We use this <code>$v1</code> variable to create a new lexical variable named <code>$v2</code>. However, after the end of the inner block, we can see that the <code>$v2</code> variable is no longer available.</p>
+
+<p><a id="org65cc942"></a></p>
+
+<h1>
+  
+  
+  Closures
+</h1>
+
+<p>The next concept we need to explain is a <a href="https://en.wikipedia.org/wiki/Closure_(computer_programming)">closure</a>. A closure is a function that encapsulates its lexical state. Let us look at a simple (and the classic) example.<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="p">{</span>
+    <span class="k">my</span> <span class="nv">$counter</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="k">sub </span><span class="nf">increment</span> <span class="p">{</span>
+        <span class="nv">$counter</span><span class="o">++</span><span class="p">;</span>
+        <span class="k">print</span> <span class="p">"</span><span class="se">\$</span><span class="s2">counter = </span><span class="si">$counter</span><span class="se">\n</span><span class="p">";</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nv">increment</span><span class="p">();</span>
+<span class="nv">increment</span><span class="p">();</span>
+<span class="nv">increment</span><span class="p">();</span>
+</code></pre>
+
+</div>
+
+
+
+<p>Here is the output we get from running this program:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>$counter = 1
+$counter = 2
+$counter = 3
+</code></pre>
+
+</div>
+
+<p>We can see that our <code>&amp;increment</code> subroutine saves the value of <code>$counter</code> across invocations.</p>
+
+<p><a id="orgfcb4021"></a></p>
+
+<h1>
+  
+  
+  Putting It All Together
+</h1>
+
+<p>We now have all the knowledge we need to understand our pattern for read-only configuration access.</p>
+
+<p>Just to refresh, here is the pattern again:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="p">{</span>
+    <span class="k">my</span> <span class="nv">%config</span> <span class="o">=</span> <span class="nv">parse_config_file</span><span class="p">();</span>
+    <span class="k">sub </span><span class="nf">config</span> <span class="p">{</span> <span class="nv">%config</span> <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+
+</div>
+
+
+
+<p>The <code>&amp;config</code> subroutine is a closure that simply returns the <code>%config</code> variable that it closes over. The <code>%config</code> variable is completely private to the <code>&amp;config</code> method however, because it is a lexical variable, and this pattern takes place in its own block.  This means we can be completely sure that no other code in our program can ever modify <code>%config</code>. We can be completely sure the <code>&amp;config</code> subroutine always returns the same configuration.</p>
+
+<p>Another interesting aspect of this pattern is that you can structure your program such that the value of <code>%config</code> is calculated before the main runtime of the program. Here is an example:<br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">main</span> <span class="p">{</span>
+    <span class="k">print</span> <span class="p">"</span><span class="s2">Hello from &amp;main</span><span class="se">\n</span><span class="p">";</span>
+    <span class="nv">parse_config_file</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="p">{</span>
+    <span class="k">my</span> <span class="nv">%config</span> <span class="o">=</span> <span class="nv">parse_config_file</span><span class="p">();</span>
+    <span class="k">sub </span><span class="nf">config</span> <span class="p">{</span> <span class="nv">%config</span> <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">sub </span><span class="nf">parse_config_file</span> <span class="p">{</span>
+    <span class="k">print</span> <span class="p">"</span><span class="s2">Hello from &amp;parse_config_file</span><span class="se">\n</span><span class="p">";</span>
+    <span class="k">return</span> <span class="p">(</span><span class="s">foo</span> <span class="o">=&gt;</span> <span class="mi">12</span><span class="p">,</span> <span class="s">bar</span> <span class="o">=&gt;</span> <span class="mi">42</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="nv">main</span><span class="p">();</span>
+</code></pre>
+
+</div>
+
+
+
+<p>This program outputs the following:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>Hello from &amp;parse_config_file
+Hello from &amp;main
+Hello from &amp;parse_config_file
+</code></pre>
+
+</div>
+
+<p>As you can see the configuration was parsed before <code>&amp;main</code> was invoked.</p>
+
+<p><a id="orgba381a9"></a></p>
+
+<h1>
+  
+  
+  Synopsis
+</h1>
+
+<p>There are many ways to provide your program access to a read-only configuration. In this article we presented an interesting way to do it using blocks and closures. This strategy may not be suitable for all programs, but it is at least interesting.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-set-and-get-perl5lib-environment-variable-on-github-action-461e">How to set and get PERL5LIB environment variable on Github Action</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -236,7 +430,7 @@ echo $env:PERL5LIB
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/ci-for-the-logany-perl-module-5bl2">Day 14: CI for the Log::Any Perl module 🐪</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -265,7 +459,7 @@ distribution.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/lets-upgrade-perl-to-newest-one-420f">Let's upgrade Perl to newest one!</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -281,7 +475,7 @@ distribution.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/spvm-now-uses-github-action-version-3-2o16">SPVM now uses Github Action Version 3</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -333,7 +527,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-14/">Advent Calendar - December 14, 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -346,7 +540,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/advent-calendar-2022/">Advent Calendar 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -364,7 +558,7 @@ jobs:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perladvent.org/2022/2022-12-14.html">Let the Elves Import Your Packages</a></h2>
 <a href="https://perladvent.org/2022" class="badge badge-primary" style="float: left">Perl Advent Calendar 2022</a>
@@ -373,138 +567,6 @@ jobs:
  on Wednesday 14 December 2022 00:00</small></p>
             </div> <!-- card-header -->
 
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_8">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/midas/strawberry-perl-vs-activeperl-1fb6">Strawberry Perl vs ActivePerl</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by MIDAS
- on Tuesday 13 December 2022 13:02</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>"Perl" is the coding language we develop our <a href="https://mid.as">MIDAS web based room booking and resource scheduling software</a> in.</p>
-
-<p>Most Linux and Mac OS based operating systems come with Perl pre-installed, yet, Windows operating systems do not.</p>
-
-<p>We test MIDAS on a range of operating systems, servers and platforms. Our in-house development of MIDAS is primarily within a Windows-based environment. This means that we needed to install a Perl distribution on Windows.</p>
-
-<h2>
-  
-  
-  <img src="https://res.cloudinary.com/practicaldev/image/fetch/s--ufJMOUH3--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/h9eoxnevbosqox9ih6k2.png" alt="ActivePerl" width="64" height="64"> ActivePerl
-</h2>
-
-<p>When MIDAS development started <a href="https://blog.mid.as/happy-5th-birthday-midas/">back in 2005</a>, there was really only one mainstream solution for running Perl on Windows. This was a Perl distribution named "<a href="https://www.activestate.com/products/perl/downloads/">ActivePerl</a>", produced by <a href="https://www.activestate.com/">ActiveState</a>.</p>
-
-<p>The reason we liked ActivePerl was two-fold; firstly, a completely free "Community Edition" was available. Secondly ActivePerl came with a handy tool called the "Perl Package Manager" (PPM). This made installing and updating Perl modules easy. It provided a graphical interface where modules could be quickly installed, updated, or uninstalled with just a few clicks:</p>
-
-<p><a href="https://res.cloudinary.com/practicaldev/image/fetch/s--OZne8TgC--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/04xcryoomb5os0f7vzb0.png" class="article-body-image-wrapper"><img src="https://res.cloudinary.com/practicaldev/image/fetch/s--OZne8TgC--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/04xcryoomb5os0f7vzb0.png" alt="ActivePerl's Perl Package Manager" width="500" height="512"></a></p>
-
-<p>ActivePerl included a number of "default" Perl modules. MIDAS requires <a href="https://mid.as/kb/00005/during-install-required-modules-missing">some additional modules</a> not included within the standard ActivePerl distribution. The PPM tool allowed easy and quick installation of any such modules as required.</p>
-
-<p>Many of our "self hosted" customers intended to install our MIDAS booking software on their Windows-based server. Therefore, we would recommend ActivePerl due to its availability, regular updates, and ease of use.</p>
-
-<h2>
-  
-  
-  <img src="https://res.cloudinary.com/practicaldev/image/fetch/s--TB1viLu0--/c_limit%2Cf_auto%2Cfl_progressive%2Cq_auto%2Cw_880/https://dev-to-uploads.s3.amazonaws.com/uploads/articles/wkt7vrgp9xmrc23j9nfa.png" alt="Strawberry Perl" width="64" height="64"> Strawberry Perl
-</h2>
-
-<p>Since 2005, other Perl distributions built for Windows have come along. Perhaps the most notable of these being "<a href="http://strawberryperl.com/">Strawberry Perl</a>", which first appeared in 2008.</p>
-
-<p>Back then we explored what Strawberry Perl had to offer when compared to ActivePerl. After evaluating Strawberry Perl, we decided ActivePerl would continue to be the Perl distribution we developed under and would recommend to our Windows-based customers.</p>
-
-<h2>
-  
-  
-  What initially made ActivePerl better than Strawberry Perl?
-</h2>
-
-<p>When we first evaluated the newcomer Strawberry Perl in 2008 against the more established ActivePerl, differences became clear from an ease of installation and use perspective.</p>
-
-<p>Firstly, Strawberry Perl didn't include a visual "Perl Package Manager"-type tool for installing and maintaining Perl modules. Rather, Perl modules required installation via the command line. On Linux-based servers, installing modules via the command line is the norm, but many of Windows-based users were less familiar with command line use. Consequently, a graphical Windows application which allowed easy installation of Perl modules was preferable.</p>
-
-<p>Another difference was that ActivePerl was established and more stable. Strawberry Perl was still the newcomer and felt a bit "rough around the edges". Some Perl modules were also not fully supported or failed to install easily/correctly in Strawberry Perl.</p>
-
-<p>As such, because we continued to only recommend ActivePerl to Windows customers, it was logical to continue to develop under ActivePerl ourselves. We would however keep an open mind and keen interest in the ongoing development of Strawberry Perl.</p>
-
-<p>For the most part, our Windows-based customers continued to opt for our recommendation of ActivePerl. A few chose Strawberry Perl instead and were able to initially do so successfully.</p>
-
-<h2>
-  
-  
-  Are we POSIXtive?(!)
-</h2>
-
-<p>However, around June 2010, Strawberry Perl suddenly removed a key component from their distribution which MIDAS relied on; the ability to natively work with and set Timezones. This resulted in those running MIDAS under Strawberry Perl seeing "<a href="https://mid.as/kb/00057/posix-tzset-not-implemented-on-this-architecture">POSIX::tzset not implemented on this architecture</a>" errors. We had no idea why Strawberry Perl removed this functionality, or whether it was just an unintentional bug/glitch in their software. The reason for the removal of this functionality wasn't forthcoming, or even acknowledged, by the Strawberry Perl team. This led us to initially suspect that perhaps it may have just been a bug.</p>
-
-<p>This wasn't a major problem for us, as we'd never officially recommended or supported MIDAS running under Strawberry Perl. It was of course though an inconvenience for the handful of customers who had been running under Strawberry Perl.</p>
-
-<p>As a fix wasn't forthcoming from Strawberry Perl, the solution for affected customers was either to install an older version of Strawberry Perl, or switch to ActivePerl.</p>
-
-<p>By late 2010, it became clear that the developers of Strawberry Perl weren't going to address/fix this issue. So we re-engineered our MIDAS software to work around this issue. Our next release in January 2011 once again ran under Strawberry Perl without issue.</p>
-
-<p>What we learnt from all this was that Strawberry Perl still felt in its infancy and in a state of flux. We still didn't consider it "stable" enough for use in production server environments.</p>
-
-<p>We continued to recommend ActivePerl for all our Windows-based customers.</p>
-
-<p>ActivePerl was in continual development, with regular releases which reasonably closely tracked the latest versions of Perl available for Linux-based servers.</p>
-
-<h2>
-  
-  
-  Something changed…
-</h2>
-
-<p>In late 2016, we felt things began to shift and change with ActivePerl.</p>
-
-<p>We began to notice that the latest versions of Perl modules stopped being offered via ActivePerl's Perl Package Manager (PPM). Initially, this wasn't a great cause for concern. MIDAS didn't require the very latest version of any Perl module.</p>
-
-<p>The released of ActivePerl 5.26 saw things further decline…</p>
-
-<p>As you may be aware, MIDAS uses MySQL as its database. Perl therefore has to be able to connect to a MySQL database in order for MIDAS to function. The critical Perl module for doing this (DBD::MySQL) wasn't made available for ActivePerl 5.26 via the Perl Package Manager.</p>
-
-<p>This meant that MIDAS wouldn't run for customers under ActivePerl 5.26. Customers would instead have to install the previous ActivePerl 5.24 build, which was still available for download from ActiveState.</p>
-
-<p>Now, in the past following a new release of ActivePerl, it could take several weeks for Perl module updates to become available though the PPM.</p>
-
-<p>So we waited… and waited.. yet still no DBD::MySQL module appeared for ActivePerl 5.26. ActivePerl 5.26 became useless for any application like MIDAS which need to connect to a MySQL database!</p>
-
-<p>In our view, ActivePerl declined from there; in order to download ActivePerl an account was now required on their website. Additionally, they <a href="https://www.activestate.com/blog/goodbye-ppm-hello-state-tool/">discontinued Perl Package Manager</a>. Instead users had to "custom build" their own ActivePerl package in the cloud with the modules they needed, or use a command line tool to add in modules.</p>
-
-<p>ActivePerl's development started to lag behind Perl itself. For example, at time of writing, the latest official version of Perl available is 5.30.2. The latest version of Strawberry Perl available is also 5.30.2. However, the latest version of ActivePerl available today is 5.28.1 – nearly 2 years behind where Perl is currently at!</p>
-
-<p>Then in 2019 <a href="https://www.reddit.com/r/perl/comments/bbm02t/has_wwwactivestatecom_been_hacked/">ActiveState's website was reportedly hacked</a>.</p>
-
-<p>Doubts began to arise over ActiveState's commitment to continuing to continue to provide Perl and a free "community edition". Their focus seems to have shifted more towards monetization and on their Python language products instead (as evident from the majority of their recent posts on Twitter)</p>
-
-<h2>
-  
-  
-  Why we moved to Strawberry Perl?
-</h2>
-
-<p>These developments were a worrying trend for us. This is why last year we began equally promoting and recommending Strawberry Perl alongside ActivePerl on our <a href="https://mid.as/sysreq">server requirements page</a>. We also provided a helpful step-by-step guide for installing Strawberry Perl, to complement our previous guide for installing ActivePerl.</p>
-
-<p>Strawberry Perl has certainly come a long way since its first release. It's now very stable, is passionately developed, and closely tracks the official version of Perl with frequent releases. Best of all, it remains completely free!</p>
-
-<p>Whilst there's no "visual" tool to install Perl modules as there was with the PPM under ActivePerl, <a href="https://mid.as/kb/00129/how-to-install-perl-modules">installing modules under Strawberry Perl is straight forward</a>. We've found that the latest modules are always available (including DBD::MySQL!)</p>
-
-<p>Many previous ActivePerl users around the world have already made the switch over to Strawberry Perl. At the start of 2020, we also moved all our development from using ActivePerl's distribution or Perl to Strawberry Perl.</p>
-
-<h2>
-  
-  
-  Should I choose ActivePerl or Strawberry Perl?
-</h2>
-
-<p>If you're considering a self-hosted edition of MIDAS (remember that we also <a href="https://mid.as/kb/00131/difference-between-self-cloud-hosted-midas">offer a cloud-hosted edition too</a>!) for installation on a Windows-based server, whilst we still presently support both ActivePerl and Strawberry Perl on our website we would strongly recommend you choose Strawberry Perl.</p>
-
-<p>If you must use ActivePerl, then we'd suggest getting your hands on 5.24, although this is now four years old, and we're big advocates for <a href="https://mid.as/kb/00108/tips-for-keeping-your-midas-system-secure">keeping server software up to date</a>. So going forward Strawberry Perl would be our preferred option on Windows.</p>
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2583,7 +2645,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 14 December 2022 20:39 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 15 December 2022 00:57 UTC</address>
             </div>
           </div>
         </div><!-- container -->
