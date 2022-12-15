@@ -394,200 +394,6 @@ Write a script to find out the smallest slice, i.       </div><!-- card-text -->
           </div><!-- card -->
           <div class="card" id="card_7">
             <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/nicholasbhubbard/a-perl-pattern-for-read-only-configuration-access-2a9k">A Perl Pattern for Read-Only Configuration Access</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Nicholas Hubbard
- on Wednesday 14 December 2022 21:04</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Some programs have many subroutines that need access to some read-only configuration. Deciding how to provide access to this configuration in a safe way, that ensures no mutation will take place, is important to the reliability of the program.</p>
-
-<p>The simplest thing to do is to use a global variable. The problem with using a global variable is that you have to be careful to not mutate it, or else your program may behave mysteriously. If you trust yourself not to mess up, then using a global variable is fine. An improved way to implement global variables it to use <a href="https://metacpan.org/pod/Const::Fast">Const::Fast</a> from CPAN to make the variable truly read-only.</p>
-
-<p>In this article, however, we will explore an interesting pattern I came up with, which provides convenient access to a read-only configuration without the need for a global variable or any CPAN module.</p>
-
-<p>Here is the pattern:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">%config</span> <span class="o">=</span> <span class="nv">parse_user_config</span><span class="p">();</span>
-    <span class="k">sub </span><span class="nf">config</span> <span class="p">{</span> <span class="nv">%config</span> <span class="p">}</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>This pattern allows us to use the <code>&amp;config</code> subroutine as somewhat of a constant.</p>
-
-<p>Though seemingly simple, there is a lot to unpack in this piece of code.</p>
-
-<p><a id="orgcdab093"></a></p>
-
-<h1>
-  
-  
-  Blocks
-</h1>
-
-<p>Let us start with a brief explanation on Perl's <a href="https://perldoc.perl.org/perlsyn#Basic-BLOCKs">blocks</a>. A block, denoted by a set of curly braces, introduces a new <a href="https://en.wikipedia.org/wiki/Scope_(computer_science)#Lexical_scope">lexical scope</a>. Here is an example:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$v1</span> <span class="o">=</span> <span class="p">'</span><span class="s1">camel</span><span class="p">';</span>
-
-    <span class="p">{</span>
-        <span class="k">my</span> <span class="nv">$v2</span> <span class="o">=</span> <span class="p">"</span><span class="si">$v1</span><span class="s2"> onion</span><span class="p">";</span>
-
-        <span class="k">print</span> <span class="p">"</span><span class="s2">From inner block:</span><span class="se">\n</span><span class="s2">  </span><span class="se">\$</span><span class="s2">v2 = </span><span class="si">$v2</span><span class="se">\n</span><span class="p">";</span>
-    <span class="p">}</span>
-
-    <span class="k">print</span> <span class="p">"</span><span class="s2">From outer block:</span><span class="se">\n</span><span class="s2">  </span><span class="se">\$</span><span class="s2">v2 = </span><span class="si">$v2</span><span class="se">\n</span><span class="p">";</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>If we run this code without <a href="https://perldoc.perl.org/strict">strict</a> enabled, then we get the following output:</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>From inner block:
-  $v2 = camel onion
-From outer block:
-  $v2 =
-</code></pre>
-
-</div>
-
-<p>You can think of a lexical scope as a container for lexical variables (declared with <a href="https://perldoc.perl.org/functions/my">my</a>). When you create a new lexical scope, all the lexical variables defined in outer scopes are available in the new scope. However, at the end of the scope, the variables are no longer available. In the example above we can see that the <code>$v1</code> variable is available in the inner block. We use this <code>$v1</code> variable to create a new lexical variable named <code>$v2</code>. However, after the end of the inner block, we can see that the <code>$v2</code> variable is no longer available.</p>
-
-<p><a id="org65cc942"></a></p>
-
-<h1>
-  
-  
-  Closures
-</h1>
-
-<p>The next concept we need to explain is a <a href="https://en.wikipedia.org/wiki/Closure_(computer_programming)">closure</a>. A closure is a function that encapsulates its lexical state. Let us look at a simple (and the classic) example.<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">$counter</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-
-    <span class="k">sub </span><span class="nf">increment</span> <span class="p">{</span>
-        <span class="nv">$counter</span><span class="o">++</span><span class="p">;</span>
-        <span class="k">print</span> <span class="p">"</span><span class="se">\$</span><span class="s2">counter = </span><span class="si">$counter</span><span class="se">\n</span><span class="p">";</span>
-    <span class="p">}</span>
-<span class="p">}</span>
-
-<span class="nv">increment</span><span class="p">();</span>
-<span class="nv">increment</span><span class="p">();</span>
-<span class="nv">increment</span><span class="p">();</span>
-</code></pre>
-
-</div>
-
-
-
-<p>Here is the output we get from running this program:</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>$counter = 1
-$counter = 2
-$counter = 3
-</code></pre>
-
-</div>
-
-<p>We can see that our <code>&amp;increment</code> subroutine saves the value of <code>$counter</code> across invocations.</p>
-
-<p><a id="orgfcb4021"></a></p>
-
-<h1>
-  
-  
-  Putting It All Together
-</h1>
-
-<p>We now have all the knowledge we need to understand our pattern for read-only configuration access.</p>
-
-<p>Just to refresh, here is the pattern again:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="p">{</span>
-    <span class="k">my</span> <span class="nv">%config</span> <span class="o">=</span> <span class="nv">parse_config_file</span><span class="p">();</span>
-    <span class="k">sub </span><span class="nf">config</span> <span class="p">{</span> <span class="nv">%config</span> <span class="p">}</span>
-<span class="p">}</span>
-</code></pre>
-
-</div>
-
-
-
-<p>The <code>&amp;config</code> subroutine is a closure that simply returns the <code>%config</code> variable that it closes over. The <code>%config</code> variable is completely private to the <code>&amp;config</code> method however, because it is a lexical variable, and this pattern takes place in its own block.  This means we can be completely sure that no other code in our program can ever modify <code>%config</code>. We can be completely sure the <code>&amp;config</code> subroutine always returns the same configuration.</p>
-
-<p>Another interesting aspect of this pattern is that you can structure your program such that the value of <code>%config</code> is calculated before the main runtime of the program. Here is an example:<br>
-</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight perl"><code><span class="k">sub </span><span class="nf">main</span> <span class="p">{</span>
-    <span class="k">print</span> <span class="p">"</span><span class="s2">Hello from &amp;main</span><span class="se">\n</span><span class="p">";</span>
-    <span class="nv">parse_config_file</span><span class="p">();</span>
-<span class="p">}</span>
-
-<span class="p">{</span>
-    <span class="k">my</span> <span class="nv">%config</span> <span class="o">=</span> <span class="nv">parse_config_file</span><span class="p">();</span>
-    <span class="k">sub </span><span class="nf">config</span> <span class="p">{</span> <span class="nv">%config</span> <span class="p">}</span>
-<span class="p">}</span>
-
-<span class="k">sub </span><span class="nf">parse_config_file</span> <span class="p">{</span>
-    <span class="k">print</span> <span class="p">"</span><span class="s2">Hello from &amp;parse_config_file</span><span class="se">\n</span><span class="p">";</span>
-    <span class="k">return</span> <span class="p">(</span><span class="s">foo</span> <span class="o">=&gt;</span> <span class="mi">12</span><span class="p">,</span> <span class="s">bar</span> <span class="o">=&gt;</span> <span class="mi">42</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="nv">main</span><span class="p">();</span>
-</code></pre>
-
-</div>
-
-
-
-<p>This program outputs the following:</p>
-
-<div class="highlight js-code-highlight">
-<pre class="highlight plaintext"><code>Hello from &amp;parse_config_file
-Hello from &amp;main
-Hello from &amp;parse_config_file
-</code></pre>
-
-</div>
-
-<p>As you can see the configuration was parsed before <code>&amp;main</code> was invoked.</p>
-
-<p><a id="orgba381a9"></a></p>
-
-<h1>
-  
-  
-  Synopsis
-</h1>
-
-<p>There are many ways to provide your program access to a read-only configuration. In this article we presented an interesting way to do it using blocks and closures. This strategy may not be suitable for all programs, but it is at least interesting.</p>
-
-       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_8">
-            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-set-and-get-perl5lib-environment-variable-on-github-action-461e">How to set and get PERL5LIB environment variable on Github Action</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -768,7 +574,7 @@ echo $env:PERL5LIB
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/ci-for-the-logany-perl-module-5bl2">Day 14: CI for the Log::Any Perl module 🐪</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -797,7 +603,7 @@ distribution.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/lets-upgrade-perl-to-newest-one-420f">Let's upgrade Perl to newest one!</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -808,6 +614,58 @@ distribution.</p>
      <div class="card-body">       <div class="card-text"><p>Let's upgrade Perl to newest one!</p>
 
 <p>If you use Perl 5.8, the newest Perl is Perl 5.36.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_10">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/yukikimoto/spvm-now-uses-github-action-version-3-2o16">SPVM now uses Github Action Version 3</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Yuki Kimoto - SPVM - Perl Club
+ on Wednesday 14 December 2022 00:14</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p><a href="https://metacpan.org/pod/SPVM">SPVM</a> now uses Github Action Version 3.</p>
+
+<p><a href="https://github.com/yuki-kimoto/SPVM/tree/master/.github/workflows">.github/workflows</a><br>
+</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: linux-ubuntu-latest
+
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Perl version
+        run: perl -V
+      - name: Perl config
+        run: perl -MConfig -MData::Dumper -e 'local $Data::Dumper::Sortkeys = 1;warn Dumper \%Config;'
+      - name: Set PERL5LIB
+        run: echo "PERL5LIB=$HOME/mylib/lib/perl5:$HOME/mylib/lib/perl5/"$(perl -MConfig -e 'print $Config{archname}') &gt;&gt; $GITHUB_ENV
+      - name: Download cpanm
+        run: perl -Mstrict -Mwarnings -MIO::Socket::INET -e 'my $socket = IO::Socket::INET-&gt;new(PeerAddr =&gt; qq(cpanmin.us), PeerPort =&gt; 80, Proto=&gt; qq(tcp));print $socket qq(GET / HTTP/1.0\r\nHost:cpanmin.us\r\n\r\n);binmode STDOUT;print &lt;$socket&gt;;' | perl -p -0777 -e 'BEGIN { binmode STDOUT;binmode STDIN  } s/.*?\r\n\r\n//s' &gt; cpanm
+      - name: cpanm installs dependent modules
+        run: perl cpanm -v -n -L ~/mylib --installdeps . --configure-args="--no-build-spvm-modules"
+      - run: perl Makefile.PL
+      - run: make
+      - run: make disttest
+</code></pre>
+
+</div>
+
+
 
        </div><!-- card-text -->     </div>
             <div class="card-footer">
@@ -2858,7 +2716,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 15 December 2022 16:44 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 15 December 2022 20:39 UTC</address>
             </div>
           </div>
         </div><!-- container -->
