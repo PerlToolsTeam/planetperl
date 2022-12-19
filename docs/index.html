@@ -60,6 +60,216 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://blogs.perl.org/users/bruce_gray/2022/12/twc-195-special-speedy-frequency.html">TWC 195: Special Speedy Frequency</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Bruce Gray
+ on Monday 19 December 2022 09:07</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>In which count only what we must.</p>
+
+<p>In Raku, Perl, and C {via Perl's Inline::C} .</p>
+
+        <p>(Still editing!)</p>
+
+<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-195/#TASK1">Special Integers</a></h1>
+
+<h2>Task:</h2>
+
+<p>Count the integers that have no repeating digits, between 1 and <code>$n</code>.</p>
+
+<h2>Observations:</h2>
+
+<ul>
+<li><p>This is the more time-consuming of the two tasks, in both CPU and programmer time.</p></li>
+<li><p>Since the largest number with all-unique digits is 9<em>876</em>543_210, any requested <code>$n</code> higher than that will have the same answer.</p></li>
+<li><p>Scanning every integer in the range will scale linearly, and since the largest input in in the 9 billions, we should look for a faster algorithm. The problem relates to combinations of individual digits, irrespective of their order, so something from combinatorics might be fruitful.</p></li>
+</ul>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/perl/ch-1.pl">Perl</a></h2>
+
+<p>Using simple one-at-a-time iteration:</p>
+
+<pre><code>use v5.36;
+use List::Util qw&lt;uniq&gt;;
+sub task1 ( $n ) {
+    return 0 + grep { length == uniq split '' } 1..$n;
+}
+</code></pre>
+
+<p>I also could have said:</p>
+
+<pre><code>return 0 + grep !/(.).*\1/, 1..$n;
+</code></pre>
+
+<p>, which would have been faster, but less clear.</p>
+
+<p>Also, for large <code>$n</code>, I observe that about 25% of the total time for <code>perl</code> to return control to my terminal happens <em>after</em> <code>perl</code> outputs the answer. I expect this is due to Perl not optimizing the scalar <code>grep</code> into a "count-only" version of itself, and so a huge list really is allocated and built by <code>grep</code>, which must be <code>DESTROY</code>ed at <code>END</code> time. Recoding as something like <code>/(.).*\1/ or $c++ for 1..$n</code> recovered all that cleanup time.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/perl/ch-1_inline.pl">C</a></h2>
+
+<p>This code takes 2m42s to calculate <code>task1(9_876_543_210)==8_877_690</code> using one-at-a-time iteration. That is nearly 3 minutes, at full <code>C</code> speed; no bouncing between Perl and C is done except at start and end of a calculation.</p>
+
+<pre><code>use v5.36;
+use Inline 'C';
+# ... Testing code omitted here
+__END__
+__C__
+int is_special(long x) {
+    int ds[10];
+    memset(ds, 0, 10*sizeof(int));
+    while (x) {
+        if (ds[x % 10]++)
+            return 0;
+        x /= 10;
+    }
+    return 1;
+}
+int count_special(long in) {
+    long x = in &gt; 9876543210 ? 9876543210 : in;
+    int  r = 0;
+    for ( ; x ; x-- ) {
+        if ( is_special(x) )
+            r++;
+    }
+    return r;
+}
+</code></pre>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/raku/ch-1.raku">Raku</a></h2>
+
+<p>I have two versions that use combinatorics to solve the task. The first rips into the problem in two phases</p>
+
+<p>(Ack! Must finish this explanation soon, but cannot right now.)</p>
+
+<pre><code># https://oeis.org/A073531  Number of n-digit positive integers with all digits distinct.
+constant @n-digits-distinct     = 0, 9, |( 9 X* [\*] (9...1) );
+constant @n-digits-distinct-sum = [\+] @n-digits-distinct;
+
+sub task1 ( UInt $n --&gt; UInt ) {
+    constant MAX = 9_876_543_210;
+    return &amp;?ROUTINE(MAX) if $n &gt; MAX;
+
+    # Knuth's "falling powers"; kfp(9,3) == 9*8*7
+    sub kfp ($n, $k) { [*] ( ($n-$k) ^.. $n ) }
+
+    my $nc = $n.chars;
+    my @totals;
+
+    push @totals, @n-digits-distinct-sum[$nc - 1];
+
+    my SetHash $used;
+    for $n.comb».Numeric.kv -&gt; UInt $k, UInt $digit {
+
+        my UInt $combinations_in_rightward_places
+            = kfp(9 - $k, $nc - $k - 1);
+
+        my Range $space_below_digit = (     0 + (1 if $k == 0   ))
+                                   .. ($digit - (1 if $k &lt; $nc-1));
+
+        my Set $using_for_this_digit = $space_below_digit (-) $used;
+
+        push @totals, $using_for_this_digit.elems
+                    * $combinations_in_rightward_places;
+
+        $used{$digit}++;
+    }
+
+    return @totals.sum;
+}
+</code></pre>
+
+<p>This version is simpler to understand, but does not perform as well.
+It does the initial optimization to skip over about .log10 places,
+then generates all the combinations with the correct leading digit,
+filtering on which ones are less than $n.</p>
+
+<pre><code>sub task1_one_big_skip ( UInt $n --&gt; UInt ) {
+    constant MAX = 9_876_543_210;
+    return &amp;?ROUTINE(MAX) if $n &gt; MAX;
+
+    my @totals;
+    my $lead  = $n.substr(0, 1);
+    my $core  = $n.chars - 1;
+
+    push @totals, @n-digits-distinct-sum[$core];
+
+    push @totals, +combinations(9,$core) * ([*] 1..$core)
+                                         * ($lead - 1);
+
+    my $L3 = 0;
+    for (0..9).grep(* != $lead).combinations($core) -&gt; @comb {
+        $L3 += +@comb.permutations.grep: { ($lead ~ .join) &lt;= $n };
+    }
+    push @totals, $L3;
+
+    return @totals.sum;
+}
+</code></pre>
+
+<hr />
+
+<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-195/#TASK2">Most Frequent Even</a></h1>
+
+<h2>Task:</h2>
+
+<p>Given a <code>@list</code> of integers, find the most frequent even numbers in the list,
+with smallest of those most frequent as a tie-breaker.
+return <code>-1</code> if no even numbers are in the list.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/raku/ch-2.raku">Raku</a></h2>
+
+<pre><code>@ns.grep( * %% 2 ).Bag.max({ .value, -.key }).?key // -1 ;
+</code></pre>
+
+<p>Yes, the solution can be expressed in a single, um, <em>expression</em>.</p>
+
+<p>The <code>Bag</code> counts the even numbers, giving a hash of key=original<em>number => value=count</em>of<em>times</em>seen.</p>
+
+<p>The <code>.max</code> method will receive <code>Pair</code> objects from the <code>Bag</code>, and find the maximum of each <code>Pair</code>'s <code>.value</code> (the count), with <em>negative</em> (because we want the <em>lowest</em> in a <code>.max</code>) <code>.key</code> (original number) as tie-breaker.</p>
+
+<p>Now we just need to return the <code>.key</code> of the <code>Pair</code> that <code>.max</code> found, or <code>-1</code> if <code>grep</code> found no even numbers. But wait! <code>.max</code> returns <code>-Inf</code> when given a empty list; we cannot call <code>.key</code> on <code>-Inf</code>.</p>
+
+<p>The <code>.?</code> methodop is the "Safe call operator". It works as <code>.</code>, but if the left-hand side lacks the requested method, it returns <code>Nil</code>, which is just what we need for <code>//</code> to trigger the <code>-1</code> return.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/perl/ch-2.pl">Perl</a></h2>
+
+<pre><code>use v5.36;
+use List::Util    qw&lt;min&gt;;
+use List::UtilsBy qw&lt;max_by&gt;;
+
+sub task2 (@ns) {
+    my %bag;
+    $bag{$_}++ for grep { $_ % 2 == 0 } @ns;
+    return -1 if not %bag;
+
+    return min max_by { $bag{$_} } keys %bag;
+}
+</code></pre>
+
+<p>Compared to the Raku code, having <code>%bag</code> as a separate variable does prevent a single-expression solution, but we gain clarity; returning <code>-1</code> happens much sooner in the dataflow, and in a place that is simpler to read.</p>
+
+<p>Also, because we can refer to the count via (less efficient) hash-lookup, and because Perl's <code>max_by</code> <em>does</em> return all the participants in a tie, we can feed in only the keys, so <code>min</code> is operating only on the keys.</p>
+
+<hr />
+
+<blockquote>
+  <p>With great pleasure, we announce Bruce Gray <br />
+as the next Champion of The Weekly Challenge. <br />
+-- <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#HEADLINES">TWC 194</a> Mohammad S Anwar</p>
+
+<p>The thing about me that's so impressive <br />
+is how infrequently I mention all of my successes <br />
+-- <a href="https://www.youtube.com/watch?v=XzbAEHdy8oU">Video</a> "I'm So Humble" {The <em>only</em> song by The Lonely Island that is Safe For Work}.</p>
+</blockquote>
+
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/ryan_voots/2022/12/perl-fediverse-network.html">Perl fediverse network</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -103,7 +313,19 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="http://perladvent.org/2022/2022-12-19.html">Find known, reported vulnerabilities in the modules you use</a></h2>
+<a href="https://perladvent.org/2022" class="badge badge-primary" style="float: left">Perl Advent Calendar 2022</a>
+
+              <p class="text-right"><small>Published by brian d foy
+ on Monday 19 December 2022 00:00</small></p>
+            </div> <!-- card-header -->
+
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/12/cdxxiii-10-great-cpan-modules-released.html">(cdxxiii) 10 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -115,7 +337,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/12/dxxxvi-metacpan-weekly-report.html">(dxxxvi) metacpan weekly report - Catalyst::Runtime</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -127,7 +349,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2022/12/dlxiv-stackoverflow-perl-report.html">(dlxiv) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -139,7 +361,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/manwar/the-weekly-challenge-advent-calendar-2022-6ad">The Weekly Challenge Advent Calendar 2022</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -328,7 +550,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2022/12/18#pwc195">Especially Frequent Even</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -438,7 +660,7 @@ then sorted with the lowest one being returned, as specified.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/saif/2022/12/perlaystation-games-console.html">PerlayStation Games Console (Part 1)</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -476,7 +698,7 @@ Some interesting frameworks <a href="https://metacpan.org/pod/Games::Quest3D">Qu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-18/">Advent Calendar - December 18, 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -489,7 +711,7 @@ Some interesting frameworks <a href="https://metacpan.org/pod/Games::Quest3D">Qu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/advent-calendar-2022/">Advent Calendar 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -507,7 +729,7 @@ Some interesting frameworks <a href="https://metacpan.org/pod/Games::Quest3D">Qu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perladvent.org/2022/2022-12-18.html">TWVycnkgQ2hyaXN0bWFzIDop</a></h2>
 <a href="https://perladvent.org/2022" class="badge badge-primary" style="float: left">Perl Advent Calendar 2022</a>
@@ -519,7 +741,7 @@ Some interesting frameworks <a href="https://metacpan.org/pod/Games::Quest3D">Qu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/recently-used-perl-one-liner-for-replacement-on-linux-4g98">A recent Perl one-liner on Linux that has Really Helped me as an IT engineer</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -560,7 +782,7 @@ Some interesting frameworks <a href="https://metacpan.org/pod/Games::Quest3D">Qu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-17/">Advent Calendar - December 17, 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -574,7 +796,7 @@ Spoiler Alert: This weekly challenge deadline is due in a few days from now (on 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -586,7 +808,7 @@ Spoiler Alert: This weekly challenge deadline is due in a few days from now (on 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perladvent.org/2022/2022-12-17.html">Naughty or Nice Networks</a></h2>
 <a href="https://perladvent.org/2022" class="badge badge-primary" style="float: left">Perl Advent Calendar 2022</a>
@@ -598,7 +820,7 @@ Spoiler Alert: This weekly challenge deadline is due in a few days from now (on 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/how-to-use-react-with-perlmojolicious-web-frame-work-8id">How to use React with Perl/Mojolicious web frame work</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -685,7 +907,7 @@ root.render(e(LikeButton));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/psc/2022/12/this-week-in-psc-091.html">This Week in PSC (091)</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -706,7 +928,7 @@ root.render(e(LikeButton));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/fosdemstand">FOSDEM</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -726,7 +948,7 @@ root.render(e(LikeButton));
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_november_2022">Maintaining Perl (Tony Cook) November 2022</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -967,7 +1189,7 @@ were applied.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_19">
+          <div class="card" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/maintaining_perl_dave_mitchell_nov_2022">Maintaining Perl 5 Core (Dave Mitchell): November 2022 </a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1029,7 +1251,7 @@ SUMMARY:
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_20">
+          <div class="card" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/day-16-moving-from-travis-ci-to-github-actions-for-marpar2-21cj">Day 16: Moving from Travis-CI to GitHub Actions for Marpa::R2</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1295,7 +1517,7 @@ programmer as Jeffrey Kegler, the author of Marpa. And even then you might forge
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_21">
+          <div class="card" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/advent-calendar-2022-12-16/">Advent Calendar - December 16, 2022</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1309,7 +1531,7 @@ Write a script to find out count of pairs in the given list that satisfies the f
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_22">
+          <div class="card" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perladvent.org/2022/2022-12-16.html">Relocatable Perl</a></h2>
 <a href="https://perladvent.org/2022" class="badge badge-primary" style="float: left">Perl Advent Calendar 2022</a>
@@ -1321,7 +1543,7 @@ Write a script to find out count of pairs in the given list that satisfies the f
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_23">
+          <div class="card" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/news-perl-advent-calendar-2022-1d5b">News: Perl Advent Calendar 2022</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1355,7 +1577,7 @@ Write a script to find out count of pairs in the given list that satisfies the f
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_24">
+          <div class="card" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2022/12/perl-weekly-challenge-195-special-integers-and-most-frequent-even.html">Perl Weekly Challenge 195:  Special Integers and Most Frequent Even</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1577,7 +1799,7 @@ for my $test ([&lt;1 1 2 6 2&gt;], [&lt;1 3 5 7&gt;], [&lt;6 4 4 6 1&gt;],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_25">
+          <div class="card" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="http://perladvent.org/2022/2022-12-15.html">Create Professional Slideshows with Mojolicious::Plugin::RevealJS</a></h2>
 <a href="https://perladvent.org/2022" class="badge badge-primary" style="float: left">Perl Advent Calendar 2022</a>
@@ -1589,19 +1811,7 @@ for my $test ([&lt;1 1 2 6 2&gt;], [&lt;1 3 5 7&gt;], [&lt;6 4 4 6 1&gt;],
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_26">
-            <div class="card-header">
-              <h2 class="card-title"><a href="http://perladvent.org/2022/2022-12-14.html">Let the Elves Import Your Packages</a></h2>
-<a href="https://perladvent.org/2022" class="badge badge-primary" style="float: left">Perl Advent Calendar 2022</a>
-
-              <p class="text-right"><small>Published by Bartosz Jarzyna
- on Wednesday 14 December 2022 00:00</small></p>
-            </div> <!-- card-header -->
-
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_27">
+          <div class="card" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/594.html">#594 - Advent Calendar</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1617,179 +1827,6 @@ for my $test ([&lt;1 1 2 6 2&gt;], [&lt;1 3 5 7&gt;], [&lt;6 4 4 6 1&gt;],
 <p>If you are still looking for more <strong>Advent Calendar</strong> theme fun then I would highly recommend, <a href="https://theweeklychallenge.org/blog/advent-calendar-2022">The Weekly Challenge Advent Calendar</a>. Like in the past, this year also, it has contributions from <strong>Team PWC</strong> hand picked by me. I am sure you would find it interesting.</p>
 <p>I am working on something that I would love to be part of this year <strong>Perl Advent Calendar</strong>. Hopefully it would be ready soon. Well I am also working on something similar for <strong>Raku Advent Calendar</strong>. It would be an achievement if I can get both done on time. Please wish me luck.</p>
 <p>Enjoy rest of the newsletter.</p>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_28">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://blogs.perl.org/users/bruce_gray/2022/12/twc-194-bag-time.html">TWC 194: Bag Time!</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Bruce Gray
- on Monday 12 December 2022 03:52</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>In which analysis speeds, and mis-leads.</p>
-
-        <p>(Still editing!)</p>
-
-<blockquote>
-  <p>Old Mr. Kringle is soon gonna jingle <br />
-The bells that'll tingle all your troubles away <br />
-Everybody's waitin' for the man with the bag <br />
-'cause Christmas is coming again
--- <a href="https://www.youtube.com/watch?v=TF01VuvBfq8">The Brian Setzer Orchestra</a></p>
-</blockquote>
-
-<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#TASK1">Digital Clock</a></h1>
-
-<h2>Task</h2>
-
-<p>Given time in the format <code>hh:mm</code> with one missing digit, find the highest digit <code>0-9</code> that makes it a valid time.</p>
-
-<h2>Observations</h2>
-
-<p>Example #4 says <code>'2?:00'</code> should return <code>3</code>, which tells us that we should work with 24-hour time, and that <code>24:00</code> is not allowed as a alternate expression of <code>00:00 the-next-day</code>.</p>
-
-<ul>
-<li>Question mark in 4th digit place, the answer is 9.</li>
-<li>Question mark in 3th digit place, the answer is 5.</li>
-<li>Question mark in 2th digit place, the answer is 9 or 3, depending on whether the 1st digit is 0|1 or 2.</li>
-<li>Question mark in 1st digit place, the answer is 2 or 1, depending on whether the 2nd digit is 0..3 or 4..9.</li>
-</ul>
-
-<p>There are only 24<em>60=1440 possible times, but only (10</em>60)+( 3<em>60)+(24</em>10)+(24* 6) = 1164 possible (valid) inputs.</p>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/raku/ch-1.raku">Raku</a></h2>
-
-<pre><code>sub is_time_valid ( Str $s --&gt; Bool ) {
-    constant $valid_times = ( ^24 X ^60 ).map( *.fmt('%02d', ':') ).Set;
-    return $s ∈ $valid_times;
-}
-sub task1 ( Str $s --&gt; UInt ) {
-    return (9…0).first: { $s.subst( '?', $_ ).&amp;is_time_valid };
-}
-</code></pre>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/perl/ch-1.pl">Perl</a></h2>
-
-<hr />
-
-<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#TASK2">Frequency Equalizer</a></h1>
-
-<h2>Task</h2>
-
-<p>Given a string, determine whether removing only one character can make the frequency of the remaining characters the same.</p>
-
-<h2>Observations</h2>
-
-<p>The test cases led many participants to shortcut the analysis and produce concise solutions that would fail one of these cases:</p>
-
-<ul>
-<li>'aaaaab', 1</li>
-</ul>
-
-<p>The count of <code>a</code> (<code>5</code>) is not within striking distance of the count of <code>b</code> (1), but because <code>b</code> is the only solo character, removing it would succeed.</p>
-
-<ul>
-<li>'aaabbbcc', 0</li>
-</ul>
-
-<p><code>3</code> can be reduced to <code>2</code> be removing <code>1</code>, but there are <em>two</em> letters that each have <code>3</code>, so the frequency cannot be made equal with just one character removed.</p>
-
-<p>Alternately, one of the groups has only one letter in it (<code>c</code>), and <code>abs(3-2) == 1</code>, but in the wrong direction; you would have to <em>add</em> a <code>c</code> to equalize.</p>
-
-<ul>
-<li>'abcd', 1</li>
-</ul>
-
-<p>Removing <em>any</em> of the letters leaves us with equal frequency.</p>
-
-<h3>Generating test cases</h3>
-
-<p>Of interest to me were methods to generate minimal sets of test cases:</p>
-
-<pre><code>raku -e 'my @a = "a".."e"; for ( [X] (@a xx 5) ) { say .join if [le] .list and (.join ~~ /^a+[b+[c+[d+[e+]?]?]?]?$/)}' | m
-aaaaa aaaab aaabb aaabc aabbb aabbc aabcc aabcd abbbb abbbc abbcc abbcd abccc abccd abcdd abcde
-</code></pre>
-
-<p>Longer code, but more efficient to run:</p>
-
-<pre><code>raku -e 'my $w = 5; my $f = "\%0{$w}b"; for ^(2 ** $w) { my @bin = .fmt($f).comb;
-my $c = "a";
-my $out = "a";
-for @bin {
-    $c++ if +$_;
-    $out ~= $c;
-}
-say $out;
-}'
-</code></pre>
-
-<p>The above is not fully minimal; it misses the nuance that <code>aabbc</code> and <code>aabcc</code> both are "two of two, and one of one". We need partitioning!</p>
-
-<pre><code>perl -MList::Util=zip -MInteger::Partition -wE 'my $i = Integer::Partition-&gt;new(shift); while (my $p = $i-&gt;next){say map { $_-&gt;[0] x $_-&gt;[1] } zip [("a".."z")[keys @$p]], $p}' 5
-aaaaa
-aaaab
-aaabb
-aaabc
-aabbc
-aabcd
-abcde
-</code></pre>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/raku/ch-2.raku">Raku</a></h2>
-
-<pre><code># Best compromise between performance, complexity, reducing chance to "get it wrong",
-# and likelihood of a maintenance programmer to reverse-engineer the original requirements.
-sub task2 ( Str $s --&gt; Bool ) {
-    my BagHash $b = $s.comb.BagHash;
-    my @k = $b.keys;
-
-    for @k -&gt; $k {
-        $b.remove: $k;
-        return True if $b.values.unique.elems == 0|1;
-        $b.add:    $k;
-    }
-    return False;
-}
-</code></pre>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/perl/ch-2.pl">Perl</a></h2>
-
-<p>Translation of my Raku solution, with <code>%h</code> as a improvised <code>Bag</code>.
-The code <code>grep { $_ != 0 }</code> is needed to adapt to the hash entry not disappearing when the value goes to <code>0</code>.</p>
-
-<pre><code>use v5.36;
-use List::Util qw&lt;uniq&gt;;
-sub task2 ($s) {
-    my %h;
-    $h{$_}++ for split '', $s;
-    my @k = keys %h;
-
-    for my $k (@k) {
-        $h{$k}--;
-
-        my $c = 0 + grep { $_ != 0 } uniq values %h;
-
-        return 1 if $c == 0
-                 or $c == 1;
-
-        $h{$k}++;
-    }
-    return 0;
-}
-</code></pre>
-
-<blockquote>
-  <p>He'll make this December the one you'll remember <br />
-The best and the merriest you ever did have <br />
-Everybody's waitin', they're all congregating <br />
-Waitin' for the man with the bag
--- <a href="https://voctave.net/videos/2/">#Voctave</a> {A Cappella, and Breath-taking; We got to see them in concert last week!}</p>
-</blockquote>
-
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3259,7 +3296,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 19 December 2022 00:56 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Monday 19 December 2022 04:40 UTC</address>
             </div>
           </div>
         </div><!-- container -->

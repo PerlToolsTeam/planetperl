@@ -7,9 +7,222 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2022-12-19T00:56:55Z</updated>
+  <updated>2022-12-19T04:40:15Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>TWC 195: Special Speedy Frequency</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/bruce_gray/2022/12/twc-195-special-speedy-frequency.html"/>
+    <id>tag:blogs.perl.org,2022:/users/bruce_gray//532.10973</id>
+    <published>2022-12-19T03:21:50Z</published>
+    <updated>2022-12-19T09:07:04Z</updated>
+    <author>
+        <name>Bruce Gray</name>
+        <uri>https://github.com/Util/</uri>
+    </author>
+    <category term="Perl" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="Raku" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="TheWeeklyChallenge" scheme="http://www.sixapart.com/ns/types#category"/>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/bruce_gray/">
+        <![CDATA[<p>In which count only what we must.</p>
+
+<p>In Raku, Perl, and C {via Perl's Inline::C} .</p>
+]]>
+        <![CDATA[<p>(Still editing!)</p>
+
+<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-195/#TASK1">Special Integers</a></h1>
+
+<h2>Task:</h2>
+
+<p>Count the integers that have no repeating digits, between 1 and <code>$n</code>.</p>
+
+<h2>Observations:</h2>
+
+<ul>
+<li><p>This is the more time-consuming of the two tasks, in both CPU and programmer time.</p></li>
+<li><p>Since the largest number with all-unique digits is 9<em>876</em>543_210, any requested <code>$n</code> higher than that will have the same answer.</p></li>
+<li><p>Scanning every integer in the range will scale linearly, and since the largest input in in the 9 billions, we should look for a faster algorithm. The problem relates to combinations of individual digits, irrespective of their order, so something from combinatorics might be fruitful.</p></li>
+</ul>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/perl/ch-1.pl">Perl</a></h2>
+
+<p>Using simple one-at-a-time iteration:</p>
+
+<pre><code>use v5.36;
+use List::Util qw&lt;uniq&gt;;
+sub task1 ( $n ) {
+    return 0 + grep { length == uniq split '' } 1..$n;
+}
+</code></pre>
+
+<p>I also could have said:</p>
+
+<pre><code>return 0 + grep !/(.).*\1/, 1..$n;
+</code></pre>
+
+<p>, which would have been faster, but less clear.</p>
+
+<p>Also, for large <code>$n</code>, I observe that about 25% of the total time for <code>perl</code> to return control to my terminal happens <em>after</em> <code>perl</code> outputs the answer. I expect this is due to Perl not optimizing the scalar <code>grep</code> into a "count-only" version of itself, and so a huge list really is allocated and built by <code>grep</code>, which must be <code>DESTROY</code>ed at <code>END</code> time. Recoding as something like <code>/(.).*\1/ or $c++ for 1..$n</code> recovered all that cleanup time.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/perl/ch-1_inline.pl">C</a></h2>
+
+<p>This code takes 2m42s to calculate <code>task1(9_876_543_210)==8_877_690</code> using one-at-a-time iteration. That is nearly 3 minutes, at full <code>C</code> speed; no bouncing between Perl and C is done except at start and end of a calculation.</p>
+
+<pre><code>use v5.36;
+use Inline 'C';
+# ... Testing code omitted here
+__END__
+__C__
+int is_special(long x) {
+    int ds[10];
+    memset(ds, 0, 10*sizeof(int));
+    while (x) {
+        if (ds[x % 10]++)
+            return 0;
+        x /= 10;
+    }
+    return 1;
+}
+int count_special(long in) {
+    long x = in &gt; 9876543210 ? 9876543210 : in;
+    int  r = 0;
+    for ( ; x ; x-- ) {
+        if ( is_special(x) )
+            r++;
+    }
+    return r;
+}
+</code></pre>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/raku/ch-1.raku">Raku</a></h2>
+
+<p>I have two versions that use combinatorics to solve the task. The first rips into the problem in two phases</p>
+
+<p>(Ack! Must finish this explanation soon, but cannot right now.)</p>
+
+<pre><code># https://oeis.org/A073531  Number of n-digit positive integers with all digits distinct.
+constant @n-digits-distinct     = 0, 9, |( 9 X* [\*] (9...1) );
+constant @n-digits-distinct-sum = [\+] @n-digits-distinct;
+
+sub task1 ( UInt $n --&gt; UInt ) {
+    constant MAX = 9_876_543_210;
+    return &amp;?ROUTINE(MAX) if $n &gt; MAX;
+
+    # Knuth's "falling powers"; kfp(9,3) == 9*8*7
+    sub kfp ($n, $k) { [*] ( ($n-$k) ^.. $n ) }
+
+    my $nc = $n.chars;
+    my @totals;
+
+    push @totals, @n-digits-distinct-sum[$nc - 1];
+
+    my SetHash $used;
+    for $n.comb».Numeric.kv -&gt; UInt $k, UInt $digit {
+
+        my UInt $combinations_in_rightward_places
+            = kfp(9 - $k, $nc - $k - 1);
+
+        my Range $space_below_digit = (     0 + (1 if $k == 0   ))
+                                   .. ($digit - (1 if $k &lt; $nc-1));
+
+        my Set $using_for_this_digit = $space_below_digit (-) $used;
+
+        push @totals, $using_for_this_digit.elems
+                    * $combinations_in_rightward_places;
+
+        $used{$digit}++;
+    }
+
+    return @totals.sum;
+}
+</code></pre>
+
+<p>This version is simpler to understand, but does not perform as well.
+It does the initial optimization to skip over about .log10 places,
+then generates all the combinations with the correct leading digit,
+filtering on which ones are less than $n.</p>
+
+<pre><code>sub task1_one_big_skip ( UInt $n --&gt; UInt ) {
+    constant MAX = 9_876_543_210;
+    return &amp;?ROUTINE(MAX) if $n &gt; MAX;
+
+    my @totals;
+    my $lead  = $n.substr(0, 1);
+    my $core  = $n.chars - 1;
+
+    push @totals, @n-digits-distinct-sum[$core];
+
+    push @totals, +combinations(9,$core) * ([*] 1..$core)
+                                         * ($lead - 1);
+
+    my $L3 = 0;
+    for (0..9).grep(* != $lead).combinations($core) -&gt; @comb {
+        $L3 += +@comb.permutations.grep: { ($lead ~ .join) &lt;= $n };
+    }
+    push @totals, $L3;
+
+    return @totals.sum;
+}
+</code></pre>
+
+<hr />
+
+<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-195/#TASK2">Most Frequent Even</a></h1>
+
+<h2>Task:</h2>
+
+<p>Given a <code>@list</code> of integers, find the most frequent even numbers in the list,
+with smallest of those most frequent as a tie-breaker.
+return <code>-1</code> if no even numbers are in the list.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/raku/ch-2.raku">Raku</a></h2>
+
+<pre><code>@ns.grep( * %% 2 ).Bag.max({ .value, -.key }).?key // -1 ;
+</code></pre>
+
+<p>Yes, the solution can be expressed in a single, um, <em>expression</em>.</p>
+
+<p>The <code>Bag</code> counts the even numbers, giving a hash of key=original<em>number => value=count</em>of<em>times</em>seen.</p>
+
+<p>The <code>.max</code> method will receive <code>Pair</code> objects from the <code>Bag</code>, and find the maximum of each <code>Pair</code>'s <code>.value</code> (the count), with <em>negative</em> (because we want the <em>lowest</em> in a <code>.max</code>) <code>.key</code> (original number) as tie-breaker.</p>
+
+<p>Now we just need to return the <code>.key</code> of the <code>Pair</code> that <code>.max</code> found, or <code>-1</code> if <code>grep</code> found no even numbers. But wait! <code>.max</code> returns <code>-Inf</code> when given a empty list; we cannot call <code>.key</code> on <code>-Inf</code>.</p>
+
+<p>The <code>.?</code> methodop is the "Safe call operator". It works as <code>.</code>, but if the left-hand side lacks the requested method, it returns <code>Nil</code>, which is just what we need for <code>//</code> to trigger the <code>-1</code> return.</p>
+
+<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-195/bruce-gray/perl/ch-2.pl">Perl</a></h2>
+
+<pre><code>use v5.36;
+use List::Util    qw&lt;min&gt;;
+use List::UtilsBy qw&lt;max_by&gt;;
+
+sub task2 (@ns) {
+    my %bag;
+    $bag{$_}++ for grep { $_ % 2 == 0 } @ns;
+    return -1 if not %bag;
+
+    return min max_by { $bag{$_} } keys %bag;
+}
+</code></pre>
+
+<p>Compared to the Raku code, having <code>%bag</code> as a separate variable does prevent a single-expression solution, but we gain clarity; returning <code>-1</code> happens much sooner in the dataflow, and in a place that is simpler to read.</p>
+
+<p>Also, because we can refer to the count via (less efficient) hash-lookup, and because Perl's <code>max_by</code> <em>does</em> return all the participants in a tie, we can feed in only the keys, so <code>min</code> is operating only on the keys.</p>
+
+<hr />
+
+<blockquote>
+  <p>With great pleasure, we announce Bruce Gray <br />
+as the next Champion of The Weekly Challenge. <br />
+-- <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#HEADLINES">TWC 194</a> Mohammad S Anwar</p>
+
+<p>The thing about me that's so impressive <br />
+is how infrequently I mention all of my successes <br />
+-- <a href="https://www.youtube.com/watch?v=XzbAEHdy8oU">Video</a> "I'm So Humble" {The <em>only</em> song by The Lonely Island that is Safe For Work}.</p>
+</blockquote>
+]]>
+    </content>
+</entry>
   <entry>
     <title>Perl fediverse network</title>
     <link rel="alternate" href="https://blogs.perl.org/users/ryan_voots/2022/12/perl-fediverse-network.html"/>
@@ -55,6 +268,118 @@
 
     </content>
 </entry>
+  <entry>
+    <title>Find known, reported vulnerabilities in the modules you use</title>
+    <link href="http://perladvent.org/2022/2022-12-19.html"/>
+    <id>http://perladvent.org/2022/2022-12-19.html</id>
+    <summary type="html">&lt;div class='pod'&gt;&lt;p&gt;How do you know that you are up-to-date on security advisories for perl and CPAN modules? &lt;a href="https://metacpan.org/module/CPAN::Audit"&gt;CPAN::Audit&lt;/a&gt; and its &lt;b&gt;cpan-audit&lt;/b&gt; program can do that for you:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    % cpan CPAN::Audit
+    % cpan-audit installed&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;You end up with a list of reports of known vulnerabilities for everything in your &lt;code&gt;@INC&lt;/code&gt;. Fix some of those by upgrading modules, using a more modern replacement, or, even better fix the problem and send that upstream.&lt;/p&gt;
+
+&lt;p&gt;These reports come mostly from &lt;a href="https://www.cve.org"&gt;MITRE&lt;/a&gt; and its library of Common Vulnerabilities and Exposures, or just CVE, that it&amp;#39;s developed since 1999. All of this is pre-digested and arranged into &lt;code&gt;CPAN::Audit::DB&lt;/code&gt;, which comes with the &lt;a href="https://metacpan.org/module/CPAN::Audit"&gt;CPAN::Audit&lt;/a&gt; distribution.&lt;/p&gt;
+
+&lt;h3 id="Check-a-module"&gt;Check a module&lt;/h3&gt;
+
+&lt;p&gt;If you are interested in a particular module, you can check that too. For example, &lt;a href="https://metacpan.org/module/DBI"&gt;DBI&lt;/a&gt; has had several reports over its history:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;        % cpan-audit module DBI
+
+          * CPANSA-DBI-2014-01
+                DBD::File drivers open files from folders other than
+                specifically passed using the f_dir attribute.
+
+                Affected range: &amp;lt;1.632
+                Fixed range: &amp;gt;=1.632
+
+                References:
+                https://metacpan.org/changes/distribution/DBI
+                https://rt.cpan.org/Public/Bug/Display.html?id=99508
+
+          * CPANSA-DBI-2020-01
+                A buffer overflow was found in perl-DBI &amp;lt; 1.643 in DBI.xs. A
+                local attacker who is able to supply a string longer than 300
+                characters could cause an out-of-bounds write, affecting the
+                availability of the service or integrity of data.
+
+                Affected range: &amp;lt;1.643
+                Fixed range: &amp;gt;=1.643
+
+                CVEs: CVE-2020-14393
+
+                References:
+                https://metacpan.org/changes/distribution/DBI
+                https://bugzilla.redhat.com/show_bug.cgi?id=1877409
+
+        ... many more advisories ...
+
+        Total advisories found: 9&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Those are the advisories for DBI for the entire history of the Universe, and all of those have been patched already and you don&amp;#39;t care about them.&lt;/p&gt;
+
+&lt;p&gt;Specify a version to see advisories the apply to just that version. The current version of &lt;a href="https://metacpan.org/module/DBI"&gt;DBI&lt;/a&gt;, 1.643 as I write this, so try that. There are no open (known) vulnerabilities:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;        % cpan-audit module DBI 1.643
+        No advisories found&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;That second argument can also be a range, such as &lt;code&gt;&amp;gt;1.600&lt;/code&gt;. Ensure that you quote the range since &lt;code&gt;&amp;gt;&lt;/code&gt; and &lt;code&gt;&amp;lt;&lt;/code&gt; are shell metacharacters:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;        % cpan-audit module DBI &amp;#39;&amp;gt;1.600&amp;#39;
+        ... eight advisories ...
+        Total advisories found: 8&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Command-line use is nice, but you&amp;#39;re more likely to use this in some automated program to continuously check your installation. The exit code tells you what &lt;b&gt;cpan-audit&lt;/b&gt; found. If you get 0, there were no advisories found. If you get a number larger than 64, subtract 64 to get the number of advisories:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;        % cpan-audit module DBI &amp;#39;&amp;gt;1.600&amp;#39;
+        ... eight advisories ...
+        Total advisories found: 8
+        % echo $?
+        72&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id="How-it-works"&gt;How it works&lt;/h3&gt;
+
+&lt;p&gt;&amp;#x412;&amp;#x44F;&amp;#x447;&amp;#x435;&amp;#x441;&amp;#x43B;&amp;#x430;&amp;#x432; &amp;#x422;&amp;#x438;&amp;#x445;&amp;#x430;&amp;#x43D;&amp;#x43E;&amp;#x432;&amp;#x441;&amp;#x43A;&amp;#x438;&amp;#x439; (vti on CPAN) created &lt;a href="https://metacpan.org/module/CPAN::Audit"&gt;CPAN::Audit&lt;/a&gt; to collate information from MITRE (the repository of CVEs), namespace mappings from PAUSE, and version data from MetaCPAN. He put that all together so he could present to you the vulnerabilities in a useful way.&lt;/p&gt;
+
+&lt;p&gt;The advisory data are actually kept in a separate repository, &lt;a href="https://github.com/briandfoy/cpan-security-advisory"&gt;cpan-security-advisory&lt;/a&gt;. Each advisory references some vulnerability, notes the affected version, and tracks some other information. These are kept in YAML files for each distribution.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/module/CPAN::Audit"&gt;CPAN::Audit&lt;/a&gt; digests those YAML files to create &lt;code&gt;CPAN::Audit::DB&lt;/code&gt; so that each release contains all of the vulnerability data. Once you install &lt;a href="https://metacpan.org/module/CPAN::Audit"&gt;CPAN::Audit&lt;/a&gt;, perhaps on an isolated machine with no network access, you have everything you need. There&amp;#39;s no extra networking, downloading, and so on.&lt;/p&gt;
+
+&lt;p&gt;When you run &lt;b&gt;cpan-audit&lt;/b&gt;, it selects from that database just the information appropriate for you.&lt;/p&gt;
+
+&lt;h3 id="Contribute"&gt;Contribute!&lt;/h3&gt;
+
+&lt;p&gt;A small group of people are revitalizing &lt;a href="https://metacpan.org/module/CPAN::Audit"&gt;CPAN::Audit&lt;/a&gt;, and there&amp;#39;s always room for more. There&amp;#39;s work appropriate for all skill levels.&lt;/p&gt;
+
+&lt;p&gt;This project only useful if it has up-to-date and correct data. A large part of the effort involves keeping up-to-date with vulnerabilities, and a lot of that is boring, manual work. Bite off some small chunks to earn some of those [GitHub badges](https://github.com/Schweinepriester/github-profile- achievements). The &lt;a href="https://github.com/briandfoy/cpan-security-advisory/blob/master/CONTRIBUTING.md"&gt;CONTRIBUTING&lt;/a&gt; docs are a good place to start.&lt;/p&gt;
+
+&lt;p&gt;We&amp;#39;re also looking to revamp how we collate the data to make it easier to work with. We&amp;#39;ve started tracking vulnerabilities in external libraries, such as bootstrap, that some distributions include. That&amp;#39;s not quite ready, but it&amp;#39;s getting close.&lt;/p&gt;
+
+&lt;p&gt;Finally, you can just use &lt;b&gt;cpan-audit&lt;/b&gt; and let us know how it works for you, what else you need to accomplish your task, and how else we can help you track this information. The &lt;a href="https://github.com/briandfoy/cpan-audit/discussions"&gt;Discussions section of CPAN::Audit&amp;#39;s repo&lt;/a&gt; is a good way to give non-issue feedback.&lt;/p&gt;
+
+&lt;h3 id="Links"&gt;Links&lt;/h3&gt;
+
+&lt;ul&gt;
+
+&lt;li&gt;&lt;p&gt;The &lt;a href="https://github.com/briandfoy/cpan-audit"&gt;CPAN::Audit&lt;/a&gt; repository&lt;/p&gt;
+
+&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;The &lt;a href="https://github.com/briandfoy/cpan-security-advisory"&gt;CPAN Security Advisory repository&lt;/a&gt;&lt;/p&gt;
+
+&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;An RSS feed for &lt;a href="https://www.theperlreview.com/perl-cve-atom.xml"&gt;perl search results from MITRE&lt;/a&gt;&lt;/p&gt;
+
+&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;/div&gt;</summary>
+    <updated>2022-12-19T00:00:00Z</updated>
+    <category term="Perl"/>
+    <author>
+      <name>brian d foy</name>
+    </author>
+  </entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-8864789888750170014</id>
     <published>2022-12-18T14:40:00.001+01:00</published>
@@ -1860,43 +2185,6 @@ for my $test ([&lt;1 1 2 6 2&gt;], [&lt;1 3 5 7&gt;], [&lt;6 4 4 6 1&gt;],
     </author>
   </entry>
   <entry>
-    <title>Let the Elves Import Your Packages</title>
-    <link href="http://perladvent.org/2022/2022-12-14.html"/>
-    <id>http://perladvent.org/2022/2022-12-14.html</id>
-    <summary type="html">&lt;div class='pod'&gt;&lt;p&gt;Same as every year, the last few days before Christmas are very busy for the Elves. Those little tinkers are best known for hand-crafting all the presents kids dreamed of, but they also run small but repetitive errands for Santa.&lt;/p&gt;
-
-&lt;p&gt;Did you know he doesn&amp;#39;t need to manually import every single Perl package he has written? Yep, elves do that for him. It&amp;#39;s effortless - he just whispers the namespace and his little helpers take care of the rest.&lt;/p&gt;
-
-&lt;p&gt;At around 2003, Santa managed to spy on the Elves to figure out how they do it. In his infinite generosity, he shared their method with some Perl module authors who later refined it. It was released to the world as &lt;i&gt;EaaPM&lt;/i&gt; (Elves as a Perl Module) named &lt;a href="https://metacpan.org/module/all"&gt;all&lt;/a&gt;. Fourteen long years have passed since the method was perfected and Santa can still use this module without any issues, thanks to Perl&amp;#39;s excellent backwards compatibility.&lt;/p&gt;
-
-&lt;p&gt;So, what was the method you might ask? Simple. You just had to write &lt;code&gt;use all &amp;#39;NAMESPACE&amp;#39;;&lt;/code&gt; and busy elves would go through your &lt;code&gt;@INC&lt;/code&gt; recursively and import everything they found under that namespace. They had one significant limitation though - no matter how much they practiced, they couldn&amp;#39;t get the hang of importing symbols into the caller. You could tell it just wasn&amp;#39;t their thing.&lt;/p&gt;
-
-&lt;p&gt;How can you benefit from the module? Let&amp;#39;s say you have packages, which are all classes:&lt;/p&gt;
-
-&lt;table class='code-listing'&gt;&lt;tr&gt;&lt;td class='line-numbers'&gt;&lt;br /&gt;&lt;code&gt;1:&amp;nbsp;&lt;br /&gt;2:&amp;nbsp;&lt;br /&gt;3:&amp;nbsp;&lt;br /&gt;4:&amp;nbsp;&lt;br /&gt;5:&amp;nbsp;&lt;br /&gt;6:&amp;nbsp;&lt;/code&gt;&lt;br /&gt;&amp;nbsp;&lt;/td&gt;&lt;td class='code'&gt;&lt;br /&gt;&lt;code&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="word"&gt;Present::Toy&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;br /&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="word"&gt;Present::ElectronicDevice&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;br /&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="word"&gt;Present::BoardGame&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;br /&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="word"&gt;Present::SportsEquipment&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;br /&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="word"&gt;Present::Candy&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;br /&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="word"&gt;Present::Book&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;/code&gt;&lt;br /&gt;&amp;nbsp;&lt;/td&gt;&lt;/table&gt;
-
-&lt;p&gt;You can just replace all of those lines with one of the following, which will all do the same:&lt;/p&gt;
-
-&lt;table class='code-listing'&gt;&lt;tr&gt;&lt;td class='line-numbers'&gt;&lt;br /&gt;&lt;code&gt;1:&amp;nbsp;&lt;br /&gt;2:&amp;nbsp;&lt;br /&gt;3:&amp;nbsp;&lt;/code&gt;&lt;br /&gt;&amp;nbsp;&lt;/td&gt;&lt;td class='code'&gt;&lt;br /&gt;&lt;code&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="pragma"&gt;all&lt;/span&gt; &lt;span class="single"&gt;'Present'&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;br /&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="pragma"&gt;all&lt;/span&gt; &lt;span class="single"&gt;'Present::*'&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;br /&gt;&lt;span class="keyword"&gt;use&lt;/span&gt; &lt;span class="pragma"&gt;all&lt;/span&gt; &lt;span class="word"&gt;of&lt;/span&gt; &lt;span class="operator"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="single"&gt;'Present'&lt;/span&gt;&lt;span class="structure"&gt;;&lt;/span&gt;&lt;/code&gt;&lt;br /&gt;&amp;nbsp;&lt;/td&gt;&lt;/table&gt;
-
-&lt;p&gt;It&amp;#39;s Straightforward, Stable and Santa-approved - &lt;code&gt;&amp;#39;S&amp;#39; x 3&lt;/code&gt;!&lt;/p&gt;
-
-&lt;p&gt;Before I go, let me tell you a story of little Timmy.&lt;/p&gt;
-
-&lt;p&gt;Timmy enjoyed programming, especially in Perl. He had his own personal project, on which he spent a lot of his free time. The project grew and grew, and Timmy had implemented self-made tools that would resemble the Elvish method. Little did he know, he had circular imports in his code.&lt;/p&gt;
-
-&lt;p&gt;One day Timmy stumbled upon &lt;a href="https://metacpan.org/module/all"&gt;all&lt;/a&gt; module while enjoying metacpan. &lt;i&gt;&amp;quot;It&amp;#39;s so old and unmaintained, but I&amp;#39;m going to try it anyway&amp;quot;&lt;/i&gt; he thought while finding and replacing all his in-house code. When his tests all failed, he searched for two hours trying to figure out what was wrong with the module.&lt;/p&gt;
-
-&lt;p&gt;But the module wasn&amp;#39;t broken. Funnily enough, it was his code that was to blame and the module just made it visible. Timmy humbly fixed his architecture and had more confidence in his code ever since. You see, the way Elves work may seem sloppy at first glance, but they actually do their work very well. The moral of the story is: don&amp;#39;t fix something that isn&amp;#39;t broken, especially if actual magic is involved.&lt;/p&gt;
-
-&lt;/div&gt;</summary>
-    <updated>2022-12-14T00:00:00Z</updated>
-    <category term="Perl"/>
-    <author>
-      <name>Bartosz Jarzyna</name>
-    </author>
-  </entry>
-  <entry>
     <title>#594 - Advent Calendar</title>
     <link rel="alternate" href="https://perlweekly.com/archive/594.html" type="text/html"/>
     <content type="xhtml">
@@ -1914,182 +2202,6 @@ for my $test ([&lt;1 1 2 6 2&gt;], [&lt;1 3 5 7&gt;], [&lt;6 4 4 6 1&gt;],
     <updated>2022-12-12T10:00:00Z</updated>
     <category term="editorial"/>
   </entry>
-  <entry>
-    <title>TWC 194: Bag Time!</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/bruce_gray/2022/12/twc-194-bag-time.html"/>
-    <id>tag:blogs.perl.org,2022:/users/bruce_gray//532.10969</id>
-    <published>2022-12-12T02:18:17Z</published>
-    <updated>2022-12-12T03:52:49Z</updated>
-    <author>
-        <name>Bruce Gray</name>
-        <uri>https://github.com/Util/</uri>
-    </author>
-    <category term="Perl" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="Raku" scheme="http://www.sixapart.com/ns/types#category"/>
-    <category term="TheWeeklyChallenge" scheme="http://www.sixapart.com/ns/types#category"/>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/bruce_gray/">
-        <![CDATA[<p>In which analysis speeds, and mis-leads.</p>
-]]>
-        <![CDATA[<p>(Still editing!)</p>
-
-<blockquote>
-  <p>Old Mr. Kringle is soon gonna jingle <br />
-The bells that'll tingle all your troubles away <br />
-Everybody's waitin' for the man with the bag <br />
-'cause Christmas is coming again
--- <a href="https://www.youtube.com/watch?v=TF01VuvBfq8">The Brian Setzer Orchestra</a></p>
-</blockquote>
-
-<h1>TWC Task #1 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#TASK1">Digital Clock</a></h1>
-
-<h2>Task</h2>
-
-<p>Given time in the format <code>hh:mm</code> with one missing digit, find the highest digit <code>0-9</code> that makes it a valid time.</p>
-
-<h2>Observations</h2>
-
-<p>Example #4 says <code>'2?:00'</code> should return <code>3</code>, which tells us that we should work with 24-hour time, and that <code>24:00</code> is not allowed as a alternate expression of <code>00:00 the-next-day</code>.</p>
-
-<ul>
-<li>Question mark in 4th digit place, the answer is 9.</li>
-<li>Question mark in 3th digit place, the answer is 5.</li>
-<li>Question mark in 2th digit place, the answer is 9 or 3, depending on whether the 1st digit is 0|1 or 2.</li>
-<li>Question mark in 1st digit place, the answer is 2 or 1, depending on whether the 2nd digit is 0..3 or 4..9.</li>
-</ul>
-
-<p>There are only 24<em>60=1440 possible times, but only (10</em>60)+( 3<em>60)+(24</em>10)+(24* 6) = 1164 possible (valid) inputs.</p>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/raku/ch-1.raku">Raku</a></h2>
-
-<pre><code>sub is_time_valid ( Str $s --&gt; Bool ) {
-    constant $valid_times = ( ^24 X ^60 ).map( *.fmt('%02d', ':') ).Set;
-    return $s ∈ $valid_times;
-}
-sub task1 ( Str $s --&gt; UInt ) {
-    return (9…0).first: { $s.subst( '?', $_ ).&amp;is_time_valid };
-}
-</code></pre>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/perl/ch-1.pl">Perl</a></h2>
-
-<hr />
-
-<h1>TWC Task #2 - <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-194/#TASK2">Frequency Equalizer</a></h1>
-
-<h2>Task</h2>
-
-<p>Given a string, determine whether removing only one character can make the frequency of the remaining characters the same.</p>
-
-<h2>Observations</h2>
-
-<p>The test cases led many participants to shortcut the analysis and produce concise solutions that would fail one of these cases:</p>
-
-<ul>
-<li>'aaaaab', 1</li>
-</ul>
-
-<p>The count of <code>a</code> (<code>5</code>) is not within striking distance of the count of <code>b</code> (1), but because <code>b</code> is the only solo character, removing it would succeed.</p>
-
-<ul>
-<li>'aaabbbcc', 0</li>
-</ul>
-
-<p><code>3</code> can be reduced to <code>2</code> be removing <code>1</code>, but there are <em>two</em> letters that each have <code>3</code>, so the frequency cannot be made equal with just one character removed.</p>
-
-<p>Alternately, one of the groups has only one letter in it (<code>c</code>), and <code>abs(3-2) == 1</code>, but in the wrong direction; you would have to <em>add</em> a <code>c</code> to equalize.</p>
-
-<ul>
-<li>'abcd', 1</li>
-</ul>
-
-<p>Removing <em>any</em> of the letters leaves us with equal frequency.</p>
-
-<h3>Generating test cases</h3>
-
-<p>Of interest to me were methods to generate minimal sets of test cases:</p>
-
-<pre><code>raku -e 'my @a = "a".."e"; for ( [X] (@a xx 5) ) { say .join if [le] .list and (.join ~~ /^a+[b+[c+[d+[e+]?]?]?]?$/)}' | m
-aaaaa aaaab aaabb aaabc aabbb aabbc aabcc aabcd abbbb abbbc abbcc abbcd abccc abccd abcdd abcde
-</code></pre>
-
-<p>Longer code, but more efficient to run:</p>
-
-<pre><code>raku -e 'my $w = 5; my $f = "\%0{$w}b"; for ^(2 ** $w) { my @bin = .fmt($f).comb;
-my $c = "a";
-my $out = "a";
-for @bin {
-    $c++ if +$_;
-    $out ~= $c;
-}
-say $out;
-}'
-</code></pre>
-
-<p>The above is not fully minimal; it misses the nuance that <code>aabbc</code> and <code>aabcc</code> both are "two of two, and one of one". We need partitioning!</p>
-
-<pre><code>perl -MList::Util=zip -MInteger::Partition -wE 'my $i = Integer::Partition-&gt;new(shift); while (my $p = $i-&gt;next){say map { $_-&gt;[0] x $_-&gt;[1] } zip [("a".."z")[keys @$p]], $p}' 5
-aaaaa
-aaaab
-aaabb
-aaabc
-aabbc
-aabcd
-abcde
-</code></pre>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/raku/ch-2.raku">Raku</a></h2>
-
-<pre><code># Best compromise between performance, complexity, reducing chance to "get it wrong",
-# and likelihood of a maintenance programmer to reverse-engineer the original requirements.
-sub task2 ( Str $s --&gt; Bool ) {
-    my BagHash $b = $s.comb.BagHash;
-    my @k = $b.keys;
-
-    for @k -&gt; $k {
-        $b.remove: $k;
-        return True if $b.values.unique.elems == 0|1;
-        $b.add:    $k;
-    }
-    return False;
-}
-</code></pre>
-
-<h2><a href="https://github.com/manwar/perlweeklychallenge-club/blob/master/challenge-194/bruce-gray/perl/ch-2.pl">Perl</a></h2>
-
-<p>Translation of my Raku solution, with <code>%h</code> as a improvised <code>Bag</code>.
-The code <code>grep { $_ != 0 }</code> is needed to adapt to the hash entry not disappearing when the value goes to <code>0</code>.</p>
-
-<pre><code>use v5.36;
-use List::Util qw&lt;uniq&gt;;
-sub task2 ($s) {
-    my %h;
-    $h{$_}++ for split '', $s;
-    my @k = keys %h;
-
-    for my $k (@k) {
-        $h{$k}--;
-
-        my $c = 0 + grep { $_ != 0 } uniq values %h;
-
-        return 1 if $c == 0
-                 or $c == 1;
-
-        $h{$k}++;
-    }
-    return 0;
-}
-</code></pre>
-
-<blockquote>
-  <p>He'll make this December the one you'll remember <br />
-The best and the merriest you ever did have <br />
-Everybody's waitin', they're all congregating <br />
-Waitin' for the man with the bag
--- <a href="https://voctave.net/videos/2/">#Voctave</a> {A Cappella, and Breath-taking; We got to see them in concert last week!}</p>
-</blockquote>
-]]>
-    </content>
-</entry>
   <entry xmlns:gd="http://schemas.google.com/g/2005" xmlns:thr="http://purl.org/syndication/thread/1.0">
     <id>tag:blogger.com,1999:blog-5910101498857524639.post-5239354894593758389</id>
     <published>2022-12-10T21:38:00.000+01:00</published>
@@ -2959,8 +3071,8 @@ which is then returned.&lt;/p&gt;
     <id>http://perlancar.wordpress.com/?p=2002</id>
     <published>2022-12-01T00:44:15Z</published>
     <updated>2022-12-01T00:44:15Z</updated>
-    <category term="perl"/>
     <category term="cpan"/>
+    <category term="perl"/>
   </entry>
   <entry>
     <title>#592 - Perl Blogging?</title>
