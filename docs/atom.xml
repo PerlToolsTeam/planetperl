@@ -7,9 +7,270 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2022-12-22T16:42:55Z</updated>
+  <updated>2022-12-22T20:39:38Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 196: Pattern 132 and Range List</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/laurent_r/2022/12/perl-weekly-challenge-196-pattern-132-and-range-list.html"/>
+    <id>tag:blogs.perl.org,2022:/users/laurent_r//3226.10974</id>
+    <published>2022-12-22T22:36:20Z</published>
+    <updated>2022-12-22T22:39:07Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 196 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-196/">Perl Weekly Challenge</a> organized by <a href="https://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on December 25, 2022 at 23:59). This blog post offers some solutions to this challenge. Please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Pattern 132</h2>
+
+<p><em>You are given a list of integers, <code>@list</code>.</em></p>
+
+<p><em>Write a script to find out subsequence that respect Pattern 132. Return empty array if none found.</em></p>
+
+<blockquote>
+  <p><em>Pattern 132 in a sequence <code>(a[i], a[j], a[k])</code> such that <code>i &lt; j &lt; k</code> and <code>a[i] &lt; a[k] &lt; a[j]</code>.</em></p>
+</blockquote>
+
+<p><em>Example 1</em></p>
+
+<pre><code>Input:  @list = (3, 1, 4, 2)
+Output: (1, 4, 2) respect the Pattern 132.
+</code></pre>
+
+<p><em>Example 2</em></p>
+
+<pre><code>Input: @list = (1, 2, 3, 4)
+Output: () since no susbsequence can be found.
+</code></pre>
+
+<p><em>Example 3</em></p>
+
+<pre><code>Input: @list = (1, 3, 2, 4, 6, 5)
+Output: (1, 3, 2) if more than one subsequence found then return the first.
+</code></pre>
+
+<p><em>Example 4</em></p>
+
+<pre><code>Input: @list = (1, 3, 4, 2)
+Output: (1, 3, 2)
+</code></pre>
+
+<h3>Pattern 132 in Raku</h3>
+
+<p>The <code>find_132</code> subroutine is a recursive subroutine which does different things, depending on the number of items in the partial result array passed to it.</p>
+
+<pre><code>sub find_132 (@input, @part-result) {
+    # say @input, " - ", @part-result;
+    given @part-result.elems {
+        when 3 { return @part-result }
+        when 2 {
+            for 0..@input.end -&gt; $i {
+                my $ret = find_132 @input[$i^..@input.end],
+                    (@part-result, @input[$i]).flat
+                    if @input[$i] &gt; @part-result[0]
+                    &amp;&amp; @input[$i] &lt; @part-result[1];
+                return $ret if $ret;
+            }
+        }
+        when 1 {
+            for 0..@input.end -&gt; $i {
+                my $ret =find_132 @input[$i^..@input.end],
+                    (@part-result, @input[$i]).flat
+                    if @input[$i] &gt; @part-result[0];
+                return $ret if $ret;
+            }
+        }
+        when 0 {
+            for 0..@input.end -&gt; $i {
+                my $ret = find_132(@input[$i^..@input.end],
+                    (@input[$i],));
+                return $ret if $ret;
+            }
+        }
+    }
+}
+for &lt;3 1 4 2&gt;, &lt;1 2 3 4&gt;, &lt;1 3 2 4 6 5&gt;, &lt;1 3 4 2&gt; -&gt; @test {
+    say @test, "\t=&gt; ", (find_132 @test, ()) // "()";
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku  ./pattern-132.raku
+(3 1 4 2)       =&gt; (1 4 2)
+(1 2 3 4)       =&gt; ()
+(1 3 2 4 6 5)   =&gt; (1 3 2)
+(1 3 4 2)       =&gt; (1 3 2)
+</code></pre>
+
+<p>I&#8217;m afraid I got carried away by my love for recursive solutions. Using a recursive subroutine might in our case be overkill, or over-engineering, especially in view of the fact that we always need three steps, so that these steps can easily be hard-coded in an iterative loop. In the real life, I would probably rewrite it with an iterative approach. In the case of this challenge, I&#8217;ll simply try that option in the Perl implementation.</p>
+
+<h3>Pattern 132 in Perl</h3>
+
+<p>Using a recursive subroutine is useful when there is an unpredictable, or rather variable, number of nested loops, depending on the input data. Here, we know that we essentially need three loops, one for each integer in the output. So, rather than porting to Perl the recursive approach used in Raku, we&#8217;ll try an iterative approach with three nested hard-coded loops, which should presumably be simpler.</p>
+
+<pre><code>use strict;
+use warnings;
+use feature qw/say/;
+
+sub find_132 {
+    my @in = @_;
+    for my $i (0..$#in) {
+        my @out = ($in[$i]);
+        for my $j ($i+1..$#in) {
+            next unless $in[$j] &gt; $out[0];
+            my @out2 = (@out, $in[$j]);
+            for my $k ($j+1..$#in) {
+                if ($in[$k] &gt; $out2[0] 
+                    and $in[$k] &lt; $out2[1]) {
+                    return @out2, $in[$k];
+                }
+            }
+        }
+    }
+    return "()"; # no solution if we've got here
+}
+for my $test ( [&lt;3 1 4 2&gt;], [&lt;1 2 3 4&gt;], 
+               [&lt;1 3 2 4 6 5&gt;], [&lt;1 3 4 2&gt;] ) {
+    say "@$test \t=&gt; ", join " ", find_132 @$test;
+}
+</code></pre>
+
+<p>The <code>find_123</code> subroutine is only is only 17 code lines (versus 30 lines for the recursive version used in the Raku implementation), so this is definitely significantly shorter, and also, I believe, simpler.</p>
+
+<p>This program displays the following output: </p>
+
+<pre><code>$ perl  ./pattern-132.pl
+3 1 4 2         =&gt; 1 4 2
+1 2 3 4         =&gt; ()
+1 3 2 4 6 5     =&gt; 1 3 2
+1 3 4 2         =&gt; 1 3 2
+</code></pre>
+
+<h2>Task 2: Range List</h2>
+
+<p><em>You are given a sorted unique integer array, <code>@array</code>.</em></p>
+
+<p><em>Write a script to find all possible Number Range i.e <code>[x, y]</code> represent range all integers from x and y (both inclusive).</em></p>
+
+<blockquote>
+  <p><em>Each subsequence of two or more contiguous integers</em></p>
+</blockquote>
+
+<p><em>Example 1</em></p>
+
+<pre><code>Input: @array = (1,3,4,5,7)
+Output: [3,5]
+</code></pre>
+
+<p><em>Example 2</em></p>
+
+<pre><code>Input: @array = (1,2,3,6,7,9)
+Output: [1,3], [6,7]
+</code></pre>
+
+<p><em>Example 3</em></p>
+
+<pre><code>Input: @array = (0,1,2,4,5,6,8,9)
+Output: [0,2], [4,6], [8,9]
+</code></pre>
+
+<h3>Range List in Raku</h3>
+
+<p>We loop over the input list and keep track of successive ranges.</p>
+
+<pre><code>sub find-ranges (@in) {
+    my ($start, $curr);
+    my @result;
+    $start = $curr = @in[0];
+    for 1..@in.end -&gt; $i {
+        next if @in[$i] == $start;
+        if @in[$i] == $curr + 1 {
+            $curr = @in[$i];
+        } else {
+            push @result, "[$start $curr]" 
+                if $curr - $start &gt; 0;
+            $start = @in[$i];
+            $curr = $start;
+        }
+    }
+    push @result, "[$start $curr]" if $curr &gt; $start;
+    return @result.elems &gt; 0 ?? @result !! "[]";
+}
+for &lt;1 3 4 5 7&gt;, &lt;1 2 3 6 7 9&gt;, &lt;0 1 2 4 5 6 8 9&gt;,
+    &lt;1 3 4 6 7 11 12 13&gt;, &lt;1 3 4 5 7 9&gt;, &lt;1 3 5&gt; -&gt; @test {
+    printf "%-20s =&gt; %s\n", ~@test, ~find-ranges @test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./find-ranges.raku
+1 3 4 5 7            =&gt; [3 5]
+1 2 3 6 7 9          =&gt; [1 3] [6 7]
+0 1 2 4 5 6 8 9      =&gt; [0 2] [4 6] [8 9]
+1 3 4 6 7 11 12 13   =&gt; [3 4] [6 7] [11 13]
+1 3 4 5 7 9          =&gt; [3 5]
+1 3 5                =&gt; []
+</code></pre>
+
+<h3>Range List in Perl</h3>
+
+<p>This is a port to Perl of the Raku program just above:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature qw/say/;
+
+sub find_ranges {
+    my @in = @_;
+    my ($start, $curr);
+    my @result;
+    $start = $curr = $in[0];
+    for my $i (1..$#in) {
+        next if $in[$i] == $start;
+        if ($in[$i] == $curr + 1) {
+            $curr = $in[$i];
+        } else {
+            push @result, "[$start $curr] " 
+                if $curr &gt; $start;
+            $start = $in[$i];
+            $curr = $start;
+        }
+    }
+    push @result, "[$start $curr]" if $curr &gt; $start;
+    return @result &gt; 0 ? @result : "[]";
+}
+for my $test ([&lt;1 3 4 5 7&gt;], [&lt;1 2 3 6 7 9&gt;], 
+    [&lt;0 1 2 4 5 6 8 9&gt;], [&lt;1 3 4 6 7 11 12 13&gt;], 
+    [&lt;1 3 4 5 7 9&gt;], [&lt;1 3 5&gt;]) {
+    say sprintf("%-25s", "@$test =&gt; "), find_ranges @$test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl ./find-ranges.pl
+1 3 4 5 7 =&gt;             [3 5]
+1 2 3 6 7 9 =&gt;           [1 3] [6 7]
+0 1 2 4 5 6 8 9 =&gt;       [0 2] [4 6] [8 9]
+1 3 4 6 7 11 12 13 =&gt;    [3 4] [6 7] [11 13]
+1 3 4 5 7 9 =&gt;           [3 5]
+1 3 5 =&gt;                 []
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on January 1, 2023. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
     <title>I want to clean up the negative messages about Perl in past 3 decades</title>
     <link rel="alternate" href="https://dev.to/yukikimoto/i-want-to-cleanup-the-negative-messages-about-perl-in-past-3-dicades-72p" type="text/html"/>
@@ -1433,27 +1694,6 @@ Some interesting frameworks <a href="https://metacpan.org/pod/Games::Quest3D">Qu
     </author>
   </entry>
   <entry>
-    <title>This Week in PSC (091)</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/psc/2022/12/this-week-in-psc-091.html"/>
-    <id>tag:blogs.perl.org,2022:/users/psc//4112.10971</id>
-    <published>2022-12-16T22:00:45Z</published>
-    <updated>2022-12-16T22:02:42Z</updated>
-    <author>
-        <name>Perl Steering Council</name>
-        
-    </author>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/psc/">
-        <![CDATA[<ul>
-<li>Continued discussing the lack of reviews for PRs. Maybe we need a bit of a defined process for how to review small/medium/big PRs
-<li>Paul suggested he might find time to begin implementing <tt>qt{}</tt> strings soon
-<li>HTTPS support in core still needs a project manager to help coördinate the efforts
-</ul>
-
-<p>We won't be meeting next week due to the Christmas holidays. Next meeting may be 30th or may be in 2023.</p>]]>
-        
-    </content>
-</entry>
-  <entry>
   <title>FOSDEM Call for Volunteers! </title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/fosdemstand"/>
   <id>tag:news.perlfoundation.org,2022-12-16:/post/fosdemstand</id>
@@ -2679,8 +2919,8 @@ which is then returned.&lt;/p&gt;
     <id>http://perlancar.wordpress.com/?p=2002</id>
     <published>2022-12-01T00:44:15Z</published>
     <updated>2022-12-01T00:44:15Z</updated>
-    <category term="perl"/>
     <category term="cpan"/>
+    <category term="perl"/>
   </entry>
   <entry>
     <title>#592 - Perl Blogging?</title>
