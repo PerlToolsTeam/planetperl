@@ -7,9 +7,163 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2022-12-25T04:40:10Z</updated>
+  <updated>2022-12-25T08:39:42Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Day 25: CI for Data::Alias in Perl - including threaded perl</title>
+    <link rel="alternate" href="https://dev.to/szabgab/day-25-ci-for-dataalias-in-perl-including-threaded-perl-5feh" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml"><p><a href="https://cpan-digger.perlmaven.com/">CPAN Digger</a> has a never ending 3rd party Perl libraries, many without any CI configured. This time I picked the one called <a href="https://metacpan.org/dist/Data-Alias">Data::Alias</a>.</p>
+
+<p>At first I sent a "standard" configuration of GitHub Actions, but then I noticed 2 things. Some tests were dependent on some extra modules and some tests needed a threaded Perl. Apparently the one that I used in my "standard" configuration isn't. So In addition to the execution of the CI on Ubuntu, macOS and Windows natively, I've also added another job in which we use a perl-based Docker image and run the tests there. In this case one of the tags I used from <a href="https://hub.docker.com/_/perl">Perl on Docker Hub</a> was the <code>5.36-threaded</code>.</p>
+
+<p>I was happy to see that the tests passed on every platform and on every version of Perl I tried.</p>
+
+<p>I sent the <a href="https://github.com/mvduin/perl-Data-Alias/pull/3">pull-request</a></p>
+
+<h2>
+  
+  
+  GitHub Actions
+</h2>
+
+
+
+<div class="highlight js-code-highlight">
+<pre class="highlight yaml"><code><span class="na">name</span><span class="pi">:</span> <span class="s">CI</span>
+
+<span class="na">on</span><span class="pi">:</span>
+  <span class="na">push</span><span class="pi">:</span>
+  <span class="na">pull_request</span><span class="pi">:</span>
+  <span class="na">workflow_dispatch</span><span class="pi">:</span>
+  <span class="na">schedule</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">cron</span><span class="pi">:</span> <span class="s1">'</span><span class="s">42</span><span class="nv"> </span><span class="s">5</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*'</span>
+
+<span class="na">jobs</span><span class="pi">:</span>
+  <span class="na">test</span><span class="pi">:</span>
+    <span class="na">strategy</span><span class="pi">:</span>
+      <span class="na">fail-fast</span><span class="pi">:</span> <span class="no">false</span>
+      <span class="na">matrix</span><span class="pi">:</span>
+        <span class="na">runner</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">ubuntu-latest</span><span class="pi">,</span> <span class="nv">macos-latest</span><span class="pi">,</span> <span class="nv">windows-latest</span><span class="pi">]</span>
+        <span class="na">perl</span><span class="pi">:</span> <span class="pi">[</span> <span class="s1">'</span><span class="s">5.30'</span><span class="pi">,</span> <span class="s1">'</span><span class="s">5.36'</span> <span class="pi">]</span>
+        <span class="na">exclude</span><span class="pi">:</span>
+          <span class="pi">-</span> <span class="na">runner</span><span class="pi">:</span> <span class="s">windows-latest</span>
+            <span class="na">perl</span><span class="pi">:</span> <span class="s1">'</span><span class="s">5.36'</span>
+
+    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">${{matrix.runner}}</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">OS ${{matrix.runner}} Perl ${{matrix.perl}}</span>
+
+    <span class="na">steps</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v3</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Set up perl</span>
+      <span class="na">uses</span><span class="pi">:</span> <span class="s">shogo82148/actions-setup-perl@v1</span>
+      <span class="na">with</span><span class="pi">:</span>
+          <span class="na">perl-version</span><span class="pi">:</span> <span class="s">${{ matrix.perl }}</span>
+          <span class="na">distribution</span><span class="pi">:</span> <span class="s">${{ ( startsWith( matrix.runner, 'windows-' ) &amp;&amp; 'strawberry' ) || 'default' }}</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Perl Version</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">perl -v</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install Modules</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">cpanm -v</span>
+        <span class="s">cpanm --installdeps --notest .</span>
+        <span class="s">cpanm --notest Devel::CallParser Test::Pod::Coverage Test::Pod</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Errors on Windows</span>
+      <span class="na">if</span><span class="pi">:</span>  <span class="s">${{ failure() &amp;&amp; startsWith( matrix.runner, 'windows-')}}</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+         <span class="s">ls -l C:/Users/</span>
+         <span class="s">ls -l C:/Users/RUNNER~1/</span>
+         <span class="s">cat C:/Users/runneradmin/.cpanm/work/*/build.log</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Errors on Ubuntu</span>
+      <span class="na">if</span><span class="pi">:</span>  <span class="s">${{ failure() &amp;&amp; startsWith( matrix.runner, 'ubuntu-')}}</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+         <span class="s">cat /home/runner/.cpanm/work/*/build.log</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Errors on OSX</span>
+      <span class="na">if</span><span class="pi">:</span>  <span class="s">${{ failure() &amp;&amp; startsWith( matrix.runner, 'macos-')}}</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+         <span class="s">cat  /Users/runner/.cpanm/work/*/build.log</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Run tests</span>
+      <span class="na">env</span><span class="pi">:</span>
+        <span class="na">AUTHOR_TESTING</span><span class="pi">:</span> <span class="m">1</span>
+        <span class="na">RELEASE_TESTING</span><span class="pi">:</span> <span class="m">1</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">perl Makefile.PL</span>
+        <span class="s">make</span>
+        <span class="s">make test</span>
+
+
+  <span class="na">test-in-container</span><span class="pi">:</span>
+    <span class="na">strategy</span><span class="pi">:</span>
+      <span class="na">fail-fast</span><span class="pi">:</span> <span class="no">false</span>
+      <span class="na">matrix</span><span class="pi">:</span>
+        <span class="na">perl</span><span class="pi">:</span> <span class="pi">[</span> <span class="s1">'</span><span class="s">5.30'</span><span class="pi">,</span> <span class="s1">'</span><span class="s">5.36'</span><span class="pi">,</span> <span class="s1">'</span><span class="s">5.36-threaded'</span> <span class="pi">]</span>
+        <span class="c1"># tags from https://hub.docker.com/_/perl</span>
+
+    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">ubuntu-latest</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">Perl ${{matrix.perl}}</span>
+    <span class="na">container</span><span class="pi">:</span> <span class="s">perl:${{matrix.perl}}</span>
+
+    <span class="na">steps</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v3</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Perl Version</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">perl -v</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install Modules</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">cpanm -v</span>
+        <span class="s">cpanm --installdeps --notest .</span>
+        <span class="s">cpanm --notest Devel::CallParser Test::Pod::Coverage Test::Pod</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Show Errors on Ubuntu</span>
+      <span class="na">if</span><span class="pi">:</span>  <span class="s">${{ failure() }}</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+         <span class="s">cat /home/runner/.cpanm/work/*/build.log</span>
+
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Run tests</span>
+      <span class="na">env</span><span class="pi">:</span>
+        <span class="na">AUTHOR_TESTING</span><span class="pi">:</span> <span class="m">1</span>
+        <span class="na">RELEASE_TESTING</span><span class="pi">:</span> <span class="m">1</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="pi">|</span>
+        <span class="s">perl Makefile.PL</span>
+        <span class="s">make</span>
+        <span class="s">make test</span>
+</code></pre>
+
+</div>
+
+
+
+<h2>
+  
+  
+  Conclusion
+</h2>
+
+<p>Sometimes you need more than one job even for stand-alone 3rd-party libraries.</p>
+
+</div>
+    </content>
+    <author>
+      <name>Gabor Szabo</name>
+    </author>
+    <id>https://dev.to/szabgab/day-25-ci-for-dataalias-in-perl-including-threaded-perl-5feh</id>
+    <published>2022-12-25T07:47:00Z</published>
+    <updated>2022-12-25T07:47:00Z</updated>
+    <category term="perl"/>
+    <category term="programming"/>
+    <category term="ci"/>
+    <category term="testing"/>
+  </entry>
   <entry>
     <title>How to wrap a camel?</title>
     <link href="http://perladvent.org/2022/2022-12-25.html"/>
@@ -641,31 +795,6 @@ WriteMakefile(
     <updated>2022-12-23T22:46:14Z</updated>
     <category term="perl"/>
     <category term="spvm"/>
-    <category term="beginners"/>
-    <category term="programming"/>
-  </entry>
-  <entry>
-    <title>Would you like to communicate with me on DEV Community?</title>
-    <link rel="alternate" href="https://dev.to/yukikimoto/would-you-like-to-communicate-with-me-on-dev-community-28j4" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p>I start to continue to communicate with the member of DEV community.</p>
-
-<p>I'm a web developer using Perl programming language.</p>
-
-<p>Would you like to communicate with me on DEV Community?</p>
-
-<p>Beginners are also welcome!</p>
-
-</div>
-    </content>
-    <author>
-      <name>Yuki Kimoto - SPVM - Perl Club</name>
-    </author>
-    <id>https://dev.to/yukikimoto/would-you-like-to-communicate-with-me-on-dev-community-28j4</id>
-    <published>2022-12-23T22:40:50Z</published>
-    <updated>2022-12-23T22:40:50Z</updated>
-    <category term="perl"/>
-    <category term="webdev"/>
     <category term="beginners"/>
     <category term="programming"/>
   </entry>
@@ -3090,8 +3219,8 @@ which is then returned.&lt;/p&gt;
     <id>http://perlancar.wordpress.com/?p=2002</id>
     <published>2022-12-01T00:44:15Z</published>
     <updated>2022-12-01T00:44:15Z</updated>
-    <category term="perl"/>
     <category term="cpan"/>
+    <category term="perl"/>
   </entry>
   <entry>
     <title>#592 - Perl Blogging?</title>
