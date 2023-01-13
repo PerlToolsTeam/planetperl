@@ -69,6 +69,213 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://dev.to/davorg/updating-github-pages-using-github-actions-395a">Updating GitHub Pages using GitHub Actions</a></h2>
+<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
+
+              <p class="text-right"><small>Published by Dave Cross
+ on Friday 13 January 2023 16:04</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>I thought it might be fun to show how I spent an hour or so yesterday throwing together a simple web site that is hosted on <a href="https://pages.github.com/">GitHub Pages</a> and is updated daily using <a href="https://github.com/features/actions">GitHub Actions</a>.</p>
+
+<h2>
+  
+  
+  An itch to scratch
+</h2>
+
+<p>So many web sites start out with an itch to scratch, and this one is no different. In this case, it was about wanting to stay more informed.</p>
+
+<p>Each day, the <a href="https://bbc.co.uk/news/">BBC News web site</a> publishes a story that shows the front pages of all of the British newspapers. Although a lot of the British press isn't particularly trustworthy, I still think it's good to get an overview of what they're saying about the day's news. So finding and reading this story on the BBC site is one of my morning rituals.</p>
+
+<p>But they don't make it easy to find the archive of those stories. So it's hard to read anything than the current day's front pages - and even that story tends to vanish from the BBC site by lunchtime. I decided I'd like a page that contains an archive to these stories.</p>
+
+<h2>
+  
+  
+  Scraping the site
+</h2>
+
+<p>The BBC don't publish an API for their web site, so we need to resort to screen-scraping. That, of course makes the process inherently fragile but it seems to be the best we can do at this stage.</p>
+
+<p>It wasn't hard to create a program that pulls what I want from the web site using <a href="https://metacpan.org/pod/Web::Query">Web::Query</a> (my tool of choice for scraping web sites).</p>
+
+<p>Of course, having scraped the data, we need to store it somewhere. I decided to store it in a JSON document and worry about displaying it later.</p>
+
+<p>So here's the code I wrote:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use feature 'say';
+
+use Time::Piece;
+use Web::Query;
+use JSON;
+
+my $site  = 'https://bbc.co.uk';
+my $start = "$site/news/";
+my $file  = 'docs/papers.json';
+my $js_p  = JSON-&gt;new-&gt;pretty-&gt;canonical;
+my $data;
+
+if (-e $file) {
+  open my $fh, '&lt;', $file or die "$!\n";
+  my $json = do { local $/; &lt;$fh&gt; };
+  $data = $js_p-&gt;decode($json);
+}
+
+my $start_len = @$data;
+
+my $q = wq($start);
+
+$q-&gt;find('a')
+   -&gt;each(sub {
+  my ($i, $elem) = @_;
+
+  return unless $elem-&gt;text =~ /^The Papers:/;
+
+  push @$data, {
+    date =&gt; localtime-&gt;strftime('%Y-%m-%d'),
+    text =&gt; ($elem-&gt;text =~ s/^The Papers:\s*//r),
+    link =&gt; $site . $elem-&gt;attr('href'),
+  };
+});
+
+if (@$data == $start_len) {
+  warn "No new article found\n";
+} else {
+  open my $fh, '&gt;', $file or die "$!\n";
+  print $fh $js_p-&gt;encode($data);
+}
+</code></pre>
+
+</div>
+
+<p>Nothing too complex there. We look for all of the <code>&lt;a&gt;</code> tags in the page and ignore the ones that don't contain text starting with "The Papers:". We then extract the information we want (the text, the link and the date) and store that all in the JSON document.</p>
+
+<p>At that point, I could run the code to create the JSON file. I then created the GitHub repository and turned on GitHub Pages for the repo. Once that was all working, I could browse to <a href="https://davorg.github.io/bbc_papers/papers.json">https://davorg.github.io/bbc_papers/papers.json</a> to see the JSON.</p>
+
+<h2>
+  
+  
+  Doing it every day
+</h2>
+
+<p>We need to run this code every day. That's simple enough with GitHub Actions. We simply add a workflow definition file to the repo. The workflow looks like this:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>name: Overnight processing
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Install cpanm
+      run: sudo apt update &amp;&amp; sudo apt install cpanminus
+
+    - name: Install dependencies
+      run: sudo cpanm -n --installdeps .
+
+    - name: Add data
+      run: ./get_link
+
+    - name: Commit new page
+      run: |
+        GIT_STATUS=$(git status --porcelain)
+        echo $GIT_STATUS
+        git config user.name github-actions[bot]
+        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        git add docs/
+        if [ "$GIT_STATUS" != "" ]; then git commit -m "Overnight job"; fi
+        if [ "$GIT_STATUS" != "" ]; then git push; fi
+</code></pre>
+
+</div>
+
+<p>Again, this is all pretty much standard stuff. We run the workflow on a Ubuntu container. It's a three-phase process:</p>
+
+<ol>
+<li>Install everything we need</li>
+<li>Run the program to get the new data</li>
+<li>Commit the new data file to the repo</li>
+</ol>
+
+<p>Note that the workflow is triggered in two ways:</p>
+
+<ul>
+<li>It runs at 09:00 every morning</li>
+<li>You can run it manually from the Actions tab in the repo (that's what the <code>workflow_dispatch</code> line does)</li>
+</ul>
+
+<h2>
+  
+  
+  Displaying our wares
+</h2>
+
+<p>Having got a daily build of the data, we need to create a web page to display it. I'm not a web designer, so this is going to be necessarily basic. I threw together a simple page using <a href="https://getbootstrap.com/">Bootstrap</a>.</p>
+
+<p>The next step was to grab the <code>papers.json</code> document, parse it and then display it on the page. Now, I can wrangle Javascript pretty successfully most of the time. but I wanted to get this working as quickly as possible, so I asked ChatGPT for some help. It only took a few iterations for it to give me this code:</p>
+
+<div class="highlight js-code-highlight">
+<pre class="highlight plaintext"><code>document.addEventListener("DOMContentLoaded", function(){
+    fetch("papers.json")
+    .then(response =&gt; response.json())
+    .then(data =&gt; {
+        const tableBody = document.querySelector("table tbody");
+        data.forEach(item =&gt; {
+            const row = document.createElement("tr");
+            const date = document.createElement("td");
+            date.textContent = item.date;
+            row.appendChild(date);
+            const textLink = document.createElement("td");
+            const a = document.createElement("a");
+            a.href = item.link;
+            a.textContent = item.text;
+            textLink.appendChild(a);
+            row.appendChild(textLink);
+            tableBody.appendChild(row);
+        });
+    });
+});
+</code></pre>
+
+</div>
+
+<p>It didn't work first time. But that's because I'm an idiot and didn't tell ChatGPT the name of my JSON document or how to correctly identify the <code>&lt;table&gt;</code> element in the HTML. But once I'd corrected my errors it all worked perfectly.</p>
+
+<h2>
+  
+  
+  Summing up
+</h2>
+
+<p>So that's how I spent yesterday's lunch break. I can now see an archive of the BBC's stories about each day'd front pages by just going to:</p>
+
+<ul>
+<li><a href="https://davorg.github.io/bbc_papers/">https://davorg.github.io/bbc_papers/</a></li>
+</ul>
+
+<p>Of course, just after I'd written it, I (once again) had a look to see if someone else had created something similar and found the <a href="https://www.bbc.co.uk/news/topics/cpml2v678pxt">BBC's page</a> listing all of the stories. Ah well, I had fun putting my version together.</p>
+
+       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/max_maischein/2023/01/geizhals-preisvergleich-sponsors-the-german-perlraku-workshop.html">Geizhals Preisvergleich sponsors the German Perl/Raku Workshop</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
 
@@ -97,7 +304,7 @@ Unternehmen.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2023/01/perl-weekly-challenge-199-good-pairs-and-good-triplets.html">Perl Weekly Challenge 199: Good Pairs and Good Triplets</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -334,7 +541,7 @@ for ( &lt;3 0 1 1 9 7&gt;,  &lt;7 2 3&gt; ),
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/drhyde/numberphone-release-candidate-3h7">Number::Phone release candidate</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -388,7 +595,7 @@ for ( &lt;3 0 1 1 9 7&gt;,  &lt;7 2 3&gt; ),
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/tprfmarketing/2023/01/fosdem-mini-grants-for-2023.html">Fosdem mini grants for 2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -413,7 +620,7 @@ for ( &lt;3 0 1 1 9 7&gt;,  &lt;7 2 3&gt; ),
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/sylvain_colinet/2023/01/benchmarking-rakudo-releases-is-raku-still-slow.html">Benchmarking Rakudo releases. Is Raku Still slow?</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -530,7 +737,7 @@ rakudo-2022.12, gumboxml.p6, 0.23526197301
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/fosdem2023">Fosdem mini grants</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -558,7 +765,7 @@ rakudo-2022.12, gumboxml.p6, 0.23526197301
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -570,7 +777,7 @@ rakudo-2022.12, gumboxml.p6, 0.23526197301
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/toby_inkster/2023/01/creating-a-simple-dsl-in-perl.html">Creating a Simple DSL in Perl</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -864,7 +1071,7 @@ rakudo-2022.12, gumboxml.p6, 0.23526197301
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/scotticles/jenkins-for-running-scripts-kg1">Jenkins for running scripts!</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -902,7 +1109,7 @@ rakudo-2022.12, gumboxml.p6, 0.23526197301
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/tobyink/creating-a-simple-dsl-in-perl-4f12">Creating a Simple DSL in Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1297,7 +1504,7 @@ offer a <code>to_xml</code> method.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/598.html">#598 - TIOBE and Perl</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -1317,7 +1524,7 @@ offer a <code>to_xml</code> method.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/perl-weekly-598-tiobe-and-perl-2fg">Perl Weekly #598 - TIOBE and Perl</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1676,7 +1883,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="http://www.rabbitfarm.com/cgi-bin/blosxom/2023/01/08#pwc198">Prime the Gaps!</a></h2>
 <a href="http://www.rabbitfarm.com/cgi-bin/blosxom/perl" class="badge badge-primary" style="float: left">RabbitFarm Perl</a>
@@ -1811,7 +2018,7 @@ much to elaborate on. Check primality using is_prime() and we're done!</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-198/">RECAP - The Weekly Challenge - 198</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1824,7 +2031,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-199/">The Weekly Challenge - 199</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1838,7 +2045,7 @@ With the start of new year, I feel little tired.       </div><!-- card-text --> 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/cdxxvi-18-great-cpan-modules-released.html">(cdxxvi) 18 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1850,7 +2057,7 @@ With the start of new year, I feel little tired.       </div><!-- card-text --> 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/dxxxix-metacpan-weekly-report.html">(dxxxix) metacpan weekly report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1862,7 +2069,7 @@ With the start of new year, I feel little tired.       </div><!-- card-text --> 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/dlxvii-stackoverflow-perl-report.html">(dlxvii) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1871,120 +2078,6 @@ With the start of new year, I feel little tired.       </div><!-- card-text --> 
  on Sunday 08 January 2023 08:12</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><p>These are the five most rated questions at <a href="http://www.stackoverflow.com">Stack Overflow</a> last week.<br/>Between brackets: [<b>question score</b> / answers count]<br/>Build date: 2023-01-08 07:12:02 GMT</p><hr/><ol><li><a href="http://stackoverflow.com/questions/74985261" target="_blank">How do I wrap this shell command in Perl?</a> - [<b>2</b>/3]</li><li><a href="http://stackoverflow.com/questions/75004352" target="_blank">Can anyone spot the problem in my for loop in Perl?</a> - [<b>2</b>/3]</li><li><a href="http://stackoverflow.com/questions/75018859" target="_blank">Resolving a symlink without readlink utility</a> - [<b>2</b>/3]</li><li><a href="http://stackoverflow.com/questions/75043162" target="_blank">perl Curses and unicode: why addstr prints fine whereas addstring prints garbage?</a> - [<b>2</b>/1]</li><li><a href="http://stackoverflow.com/questions/75016105" target="_blank">Fastest way to transpose large, space delimited text file</a> - [<b>1</b>/1]</li></ol>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_19">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-198-2jbl">Weekly Challenge 198</a></h2>
-<a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
-
-              <p class="text-right"><small>Published by Simon Green
- on Sunday 08 January 2023 06:13</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><p>Two relatively straight forward tasks to start the new year.</p>
-
-<p><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-198/">Challenge</a>, <a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-198/sgreen">My solutions</a></p>
-
-<h2>
-  
-  
-  Task 1: Max Gap
-</h2>
-
-<h3>
-  
-  
-  Task
-</h3>
-
-<p>You are given a list of integers, <code>@list</code>.</p>
-
-<p>Write a script to find the total pairs in the sorted list where 2 consecutive elements has the max gap. If the list contains less then 2 elements then return 0.</p>
-
-<h3>
-  
-  
-  My solution
-</h3>
-
-<p>For this task, I have defined two variables. The value <code>gap</code> records the largest gap between two numbers so far, while the <code>count</code> value records the number of occurrences of the gap.</p>
-
-<p>The first thing I do is (numerically) sort the list. I then iterate from 0 to the size of the list minus two. For each iteration, I compare the difference in the value in that position to the one in the next position. If the gap is greater, I set <code>gap</code> to the difference, and reset <code>count</code> to 1. If the difference is the same as the current gap, I increase 1 to <code>count</code>.</p>
-
-<p>Finally I display the value of <code>count</code>.</p>
-
-<h3>
-  
-  
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>./ch-1.py 2 5 8 1
-2
-
-<span class="nv">$ </span>./ch-1.py 3
-0
-</code></pre>
-
-</div>
-
-
-
-<h2>
-  
-  
-  Task 2: Prime Count
-</h2>
-
-<h3>
-  
-  
-  Task
-</h3>
-
-<p>You are given an integer <code>$n &gt; 0</code>.</p>
-
-<p>Write a script to print the count of primes less than <code>$n</code>.</p>
-
-<h3>
-  
-  
-  My solution
-</h3>
-
-<p>Time to pull out my trusty <code>is_prime</code> method. This was last used in task 2 from challenge 177. I iterate from 1 to <code>n-1</code> and added one to <code>count</code> if that number is a prime. Then I display the value of <code>count</code>.</p>
-
-<h3>
-  
-  
-  Examples
-</h3>
-
-
-
-<div class="highlight js-code-highlight">
-<pre class="highlight shell"><code><span class="nv">$ </span>./ch-2.py 10
-4
-
-<span class="nv">$ </span>./ch-2.py 15
-6
-
-<span class="nv">$ </span>./ch-2.py 1
-0
-
-<span class="nv">$ </span>./ch-2.py 25
-9
-</code></pre>
-
-</div>
-
-
-
-       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3401,7 +3494,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 13 January 2023 12:47 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 13 January 2023 16:45 UTC</address>
             </div>
           </div>
         </div><!-- container -->
