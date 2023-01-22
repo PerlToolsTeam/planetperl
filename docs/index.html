@@ -69,6 +69,35 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://blogs.perl.org/users/chrisarg/2023/01/using-perl-to-prepare-sequencing-files-to-submit-to-ncbis-geo.html">Using Perl to prepare sequencing files to submit to NCBI's GEO</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by chrisarg
+ on Sunday 22 January 2023 06:42</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>In the middle of a manuscript submission that requires sequencing data to be uploaded to <a href="https://www.ncbi.nlm.nih.gov/">NCBI's </a> Gene Expression Omnibus.<br />
+This is a fairly standardized and (painful!) process that requires one to assemble their sequencing data (a collection of hundreds or thousands of files in the <a href="https://en.wikipedia.org/wiki/FASTQ_format">FASTQ</a> format), put them in a single (very large) folder, compress them, generate md5 hashes and then upload them to <a href="https://www.ncbi.nlm.nih.gov/geo/">GEO's </a>FTP site. <br />
+There are a couple of tutorials available e.g. <a href="http://yeolab.github.io/onboarding/geo.html">here</a> and <a href="https://divingintogeneticsandgenomics.rbind.io/post/how-to-upload-files-to-geo/">there</a> that mostly cover the use case of one having assembled the files into a single fastq. <br />
+Our <a href="https://www.biorxiv.org/content/10.1101/2022.12.16.520507v1">project</a> used Oxford's Nanopore platform which store's its data as a series of fastq files, each holding a user defined number of sequences (in our case 2,000). Some of the experiments had generated an excess of 10M reads, so we are talking about a serious number of files to process: <br />
+</p><ol><br />
+	<li>uncompress (if compressed)</li><br />
+	<li>concatanate</li><br />
+	<li>compress</li><br />
+	<li>hash using md5sum</li><br />
+</ol><p></p>
+
+<p>I am extremely lazy to do repetitive shell typing, so I figure to use PERL to package the steps together. One needs first to create a list of directories that have the sequencing files (by default nanopore stores them in a directory that contains two subdirectories, called "fastq_pass" and "fastq_fail", with the pass and fail referring to files with different sequencing qualities. <br />
+I hardwired the name of that CSV in the script (but you could easily modify to use the commandline to get an arbitrary file), as well as the name of the output directory (which must be created beforehand). <br />
+The repetitive steps are now taken care by this PERL script (which is boring, but useful). <br /></p><p><br /></p><p><br />#!/home/chrisarg/perl5/perlbrew/perls/current/bin/perl<br />## compress files for NCBI<br />use v5.36;<br />use experimental qw(signatures);<br />use strict;<br />use Text::CSV qw( csv );<br />use File::Spec ;<br />use File::Basename;<br />use File::Copy;<br /><br />use FindBin qw($Bin);<br /><br />my $out_directory = File::Spec-&gt;catdir(dirname($Bin),'chrisarg_NCBI_submission');<br />my $analyses_files = <br />&nbsp;&nbsp;&nbsp; csv(in =&gt; File::Spec-&gt;catfile($Bin,"package_PALS_NS_2.csv"), <br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; sep_char =&gt;',',headers =&gt; "auto") <br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; or die Text::CSV-&gt;error_diag; <br />my @fastq_directories = map {<br />&nbsp;&nbsp;&nbsp; File::Spec-&gt;catdir(dirname($Bin),values %{ $_})<br />&nbsp;&nbsp;&nbsp; } @$analyses_files;<br />my @fastq_output_names = map { <br />&nbsp;&nbsp;&nbsp; basename(values %{ $_}).".fastq";<br />&nbsp;&nbsp;&nbsp; } @$analyses_files;<br /><br />## directories go here<br />my (@files, @gz, @fastq,@dir_of_files,@dest_files, $output_fh);<br />while (my($index,$current_experiment_dir) = each @fastq_directories){<br />&nbsp;&nbsp;&nbsp; @dir_of_files = (File::Spec-&gt;catdir($current_experiment_dir,'fastq_pass'),<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; File::Spec-&gt;catdir($current_experiment_dir,'fastq_fail'),<br />&nbsp;&nbsp;&nbsp; );<br />&nbsp;&nbsp;&nbsp; for my $current_dir (@dir_of_files){<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; say "Processing $current_dir";<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; chdir $current_dir or die "can't cd into $current_dir";<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; @gz = glob('*.gz');<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; @fastq = glob('*.fastq');<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (scalar @gz &gt; 1){<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; @dest_files = map {<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; File::Spec-&gt;catfile($out_directory,$_)<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; } @gz;<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; foreach (0..$#dest_files){<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; copy($gz[$_],$dest_files[$_])<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; or die "Can't copy $gz[$_] because of&nbsp; $!"; <br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; system 'gunzip', $dest_files[$_];<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ## may have to deal with mix of gzpd and not files<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (scalar @fastq &gt; 1){<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; @dest_files = map {<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; File::Spec-&gt;catfile($out_directory,$_)<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; } @fastq;<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; foreach (0..$#dest_files){<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; copy($fastq[$_],$dest_files[$_])<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; or die "Can't copy $gz[$_] because of&nbsp; $!"; <br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br />&nbsp;&nbsp;&nbsp; }<br />&nbsp;&nbsp;&nbsp; chdir $out_directory;<br />&nbsp;&nbsp;&nbsp; @dest_files = glob('*.fastq');<br />&nbsp;&nbsp;&nbsp; open&nbsp; $output_fh,&nbsp; '&gt;',$fastq_output_names[$index] <br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; or die "failed at $fastq_output_names[$index] due to $!";<br />&nbsp;&nbsp;&nbsp; foreach my $input_file (@dest_files){<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; open my $input_fh , '&lt;', $input_file<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; or die "can't open $input_file for reading";<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; print $output_fh $_ while &lt;$input_fh&gt;;<br />&nbsp;&nbsp;&nbsp; }<br />&nbsp;&nbsp;&nbsp; close $output_fh;<br />&nbsp;&nbsp;&nbsp; unlink @dest_files;<br />&nbsp;&nbsp; !system 'gzip', '-9', $fastq_output_names[$index] <br />&nbsp;&nbsp;&nbsp; or die 'something went wrong';<br />}<br /><br />chdir $out_directory;<br />system "md5sum * &gt; md5sum.txt";<br /><br /><br /><br /><br /><br />
+</p><blockquote></blockquote><p></p>
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/cdxxviii-9-great-cpan-modules-released.html">(cdxxviii) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
 
@@ -79,7 +108,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/dxli-metacpan-weekly-report-iosocketssl.html">(dxli) metacpan weekly report - IO::Socket::SSL</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -91,7 +120,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/dlxix-stackoverflow-perl-report.html">(dlxix) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -103,7 +132,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/spvm-supported-self-compiler-in-09683-7jo">SPVM supported self Compiler in 0.9683.</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -258,7 +287,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/psc/2023/01/this-week-in-psc-094.html">This Week in PSC (094)</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -281,7 +310,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/saiftynet">Call for Grant Proposals: January 2023 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -317,7 +346,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/max_maischein/2023/01/otobo-supports-the-german-perlraku-workshop.html"> OTOBO supports the German Perl/Raku-Workshop</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -345,7 +374,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/retirementdave">Retirement Announcement - Dave Rolsky</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -365,7 +394,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2023/01/perl-weekly-challenge-200-arithmetic-slices-and-seven-segment-display.html">Perl Weekly Challenge 200: Arithmetic Slices and Seven Segment Display</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -678,7 +707,7 @@ for my $test (&lt;200 2023 01234 56789&gt;) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/oodler_577/2023/01/post-advent-carolling.html">Util::H2O and More, during Ordinary Times</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -813,57 +842,6 @@ foreach my $person ( $json_array_ref-&gt;all ) {
 <p>Please checkout <a href="https://metacpan.org/pod/Util::H2O">Util::H2O</a> and <a href="https://metacpan.org/pod/Util::H2O::More">Util::H2O::More</a>; alone or combined, the options available to deal with <em>ad hoc</em> or <em>in flight</em> complex data structures in Perl in very clean and idiomatic ways <em>without</em> resorting to so called "POOP" (<em>Perl Object Oriented Programming</em>) is continuing to improve. Practical sources of these data structures include, <code>DBI</code> (e.g., <code>DBD::mysql</code>), <code>JSON::decode_json</code>, and <code>Web::Scraper</code>. <code>Util::H2O::More</code> even provides special methods for working with <code>Getopt::Long</code> and <code>Config::Tiny</code>, <code>opt2h2o</code> and <code>ini2h2o</code>, respectively.</p>
 
 <p>PS: Sorry for the bad code highlighting, I have no idea how this thing works. :-)</p>
-
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_11">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://blogs.perl.org/users/saif/2023/01/my-family-and-other-fish.html">My Family and Other Fish  (PerlayStation Part 2)</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by Saif
- on Wednesday 18 January 2023 17:56</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>Faced with any problem, there are many potential approaches. This, I have realised, is amply illustrated by the members of my own family, further reinforcing the educational value of having one.  I shall anonymise them for my own protection, and as a disclaimer also state that everything I say about them or anything at all is probably wrong.  In fact I have already issued my daily, pre-emptive, unspecified apology to my wife.  For me, game coding in Perl is no different. </p>
-
-<h3>Identify Problem</h3>
-
-<p>Take the aforementioned Mrs S,  for example. Faced with a mildly unacceptable state of affairs, her approach is reliably consistent. A detailed root-cause-analysis invariably identifies the source of disquiet: it often comes down to something I did, occasionally something I didn't do, and on serious situations something I was possibly thinking of doing. Her problem can be retrospectively solved if only she had picked any of the better looking and supremely solvent alternatives available to her. My fault then, for choosing the terminal to program Perl Games in. This “blame someone” approach never solved anything, but in difficult situations diverts attention, explains failure and justifies expenditure on jewellery, home decorations, the plumber, or in the case of software development, discarding previous knowledge and using a more popular, fancier, methodology like the neighbours.</p>
-
-<h3>Consider Ignoring It</h3>
-
-<p>My rather chilled-out older daughter on the other hand handles difficult problems with eminent ease. Her energy-efficient solution is simply to ignore them, saving her time, expense and effort.  "Dad, it is only your problem if you see it as your problem." In reality, many problems have always existed; they are not created <em>de novo</em>. They don't have to be your problem,  and the world will keep turning,  and you will find ways of doing without. Who needs your games? Why do you do open source? Why in fact, do anything strenuous at all, one might say.  Perl was never a powerhouse gaming tool, and terminal is not where one looks for arcade thrills given technologies offered by graphical tool-kits and modern browser engines. But one makes games for many reasons.  In making games you discover how things work, you learn strategies, transferable skills, and who knows, maybe give fun to others.  Critically you develop tools that allow you to make games and practical utilities easier.  Indeed, game coding is a diversion, not the end-game for me.  The tools one creates to help game development may also help in other projects.</p>
-
-<h3>Unexpected Benefits</h3>
-
-<p>I do have another hare-brained offspring, a delightfully positive and more energetic individual whose attention is devoted to exclusively herself and her friends.  There is seemingly nothing she can not solve by merely fluttering her eyelids and exuding praise, and at the same time getting a profitable outcome. “Oh daddy, those socks go so well with your sandals, but I have nothing to wear for the par… study-session this evening, can you please buy me a &lt;insert-any-item that-could-not-conceivably-improve-grades>, PLEASE???".   In reality coding without feedback, whether positive or negative, is difficult. One needs motivation, a second pair of eyes to affirm or maybe redirect thoughts, and recognise connections that may not at first glance be apparent, and that motivation is by definition outward looking.  Certainly that motivation factor may be driving secondary gains for other people, but that by no means diminishes its value. Who knew that roller skates actually help effective group-learning?</p>
-
-<p>So the resultant path that <a href="https://github.com/saiftynet/Term-Graille">Term::Graille</a> has taken is this.  It avoids the fancier toolkits that rely on <code>libcurses</code> or <code>libtickit</code>.  It starts off as a graphical tool for a non-graphical interface.  For practical applications it emulates real-time interactivity (instead of using things like <code>libev</code>) for an environment that is principally asynchronous using <a href="https://github.com/saiftynet/Term-Graille/wiki/Term::Graille-Interact">Term::Graille::Interact</a>.  This is inevitably weak and has to be  to be stressed to to become optimised, and game development perhaps allows this stress, highlighting failures in other existing code. Just developing one game is a dead end, however and the diverse set of problems one might face requires more specialised assets. Term::Graille::Sprite, like my daughter’s roller skates, does not outwardly have any of the features that will be required for serious, useful applications. But who knows, it might reasonably stress the platform and may offer secondary entertainment for others.</p>
-
-<h3>Term::Graille::Sprite</h3>
-
-<p>So what is a <code>$sprite</code>?  A Term::Graille::Sprite object which can have a <code>{shape}</code> , a <code>{pos}</code>ition on a screen, and a <code>{vel}</code>ocity. <code>{vel}</code>olicity is a matter of displacement over time, and Term::Graille::Interact, the time is represented by the refresh cycles for the keyboard read routine. The updating of the sprites may be prolonged by skipping a number of updating events.  Motion is simulated by <code>blank-&gt;()</code>ing a sprite current position and re-blitting the image on the screen.   It may interact with other sprites, e.g. <code>collide-&gt;($another_sprite)</code> or the environment e.g. <code>edge()</code> or with the user (via an <code>addAction()</code> on Term::Graille::Interact.  We may have multiple sprites and these can be handled as a group of sprites, and a SpriteBank object is also provided, that keeps a store of these groups of items, updating them automatically each cycle as needed, or removing them if set to be  <code>{destroyed}</code>.</p>
-
-<pre><code>my $spriteBank=Term::Graille::SpriteBank-&gt;new(); # store sprites
-my $dir="./sprites/";   # path for predefined sprite shapes
-my $bat=new Term::Graille::Sprite(data=&gt;[[("█") x 6]],pos=&gt;[20,0],
-   bounds=&gt;[1,14,60,0]);   # creating a bat
-my $ball=new Term::Graille::Sprite(pos=&gt;[20,3],vel=&gt;[1,1],
-   bounds=&gt;[1,14,70,-1],skip=&gt;6);    #  default shape is ⬤ 
-$spriteBank-&gt;addSprite("player",$bat);  #  Adding $bat to  spriteBank
-$spriteBank-&gt;addSprite("ball",$ball);    #  Adding a ball
-</code></pre>
-
-<p>One imagines in the future, one would include animations, physics (e.g. mass, acceleration and gravity).  But what is clear is that in developing games, we find multiple failures in Term::Graille. Glitches as the drawing application plots off screen or experiences an error in data supplied.   These should be cleanly handled, and one gradually makes adjustments for this, all the time hoping that these changes don’t break previous applications.  <a href="https://github.com/saiftynet/PerlayStation/tree/main/Arcade/SingleScreen/Breakout">Breakout</a> is a prototype game that uses Sprite.pm</p>
-
-<h3>Inconclusion</h3>
-
-<p>My goldfish, Goldzilla, on the other hand has a much wiser outlook to my life’s difficulties. She recognises my flaws and chooses to ignore them.  She appreciates my problems, sympathises, listens calmly to my rants, but only ever offers advice when asked.  She never showers me with praise to get a new aquarium  ornament and appears to mouth out Perl code to herself, if only I could hear this stream of wisdom.  Here is the mainstay of problem solving.  You are either provided with the tools to solve them or you make the tools yourself.  The majority of useful tips will remain  unheard, but they do exist and you have to listen closely…and use your imagination.</p>
-
-        
 
            </div><!-- card-text -->     </div>
             <div class="card-footer">
@@ -2868,7 +2846,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 22 January 2023 00:57 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 22 January 2023 04:40 UTC</address>
             </div>
           </div>
         </div><!-- container -->
