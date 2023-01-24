@@ -7,9 +7,396 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-01-24T16:42:58Z</updated>
+  <updated>2023-01-24T20:39:23Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Testing in 2023</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/toby_inkster/2023/01/perl-testing-in-2023.html"/>
+    <id>tag:blogs.perl.org,2023:/users/toby_inkster//1019.11007</id>
+    <published>2023-01-24T22:38:36Z</published>
+    <updated>2023-01-24T22:55:43Z</updated>
+    <author>
+        <name>Toby Inkster</name>
+        <uri>https://toby.ink/</uri>
+    </author>
+    <category term="TDD" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="test2suite" label="Test2-Suite" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/toby_inkster/">
+        <![CDATA[<p>With my open source work, I've historically taken an approach which relies more on integration testing than unit testing, but with some of my newer projects, I've tried adopting principles from $paidwork and applying them to my free software.</p>
+<p>This is a quick run-down of how I'm structuring my test suite in newer projects. It's likely that many of my existing projects will never adopt this structure, but some may.</p>
+]]>
+        <![CDATA[		<h2><span id="Out_with_the_old,_in_with_the_new">Out with the old, in with the new</span></h2>
+		<p>First step is ditching <a class="podlinkpod" href="https://metacpan.org/pod/Test%3A%3AMore">Test::More</a>, <a class="podlinkpod" href="https://metacpan.org/pod/Test%3A%3AFatal">Test::Fatal</a>, <a class="podlinkpod" href="https://metacpan.org/pod/Test%3A%3AWarnings">Test::Warnings</a>, and other pre-Test2 testing libraries.</p>
+		<p><a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3AV0">Test2::V0</a> provides a good base to work with, so we add that to our project's requirements list straight away.</p>
+		<p>We'll round that out with:</p>
+		<ul>
+			<li><a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3ARequire%3A%3AAuthorTesting">Test2::Require::AuthorTesting</a> to skip certain tests when run on the end user's machine, and require the <code>AUTHOR_TESTING</code> environment variable to run. This is useful for tests which are very slow or require a highly specific environment to run in.</li>
+			<li><a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3ARequire%3A%3AModule">Test2::Require::Module</a> to skip certain tests when optional modules are unavailable.</li>
+			<li><a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3ATools%3A%3ASpec">Test2::Tools::Spec</a> to better structure our unit tests.</li>
+			<li><a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3APlugin%3A%3ABailOnFail">Test2::Plugin::BailOnFail</a> for when your tests simply cannot carry on. Use sparingly.</li>
+		</ul>
+		<p>There are other Test2 modules that can be nice to have, but that's a good starter set. The ones I list above are distributed alongside <a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3AV0">Test2::V0</a>, so you get them "for free". It is worth explicitly listing them in your project's dependencies though, in case they are split into separate distributions in the future.</p>
+		<h2><span id="Test_directory_structure">Test directory structure</span></h2>
+		<p>Perl distributions typically keep their tests in a directory called <em>t</em> found inside the project root. We won't change that. We will however create two subdirectories within it, <em>t/unit</em> and <em>t/integration</em>.</p>
+		<p>You may have other categories of tests which need their own subdirectories too, but these two will be sufficient for most projects.</p>
+		<p>If support modules are needed for testing, they can live in <em>t/lib</em>. If any data files are needed, put them in <em>t/share</em>.</p>
+		<p>Any especially important tests can included in the <em>t</em> directory itself for maximum visibility. I recommend giving them numerically-prefixed filenames for better control over the order they run in.</p>
+		<p>I will typically include two such tests:</p>
+		<ul>
+			<li><em>t/00start.t</em> which performs no real testing, but prints relevant information about the system it's being run on, such as the version numbers of dependencies, the values of important environment variables, etc.</li>
+			<li><em>t/01basic.t</em> which loads all of your modules, or at least the important ones, then passes without any real testing being done. The purpose of this is to quickly check for syntax errors so extreme that they prevent your code from even compiling. This is a good place for <a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3APlugin%3A%3ABailOnFail">Test2::Plugin::BailOnFail</a>.</li>
+		</ul>
+		<h2><span id="Unit_tests">Unit tests</span></h2>
+		<p>For each module <em>lib/Foo/Bar.pm</em> there should be a corresponding unit test script <em>t/unit/Foo/Bar.t</em>.</p>
+		<p>The prelude of this file will look something like this:</p>
+		<pre class="highlighting-perl">  <span class="keyword" style="color:#009;font-weight:bold">use</span> <span class="word">Test2::V0</span> <span class="word">-target</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="single" style="color:#909">'Foo::Bar'</span><span class="structure">;</span>
+  <span class="keyword" style="color:#009;font-weight:bold">use</span> <span class="word">Test2::Tools::Spec</span><span class="structure">;</span>
+  <span class="keyword" style="color:#009;font-weight:bold">use</span> <span class="word">Data::Dumper</span><span class="structure">;</span></pre>
+		<p>The footer will look exactly like this:</p>
+		<pre class="highlighting-perl">  <span class="word">done_testing</span><span class="structure">;</span></pre>
+		<p>And in between will be tests for each unit of code. A "unit" would typically be a function, a method, or an important package variable. Tests for a unit should avoid exercising much code outside their unit, and should <i>especially</i> avoid exercising code outside the target module.</p>
+		<p>A fairly extensive unit test for a method:</p>
+		<pre class="highlighting-perl">  <span class="word">describe</span> <span class="double" style="color:#909">"method `foo_bar`"</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+    
+    <span class="keyword" style="color:#009;font-weight:bold">my</span> <span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$foo</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="symbol" style="color:#333;background-color:#fcc">$bar</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="structure">);</span>
+    
+    <span class="word">case</span> <span class="single" style="color:#909">'both defined'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$foo</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'Hello'</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'world'</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'Hello world'</span><span class="structure">;</span>
+    <span class="structure">};</span>
+    
+    <span class="word">case</span> <span class="single" style="color:#909">'both defined, but foo is empty string'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$foo</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">''</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'world'</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">' world'</span><span class="structure">;</span>
+    <span class="structure">};</span>
+    
+    <span class="word">case</span> <span class="single" style="color:#909">'both defined, but bar is empty string'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$foo</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'Hello'</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">''</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'Hello '</span><span class="structure">;</span>
+    <span class="structure">};</span>
+    
+    <span class="word">case</span> <span class="single" style="color:#909">'both defined, but both are empty string'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$foo</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">''</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">''</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">' '</span><span class="structure">;</span>
+    <span class="structure">};</span>
+    
+    <span class="word">case</span> <span class="single" style="color:#909">'foo is undefined'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$foo</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="core" style="color:#009;font-weight:bold">undef</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'world'</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'world'</span><span class="structure">;</span>
+    <span class="structure">};</span>
+    
+    <span class="word">case</span> <span class="single" style="color:#909">'bar is undefined'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$foo</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'Hello'</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="core" style="color:#009;font-weight:bold">undef</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">'Hello'</span><span class="structure">;</span>
+    <span class="structure">};</span>
+    
+    <span class="word">case</span> <span class="single" style="color:#909">'both are undefined'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$foo</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="core" style="color:#009;font-weight:bold">undef</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="core" style="color:#009;font-weight:bold">undef</span><span class="structure">;</span>
+      <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="single" style="color:#909">''</span><span class="structure">;</span>
+    <span class="structure">};</span>
+    
+    <span class="word">tests</span> <span class="single" style="color:#909">'it works'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="keyword" style="color:#009;font-weight:bold">my</span> <span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$object</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="symbol" style="color:#333;background-color:#fcc">$got_foo_bar</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="symbol" style="color:#333;background-color:#fcc">$got_exception</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="symbol" style="color:#333;background-color:#fcc">$got_warnings</span> <span class="structure">);</span>
+      
+      <span class="symbol" style="color:#333;background-color:#fcc">$got_exception</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="word">dies</span> <span class="structure">{</span>
+        <span class="symbol" style="color:#333;background-color:#fcc">$got_warnings</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="word">warns</span> <span class="structure">{</span>
+          <span class="symbol" style="color:#333;background-color:#fcc">$object</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="symbol" style="color:#333;background-color:#fcc">$CLASS</span><span class="operator" style="color:#000;font-weight:bold">-&gt;</span><span class="word">new</span><span class="structure">(</span> <span class="word">foo</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="symbol" style="color:#333;background-color:#fcc">$foo</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="word">bar</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="symbol" style="color:#333;background-color:#fcc">$bar</span> <span class="structure">);</span>
+          <span class="symbol" style="color:#333;background-color:#fcc">$got_foo_bar</span> <span class="operator" style="color:#000;font-weight:bold">=</span> <span class="symbol" style="color:#333;background-color:#fcc">$object</span><span class="operator" style="color:#000;font-weight:bold">-&gt;</span><span class="word">foo_bar</span><span class="structure">;</span>
+        <span class="structure">};</span>
+      <span class="structure">};</span>
+      <span class="word">is</span><span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$got_exception</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="core" style="color:#009;font-weight:bold">undef</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="single" style="color:#909">'no exception thrown'</span> <span class="structure">);</span>
+      <span class="word">is</span><span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$got_warnings</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="number" style="color:#39C">0</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="single" style="color:#909">'no warnings generated'</span> <span class="structure">);</span>
+      <span class="word">is</span><span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$got_foo_bar</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="symbol" style="color:#333;background-color:#fcc">$expected_foo_bar</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="single" style="color:#909">'expected string returned'</span> <span class="structure">);</span>
+      <span class="word">is</span><span class="structure">(</span>
+        <span class="symbol" style="color:#333;background-color:#fcc">$object</span><span class="operator" style="color:#000;font-weight:bold">,</span>
+        <span class="word">object</span> <span class="structure">{</span>
+          <span class="word">call</span> <span class="word">foo</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="symbol" style="color:#333;background-color:#fcc">$foo</span><span class="structure">;</span>
+          <span class="word">call</span> <span class="word">bar</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="symbol" style="color:#333;background-color:#fcc">$bar</span><span class="structure">;</span>
+        <span class="structure">}</span><span class="operator" style="color:#000;font-weight:bold">,</span>
+        <span class="double" style="color:#909">"method call didn't alter the values of the attributes"</span><span class="operator" style="color:#000;font-weight:bold">,</span>
+      <span class="structure">)</span> <span class="operator" style="color:#000;font-weight:bold">or</span> <span class="word">diag</span> <span class="word">Dumper</span><span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$object</span> <span class="structure">);</span>
+    <span class="structure">};</span>
+  <span class="structure">};</span></pre>
+		<p>The module itself as a whole can also be considered a "unit" so that very basic module-wide concerns can be tested there.</p>
+		<p>A fairly simple module-wide unit test:</p>
+		<pre class="highlighting-perl">  <span class="word">describe</span> <span class="double" style="color:#909">"class `$CLASS`"</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+    
+    <span class="word">tests</span> <span class="single" style="color:#909">'it inherits from Moo::Object'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="word">isa_ok</span><span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$CLASS</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="single" style="color:#909">'Moo::Object'</span> <span class="structure">);</span>
+    <span class="structure">};</span>
+    
+    <span class="word">tests</span> <span class="single" style="color:#909">'it can be instantiated'</span> <span class="operator" style="color:#000;font-weight:bold">=&gt;</span> <span class="keyword" style="color:#009;font-weight:bold">sub</span> <span class="structure">{</span>
+      <span class="word">can_ok</span><span class="structure">(</span> <span class="symbol" style="color:#333;background-color:#fcc">$CLASS</span><span class="operator" style="color:#000;font-weight:bold">,</span> <span class="single" style="color:#909">'new'</span> <span class="structure">);</span>
+    <span class="structure">};</span>
+  <span class="structure">};</span></pre>
+		<h2><span id="Integration_tests">Integration tests</span></h2>
+		<p>Integration tests can take a far more freeform approach. These tests should ensure that the system as a whole, or subsystems within it (which may involve multiple modules), work when used together.</p>
+		<p>A good place to start is to look at the <i>SYNOPSIS</i> sections of your documentation and test that they work as advertised.</p>
+		<p>Integration tests should use <a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3AV0">Test2::V0</a> but will often be small enough not to benefit much from <a class="podlinkpod" href="https://metacpan.org/pod/Test2%3A%3ATools%3A%3ASpec">Test2::Tools::Spec</a>.</p>
+		<h2><span id="Running_tests_locally">Running tests locally</span></h2>
+		<p>The Test2 tool for running your test suite is <a class="podlinkpod" href="https://metacpan.org/pod/App%3A%3AYath">yath</a>, but old stalwart <a class="podlinkpod" href="https://metacpan.org/pod/App%3A%3AProve">prove</a> also works well. In your project roor directory, you should be able to run <code>yath test</code> at the command-line to run your entire test suite. <code>prove -lr</code> should also work.</p>
+		<p>If you need more verbose output to see exactly which tests are passing, then append <code>-v</code> to each command.</p>
+		<h2><span id="Continuous_integration_with_GitHub_Actions">Continuous integration with GitHub Actions</span></h2>
+		<p>I will normally use GitHub Actions to automatically run my test suite on each push, on every major version of Perl I support. One of the test runs will load <a class="podlinkpod" href="https://metacpan.org/pod/Devel%3A%3ACover">Devel::Cover</a> and use it to upload test coverage data to <a class="podlinkurl" href="https://codecov.io">Codecov</a> and <a class="podlinkurl" href="https://coveralls.io">Coveralls</a>.</p>
+		<p>This gives me (almost) instant feedback on whether recent commits have broken things or reduced test coverage.</p>
+		<p>100% coverage on Coveralls is totally achieveable. 100% coverage on Codecov often takes a lot more work as it measures branch coverage instead of statement coverage. It's certainly a good goal though.</p>
+		<p>Exactly how to set up continuous integration will depend a lot on your built tools, so I won't go into specifics here.</p>
+		<h2><span id="Summary">Summary</span></h2>
+		<p>I feel this setup provides a pretty good basis for test-driven Perl development in 2023.</p>]]>
+    </content>
+</entry>
+  <entry>
+    <title>Perl Testing in 2023</title>
+    <link rel="alternate" href="https://dev.to/tobyink/perl-testing-in-2023-hd7" type="text/html"/>
+    <content type="html">&lt;p&gt;With my open source work, I’ve historically taken an approach which relies more on integration testing than unit testing, but with some of my newer projects, I’ve tried adopting principles from $paidwork and applying them to my free software.&lt;/p&gt;
+
+&lt;p&gt;This is a quick run-down of how I’m structuring my test suite in newer projects. It’s likely that many of my existing projects will never adopt this structure, but some may.&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  Out with the old, in with the new
+&lt;/h2&gt;
+
+&lt;p&gt;First step is ditching &lt;a href="https://metacpan.org/pod/Test%3A%3AMore"&gt;Test::More&lt;/a&gt;, &lt;a href="https://metacpan.org/pod/Test%3A%3AFatal"&gt;Test::Fatal&lt;/a&gt;, &lt;a href="https://metacpan.org/pod/Test%3A%3AWarnings"&gt;Test::Warnings&lt;/a&gt;, and other pre-Test2 testing libraries.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href="https://metacpan.org/pod/Test2%3A%3AV0"&gt;Test2::V0&lt;/a&gt; provides a good base to work with, so we add that to our project’s requirements list straight away.&lt;/p&gt;
+
+&lt;p&gt;We’ll round that out with:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;
+&lt;a href="https://metacpan.org/pod/Test2%3A%3ARequire%3A%3AAuthorTesting"&gt;Test2::Require::AuthorTesting&lt;/a&gt; to skip certain tests when run on the end user’s machine, and require the &lt;code&gt;AUTHOR_TESTING&lt;/code&gt; environment variable to run. This is useful for tests which are very slow or require a highly specific environment to run in.&lt;/li&gt;
+&lt;li&gt;
+&lt;a href="https://metacpan.org/pod/Test2%3A%3ARequire%3A%3AModule"&gt;Test2::Require::Module&lt;/a&gt; to skip certain tests when optional modules are unavailable.&lt;/li&gt;
+&lt;li&gt;
+&lt;a href="https://metacpan.org/pod/Test2%3A%3ATools%3A%3ASpec"&gt;Test2::Tools::Spec&lt;/a&gt; to better structure our unit tests.&lt;/li&gt;
+&lt;li&gt;
+&lt;a href="https://metacpan.org/pod/Test2%3A%3APlugin%3A%3ABailOnFail"&gt;Test2::Plugin::BailOnFail&lt;/a&gt; for when your tests simply cannot carry on. Use sparingly.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;There are other Test2 modules that can be nice to have, but that’s a good starter set. The ones I list above are distributed alongside &lt;a href="https://metacpan.org/pod/Test2%3A%3AV0"&gt;Test2::V0&lt;/a&gt;, so you get them “for free”. It is worth explicitly listing them in your project’s dependencies though, in case they are split into separate distributions in the future.&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  Test directory structure
+&lt;/h2&gt;
+
+&lt;p&gt;Perl distributions typically keep their tests in a directory called &lt;em&gt;t&lt;/em&gt; found inside the project root. We won’t change that. We will however create two subdirectories within it, &lt;em&gt;t/unit&lt;/em&gt; and &lt;em&gt;t/integration&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;You may have other categories of tests which need their own subdirectories too, but these two will be sufficient for most projects.&lt;/p&gt;
+
+&lt;p&gt;If support modules are needed for testing, they can live in &lt;em&gt;t/lib&lt;/em&gt;. If any data files are needed, put them in &lt;em&gt;t/share&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;Any especially important tests can included in the &lt;em&gt;t&lt;/em&gt; directory itself for maximum visibility. I recommend giving them numerically-prefixed filenames for better control over the order they run in.&lt;/p&gt;
+
+&lt;p&gt;I will typically include two such tests:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;
+&lt;em&gt;t/00start.t&lt;/em&gt; which performs no real testing, but prints relevant information about the system it’s being run on, such as the version numbers of dependencies, the values of important environment variables, etc.&lt;/li&gt;
+&lt;li&gt;
+&lt;em&gt;t/01basic.t&lt;/em&gt; which loads all of your modules, or at least the important ones, then passes without any real testing being done. The purpose of this is to quickly check for syntax errors so extreme that they prevent your code from even compiling. This is a good place for &lt;a href="https://metacpan.org/pod/Test2%3A%3APlugin%3A%3ABailOnFail"&gt;Test2::Plugin::BailOnFail&lt;/a&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2&gt;
+  
+  
+  Unit tests
+&lt;/h2&gt;
+
+&lt;p&gt;For each module &lt;em&gt;lib/Foo/Bar.pm&lt;/em&gt; there should be a corresponding unit test script &lt;em&gt;t/unit/Foo/Bar.t&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;The prelude of this file will look something like this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;  &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Test2::&lt;/span&gt;&lt;span class="nv"&gt;V0&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt;&lt;span class="s"&gt;target&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Foo::Bar&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+  &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Test2::Tools::&lt;/span&gt;&lt;span class="nv"&gt;Spec&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+  &lt;span class="k"&gt;use&lt;/span&gt; &lt;span class="nn"&gt;Data::&lt;/span&gt;&lt;span class="nv"&gt;Dumper&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The footer will look exactly like this:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;  &lt;span class="nv"&gt;done_testing&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;And in between will be tests for each unit of code. A “unit” would typically be a function, a method, or an important package variable. Tests for a unit should avoid exercising much code outside their unit, and should &lt;em&gt;especially&lt;/em&gt; avoid exercising code outside the target module.&lt;/p&gt;
+
+&lt;p&gt;A fairly extensive unit test for a method:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;  &lt;span class="nv"&gt;describe&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;method `foo_bar`&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+
+    &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$foo&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$bar&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;both defined&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;$foo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Hello&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+      &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;world&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+      &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Hello world&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;both defined, but foo is empty string&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;$foo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'';&lt;/span&gt;
+      &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;world&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+      &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt; world&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;both defined, but bar is empty string&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;$foo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Hello&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+      &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'';&lt;/span&gt;
+      &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Hello &lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;both defined, but both are empty string&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;$foo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'';&lt;/span&gt;
+      &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'';&lt;/span&gt;
+      &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt; &lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;foo is undefined&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;$foo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+      &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;world&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+      &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;world&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;bar is undefined&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;$foo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Hello&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+      &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+      &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Hello&lt;/span&gt;&lt;span class="p"&gt;';&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;both are undefined&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;$foo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+      &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+      &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;'';&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="nv"&gt;tests&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;it works&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="k"&gt;my&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$object&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$got_foo_bar&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$got_exception&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$got_warnings&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+
+      &lt;span class="nv"&gt;$got_exception&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;dies&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nv"&gt;$got_warnings&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;warns&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+          &lt;span class="nv"&gt;$object&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$CLASS&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="s"&gt;foo&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$foo&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s"&gt;bar&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$bar&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+          &lt;span class="nv"&gt;$got_foo_bar&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nv"&gt;$object&lt;/span&gt;&lt;span class="o"&gt;-&amp;gt;&lt;/span&gt;&lt;span class="nv"&gt;foo_bar&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+        &lt;span class="p"&gt;};&lt;/span&gt;
+      &lt;span class="p"&gt;};&lt;/span&gt;
+      &lt;span class="nv"&gt;is&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$got_exception&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nb"&gt;undef&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;no exception thrown&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+      &lt;span class="nv"&gt;is&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$got_warnings&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;no warnings generated&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+      &lt;span class="nv"&gt;is&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$got_foo_bar&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;$expected_foo_bar&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;expected string returned&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+      &lt;span class="nv"&gt;is&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+        &lt;span class="nv"&gt;$object&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+        &lt;span class="nv"&gt;object&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+          &lt;span class="nv"&gt;call&lt;/span&gt; &lt;span class="s"&gt;foo&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$foo&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+          &lt;span class="nv"&gt;call&lt;/span&gt; &lt;span class="s"&gt;bar&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nv"&gt;$bar&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+        &lt;span class="p"&gt;},&lt;/span&gt;
+        &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;method call didn't alter the values of the attributes&lt;/span&gt;&lt;span class="p"&gt;",&lt;/span&gt;
+      &lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="ow"&gt;or&lt;/span&gt; &lt;span class="nv"&gt;diag&lt;/span&gt; &lt;span class="nv"&gt;Dumper&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$object&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+  &lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;p&gt;The module itself as a whole can also be considered a “unit” so that very basic module-wide concerns can be tested there.&lt;/p&gt;
+
+&lt;p&gt;A fairly simple module-wide unit test:&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight perl"&gt;&lt;code&gt;  &lt;span class="nv"&gt;describe&lt;/span&gt; &lt;span class="p"&gt;"&lt;/span&gt;&lt;span class="s2"&gt;class `&lt;/span&gt;&lt;span class="si"&gt;$CLASS&lt;/span&gt;&lt;span class="s2"&gt;`&lt;/span&gt;&lt;span class="p"&gt;"&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+
+    &lt;span class="nv"&gt;tests&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;it inherits from Moo::Object&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;isa_ok&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$CLASS&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;Moo::Object&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+
+    &lt;span class="nv"&gt;tests&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;it can be instantiated&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="k"&gt;sub &lt;/span&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+      &lt;span class="nv"&gt;can_ok&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt; &lt;span class="nv"&gt;$CLASS&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;'&lt;/span&gt;&lt;span class="s1"&gt;new&lt;/span&gt;&lt;span class="p"&gt;'&lt;/span&gt; &lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+  &lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h2&gt;
+  
+  
+  Integration tests
+&lt;/h2&gt;
+
+&lt;p&gt;Integration tests can take a far more freeform approach. These tests should ensure that the system as a whole, or subsystems within it (which may involve multiple modules), work when used together.&lt;/p&gt;
+
+&lt;p&gt;A good place to start is to look at the &lt;em&gt;SYNOPSIS&lt;/em&gt; sections of your documentation and test that they work as advertised.&lt;/p&gt;
+
+&lt;p&gt;Integration tests should use &lt;a href="https://metacpan.org/pod/Test2%3A%3AV0"&gt;Test2::V0&lt;/a&gt; but will often be small enough not to benefit much from &lt;a href="https://metacpan.org/pod/Test2%3A%3ATools%3A%3ASpec"&gt;Test2::Tools::Spec&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  Running tests locally
+&lt;/h2&gt;
+
+&lt;p&gt;The Test2 tool for running your test suite is &lt;a href="https://metacpan.org/pod/App%3A%3AYath"&gt;yath&lt;/a&gt;, but old stalwart &lt;a href="https://metacpan.org/pod/App%3A%3AProve"&gt;prove&lt;/a&gt; also works well. In your project roor directory, you should be able to run &lt;code&gt;yath test&lt;/code&gt; at the command-line to run your entire test suite. &lt;code&gt;prove -lr&lt;/code&gt; should also work.&lt;/p&gt;
+
+&lt;p&gt;If you need more verbose output to see exactly which tests are passing, then append &lt;code&gt;-v&lt;/code&gt; to each command.&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  Continuous integration with GitHub Actions
+&lt;/h2&gt;
+
+&lt;p&gt;I will normally use GitHub Actions to automatically run my test suite on each push, on every major version of Perl I support. One of the test runs will load &lt;a href="https://metacpan.org/pod/Devel%3A%3ACover"&gt;Devel::Cover&lt;/a&gt; and use it to upload test coverage data to &lt;a href="https://codecov.io"&gt;Codecov&lt;/a&gt; and &lt;a href="https://coveralls.io"&gt;Coveralls&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;This gives me (almost) instant feedback on whether recent commits have broken things or reduced test coverage.&lt;/p&gt;
+
+&lt;p&gt;100% coverage on Coveralls is totally achieveable. 100% coverage on Codecov often takes a lot more work as it measures branch coverage instead of statement coverage. It’s certainly a good goal though.&lt;/p&gt;
+
+&lt;p&gt;Exactly how to set up continuous integration will depend a lot on your built tools, so I won’t go into specifics here.&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  Summary
+&lt;/h2&gt;
+
+&lt;p&gt;I feel this setup provides a pretty good basis for test-driven Perl development in 2023.&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Toby Inkster</name>
+    </author>
+    <id>https://dev.to/tobyink/perl-testing-in-2023-hd7</id>
+    <published>2023-01-24T17:38:36Z</published>
+    <updated>2023-01-24T17:38:36Z</updated>
+    <category term="perl"/>
+    <category term="tdd"/>
+    <category term="test2suite"/>
+  </entry>
   <entry>
     <title>#600 - 600th edition and still going ...</title>
     <link rel="alternate" href="https://perlweekly.com/archive/600.html" type="text/html"/>
@@ -938,7 +1325,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
   <updated>2023-01-20T14:57:00</updated>
   <summary>
   <![CDATA[
-     The Grants Committee is accepting grant proposals all the time. We evaluate them every two months and another round is starting. If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 January 16th, 2023, UTC. We will publish the received applications, get community feedback through January 23nd, and we 
+     The Grants Committee is accepting grant proposals all the time. We evaluate them every two months and another round is starting. If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 January 29th, 2023, UTC. We will publish the received applications, get community feedback through February 4th, and we 
    ]]>
   </summary>
   <author>
@@ -951,7 +1338,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
      
      <p>The Grants Committee is accepting grant proposals all the time. We evaluate them every two months and another round is starting.</p>
 
-<p>If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 January 16th, 2023, UTC. We will publish the received applications, get community feedback through January 23nd, and we will conclude the process shortly thereafter.</p>
+<p>If you have an idea for doing some work that will benefit the Perl or Raku communities, please consider submitting a grant application. The application deadline for this round is 23:59 January 29th, 2023, UTC. We will publish the received applications, get community feedback through February 4th, and we will conclude the process shortly thereafter.</p>
 
 <p>We now accept grant requests for core Perl and Raku development. There are some eligibility requirements that must be met for each language when submitting a grant. For Perl:
  * The applicant must be a contributor to the Perl core.
@@ -965,7 +1352,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
 
 <p>To apply, please read <a href="https://www.perlfoundation.org/how-to-write-a-proposal.html">How to Write a Proposal</a>, <a href="https://www.perlfoundation.org/grants-committee.html">GC Charter, Rules of Operation</a> and <a href="https://www.perlfoundation.org/running-grants.html">Running Grants List</a> will also help you understand how the grant process works. We also got some <a href="https://grants.perlfoundation.org/">grant ideas</a> from the community. Grant applications may be submitted via <a href="https://docs.google.com/forms/d/16seYhrMjz8rgsau9e1MtwYY0fHB81mVKm-0SD6Ynty0/viewform">this Google Form</a>.</p>
 
-<p>We will confirm the receipt of application by no later than January 18th.</p>
+<p>We will confirm the receipt of application by no later than January 30th.</p>
 
 <p>If you have further questions, please contact me at tpf-grants-secretary at perl-foundation.org.</p>
 
@@ -1337,147 +1724,6 @@ for my $test (&lt;200 2023 01234 56789&gt;) {
     </content>
 </entry>
   <entry>
-    <title>Util::H2O and More, during Ordinary Times</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/oodler_577/2023/01/post-advent-carolling.html"/>
-    <id>tag:blogs.perl.org,2023:/users/oodler_577//3888.11002</id>
-    <published>2023-01-18T04:33:05Z</published>
-    <updated>2023-01-18T22:13:56Z</updated>
-    <author>
-        <name>Oodler 577</name>
-        
-    </author>
-    <category term="h2oobjectsooppoop" label="h2o objects oop poop" scheme="http://www.sixapart.com/ns/types#tag"/>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/oodler_577/">
-        <![CDATA[<h1>Background</h1>
-
-<p>During the 2022 <a href="https://perladvent.org/2022/2022-12-06.html">Perl Advent</a>, in particular the entry for <a href="https://perladvent.org/2022/2022-12-06.html">December 06</a>; Perl Advent fans were introduced to a little module called <code>Util::H2O</code>.</p>
-
-<p>A lot has already been said about <code>Util::H2O</code>, and this author uses it a lot in client and production code because it helps produce very clean and maintainable <code>HASH</code> reference <em>heavy</em> code. So much so, that he created the <code>Util::H2O::More</code> module to encapsulate some common tasks and additional capabilities for working between <em>pure</em> Perl data structures and <em>blessed</em> objects that have real data <em>accessors</em>, in a natural and idiomatic way.</p>
-
-<h1>Support for Generic Perl Data Structures</h1>
-
-<p><code>h2o</code> is perfect for dealing with data structures that are made up of strictly <code>HASH</code> references, but it is often the case that useful data structures contain a mix of <code>HASH</code> and <code>ARRAY</code> references. For example, when using databases or web API calls returning <code>JSON</code>, it is often a list of records that is returned. This was the case of the example call that was in the <em>December 06</em> Perl Advent 2022 article. </p>
-]]>
-        <![CDATA[<p>Recall the original example,</p>
-
-<pre><code>use strict;
-use warnings;
-use JSON       qw//;
-use HTTP::Tiny qw//;
-use Util::H2O;    # only exports 'h2o'
-my $http     = HTTP::Tiny-&gt;new;
-my $response = h2o $http-&gt;get(q{https://jsonplaceholder.typicode.com/users});
-if ( not $response-&gt;success ) {
-    print STDERR qq{Cannot get list of online persons to watch!\n};
-    printf STDERR qq{Web request responded with with HTTP status: %d\n}, $response-&gt;status;
-    exit 1;
-}
-my $json_array_ref = JSON::decode_json( $response-&gt;content );
-
-print qq{lat, lng, name, username\n};
-foreach my $person (@$json_array_ref) {
-
-    # objectify each HASH reference at a time
-    h2o -recurse, $person;
-    printf qq{%5.4f, %5.4f, %s, %s\n},
-      $person-&gt;address-&gt;geo-&gt;lat,
-      $person-&gt;address-&gt;geo-&gt;lng,
-      $person-&gt;name, $person-&gt;username;
-}
-</code></pre>
-
-<p>Which outputs:</p>
-
-<pre><code>lat, lng, name, username
--37.3159, 81.1496, Leanne Graham, Bret
--43.9509, -34.4618, Ervin Howell, Antonette
--68.6102, -47.0653, Clementine Bauch, Samantha
-29.4572, -164.2990, Patricia Lebsack, Karianne
--31.8129, 62.5342, Chelsey Dietrich, Kamren
--71.4197, 71.7478, Mrs. Dennis Schulist, Leopoldo_Corkery
-24.8918, 21.8984, Kurtis Weissnat, Elwyn.Skiles
--14.3990, -120.7677, Nicholas Runolfsdottir V, Maxime_Nienow
-24.6463, -168.8889, Glenna Reichert, Delphine
--38.2386, 57.2232, Clementina DuBuque, Moriah.Stanton
-</code></pre>
-
-<h1>Some New Keywords</h1>
-
-<p>New keywords have been introduced in <code>Util::H2O::More</code>, called <code>d2o</code> and it's <em>undoer</em>, <code>o2d</code> (like <code>o2h</code> is to <code>h2o</code>). Essentially, it traverses a Perl data structure, looking for pure <code>HASH</code> refs that may be potentially contained inside of <code>ARRAY</code> refs, and adds accessors. For <code>ARRAY</code>s, it adds some handy vmethods to make accessing the lists much cleaner (e.g., <code>all</code>).</p>
-
-<p>Without much ado:</p>
-
-<pre><code>use strict;
-use warnings;
-use JSON            qw//;
-use HTTP::Tiny      qw//;
-use Util::H2O::More qw/h2o d2o/;
-my $http           = HTTP::Tiny-&gt;new;
-my $response       = h2o $http-&gt;get(q{https://jsonplaceholder.typicode.com/users});
-if ( not $response-&gt;success ) {
-    print STDERR qq{Cannot get list of online persons to watch!\n};
-    printf STDERR qq{Web request responded with with HTTP status: %d\n}, $response-&gt;status;
-    exit 1;
-}
-
-# objectify contents of $json_array_ref in one pass
-my $json_array_ref = d2o JSON::decode_json( $response-&gt;content );
-
-# $json is an ARRAY reference
-foreach my $person ( $json_array_ref-&gt;all ) {
-    printf qq{%5.4f, %5.4f, %s, %s\n},
-      $person-&gt;address-&gt;geo-&gt;lat,
-      $person-&gt;address-&gt;geo-&gt;lng,
-      $person-&gt;name, $person-&gt;username;
-}
-</code></pre>
-
-<p>Which outputs, like above:</p>
-
-<pre><code>lat, lng, name, username
--37.3159, 81.1496, Leanne Graham, Bret
--43.9509, -34.4618, Ervin Howell, Antonette
--68.6102, -47.0653, Clementine Bauch, Samantha
-29.4572, -164.2990, Patricia Lebsack, Karianne
--31.8129, 62.5342, Chelsey Dietrich, Kamren
--71.4197, 71.7478, Mrs. Dennis Schulist, Leopoldo_Corkery
-24.8918, 21.8984, Kurtis Weissnat, Elwyn.Skiles
--14.3990, -120.7677, Nicholas Runolfsdottir V, Maxime_Nienow
-24.6463, -168.8889, Glenna Reichert, Delphine
--38.2386, 57.2232, Clementina DuBuque, Moriah.Stanton
-</code></pre>
-
-<p>In this example, the initial <code>HASH</code> reference returned by <code>HTTP::Tiny</code> is made into an object with accessors using <code>h2o</code> like the original code. However, rather than having to dereference the <code>ARRAY</code> reference <code>$json_array_ref</code> (returned after decoding by <code>decode_json</code>), <code>d2o</code> is employed to convert the data structure such that all <code>HASH</code> references have accessors as expected. And the <code>ARRAY</code> reference containing the list of <code>HASH</code> references has been <em>blessed</em> so that it has the <em>virtual</em> methods on <code>ARRAY</code>s briefly mentioned above.</p>
-
-<p>This allows the code to collapse from:</p>
-
-<pre><code>foreach my $person (@$json_array_ref) {
-    h2o -recurse, $person;
-...
-</code></pre>
-
-<p>to, simply:</p>
-
-<pre><code>foreach my $person ( $json_array_ref-&gt;all ) {
-</code></pre>
-
-<p>thus avoiding the call to <code>h2o</code> since the <code>d2o</code> rooted out all the <code>HASH</code> references buried in <code>$json_array_ref</code> and applied <code>h2o</code> to them.</p>
-
-<p>More importantly, this requires no <em>a priori</em> knowledge of the data structure.</p>
-
-<h1>Conclusion</h1>
-
-<p>It is critical to point out, that <code>h2o</code> does <em>one thing</em> and does it <em>very</em> well - which is a cherished and time tested UNIX <em>ideal</em> for standard tooling. But as a result of <em>present</em>'ing <code>Util::H2O</code> in 2022's Perl Advent, it was clear that for this common case, <code>h2o</code> by itself was insufficient to idiomatically improve the handling of Perl data structures that was resulting from the web API call and subsequent <code>decode_json</code>. The solution is to just add some support for data structure traversal (applying <code>h2o</code> along the way), which is all <code>d2o</code> does.</p>
-
-<p>So <code>d2o</code> was then added to <code>Util::H2O::More</code> to make things a little nicer, and thus taking Perl another step closer to a situation that alls programmers to more cleanly work with complex data structures - by eliminating the glut of <em>curley</em> and <em>square</em> braces and the need to dereference data structures along the way. The addition of the virtual methods to the <code>ARRAY</code> containers, is just more sweetness.</p>
-
-<p>Please checkout <a href="https://metacpan.org/pod/Util::H2O">Util::H2O</a> and <a href="https://metacpan.org/pod/Util::H2O::More">Util::H2O::More</a>; alone or combined, the options available to deal with <em>ad hoc</em> or <em>in flight</em> complex data structures in Perl in very clean and idiomatic ways <em>without</em> resorting to so called "POOP" (<em>Perl Object Oriented Programming</em>) is continuing to improve. Practical sources of these data structures include, <code>DBI</code> (e.g., <code>DBD::mysql</code>), <code>JSON::decode_json</code>, and <code>Web::Scraper</code>. <code>Util::H2O::More</code> even provides special methods for working with <code>Getopt::Long</code> and <code>Config::Tiny</code>, <code>opt2h2o</code> and <code>ini2h2o</code>, respectively.</p>
-
-<p>PS: Sorry for the bad code highlighting, I have no idea how this thing works. :-)</p>
-]]>
-    </content>
-</entry>
-  <entry>
   <title>one-liner: read first elements of a huge directory</title>
   <summary type="html"><![CDATA[<p>
 At a client we have a networked disk with millions of files. I was trying to list the first few files to see what's going on.
@@ -1605,258 +1851,6 @@ At a client we have a networked disk with millions of files. I was trying to lis
     <category term="programming"/>
     <category term="devops"/>
     <category term="beginners"/>
-  </entry>
-  <entry>
-    <title>Weekly Challenge 200</title>
-    <link rel="alternate" href="https://dev.to/zapwai/weekly-challenge-200-1o38" type="text/html"/>
-    <content type="html">&lt;p&gt;I've been doing &lt;a href="https://theweeklychallenge.org/"&gt;The Weekly Challenge&lt;/a&gt; for a few weeks now, I thought this one was tricky/fun.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-200/"&gt;Challenge 200&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Task One
-&lt;/h2&gt;
-
-&lt;p&gt;An integer array is called &lt;em&gt;arithmetic&lt;/em&gt; if it has at least 3 elements and the differences between any three consecutive elements are the same. Write a script to find all Arithmetic Slices for the given array of integers.&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Task Two
-&lt;/h2&gt;
-
-&lt;p&gt;A seven segment display is an electronic component, usually used to display digits. Write a program that accepts any natural number and draws it as an ASCII seven segment display.&lt;/p&gt;
-
-&lt;p&gt;&lt;a href="https://github.com/manwar/perlweeklychallenge-club/tree/master/challenge-200/zapwai"&gt;My solutions on github&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Solution to Task One
-&lt;/h2&gt;
-
-&lt;p&gt;Initially I was constructing the slices during one pass of the array, but decided to create a list of start/end points to make the logic easier.&lt;br&gt;
-As we traverse the list, if a difference is detected that's identical to the previous, we push the starting index to the begin array. When the difference between list elements becomes different again, the ending index is pushed to the end array.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use v5.30.0;
-my @array = (1,2,3,4);
-#my @array = (1,2,3,5,7,9,10,11,14);
-#my @array = (1,2,3,5,7,9,10,11,14,5,32,33,40,43,46,49);
-
-sub wrap {
-    my @array = @_;
-    "(" . join(",", @array).")"
-}
-
-# return all sets of size 3+
-sub bundle {
-    my $len = @_;
-    my $str; 
-    unless (@_ &amp;lt; 4) {
-    do {
-        $len--;
-        for (0 .. @_ - $len) {
-        my @list;
-        for my $i ($_ .. $_ + $len - 1) {
-            push @list, $_[$i];
-        }
-        $str .= wrap(@list).", ";
-        }
-    } while ($len &amp;gt; 3);
-    }
-    $str .= wrap(@_);    
-    print $str;
-}
-
-say "Input: \@array = " . wrap(@array);
-if ($#array &amp;lt; 2) {
-    say "Output: No slice found."; exit;
-}
-
-# indices as we traverse list
-my $begin = 0;
-my $end = 0;            
-
-my @begin;
-my @end;
-
-$begin[0] = 0 if ($array[2] - $array[1] == $array[1] - $array[0]);
-for my $i (0 .. $#array - 2) {
-    next if ($i &amp;lt; $end);
-    $begin = $i;
-    my $diff = $array[$i + 1] - $array[$i];
-    for my $j ($i + 1 .. $#array - 1) {
-    if ($array[$j + 1] - $array[$j] == $diff) {
-        $end = $j + 1;
-        push @begin, $begin unless ($begin[$#begin] == $begin);
-    } else {
-        last if (($end == 0) or ($end[$#end] == $end));
-        push @end, $end;
-        last;
-    }
-    }
-}
-push @end, $end if (@begin != @end);
-print "Output: ";
-for my $i (0 .. $#begin - 1) {
-    bundle @array[$begin[$i] ..  $end[$i]];
-    print ", ";
-}
-bundle @array[$begin[$#begin] ..  $end[$#begin]];
-say;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;When I converted this solution to Raku, I had to address the numerical use of an uninitialized value. Perl did not mind &lt;code&gt;($end[$#end] == $end)&lt;/code&gt; where the end array is empty, but in Raku I decided to initialize the arrays to avoid the "Use of Nil in numeric context" warning. Part of the Raku code:&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;my $begin = 0;
-my $end = 0;            
-
-my @begin = (-1);
-my @end = (-1);
-
-@begin[1] = 0 if (@array[2] - @array[1] == @array[1] - @array[0]);
-loop (my $i = 0; $i &amp;lt; @array.elems - 2; $i++) {
-    next if ($i &amp;lt; $end);
-    $begin = $i;    
-    my $diff = @array[$i + 1] - @array[$i];
-    loop (my $j = $i + 1; $j &amp;lt; @array.elems - 1; $j++) {
-    if (@array[$j + 1] - @array[$j] == $diff) {
-        $end = $j + 1;
-        push @begin, $begin unless (@begin.tail == $begin);
-    } else {
-        last if (($end == 0) or (@end.tail == $end));
-        push @end, $end;
-        last;
-    }
-    }
-}
-push @end, $end if (@begin.elems != @end.elems);
-print "Output: ";
-
-shift @begin;
-shift @end;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;h2&gt;
-  
-  
-  Solution to Task Two
-&lt;/h2&gt;
-
-&lt;p&gt;This was a fun one. Initially I wrote it with newlines so it only printed one digit. Then I modified it by adding a newline_flag to determine if we're on the final digit and require a newline character printed instead of a space.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use v5.30.0;
-my @truth = qw( 1110111 0010010 1011101 1011011 0111010 1101011 0101111 1010010 1111111 1111010 );
-my $N = $ARGV[0] || 200;
-
-my $vert = 2;
-my $horiz = 2*$vert + 1;
-
-sub hor {
-    my ($newline_flag, $i, @a) = @_;
-    if ($a[$i]) {
-    print " ";
-    print "-" x $horiz;
-    ($newline_flag) ? { say " " } : { print " " };
-    } else {
-    ($newline_flag) ? { say " " x $horiz } : { print " " x ($horiz + 2) }
-    }
-}
-
-sub ver {
-    my ($newline_flag, $i, @a) = @_;
-
-    if ($a[$i]) {
-    print "|";
-    } else {
-    print " ";
-    }
-    print " " x $horiz;
-    if ($a[$i + 1]) {
-    ($newline_flag) ? { say "|" } : { print "|" };  
-    } else {
-    ($newline_flag) ? { say " " } : { print " " };  
-    }
-}
-
-sub d {
-    my @num = @_;
-    my $last = pop @num;
-    foreach (@num) {
-    my @a = split("", $truth[$_]);
-    hor(0,0, @a);
-    }
-    my @b = split("", $truth[$last]);    
-    hor(1,0, @b);
-
-    my $N = $vert;
-    do {
-    $N--;    
-    foreach (@num) {
-        my @a = split("", $truth[$_]);
-        ver(0,1, @a);
-    }
-    ver(1,1,@b);
-    } while ($N &amp;gt; 0);
-
-    foreach (@num) {
-    my @a = split("", $truth[$_]);
-    hor(0,3, @a);
-    }
-    hor(1,3, @b);
-
-    $N = $vert;
-    do {
-    $N--;    
-    foreach (@num) {
-        my @a = split("", $truth[$_]);  
-        ver(0,4, @a);
-    }
-    ver(1,4, @b);
-    } while ($N &amp;gt; 0);
-
-    foreach (@num) {
-    my @a = split("", $truth[$_]);  
-    hor(0,6, @a);   
-    }
-    hor(1,6, @b);
-}
-
-my @nums = split("",$N);
-d(@nums);
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;Converting this to Raku, I had some issues with the ternary operator, and had some bugs with the split operator until I added the :skip-empty option. e.g. &lt;code&gt;my @a = split("", @truth[$_], :skip-empty);&lt;/code&gt;&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Zapwai</name>
-    </author>
-    <id>https://dev.to/zapwai/weekly-challenge-200-1o38</id>
-    <published>2023-01-16T21:15:44Z</published>
-    <updated>2023-01-16T21:15:44Z</updated>
-    <category term="perl"/>
-    <category term="raku"/>
   </entry>
   <entry>
     <title>#599 - Open Source Development Course for Perl developers</title>
