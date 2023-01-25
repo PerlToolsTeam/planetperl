@@ -69,6 +69,89 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://blogs.perl.org/users/tom_wyant/2023/01/my-favorite-modules-perliovia.html">My Favorite Modules: PerlIO::via</a></h2>
+<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
+
+              <p class="text-right"><small>Published by Tom Wyant
+ on Wednesday 25 January 2023 20:02</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p>OK, I confess: <a href="https://metacpan.org/pod/PerlIO::via">PerlIO::via</a> is not a module that I use every day. It allows you, easily, and with minimal code, to modify an I/O stream <strong>before</strong> it gets to the reader of the stream. or <strong>after</strong> the writer has written it. All you do is write (say) <code>My::Module</code> conforming to the parts of the <code>PerlIO::via</code> interface you need, and provide it to the second argument of <code>open()</code> or <code>binmode()</code> as <code>':via(My::Module)'</code>. How cool is that? And how cool is a language that lets you do that with a minimum of fuss, bother, and code?</p>
+
+<p>I encountered this when trying to modify (OK, hack) the behavior of a large and complex hunk of Perl not under my control. Rummaging around in this turned up the fact that all file input went through a single module/object, which had an <code>open()</code> method. I realized if I could insert my own <a href="https://perldoc.perl.org/PerlIO.html">PerlIO</a> layer into the input stream, I would have control over what the <s>victim</s> host code saw.</p>
+
+<p>In the true spirit of the Conan the Barbarian school of programming ("Bash it until it submits!") I wrote a <code>PerlIO::via</code> module whose <code>import()</code> method monkey-patched the <code>open()</code> to insert my layer into the stack. All I had to do was launch the host code with <code>-MMy::Module</code> and the dirty deed was done.</p>
+
+<p>If you read the <a href="https://metacpan.org/pod/PerlIO::via">PerlIO::via</a> documentation you see a whole host of methods you can provide. All I wanted to do was modify the input stream, and that can be done by implementing just two or three:</p>
+
+<p>You will have to provide <code>PUSHED()</code>, which is called when your layer is pushed onto the I/O stack. That is, when someone specifies it in the second argument of <code>open()</code> or <code>binmode()</code>. This is called as a static method, and given a <a href="https://linux.die.net/man/3/fopen"><code>fopen()</code></a>-style mode string (i.e. <code>'r'</code>, <code>'w'</code>, or what have you) and the already-opened handle, which represents the layer below. This method needs to instantiate and return an object of the given class. Depending on your needs, this can be as simple as</p>
+
+<pre>
+sub PUSHED {
+    my ( $class ) = @_;
+    return bless {}, $class;
+}
+</pre>
+
+<p>You have a couple options for how to get the input, but I opted for <code>FILL()</code>. This is called as a method, and passed a file handle which is open to the next layer down in the PerlIO stack. This would look something like:</p>
+
+<pre>
+sub FILL {
+    my ( $self, $fh ) = @_;
+    defined( my $data = &lt;$fh&gt; )
+        or return;
+
+<p>    # Do your worst to the $data</p>
+
+<p>    return $data;<br />
+}<br />
+</pre></p>
+
+<p>A few paragraphs back I said "two or three" methods. For a while I was content with the above two. But then I realized that the caller was getting back bytes even if the file was opened with <code>:encoding(...)</code> specified in a lower layer, and the <code>FILL()</code> method preserved the character-nature of the data. Wrestling with this finally drove me back to the documentation, where I found the <code>UTF8()</code> method.</p>
+
+<p>The <code>UTF8()</code> method is optional, and is called (if it exists) right after <code>PUSHED()</code>. It receives one argument, which is interpreted as a Boolean, and is true if the next-lower layer provides characters rather than bytes. The returned value tells <code>PerlIO</code> whether your layer provides characters (if true) or bytes (if false). A minimal-but-sufficient implementation is</p>
+
+<pre>
+sub UTF8 {
+    my ( undef, $below_flag ) = @_;
+    return $below_flag;
+}
+</pre>
+
+<p><strong>Caveat:</strong> If you apply the encoding and your layer in the same operation (e.g. <code>binmode $fh, ':encoding(utf-8):via(My::Module)';</code>, the <code>UTF8()</code> method will <strong>not</strong> see a true value of <code>$below_flag</code>. There are two ways of dealing with this:</p>
+
+<ul>
+    <li>Apply your <code>PerlIO::via</code> layer in a separate call to <code>binmode()</code>, or</li>
+    <li>Specify an explicit <code>:utf8</code> after your layer (that is, <code>binmode $fh, ':encoding(utf-8):via(My::Module):utf8';</code>).</li>
+</ul>
+
+<p>This is already a longer note than I like, but I have to say something about <code>:utf8</code>. The current documentation calls it a pseudo-layer. What it really is is a bit on the layer below, telling <code>PerlIO</code> that the layer it applies to provides characters rather than bytes on input, or accepts characters on output. Around Perl 5.8 or 5.10 there was a fair amount of misunderstanding about what <code>:utf8</code> did, and there was actually core Perl documentation that said (or seemed to say) that you did UTF-8 I/O by specifying this layer. Most such instances of <code>:utf8</code> in the core documentation have been replaced by <code>:encoding(utf-8)</code> but there may still be some <code>:utf8</code> in outlying regions of the documentation.</p>
+
+<p>By using <code>:utf8</code> in the second example above, what I am telling Perl is that <code>:via(My::Module)</code> produces decoded output. It does, because the layer below it (<code>:encode(utf-8)</code>) does, and <code>:via(My::Module)</code> preserves this property. Without the <code>:encode(utf-8)</code> below it it would be an error to tell PerlIO that <code>:via(My::Module)</code> produced characters unless <code>My::Module</code> did the decoding itself.</p>
+
+<p>If you want to see what layers are in effect on file handle <code>$fh</code>, you can call <code>PerlIO::get_layers( $fh )</code>. This returns a list, which will include <code>:utf8</code> as a separate entry, maybe more than once if more than one layer has that bit set.</p>
+
+<p>Previous entries in this series:</p>
+
+<ol>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2021/09/my-favorite-modules-if.html"><code>if</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2021/10/my-favorite-modules-diagnostics-one.html"><code>diagnostics</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2021/11/my-favorite-modules-termreadlineperl.html"><code>Term::ReadLine::Perl</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2022/02/my-favorite-modules-re.html"><code>re</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2022/02/my-favorite-modules-develnytprof.html"><code>Devel::NYTProf</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2022/05/my-favorite-modules-errno.html"><code>Errno</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2022/05/my-favorite-modules-timepiece.html"><code>Time::Piece</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2022/06/core-modules-filetest.html"><code>filetest</code></a></li>
+    <li><a href="https://blogs.perl.org/users/tom_wyant/2022/06/my-favorite-modules-filestat.html"><code>File::stat</code></a></li>
+</ol>
+
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/zapwai/weekly-challenge-201-1ibc">Weekly Challenge 201</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
 
@@ -185,7 +268,7 @@ sub chonk {         #add two elems, given offset.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/toby_inkster/2023/01/perl-testing-in-2023.html">Perl Testing in 2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -326,7 +409,7 @@ sub chonk {         #add two elems, given offset.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/yukikimoto/spvm-improved-exchange-api-at-v09684-213c">SPVM improved Exchange API at v0.9684. Welcome to this easy world of type conversion!</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -371,7 +454,7 @@ SPVM::MyClass-&gt;foo(["aaa", "bbb", "ccc"]);
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/tobyink/perl-testing-in-2023-hd7">Perl Testing in 2023</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -613,7 +696,7 @@ SPVM::MyClass-&gt;foo(["aaa", "bbb", "ccc"]);
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/600.html">#600 - 600th edition and still going ...</a></h2>
 <a href="https://perlweekly.com/" class="badge badge-primary" style="float: left">Perl Weekly</a>
@@ -629,7 +712,7 @@ SPVM::MyClass-&gt;foo(["aaa", "bbb", "ccc"]);
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/perl-weekly-600-600th-edition-and-still-going--4ika">Perl Weekly #600 - 600th edition and still going ...</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1020,7 +1103,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-200/">RECAP - The Weekly Challenge - 200</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1033,7 +1116,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-201/">The Weekly Challenge - 201</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1047,7 +1130,7 @@ Apology for the late acceptance of your contributions last week. I wasn&rsquo;t 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/two-hundred-slices-ach">Two hundred slices</a></h2>
 <a href="https://dev.to/t/perl" class="badge badge-primary" style="float: left">dev.to #perl</a>
@@ -1253,7 +1336,7 @@ $ ./ch-2.py 67890
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/chrisarg/2023/01/using-perl-to-prepare-sequencing-files-to-submit-to-ncbis-geo.html">Using Perl to prepare sequencing files to submit to NCBI's GEO</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1282,7 +1365,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge badge-primary" style="float: left">The Weekly Challenge</a>
@@ -1294,7 +1377,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_12">
+          <div class="card" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/cdxxviii-9-great-cpan-modules-released.html">(cdxxviii) 9 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1306,7 +1389,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_13">
+          <div class="card" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/dxli-metacpan-weekly-report-iosocketssl.html">(dxli) metacpan weekly report - IO::Socket::SSL</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1318,7 +1401,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_14">
+          <div class="card" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/01/dlxix-stackoverflow-perl-report.html">(dlxix) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge badge-primary" style="float: left">Niceperl</a>
@@ -1330,7 +1413,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_15">
+          <div class="card" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/psc/2023/01/this-week-in-psc-094.html">This Week in PSC (094)</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1353,7 +1436,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_16">
+          <div class="card" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/saiftynet">Call for Grant Proposals: January 2023 Round</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1389,7 +1472,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_17">
+          <div class="card" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/max_maischein/2023/01/otobo-supports-the-german-perlraku-workshop.html"> OTOBO supports the German Perl/Raku-Workshop</a></h2>
 <a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
@@ -1417,7 +1500,7 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_18">
+          <div class="card" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/retirementdave">Retirement Announcement - Dave Rolsky</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge badge-primary" style="float: left">Perl Foundation News</a>
@@ -1434,319 +1517,6 @@ The repetitive steps are now taken care by this PERL script (which is boring, bu
 
     
          </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_19">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2023/01/perl-weekly-challenge-200-arithmetic-slices-and-seven-segment-display.html">Perl Weekly Challenge 200: Arithmetic Slices and Seven Segment Display</a></h2>
-<a href="http://blogs.perl.org/" class="badge badge-primary" style="float: left">blogs.perl.org</a>
-
-              <p class="text-right"><small>Published by laurent_r
- on Thursday 19 January 2023 19:34</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 200 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-200/">Perl Weekly Challenge</a> organized by <a href="https://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a couple of days from now (on January 22, 2023 at 23:59). This blog post offers some solutions to this challenge. Please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Arithmetic Slices</h2>
-
-<p><em>You are given an array of integers.</em></p>
-
-<p><em>Write a script to find out all Arithmetic Slices for the given array of integers.</em></p>
-
-<blockquote>
-  <p><em>An integer array is called arithmetic if it has at least 3 elements and the differences between any three consecutive elements are the same.</em></p>
-</blockquote>
-
-<p><em>Example 1</em></p>
-
-<pre><code>Input: @array = (1,2,3,4)
-Output: (1,2,3), (2,3,4), (1,2,3,4)
-</code></pre>
-
-<p><em>Example 2</em></p>
-
-<pre><code>Input: @array = (2)
-Output: () as no slice found.
-</code></pre>
-
-<h3>Arithmetic Slices in Raku</h3>
-
-<p>The <code>find_slices</code> subroutine loops over the input array, computes the difference (<code>$gap</code>) between any two consecutive integers and checks whether the same difference can be found between the next integers. </p>
-
-<pre><code>sub find_slices (@in) {
-    my @out;
-    return @out if @in.elems &lt; 3;
-    for 0..@in.end - 2 -&gt; $i {
-        my $gap = @in[$i+1] - @in[$i];
-        for $i+2..@in.end -&gt; $j {
-            last if @in[$j] - @in[$j-1] != $gap;
-            push @out, @in[$i..$j];
-        }
-    }
-    return @out;
-}
-for &lt;1 2 3 4&gt;, &lt;2 5&gt;, &lt;3 5 7 9&gt;, &lt;2 5 9&gt; -&gt; @test {
-    say (~@test).fmt("%-10s =&gt; "), find_slices @test;
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ raku ./arithmetic-slices.raku
-1 2 3 4    =&gt; [(1 2 3) (1 2 3 4) (2 3 4)]
-2 5        =&gt; []
-3 5 7 9    =&gt; [(3 5 7) (3 5 7 9) (5 7 9)]
-2 5 9      =&gt; []
-</code></pre>
-
-<h3>Arithmetic Slices in Perl</h3>
-
-<p>This a port to Perl of the Raku program above:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub find_slices  {
-    my @in = @_;
-    my @out;
-    # return [] if @in &lt; 3;
-    for my $i (0..$#in - 2) {
-        my $gap = $in[$i+1] - $in[$i];
-        for my $j ($i+2..$#in) {
-            last if $in[$j] - $in[$j-1] != $gap;
-            push @out, [@in[$i..$j]];
-        }
-    }
-    return @out ? @out : [];
-}
-for my $test ([&lt;1 2 3 4&gt;], [&lt;2 5&gt;], [&lt;3 4 5 6 8&gt;],
-              [&lt;3 5 7 9&gt;], [&lt;2 5 9&gt;]) {
-    printf "%-10s =&gt; ", "@$test";
-    say map "(@$_) ", find_slices @$test;
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ perl  ./arithmetic-slices.pl
-1 2 3 4    =&gt; (1 2 3) (1 2 3 4) (2 3 4)
-2 5        =&gt; ()
-3 4 5 6 8  =&gt; (3 4 5) (3 4 5 6) (4 5 6)
-3 5 7 9    =&gt; (3 5 7) (3 5 7 9) (5 7 9)
-2 5 9      =&gt; ()
-</code></pre>
-
-<h2>Task 2: Seven Segment 200</h2>
-
-<p><em>A seven segment display is an electronic component, usually used to display digits. The segments are labeled &#8216;a&#8217; through &#8216;g&#8217; as shown:</em></p>
-
-<p><img alt="lcd-display_week200.png" src="https://blogs.perl.org/users/laurent_r/lcd-display_week200.png" width="71" height="135" class="mt-image-none" style="" /></p>
-
-<p><em>The encoding of each digit can thus be represented compactly as a truth table:</em></p>
-
-<pre><code>my @truth = qw&lt;abcdef bc abdeg abcdg bcfg acdfg a cdefg abc abcdefg abcfg&gt;;
-</code></pre>
-
-<p><em>For example, <code>$truth[1] = ‘bc’</code>. The digit 1 would have segments ‘b’ and ‘c’ enabled.</em></p>
-
-<p><em>Write a program that accepts any decimal number and draws that number as a horizontal sequence of ASCII seven segment displays, similar to the following:</em></p>
-
-<pre><code>-------  -------  -------
-      |  |     |  |     |
-      |  |     |  |     |
--------
-|        |     |  |     |
-|        |     |  |     |
--------  -------  -------
-</code></pre>
-
-<p><em>To qualify as a seven segment display, each segment must be drawn (or not drawn) according to your @truth table.</em></p>
-
-<p><em>The number &#8220;200&#8221; was of course chosen to celebrate our 200th week!</em></p>
-
-<p>For the 200th week of the Perl Weekly Challenge, Ryan J Thompson, the author of this task, has decided to bring us decades backward, back in the 1970s when they started to be widely used (remember lieutenant Theo Kojak&#8217;s LED watch?). We&#8217;re actually driven back more than decades, since the first seven-segment display devices date as far back as 1903 (but obviously did not use LEDs).</p>
-
-<p>The difficulty in this task is that, for ASCII art display, we need to slice the digits into horizontal lines. I&#8217;ve decided not to use the suggested truth table, as this is quite unpractical. Instead, I&#8217;m using a table (<code>@nums</code>) dividing each digit into seven horizontal lines</p>
-
-<h3>Seven Segment Display in Raku</h3>
-
-<pre><code>my %c;                   # ascii coding of digit's slices
-%c&lt;h&gt; = "-" x 7;         # Horizontal line
-%c&lt;l&gt; = "|      ";       # Vertical bar, left
-%c&lt;r&gt; = "      |";       # Vertical bar, right
-%c&lt;2&gt; = "|     |";       # 2 vertical bars
-%c&lt;n&gt; = " " x 7;         # empty horizontal line
-
-my @nums =               # Digit horizontal slices
-    &lt;h 2 2 n 2 2 h&gt;,     # 0
-    &lt;n r r n r r n&gt;,     # 1
-    &lt;h r r h l l h&gt;,     # 2
-    &lt;h r r h r r h&gt;,     # 3
-    &lt;n l l h 2 2 n&gt;,     # 4
-    &lt;h l l h r r h&gt;,     # 5
-    &lt;n l l h 2 2 h&gt;,     # 6
-    &lt;h r r n r r n&gt;,     # 7
-    &lt;h 2 2 h 2 2 h&gt;,     # 8
-    &lt;h 2 2 h r r n&gt;;     # 9
-
-sub display ($num) {
-    my @digits = $num.comb;
-    for 0..6 -&gt; $l {     # Lines 0 to 6 iof the display
-        say join "  ", map {%c{@nums[$_][$l]}}, @digits;
-    }
-}
-
-for &lt;200 2023 01234 56789&gt; -&gt; $test {
-  display $test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./seven_segments.raku
-
--------  -------  -------
-      |  |     |  |     |
-      |  |     |  |     |
--------
-|        |     |  |     |
-|        |     |  |     |
--------  -------  -------
--------  -------  -------  -------
-      |  |     |        |        |
-      |  |     |        |        |
--------           -------  -------
-|        |     |  |              |
-|        |     |  |              |
--------  -------  -------  -------
--------           -------  -------
-|     |        |        |        |  |     |
-|     |        |        |        |  |     |
-                  -------  -------  -------
-|     |        |  |              |        |
-|     |        |  |              |        |
--------           -------  -------  -------
-|        |              |  |     |  |     |
-|        |              |  |     |  |     |
--------  -------           -------  -------
-      |  |     |        |  |     |        |
-      |  |     |        |  |     |        |
--------  -------           -------
-</code></pre>
-
-<p>Note that digits 6 and 9 could have an additional horizontal bar and 7 an additional vertical bar:</p>
-
-<pre><code>@nums[6] = &lt;h l l h 2 2 h&gt;;    # 6
-@nums[7] = &lt;h 2 2 n r r n&gt;;    # 7
-@nums[9] = &lt;h 2 2 h r r h&gt;;    # 9
-</code></pre>
-
-<p>This allegedly provides a more legible display (for some eyes, at least). Thus, the test line with the last five digits would be displayed like so:</p>
-
-<pre><code>-------  -------  -------  -------  -------
-|        |        |     |  |     |  |     |
-|        |        |     |  |     |  |     |
--------  -------           -------  -------
-      |  |     |        |  |     |        |
-      |  |     |        |  |     |        |
--------  -------           -------  -------
-</code></pre>
-
-<h2>Seven Segment Display in Perl</h2>
-
-<p>This a port to Perl of the Raku program above:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-my %c;                   # ascii coding of digit's slices
-$c{'h'} = "-" x 7;       # Horizontal line
-$c{'l'} = "|      ";     # Vertical bar, left
-$c{'r'} = "      |";     # Vertical bar, right
-$c{'2'} = "|     |";     # 2 vertical bars
-$c{'n'} = " " x 7;       # empty horizontal line
-
-my @nums = (             # Digit hoirizontal slices
-    [&lt;h 2 2 n 2 2 h&gt;],   # 0
-    [&lt;n r r n r r n&gt;],   # 1
-    [&lt;h r r h l l h&gt;],   # 2
-    [&lt;h r r h r r h&gt;],   # 3
-    [&lt;n 2 2 h r r n&gt;],   # 4
-    [&lt;h l l h r r h&gt;],   # 5
-    [&lt;n l l h 2 2 h&gt;],   # 6
-    [&lt;h r r n r r n&gt;],   # 7
-    [&lt;h 2 2 h 2 2 h&gt;],   # 8
-    [&lt;h 2 2 h r r n&gt;]);  # 9
-
-
-sub display{
-    my @digits = split //, shift;
-    for my $l (0..6) {
-        say join "  ", map {$c{$nums[$_][$l]}} @digits;
-    }
-}
-
-for my $test (&lt;200 2023 01234 56789&gt;) {
-  display $test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./seven_segments.pl
--------  -------  -------
-      |  |     |  |     |
-      |  |     |  |     |
--------                  
-|        |     |  |     |
-|        |     |  |     |
--------  -------  -------
--------  -------  -------  -------
-      |  |     |        |        |
-      |  |     |        |        |
--------           -------  -------
-|        |     |  |              |
-|        |     |  |              |
--------  -------  -------  -------
--------           -------  -------
-|     |        |        |        |  |     |
-|     |        |        |        |  |     |
-                  -------  -------  -------
-|     |        |  |              |        |
-|     |        |  |              |        |
--------           -------  -------
--------           -------  -------  -------
-|        |              |  |     |  |     |
-|        |              |  |     |  |     |
--------  -------           -------  -------
-      |  |     |        |  |     |        |
-      |  |     |        |  |     |        |
--------  -------           -------
-</code></pre>
-
-<p>We could use the changes that we did to the Raku program (definition of digits 6, 7, and 9) to presumably improve their legibility:</p>
-
-<pre><code>-------  -------  -------  -------  -------
-|        |        |     |  |     |  |     |
-|        |        |     |  |     |  |     |
--------  -------           -------  -------
-      |  |     |        |  |     |        |
-      |  |     |        |  |     |        |
--------  -------           -------  -------
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on January 29, 2023. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -2897,7 +2667,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 25 January 2023 12:48 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 25 January 2023 16:42 UTC</address>
             </div>
           </div>
         </div><!-- container -->
