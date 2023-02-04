@@ -7,9 +7,279 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-02-03T20:39:44Z</updated>
+  <updated>2023-02-04T00:56:41Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>First release of SPVM::File::Spec - complex regular expressions, file tests, SPVM::Cwd, inheritance</title>
+    <link rel="alternate" href="https://dev.to/yukikimoto/first-release-of-spvmfilespec-complex-regular-expressions-file-tests-spvmcwd-inheritance-35f8" type="text/html"/>
+    <content type="html">&lt;p&gt;First release of &lt;a href="https://metacpan.org/pod/SPVM::File::Spec"&gt;SPVM::File::Spec&lt;/a&gt;, a port of Perl's &lt;a href="https://metacpan.org/pod/File::Spec"&gt;File::Spec&lt;/a&gt; to SPVM. The repository is &lt;a href="https://github.com/yuki-kimoto/SPVM-File-Spec/commits/master"&gt;SPVM::File::Spec&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  What is File::Spec?
+&lt;/h2&gt;
+
+&lt;p&gt;File::Spec is a Perl module to handle file paths in an OS-independent manner, allowing Linux, Mac, and Windows to have similar descriptions of file paths.&lt;/p&gt;
+
+&lt;h2&gt;
+  
+  
+  File::Spec implementation difficulties.
+&lt;/h2&gt;
+
+&lt;h3&gt;
+  
+  
+  Numerous regular expressions
+&lt;/h3&gt;
+
+&lt;p&gt;One of the difficulties of implementing File::Spec is that it uses many regular expressions to handle file paths.&lt;/p&gt;
+
+&lt;p&gt;Therefore, in porting File::Spec to SPVM, it was necessary to be able to use regular expressions.&lt;/p&gt;
+
+&lt;p&gt;I ported &lt;a href="https://github.com/google/re2"&gt;Google RE2&lt;/a&gt;, a regular expression library, to SPVM as &lt;a href="https://metacpan.org/pod/SPVM::Resource::Re2::V2022_06_01"&gt;Resource::Re2&lt;/a&gt;, and created &lt;a href="https://metacpan.org/pod/SPVM::Regex"&gt;SPVM::Regex&lt;/a&gt;, a wrapper for it.&lt;/p&gt;
+
+&lt;p&gt;This allows regular expressions to be used.&lt;/p&gt;
+
+&lt;p&gt;See some of the complex regular expressions in SPVM::File::Spec. The handling of file paths, especially on Windows, is complex. This is part of the implementation of a method called canonnpath in SPVM::File::Spec::Win32 to make a path a unique expression.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;private method _canon_cat : string ($parts : string[]) {
+    my $first = $parts-&amp;gt;[0];
+
+    my $volume = (string)undef;
+
+    # drive letter - (C:)
+    my $re_drive = Regex-&amp;gt;new("\A([A-Za-z]:)([\\\\/]?)") ;
+    $first = $re_drive-&amp;gt;replace($first, "");
+    if ($re_drive-&amp;gt;replaced_count &amp;gt; 0) {
+      $volume = Fn-&amp;gt;ucfirst($re_drive-&amp;gt;cap1);
+      if (length $re_drive-&amp;gt;cap2) {
+        $volume . = "\\";
+      }
+    }
+    else {
+      my $re_unc = Regex-&amp;gt;new("\A(? :\\\\\\\\|//)([^\\\\/]+)(? :[\\\\/]([^\\\\/]+))? [\\\\/]?" , "s");
+      $first = $re_unc-&amp;gt;replace($first, "");
+
+      # UNC volume (\192.168.201.101)
+      if ($re_unc-&amp;gt;replaced_count &amp;gt; 0) {
+        $volume = "\\\\" . $re_unc-&amp;gt;cap1;
+        if ($re_unc-&amp;gt;cap2) {
+          $volume . = "\\" . $re_unc-&amp;gt;cap2;
+        }
+        $volume . = "\\" ;
+      }
+      else {
+        my $re_root = Regex-&amp;gt;new("\A[\\\\/]");
+        $first = $re_root-&amp;gt;replace($first, "");
+
+        # root dir (\foo)
+        if ($re_root-&amp;gt;replaced_count &amp;gt; 0) {
+          $volume = "\foo";
+        }
+        else {
+          $volume = "";
+        }
+      }
+    }
+
+    $parts-&amp;gt;[0] = $first;
+
+    my $path = Fn-&amp;gt;join("\", $parts);
+
+    # /+ to \
+    $path = Regex-&amp;gt;new("/+")-&amp;gt;replace_g($path, "\");
+
+    # /+ to \
+    $path = Regex-&amp;gt;new("\\\\+")-&amp;gt;replace_g($path, "\\");
+
+    # xx\. \. \yy --&amp;gt; xx\yy.
+    $path = Regex-&amp;gt;new("(? :(? :\A|\\\\)\. (? :\\\\\.) *(? :\\\\|\z))+")-&amp;gt;replace_g($path, "\");
+
+    # xx\yy. \zz --&amp;gt; xx\z.
+    my $parts_list = StringList-&amp;gt;new;
+    $parts = Fn-&amp;gt;split("\\", $path);
+    for (my $i = 0; $i &amp;lt; @$parts; $i++) {
+      my $part = $parts-&amp;gt;[$i];
+      if ($part eq "...") {
+        if ($parts_list-&amp;gt;length &amp;gt; 0) {
+          my $before_part = $parts_list-&amp;gt;get($parts_list-&amp;gt;length - 1);
+          unless ($before_part eq "...") {
+            $parts_list-&amp;gt;pop;
+            next;
+          }
+        }
+      }
+      $parts_list-&amp;gt;push($part);
+    }
+    $parts = $parts_list-&amp;gt;to_array;
+    $path = Fn-&amp;gt;join("\\", $parts);
+
+    # \xx --&amp;gt; xx
+    $path = Regex-&amp;gt;new("\A\\\\")-&amp;gt;replace_g($path, "");
+
+    # xx --&amp;gt; xx
+    $path = Regex-&amp;gt;new("\\\\\z")-&amp;gt;replace_g($path, "");
+
+    if (Regex-&amp;gt;new("\\\\\z")-&amp;gt;match($volume)) {
+      # &amp;lt;vol&amp;gt;\. --&amp;gt; &amp;lt;vol&amp;gt;\.
+      $path = Regex-&amp;gt;new("\A\. \. (? :\\\\\. \.)\.) *(? :\\\\|\z)")-&amp;gt;replace($path, "");
+
+      # \HOSTHCOSTHCARE --&amp;gt; \HOSTHCARE
+      my $re = Regex-&amp;gt;new("\A(\\\\\\\\. *)\\\\\z", "s");
+      if (!length $path &amp;amp;&amp;amp; $re-&amp;gt;match($volume)) {
+        $path = $re-&amp;gt;cap1;
+        return $path;
+      }
+    }
+
+    if (length $path || length $volume) {
+      $path = $volume . $path;
+    }
+    else {
+      $path = "." ;
+    }
+
+    return $path;
+  }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h3&gt;
+  
+  
+  File Test Operators
+&lt;/h3&gt;
+
+&lt;p&gt;File::Spec checks whether a temporary directory is writable in order to locate it. For this reason, file tests must be implemented.&lt;/p&gt;
+
+&lt;p&gt;I have implemented the &lt;a href="https://metacpan.org/pod/SPVM::Sys::FileTest"&gt;SPVM::Sys::FileTest&lt;/a&gt; module for file testing.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;  method _tmpdir : string ($dirlist : string[]) {
+    my $interface = (File::Spec::Interface)$self;
+
+    my $tmpdir = (string)undef;
+    for my $dir (@$dirlist) {
+      if ($dir &amp;amp;&amp;amp; Sys::FileTest-&amp;gt;d($dir) &amp;amp;&amp;amp; Sys::FileTest-&amp;gt;w($dir)){
+        $tmpdir = $dir;
+        last;
+      }
+    }
+
+    unless ($tmpdir) {
+      $tmpdir = $interface-&amp;gt;curdir;
+    }
+
+    $tmpdir = $interface-&amp;gt;canonpath($tmpdir);
+
+    if (! $interface-&amp;gt;file_name_is_absolute($tmpdir)) {
+      $tmpdir = $interface-&amp;gt;rel2abs($tmpdir);
+      if (! $interface-&amp;gt;file_name_is_absolute($tmpdir)) {
+        die "A temporary directory must be converted to an absolute path";
+      }
+    }
+
+    return $tmpdir;
+  }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h2&gt;
+  
+  
+  Current directory
+&lt;/h2&gt;
+
+&lt;p&gt;File::Spec needs to be able to handle the current directory for absolute and relative path conversion.&lt;/p&gt;
+
+&lt;p&gt;For this purpose I have implemented &lt;a href="https://metacpan.org/pod/SPVM::Cwd"&gt;SPVM::Cwd&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The following is an implementation of the rel2abs method that converts a relative path to an absolute path.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;  method rel2abs : string ($path : string, $base = undef : string) {
+    my $interface = (File::Spec::Interface)$self;
+
+    # Clean up $path
+    if (! $interface-&amp;gt;file_name_is_absolute($path)) {
+      # Figure out the effective $base and clean it up.
+      If (! $base || $base eq "") {
+        $base = Cwd-&amp;gt;getcwd;
+      }
+      elsif (! $interface-&amp;gt;file_name_is_absolute($base)) {
+        $base = $interface-&amp;gt;rel2abs($base) ;
+      }
+      else {
+        $base = $interface-&amp;gt;canonpath($base);
+      }
+      # Glom them together
+      $path = $interface-&amp;gt;catdir([$base, $path]);
+    }
+
+    my $rel2abs = $interface-&amp;gt;canonpath($path);
+
+    return $rel2abs;
+  }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h2&gt;
+  
+  
+  Inheritance
+&lt;/h2&gt;
+
+&lt;p&gt;Since File::Spec is implemented using inheritance, SPVM also supports inheritance. There are subtle differences between statically and dynamically typed languages in terms of expressive feasibility, and SPVM is designed to be as close as possible to Perl's inheritance.&lt;br&gt;
+&lt;/p&gt;
+
+&lt;div class="highlight js-code-highlight"&gt;
+&lt;pre class="highlight plaintext"&gt;&lt;code&gt;class File::Spec::Unix extends File::Spec {
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;/div&gt;
+
+
+
+&lt;h2&gt;
+  
+  
+  Immediate Goals
+&lt;/h2&gt;
+
+&lt;p&gt;In February 2023, our goal is to port the modules that handle file paths to SPVM.&lt;/p&gt;
+
+&lt;p&gt;Porting of File::Copy, FindBin, File::Path, File::Find, File::Temp, etc. to SPVM will be initiated.&lt;/p&gt;
+
+&lt;p&gt;Translated with &lt;a href="http://www.DeepL.com/Translator"&gt;www.DeepL.com/Translator&lt;/a&gt; (free version)&lt;/p&gt;
+
+</content>
+    <author>
+      <name>Yuki Kimoto - SPVM - Perl Club</name>
+    </author>
+    <id>https://dev.to/yukikimoto/first-release-of-spvmfilespec-complex-regular-expressions-file-tests-spvmcwd-inheritance-35f8</id>
+    <published>2023-02-03T22:40:08Z</published>
+    <updated>2023-02-03T22:40:08Z</updated>
+    <category term="perl"/>
+    <category term="spvm"/>
+  </entry>
   <entry>
     <title>This Week in PSC (096)</title>
     <link rel="alternate" href="https://blogs.perl.org/users/psc/2023/02/this-week-in-psc-096.html"/>
@@ -1869,79 +2139,6 @@ Finally, just to be nice, we close the file handle using the &lt;code&gt;close&l
       <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
     </author>
     <thr:total>0</thr:total>
-  </entry>
-  <entry>
-    <title>SPVM::File::Basename is released. This is the first module of SPVM using regular expressions.</title>
-    <link rel="alternate" href="https://dev.to/yukikimoto/spvmfilebasename-is-released-this-is-the-first-module-of-spvm-using-regular-expressions-fhe" type="text/html"/>
-    <content type="html">&lt;p&gt;&lt;a href="https://metacpan.org/pod/SPVM::File::Basename"&gt;SPVM::File::Basename&lt;/a&gt; has been released. SPVM::File::Basename is a porting of Perl's &lt;a href="https://metacpan.org/pod/File::Basename"&gt;File::Basename&lt;/a&gt; to SPVM.&lt;/p&gt;
-
-&lt;p&gt;It supports the fileparse, basename, and dirname methods.&lt;/p&gt;
-
-&lt;h2&gt;
-  
-  
-  Regular Expressions
-&lt;/h2&gt;
-
-&lt;p&gt;SPVM::File::Basename is the first module of SPVM that uses regular expressions.&lt;/p&gt;
-
-&lt;p&gt;Many Perl modules rely on regular expressions. In particular, it is safe to say that modules that deal with file paths always use regular expressions.&lt;/p&gt;
-
-&lt;p&gt;My concern was about a reliable Perl-compatible regular expression for creating modules in SPVM. At first, I created my own, but they were not very reliable. There are limitations to creating them alone.&lt;/p&gt;
-
-&lt;p&gt;I searched for I found that there is a Perl compatible regular expression called &lt;a href="https://github.com/google/re2"&gt;Google RE2&lt;/a&gt;. It is written in C++, and with Google RE2, I can use Perl-compatible regular expressions as a library.&lt;/p&gt;
-
-&lt;p&gt;I created a module called &lt;a href="https://metacpan.org/pod/SPVM::Resource::Re2::V2022_06_01"&gt;SPVM::Resource::Re2&lt;/a&gt; to make it available from SPVM.&lt;/p&gt;
-
-&lt;p&gt;Then, I created a module called &lt;a href="https://metacpan.org/pod/SPVM::Regex"&gt;SPVM::Regex&lt;/a&gt; to implement the regular expression methods of Perl's search and replace.&lt;/p&gt;
-
-&lt;p&gt;And the first module that uses SPVM::Regex in practice is SPVM::File::Basename, which handles file paths.&lt;/p&gt;
-
-&lt;p&gt;Please take a look at the code that handles regular expressions in SPVM.&lt;br&gt;
-&lt;/p&gt;
-
-&lt;div class="highlight js-code-highlight"&gt;
-&lt;pre class="highlight plaintext"&gt;&lt;code&gt;use Regex;
-
-  method fileparse : string[] ($path : string) {
-    unless ($path) {
-      die "The \$path must be defined";
-    }
-
-    my $dirpath = (string)undef;
-    my $basename = (string)undef;
-
-    my $re = Regex-&amp;gt;new("(?s)^(.*/)?(.*)");
-    if ($re-&amp;gt;match($path)) {
-      $dirpath = $re-&amp;gt;cap1;
-      $basename = $re-&amp;gt;cap2;
-    }
-
-    unless (length $dirpath) {
-      $dirpath = "./";
-    }
-
-    return [$basename, $dirpath, ""];
-  }
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;/div&gt;
-
-
-
-&lt;p&gt;&lt;a href="https://github.com/yuki-kimoto/SPVM-File-Basename/blob/master/lib/SPVM/File/Basename/Unix.spvm"&gt;File::Basename::Unix&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Translated with &lt;a href="http://www.DeepL.com/Translator"&gt;www.DeepL.com/Translator&lt;/a&gt; (free version)&lt;/p&gt;
-
-</content>
-    <author>
-      <name>Yuki Kimoto - SPVM - Perl Club</name>
-    </author>
-    <id>https://dev.to/yukikimoto/spvmfilebasename-is-released-this-is-the-first-module-of-spvm-using-regular-expressions-fhe</id>
-    <published>2023-01-27T20:22:30Z</published>
-    <updated>2023-01-27T20:22:30Z</updated>
-    <category term="perl"/>
-    <category term="spvm"/>
   </entry>
   <entry>
     <title>#600 - 600th edition and still going ...</title>
