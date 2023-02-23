@@ -7,9 +7,145 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-02-23T12:49:49Z</updated>
+  <updated>2023-02-23T16:45:07Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Assert Your Environment</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/mikko_koivunalho/2023/02/-assert-your-environment-in.html"/>
+    <id>tag:blogs.perl.org,2023:/users/mikko_koivunalho//2432.11034</id>
+    <published>2023-02-23T17:26:13Z</published>
+    <updated>2023-02-23T17:50:02Z</updated>
+    <author>
+        <name>Mikko Koivunalho</name>
+        <uri>https://metacpan.org/author/MIKKOI</uri>
+    </author>
+    <category term="How-To" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="Introduce-Package" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="environment_checking" label="environment_checking" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/mikko_koivunalho/">
+        <![CDATA[<h1>Env::Assert</h1>
+
+<p>In the category of "scratching my itch".</p>
+
+<p>I was doing some data pipelining and dockerising my creation.
+And - as always - when testing and devving I forgot to set the right
+environment variables. And when container image gets passed around,
+the information about the required env settings will certainly get lost.</p>
+
+<p>Here is something of a solution to that:</p>
+
+<h2>How to ensure you have the <strong>environment variables</strong> and values you need?</h2>
+
+<p>Here is a common sight:</p>
+
+<pre><code>$ PLAEC='Stockholm'
+$ if [[ "$PLACE" == '' ]]; then echo "Normal OK"; fi
+OK
+</code></pre>
+
+<p>... And the program fails with no errors!</p>
+
+<p><strong>Not quite what we want!</strong></p>
+
+<p>Another example, from a docker container image I created lately:</p>
+
+<pre><code>perl -Ilib bin/repos-gh-yaml.pl --verbose         \
+    | perl -Ilib bin/repos-yaml-csv.pl --verbose  \
+    | az storage blob upload --data @-            \
+        --content-type 'text/csv'                 \
+        --content-encoding 'UTF-8'                \
+        --content-language 'en_US'                \
+        --name "$blob_name"                       \
+        --container "$CONTAINER_NAME"             \
+        --account-name "$AZURE_STORAGE_ACCOUNT"   \
+        --sas-token "$AZURE_STORAGE_SAS_TOKEN"
+</code></pre>
+
+<p>If the environment variables are wrongly set, or entirely unset,
+it won't become known until after the run has started.
+And it could take hours before it reaches that point.</p>
+
+<p>What we need is a way to find out if the
+environment variables are what we assume them to be.
+This needs to be done in an easy way and right
+at the beginning of the run.</p>
+
+<h2>Environment Description to the Rescue</h2>
+
+<p>Package <code>Env::Assert</code> and the executable <code>envassert</code> that comes with it
+do just this.</p>
+
+<p><code>envassert</code> is a CLI command to assert that your environment variables
+match your <strong>environment description</strong>.</p>
+
+<p><strong>environment description</strong> is a way to describe which environment variables
+are required by your program.</p>
+
+<p><strong>environment description</strong> is written in a file.
+Default file name is <code>.envdesc</code>.</p>
+
+<p>If you are in the habbit of using <code>.env</code> files anyway,
+<code>.envdesc</code> complements it. Commit your <code>.envdesc</code> file into
+your repository and it will act as a template for user to create his/her <code>.env</code> file
+which should not be committed into Git anyway.</p>
+
+<p><code>.envdesc</code> actually looks a lot like a <code>.env</code> file, except instead of
+defining variables and their content, it defines regular expressions
+which control the variables' content. These regexps are Perl's
+extended regular expressions (<code>m/&lt;regexp&gt;/msx</code>).</p>
+
+<p>Example:</p>
+
+<pre><code>CONTAINER_NAME=^[a-z0-9-]{1,}$
+AZURE_STORAGE_ACCOUNT=^[a-z0-9]{1,}$
+AZURE_STORAGE_SAS_TOKEN=^[?].*$
+GITHUB_TOKEN=^[[:word:]]{1,}$
+</code></pre>
+
+<p>In normal circumstances, <code>envassert</code>
+only verifies the variables that you specifically describe.
+If you want more control over your environment,
+there is the meta command <code>envassert (opts: exact=1)</code>
+which will make <code>envassert</code> also assert that
+the environment doesn't contain any unknown variables.</p>
+
+<pre><code>## envassert (opts: exact=1)
+USER=^username$
+HOME=^/home/username$
+PATH=^/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin$
+</code></pre>
+
+<p>You can create an airtight environment description
+to verify environment variables in both test and production.
+Just run <code>envassert</code> as the first command during container execution.</p>
+
+<p>This is what I do:</p>
+
+<pre><code>envassert --env-description /home/me/.envdesc \
+    || ( echo 'Break execution ...' 1&gt;&amp;2 &amp;&amp; exit 1 )
+</code></pre>
+
+<h2>Installation</h2>
+
+<p>If I need to add <code>envassert</code> to a container image during build,
+there is a <a href="https://metacpan.org/pod/fatpack">FatPacked</a> executable
+ready for those cases when using <a href="https://metacpan.org/pod/Env::Assert">CPAN</a> is overkill.</p>
+
+<p>I do this in Dockerfile!</p>
+
+<pre><code>RUN curl -LSs -o /usr/local/bin/envassert \
+    https://raw.githubusercontent.com/mikkoi/env-assert/master/envassert.self-contained
+RUN chmod +x /usr/local/bin/envassert
+</code></pre>
+
+<p>There is no extra dependencies outside Perl's standard distribution, so <code>envassert</code>
+is as lean as it can be.</p>
+]]>
+        
+
+    </content>
+</entry>
   <entry>
   <title>FOSDEM 2023</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/fosdem20233"/>
@@ -2071,28 +2207,6 @@ to use something else.&lt;/p&gt;
     <category term="perl"/>
     <category term="typetiny"/>
   </entry>
-  <entry>
-    <title>Outstanding GitHub Items</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/tom_wyant/2023/02/outstanding-github-items.html"/>
-    <id>tag:blogs.perl.org,2023:/users/tom_wyant//506.11029</id>
-    <published>2023-02-17T07:30:45Z</published>
-    <updated>2023-02-17T07:32:12Z</updated>
-    <author>
-        <name>Tom Wyant</name>
-        
-    </author>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/tom_wyant/">
-        <![CDATA[<p>Recently I received a bump on a GitHub pull request. This surprised me, because I was unaware of anything outstanding. I was even more surprised when I discovered that the distribution in question also had two open issues, one dating back about three months.</p>
-
-<p>I have no idea why I was oblivious to these, but it made me want to audit myself to see if any other distributions had the same problem. GitHub has these nice links at the top of the page, <cite>Pull requests</cite> and <cite>Issues</cite>, but these show pull requests and issues that I initiated. I found no obvious way to display pull requests or issues filed against my repositories.</p>
-
-<p>Now, maybe it is just me, but I find GitHub's documentation moderately opaque. But with considerable help from Duck Duck Go, I discovered the answer: you type into the search box <code>is:open user:&lt;your GitHub user name&gt;</code>. This gets you both open issues and open pull requests. If you want, you can restrict this further with <code>is:issue</code> (for issues) or <code>is:pr</code> (for pull requests). Do <strong>not</strong> leave off the user name, even if you are logged in. If you forget this you will get every open item on GitHub -- all 102 million of them as of this writing.</p>
-
-<p>Now I am lazy, so I made a browser shortcut to do this for me. I don't think you get private repositories this way, but I was not worried about that. The string will have to be URI-escaped. So now if I want to audit myself I just click on <a href="https://github.com/search?q=user%3Atrwyant+is%3Aopen">https://github.com/search?q=user%3Atrwyant+is%3Aopen</a> and see what I get.</p>
-]]>
-        
-    </content>
-</entry>
   <entry>
   <title>Perl and Raku Merchandise</title>
   <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/freewear"/>
