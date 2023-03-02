@@ -7,9 +7,192 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-03-02T00:57:09Z</updated>
+  <updated>2023-03-02T04:41:32Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75589795</id>
+        <re:rank scheme="https://stackoverflow.com">1</re:rank>
+        <title type="text">how to pass perl EV::Loop object to your C library</title>
+            <category scheme="https://stackoverflow.com/tags" term="c"/>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="lib"/>
+            <category scheme="https://stackoverflow.com/tags" term="xs"/>
+        <author>
+            <name>Mjöllnir</name>
+            <uri>https://stackoverflow.com/users/3666587</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75589795/how-to-pass-perl-evloop-object-to-your-c-library"/>
+        <published>2023-02-28T08:57:14Z</published>
+        <updated>2023-03-02T03:34:00Z</updated>
+        <summary type="html">
+            &lt;p&gt;I need to pass loop object which is contained in perl EV::Loop module (EV::default_loop) to my C library.&lt;/p&gt;
+&lt;p&gt;I have a test library written on C that has a function &lt;strong&gt;test&lt;/strong&gt; that takes &lt;strong&gt;struct ev_loop&lt;/strong&gt;* object as input (EV_DEFAULT).&lt;/p&gt;
+&lt;p&gt;ev_lib/EvManager.h:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;#pragma once
+
+#include&amp;lt;stdio.h&amp;gt;
+#include &amp;lt;ev.h&amp;gt;
+
+void test (struct ev_loop* loop);
+static void time_cb (EV_P_ ev_timer *w, int revents);
+
+static ev_timer timeout_watcher;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;ev_lib/EvManager.c:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;#include &amp;quot;EvManager.h&amp;quot;
+
+void test (struct ev_loop* loop)
+{
+  printf(&amp;quot;%s\n&amp;quot;, __PRETTY_FUNCTION__);
+  ev_verify(loop);
+  printf(&amp;quot;%s\n&amp;quot;, &amp;quot;test(): ev_verify OK!&amp;quot;);
+
+  ev_timer_init (&amp;amp;timeout_watcher, time_cb, 2, 2);
+  ev_timer_start (loop, &amp;amp;timeout_watcher);
+
+  return;
+};
+
+static void time_cb (EV_P_ ev_timer *w, int revents)
+{
+  printf(&amp;quot;EvManager.c: time_cb&amp;quot;);
+};
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;compile:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;gcc -c -Wall -fpic EvManager.c
+gcc -shared -o libevmanager.so EvManager.o -lev
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;I wrote .xs module that used EVAPI.h to access the C loop object ( &lt;a href="https://Ev::MakeMaker" rel="nofollow noreferrer"&gt;https://metacpan.org/pod/EV::MakeMaker&lt;/a&gt;):&lt;/p&gt;
+&lt;p&gt;EvTest.xs:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;#include &amp;quot;EXTERN.h&amp;quot;
+#include &amp;quot;perl.h&amp;quot;
+#include &amp;quot;XSUB.h&amp;quot;
+
+#include &amp;quot;EVAPI.h&amp;quot;
+
+#include &amp;quot;./ev_lib/EvManager.h&amp;quot;
+
+static ev_timer timeout_watcher;
+
+static void time_cb (EV_P_ ev_timer *w, int revents)
+{
+  puts (&amp;quot;ev_timer_start (EvTest.xs): is called roughly every 2s (repeat = 2)&amp;quot;);
+};
+
+static HV *stash;
+
+MODULE = My::EvTest  PACKAGE = My::EvTest
+PROTOTYPES: ENABLE
+
+BOOT:
+{
+    stash     = gv_stashpv (&amp;quot;My::EvTest&amp;quot;    , 1);
+    I_EV_API (&amp;quot;My::EvTest&amp;quot;);
+}
+
+void pass_loop_to_lib()
+    CODE:
+{
+    ev_verify(EV_DEFAULT);
+    printf(&amp;quot;%s\n&amp;quot;, &amp;quot;pass_loop_to_lib(): ev_verify OK!&amp;quot;);
+
+    ev_timer_init (&amp;amp;timeout_watcher, time_cb, 2, 2);
+    ev_timer_start (EV_DEFAULT, &amp;amp;timeout_watcher);
+    ev_verify(EV_DEFAULT);
+
+    printf(&amp;quot;%s\n&amp;quot;, &amp;quot;pass_loop_to_lib(): ev_verify (2) OK!&amp;quot;);
+
+    test(EV_DEFAULT); // call ev_lib::test()
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;lib/My/EvTest.pm:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;package My::EvTest;
+use strict;
+use warnings;
+use Exporter qw(import);
+our %EXPORT_TAGS = ( 'all' =&amp;gt; [ qw(    ) ] );
+our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
+our @EXPORT = qw(    );
+our $VERSION = 0.01;
+require XSLoader;
+
+XSLoader::load();
+1;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Makefile.PL:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;use 5.020;
+use strict;
+use warnings;
+use utf8;
+use ExtUtils::MakeMaker 6.98; # for XSMULTI option
+use EV::MakeMaker qw(ev_args);
+
+WriteMakefile(ev_args(
+  NAME          =&amp;gt; 'My::EvTest',
+  VERSION_FROM  =&amp;gt; 'lib/My/EvTest.pm',
+  PREREQ_PM     =&amp;gt; { 'ExtUtils::MakeMaker' =&amp;gt; '6.98' },
+  ABSTRACT_FROM =&amp;gt; 'lib/My/EvTest.pm',
+  OPTIMIZE      =&amp;gt; '-O2',
+  LICENSE       =&amp;gt; 'perl',
+  LIBS          =&amp;gt;  [&amp;quot;-L./ev_lib -levmanager -lev&amp;quot;],
+  INC           =&amp;gt; '-I. -I/usr/include -I./ev_lib/'));
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;compile:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;perl Makefile.PL
+make -f Makefile
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;my perl script thats used module My::EvTest:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;#!/usr/bin/perl -w
+
+use FindBin 1.51 qw( $RealBin );
+
+use strict;
+use warnings;
+
+use Devel::Peek;
+use ExtUtils::testlib;
+
+use EV;
+use My::EvTest;
+
+my $w = EV::timer 3, 3, sub
+{
+   warn &amp;quot;EV::timer (.pm): is called roughly every 3s (repeat = 3)&amp;quot;;
+};
+
+my $loop = EV::default_loop;
+Dump $loop;
+
+My::EvTest::pass_loop_to_lib();
+
+EV::run;
+
+exit(0);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;And i have this output:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;➜ ./test_ev
+SV = IV(0x9a8d30) at 0x9a8d40
+  REFCNT = 1
+  FLAGS = (PADMY,ROK)
+  RV = 0x9c6738
+  SV = PVMG(0x99eb60) at 0x9c6738
+    REFCNT = 3
+    FLAGS = (OBJECT,IOK,pIOK)
+    IV = 139812219366784
+    NV = 0
+    PV = 0
+    STASH = 0xa03ad0    &amp;quot;EV::Loop&amp;quot;
+pass_loop_to_lib(): ev_verify OK!
+pass_loop_to_lib(): ev_verify (2) OK!
+test
+perl: ev.c:2848: ev_verify: Assertion «((loop)-&amp;gt;anfdmax) &amp;gt;= 0» failed.
+Aborted
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;What i doing wrong?&lt;/p&gt;
+
+        </summary>
+    </entry>
   <entry xmlns:media="http://search.yahoo.com/mrss/">
     <id>tag:github.com,2008:Grit::Commit/32346b7cdde5bcf8a0c8c9ee89ef541d8fe9a7b7</id>
     <link type="text/html" rel="alternate" href="https://github.com/Perl/perl5/commit/32346b7cdde5bcf8a0c8c9ee89ef541d8fe9a7b7"/>
@@ -259,6 +442,66 @@ Dynamic &lt;strong&gt;$ws{\$final_name}&lt;/strong&gt; is adding worksheets with
 
         </summary>
     </entry>
+  <entry>
+  <title>TPRC 2023 March Newsletter</title>
+  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/tprc-2023-march-newsletter"/>
+  <id>tag:news.perlfoundation.org,2023-03-01:/post/tprc-2023-march-newsletter</id>
+  <published>2023-03-01T20:06:44</published>
+  <updated>2023-03-01T20:06:44</updated>
+  <summary>
+  <![CDATA[
+     The Perl and Raku Conference 2023 in Toronto, Canada  July 11-13, 2023 is open! Sign up for talks. Book your ticket and hotel. 
+
+The Perl Foundation is delighted to announce that the annual North American Perl and Raku Conference will be held in Toronto, Canada on July 11 to 13, 2023. The venue will be the DoubleTree (a Hilton Hotels property), located at 108 Chestnut St in downtown Toronto. That's directly North from Toronto's city hall, close to public transit and one of the country's biggest malls, the Toronto Eaton Centre.
+   ]]>
+  </summary>
+  <author>
+    <name>Todd Rinaldo</name>
+  </author>
+  <category term="Conferences" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
+   <![CDATA[
+     
+       <img src="_ra-rel-mnt_/simplecas/fetch_content/3fe71fef169a5e9ca9ab275a75baa4eb3d968b24/TPRC.to.512x512.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
+     
+     <h1>The Perl and Raku Conference 2023</h1>
+
+<p>The Perl Foundation is delighted to announce that the annual <strong>North American Perl and Raku Conference</strong> will be held in <strong>Toronto, Canada on July 11 to 13, 2023</strong>. The venue will be the <a href="https://tprc.to/location">DoubleTree (a Hilton Hotels property), located at 108 Chestnut St in downtown Toronto</a>. That's directly North from Toronto's city hall, close to public transit and one of the country's biggest malls, the Toronto Eaton Centre.</p>
+
+<p>Toronto is Canada's largest city, and the city and surrounding area offers many attractions for a vacation before or after your conference attendance. For our American visitors: you're in luck, three of your dollars are about the same as four of ours.</p>
+
+<p>Call For Papers is now open! You can submit your talk Ideas at https://tprc.to/papers. Talk submission deadline is <strong>March 31 Midnight UTC.</strong> Talks must be given live and in-person. If you are looking for any talk ideas, try out the <a href="https://github.com/perlconference/tprc-2023-tor/wiki/Topics-we-want">conference wiki</a>.</p>
+
+<p>Early bird pricing is available. Purchase your ticket now through April 15th for the low price of $275 USD. You can purchase your tickets now at https://tprc2023.sched.com/tickets.</p>
+
+<p>Visit our website at https://tprc.to/. Information on special hotel rates can be found at https://tprc.to/location/. We've managed to arrange for a really great room rate for the conference days, and there are a few rooms for before and after the conference, in case you'd like to stay longer for a little vacation.</p>
+
+<p>If you are flying, you can book your tickets to YYZ (Pearson, the main airport; many public and private transit options) or YTZ (Billy Bishop, on Toronto Island; 5 minute cab ride); you can also fly into BUF (Buffalo, NY) and drive (2 hours by car) across the border. Just remember to bring your passport.</p>
+
+<h1>Unique to this year / Be Advised</h1>
+
+<ul>
+<li>The CFP closes in only 30 days! </li>
+<li>The hotel has fewer rooms than prior years, and our price is half of what you can find anywhere close-by. Book your room early!</li>
+<li>The hotel’s rooms are almost all King rooms. Contact the hotel directly, and pay an extra $30CAD if you want a room with two Queen beds!</li>
+</ul>
+
+<h1>How to reach our organizers</h1>
+
+<ul>
+<li>Visit our website: https://tprc.to</li>
+<li>Follow us on Twitter: @PerlConferences</li>
+<li>Like us on Facebook: The Perl Foundation (@tpf.perl)</li>
+<li>Subscribe to the mailing list: https://tprc.to/subscribe</li>
+<li>Post a message to us at https://tprc.to/tprc-2023-tor/contact-us/. </li>
+</ul>
+
+<p>An organizer will get back to you shortly!</p>
+
+<p>Organizer: Alex Beamish and the Toronto Perl Mongers.</p>
+
+    ]]>
+  </content>
+</entry>
   <entry xmlns:re="http://purl.org/atompub/rank/1.0">
         <id>https://stackoverflow.com/q/75604744</id>
         <re:rank scheme="https://stackoverflow.com">2</re:rank>
@@ -1591,45 +1834,6 @@ my $request = $ua-&amp;gt;get($url, ':content_cb' =&amp;gt; sub
 
 });
 &lt;/code&gt;&lt;/pre&gt;
-
-        </summary>
-    </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75585976</id>
-        <re:rank scheme="https://stackoverflow.com">-1</re:rank>
-        <title type="text">I have used alienForm foerver. Recent my host (ionos) requires SMTP authentication to use it now. What do I need to get it to authrorize?</title>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-            <category scheme="https://stackoverflow.com/tags" term="smtp"/>
-            <category scheme="https://stackoverflow.com/tags" term="authorization"/>
-            <category scheme="https://stackoverflow.com/tags" term="ionos"/>
-        <author>
-            <name>Thomas H.</name>
-            <uri>https://stackoverflow.com/users/21300079</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75585976/i-have-used-alienform-foerver-recent-my-host-ionos-requires-smtp-authenticati"/>
-        <published>2023-02-27T22:02:57Z</published>
-        <updated>2023-03-01T00:04:14Z</updated>
-        <summary type="html">
-            &lt;pre&gt;&lt;code&gt;$smtp_server    = 'smtp.ionos.com';
-
-
-The perl script I used is AlienForm by jon hedley.
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Now that ionos requires SMTP Authorization, i have stumped as to how to include it. I am clearly not that savvy with said language.&lt;/p&gt;
-&lt;p&gt;I've tried...&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;$smtp_server    = 'smtp.ionos.com', 'port' = 25, username = 'username', password = 'password';
-
-$smtp_server    = 'smtp.ionos.com', 'port' = 25, Authusername = 'username', Authpassword = 'password';
-
-$smtp_server    = 'smtp.ionos.com';
-$smtp_port    = 25;
-$smtp_username    = 'username';
-$smtp_password    = 'password';
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;None of that worked. The script itself can be found here...&lt;/p&gt;
-&lt;p&gt;&lt;a href="http://www.calladorn.com/af.zip%60" rel="nofollow noreferrer"&gt;http://www.calladorn.com/af.zip`&lt;/a&gt;
-and I know the hint to it all based on what ionos said is here...
-&lt;a href="https://www.calladorn.com/herestheclue.jpg" rel="nofollow noreferrer"&gt;https://www.calladorn.com/herestheclue.jpg&lt;/a&gt;&lt;/p&gt;
 
         </summary>
     </entry>
@@ -34296,107 +34500,6 @@ https://mybinder.org/v2/gh/EntropyOrg/perl-AI-TensorFlow-Libtensorflow/master?fi
     <updated>2023-02-06T10:00:00Z</updated>
     <category term="editorial"/>
   </entry>
-  <entry>
-  <title>Maintaining Perl (Tony Cook) December 2022 </title>
-  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/maintaining_perl_tonyc_december_2022"/>
-  <id>tag:news.perlfoundation.org,2023-02-06:/post/maintaining_perl_tonyc_december_2022</id>
-  <published>2023-02-06T09:34:28</published>
-  <updated>2023-02-06T09:34:28</updated>
-  <summary>
-  <![CDATA[
-     Tony writes: 2022/12/01 Thursday  0.83 github notifications  0.08 #20564 review and approve  1.87 ceil/floor overloading debugging, solve one issue, try  to do the next  2.65 ceil/floor overloading debugging  5.43 2022/12/05 Monday  0.40 github notifications  0.22 #20566 review and approve  0.35 #20581 review and comment  0.55 #20575 review and comments  0.63 #20580 testing, review code and comment  0.28 #20583 
-   ]]>
-  </summary>
-  <author>
-    <name>alh</name>
-  </author>
-  <category term="Grants" scheme="http://www.sixapart.com/ns/types#category"/>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
-   <![CDATA[
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/7f97282811f6a9f862d7e659c79e5462cc195d94/grant-funding.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>Tony writes:
-```
-[Hours]         [Activity]
-2022/12/01      Thursday
- 0.83           github notifications
- 0.08           #20564 review and approve
- 1.87           ceil/floor overloading - debugging, solve one issue, try
-                to do the next</p>
-
-<h1> 2.65           ceil/floor overloading - debugging</h1>
-
-<p>5.43</p>
-
-<p>2022/12/05      Monday
- 0.40           github notifications
- 0.22           #20566 review and approve
- 0.35           #20581 review and comment
- 0.55           #20575 review and comments
- 0.63           #20580 testing, review code and comment
- 0.28           #20583 review, debugging, and comment</p>
-
-<h1> 1.42           fwrapv - changes, testing, make PR #20584</h1>
-
-<p>3.85</p>
-
-<p>2022/12/06      Tuesday
- 0.38           #20584 comment
- 0.83           rfc 015</p>
-
-<h1> 1.58           rfc 015</h1>
-
-<p>2.79</p>
-
-<p>2022/12/07      Wednesday
- 0.42           github notifications
- 1.35           rfc 015 debugging</p>
-
-<h1> 2.22           rfc 015 fixes, polish, push for CI</h1>
-
-<p>3.99</p>
-
-<p>2022/12/08      Thursday
- 1.68           #20584 research, comment and close
- 0.27           rfc 015 review CI results and make PR 20593</p>
-
-<h1> 0.38           #20592 review and approve</h1>
-
-<p>2.33</p>
-
-<p>2022/12/09      Friday</p>
-
-<h1> 0.30           #20505 review and comment</h1>
-
-<p>0.30</p>
-
-<p>2022/12/14      Wednesday</p>
-
-<h1> 1.10           #20593 minor fixes, testing</h1>
-
-<p>1.10</p>
-
-<p>2022/12/15      Thursday
- 1.35           #20607 testing, research, report upstream bug, comment on</p>
-
-<h1>                #20601</h1>
-
-<p>1.35</p>
-
-<p>2022/12/19      Monday</p>
-
-<h1> 1.13           #20593 comments, some fixes, testing</h1>
-
-<p>1.13</p>
-
-<p>Which I calculate is 22.27 hours.</p>
-
-<p>Approximately 11 tickets were reviewed or worked on.
-```</p>
-
-    ]]>
-  </content>
-</entry>
   <entry>
     <title>Into the Odd Wide Valley</title>
     <link rel="alternate" href="http://www.rabbitfarm.com/cgi-bin/blosxom/2023/02/05#pwc202" type="text/html"/>
