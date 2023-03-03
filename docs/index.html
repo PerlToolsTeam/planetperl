@@ -72,6 +72,409 @@
         <div class="col-md-8">
           <div class="card" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://stackoverflow.com/questions/75627235/sql-resultset-post-processing-result-into-composite-keyed-like-representation">SQL resultset &quot;POST PROCESSING&quot; result into composite keyed like representation for commonly occurring (left) join that ends up with rows repeated</a></h2>
+<a href="https://stackoverflow.com/questions/tagged/perl" class="badge badge-primary" style="float: left">Perl questions on StackOverflow</a>
+
+              <p class="text-right"><small>Published by mjs
+ on Friday 03 March 2023 12:47</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+            <p>The fully accepted answer will receive <strong>100 USD</strong> through this platform or another one if this is ok for the site policy, and if not, they may remove this message at the top.</p>
+<p>To the mods, please do not delete this message as I've spent a lot of time formulating it.</p>
+<p>I can not find any satisfactory answer on this seemingly common issue with rows repeating for join queries.</p>
+<hr />
+<hr />
+<p>Note I am looking for a <strong>very</strong> <strong>particular</strong> answer, but I know this is possible to do.</p>
+<p>So I believe in order for this not to get out of hand with answers that go off the trail please, try to adhere to these rules:</p>
+<ol>
+<li>Do not product a response in how to do it in pure SQL, or at the DB level.</li>
+<li>Do not answer with a very specific answer to this exact problem with hard to reuse code. It needs to be repeatable with other structures. It means the joins/nesting can be arbitrarily long, and not limited to two as in this example.</li>
+<li>You may utilize pseudo code or any language you like as long as it is commented on the process and clear. Personally I utilize Java so would have been ideal.</li>
+<li>No hibernate solutions.</li>
+<li>Is as efficient as possible but postprocessing after row/col collection with Java streams might be ok but is not the ideal solution. On the fly grouping would be ideal on the first iteration of the data.</li>
+</ol>
+<p>Now, lets dig deeper:</p>
+<p>What we have is output that looks something like this:
+<a href="https://i.stack.imgur.com/VEwmN.png" rel="nofollow noreferrer"><img src="https://i.stack.imgur.com/VEwmN.png" alt="enter image description here" /></a></p>
+<p>Entire create, insert and query can be found here on <strong>dbfiddle</strong>:
+<a href="https://dbfiddle.uk/a6TIilXz" rel="nofollow noreferrer">https://dbfiddle.uk/a6TIilXz</a></p>
+<p>From the fiddle it is quite easy to understand the relationship of the columns.</p>
+<p>We know from this query that the join is :</p>
+<blockquote>
+<p>account_3.id -&gt; accountshop_5.account</p>
+</blockquote>
+<p>Lets call this relationship for <strong>shops</strong></p>
+<p>Then we know another join:</p>
+<blockquote>
+<p>accountshop_5.shop -&gt; shoptext_9.shop</p>
+</blockquote>
+<p>Lets call this relationship for <strong>texts</strong></p>
+<p>So we can define:</p>
+<pre><code>let relations = {
+    'account_3.id -&gt; accountshop_5.account' : 'shops',
+    'accountshop_5.shop -&gt; shoptext_9.shop' : 'texts'
+}
+</code></pre>
+<hr />
+<hr />
+<p>The goal is to iterate the <strong>eachRow</strong>, and <strong>eachColumnKey</strong> and in the end generate something that will look like this:</p>
+<pre><code>[
+    { /* account_3 */
+        
+        id: 'account.1',
+        
+        shops: [ /* accountshop_5 */
+        
+            {
+                id      : 'account.1 ::shop.1',
+                account : 'account.1',
+                shop    : 'shop.1',
+                
+                texts: [ /* shoptext_9 */
+                    {
+                        id  : 'shop.1 :: txt.1',
+                        
+                        shop: 'shop.1',
+                        txt : 'This is txt 1'
+                    },
+                    
+                    {
+                        id  : 'shop.1 :: txt.2',
+                        
+                        shop: 'shop.1',
+                        txt : 'This is txt 2'
+                    },
+                    
+                    {
+                        id  : 'shop.1 :: txt.3',
+                        
+                        shop: 'shop.1',
+                        txt : 'This is txt 3'
+                    }
+                ]
+            },
+            
+            {
+                id      : 'account.1 ::shop.2',
+                account : 'account.1',
+                shop    : 'shop.2',
+                
+                texts: [ /* shoptext_9 */
+                    {
+                        id  : 'shop.2 :: txt.7',
+                        
+                        shop: 'shop.2',
+                        txt : 'This is txt 7'
+                    },
+                    
+                    {
+                        id  : 'shop.2 :: txt.8',
+                        
+                        shop: 'shop.2',
+                        txt : 'This is txt 8'
+                    },
+                    
+                    {
+                        id  : 'shop.2 :: txt.9',
+                        
+                        shop: 'shop.2',
+                        txt : 'This is txt 9'
+                    }
+                ]
+            }
+        ]
+    }
+]
+</code></pre>
+<p>I believe the problem here is well defined.</p>
+<p>I've tried somethings in Java, I tried to collect them row by row, column by column, but was not able to add the finishing touches to the end array.</p>
+<hr />
+<hr />
+<p><strong>In Java</strong>, I've attempted to use streams after iterating all rows to collect them, then using <code>groupingBy</code> but not successfully later been able to build the desired object.</p>
+<p>Here is a fully working and compilable Java example that you can play with directly that works on similarly structured data:</p>
+<pre><code>public static void main(String[] args) {
+    String[]   keys = new String[]{ 
+                     &quot;club.id&quot;,        /***/ &quot;club.country&quot;,  /***/  &quot;fan.id&quot;, /***/ &quot;fan.age&quot; };
+    String[][] rows = new String[][]{  /***/                  /***/            /***/           
+                                       /***/                  /***/            /***/           
+        new String[]{ &quot;barca&quot;,         /***/ &quot;spain &quot;,        /***/  &quot;peter&quot; , /***/ &quot;18&quot;,     },  
+        new String[]{ &quot;barca&quot;,         /***/ &quot;spain &quot;,        /***/  &quot;peter&quot; , /***/ &quot;18&quot;,     },  
+        new String[]{ &quot;barca&quot;,         /***/ &quot;spain &quot;,        /***/  &quot;peter&quot; , /***/ &quot;18&quot;,     },  
+        new String[]{ &quot;barca&quot;,         /***/ &quot;spain &quot;,        /***/  &quot;jonas&quot; , /***/ &quot;19&quot;,     },  
+        new String[]{ &quot;barca&quot;,         /***/ &quot;spain &quot;,        /***/  &quot;jonas&quot; , /***/ &quot;19&quot;,     },  
+        new String[]{ &quot;barca&quot;,         /***/ &quot;spain &quot;,        /***/  &quot;jonas&quot; , /***/ &quot;19&quot;,     },
+                                                                             
+        new String[]{ &quot;real&quot;,          /***/ &quot;spain &quot;,        /***/  &quot;sara&quot;  , /***/ &quot;80&quot;,     },  
+        new String[]{ &quot;real&quot;,          /***/ &quot;spain &quot;,        /***/  &quot;sara&quot;  , /***/ &quot;80&quot;,     },  
+        new String[]{ &quot;real&quot;,          /***/ &quot;spain &quot;,        /***/  &quot;sara&quot;  , /***/ &quot;80&quot;,     },  
+        new String[]{ &quot;real&quot;,          /***/ &quot;spain &quot;,        /***/  &quot;sara&quot;  , /***/ &quot;90&quot;,     },  
+        new String[]{ &quot;real&quot;,          /***/ &quot;spain &quot;,        /***/  &quot;sara&quot;  , /***/ &quot;90&quot;,     },  
+        new String[]{ &quot;real&quot;,          /***/ &quot;spain &quot;,        /***/  &quot;sara&quot;  , /***/ &quot;90&quot;,     }
+          
+    };
+    
+    List&lt;Map&lt;String, Object&gt;&gt; list = new ArrayList&lt;&gt;();
+    for (String[] row : rows) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+    
+        int i = 0; for (String key : keys) {
+            map.put(key, row[i++]);
+        }
+        
+        list.add(map);
+    }
+
+    // System.out.println(Gsons.PUBLICS_PRETTY.toJson(list));
+ 
+    String[] groupsBy = new String[]{ &quot;club.id&quot;, &quot;fan.id&quot;, &quot;fan.age&quot; }; 
+    String[] namesBy  = new String[]{ &quot;clubs&quot;  , &quot;fans&quot;  , &quot;ages&quot;    };
+
+    Object o = list.stream()
+        .map(row -&gt; {
+            return row;                    
+        })
+        .collect(
+            
+            groupingBy(row -&gt; { return row.get(groupsBy[0]); },
+                groupingBy(row -&gt; { return row.get(groupsBy[1]); },
+                        groupingBy(row -&gt; { return row.get(groupsBy[2]); } 
+                    ) 
+                ) 
+            )
+        )
+    ;
+
+    // System.out.println(Gsons.PUBLICS_PRETTY.toJson(o));;
+}
+</code></pre>
+<p>The input in the Java example after having been built up has:</p>
+<pre><code>[
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;barca&quot;,
+    &quot;fan.id&quot;: &quot;peter&quot;,
+    &quot;fan.age&quot;: &quot;18&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;barca&quot;,
+    &quot;fan.id&quot;: &quot;peter&quot;,
+    &quot;fan.age&quot;: &quot;18&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;barca&quot;,
+    &quot;fan.id&quot;: &quot;peter&quot;,
+    &quot;fan.age&quot;: &quot;18&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;barca&quot;,
+    &quot;fan.id&quot;: &quot;jonas&quot;,
+    &quot;fan.age&quot;: &quot;19&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;barca&quot;,
+    &quot;fan.id&quot;: &quot;jonas&quot;,
+    &quot;fan.age&quot;: &quot;19&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;barca&quot;,
+    &quot;fan.id&quot;: &quot;jonas&quot;,
+    &quot;fan.age&quot;: &quot;19&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;real&quot;,
+    &quot;fan.id&quot;: &quot;sara&quot;,
+    &quot;fan.age&quot;: &quot;80&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;real&quot;,
+    &quot;fan.id&quot;: &quot;sara&quot;,
+    &quot;fan.age&quot;: &quot;80&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;real&quot;,
+    &quot;fan.id&quot;: &quot;sara&quot;,
+    &quot;fan.age&quot;: &quot;80&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;real&quot;,
+    &quot;fan.id&quot;: &quot;sara&quot;,
+    &quot;fan.age&quot;: &quot;90&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;real&quot;,
+    &quot;fan.id&quot;: &quot;sara&quot;,
+    &quot;fan.age&quot;: &quot;90&quot;
+  },
+  {
+    &quot;club.country&quot;: &quot;spain &quot;,
+    &quot;club.id&quot;: &quot;real&quot;,
+    &quot;fan.id&quot;: &quot;sara&quot;,
+    &quot;fan.age&quot;: &quot;90&quot;
+  }
+]
+</code></pre>
+<p>But the output I am able to get currently is the following which is not entirely correct:</p>
+<pre><code>{
+  &quot;barca&quot;: {
+    &quot;jonas&quot;: {
+      &quot;19&quot;: [
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;barca&quot;,
+          &quot;fan.id&quot;: &quot;jonas&quot;,
+          &quot;fan.age&quot;: &quot;19&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;barca&quot;,
+          &quot;fan.id&quot;: &quot;jonas&quot;,
+          &quot;fan.age&quot;: &quot;19&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;barca&quot;,
+          &quot;fan.id&quot;: &quot;jonas&quot;,
+          &quot;fan.age&quot;: &quot;19&quot;
+        }
+      ]
+    },
+    &quot;peter&quot;: {
+      &quot;18&quot;: [
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;barca&quot;,
+          &quot;fan.id&quot;: &quot;peter&quot;,
+          &quot;fan.age&quot;: &quot;18&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;barca&quot;,
+          &quot;fan.id&quot;: &quot;peter&quot;,
+          &quot;fan.age&quot;: &quot;18&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;barca&quot;,
+          &quot;fan.id&quot;: &quot;peter&quot;,
+          &quot;fan.age&quot;: &quot;18&quot;
+        }
+      ]
+    }
+  },
+  &quot;real&quot;: {
+    &quot;sara&quot;: {
+      &quot;90&quot;: [
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;real&quot;,
+          &quot;fan.id&quot;: &quot;sara&quot;,
+          &quot;fan.age&quot;: &quot;90&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;real&quot;,
+          &quot;fan.id&quot;: &quot;sara&quot;,
+          &quot;fan.age&quot;: &quot;90&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;real&quot;,
+          &quot;fan.id&quot;: &quot;sara&quot;,
+          &quot;fan.age&quot;: &quot;90&quot;
+        }
+      ],
+      &quot;80&quot;: [
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;real&quot;,
+          &quot;fan.id&quot;: &quot;sara&quot;,
+          &quot;fan.age&quot;: &quot;80&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;real&quot;,
+          &quot;fan.id&quot;: &quot;sara&quot;,
+          &quot;fan.age&quot;: &quot;80&quot;
+        },
+        {
+          &quot;club.country&quot;: &quot;spain &quot;,
+          &quot;club.id&quot;: &quot;real&quot;,
+          &quot;fan.id&quot;: &quot;sara&quot;,
+          &quot;fan.age&quot;: &quot;80&quot;
+        }
+      ]
+    }
+  }
+}
+</code></pre>
+<p>The desired output for the Java example would be something like:</p>
+<pre><code>[
+     {
+         'clubs' : [
+             {
+                 'club.id'      : &quot;barca&quot;,
+                 'club.country' : &quot;spain&quot;,
+                 'fans' : [
+                     {
+                         'fan.id'  : &quot;peter&quot;, 
+                         'ages'    : [
+                             {
+                                 'fan.age' : 18
+                                 // Nothing more to add here, but in theory possible
+                             },
+                             {
+                                 'fan.age' : 19
+                                 // Nothing more to add here, but in theory possible
+                             }
+                         ]
+                     },
+                 ]
+             },
+             
+             {
+                 'club.id' : &quot;real&quot;, 
+                 'fans' : [
+                     {
+                         'fan.id'  : &quot;peter&quot;, 
+                         
+                         'ages'    : [
+                             {
+                                 'fan.age' : 18
+                                 // Nothing more to add here, but in theory possible
+                             },
+                             {
+                                 'fan.age' : 19
+                                 // Nothing more to add here, but in theory possible
+                             }
+                         ]
+                     }
+                 ]
+             }
+         
+         ]
+     }
+     
+]
+</code></pre>
+<p>I know it looks long, but it is because I've also provided lots of data to reproduce it so you can play it it.</p>
+<p>Let me know if you have any questions!</p>
+
+               </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card" id="card_2">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://perlhacks.com/2023/03/improvements-to-planet-perl-and-perlanet/">Improvements to Planet Perl and Perlanet</a></h2>
 <a href="https://perlhacks.com/" class="badge badge-primary" style="float: left">Perl Hacks</a>
 
@@ -95,7 +498,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_2">
+          <div class="card" id="card_3">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75625123/perl-d-directory-exists-does-not-work-on-directories-with-spaces-in-the-name">Perl -d directory exists , does not work on directories with spaces in the name? [closed]</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge badge-primary" style="float: left">Perl questions on StackOverflow</a>
@@ -121,7 +524,7 @@ die &quot;$path does not exist, exiting\n&quot; unless (-d $path);
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_3">
+          <div class="card" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/3ab3217e79262248af3c11f8194b343ddb90b690">
         pod/perlfilter.pod - replace piracy comments with something more real…
@@ -163,7 +566,7 @@ customized.dat, although I am not sure why that was necessary. - Yves]</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_4">
+          <div class="card" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75620236/perl-finding-one-value-in-one-specific-file-in-multiple-directories">Perl: Finding one value in one specific file in multiple directories</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge badge-primary" style="float: left">Perl questions on StackOverflow</a>
@@ -214,7 +617,7 @@ print &quot;End&quot;;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_5">
+          <div class="card" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/57f98c9a18feee74f286abfbe4f84551bb6fee4d">
         dist/Filter-Simple - synchronize Makefile.PL and Changes from CPAN
@@ -235,7 +638,7 @@ changed license from &#39;perl&#39; to &#39;perl_5&#39;</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_6">
+          <div class="card" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/04528e741d17821b6c5e65bfb24935e912d182d3">
         dist/Exporter - Synchronize Changes and Makefile.PL from CPAN release
@@ -257,7 +660,7 @@ I did whitespace cleanup on Changes at the same time.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_7">
+          <div class="card" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/0e0e83c454f6e0f8eeb501c06d02a3e43d8525cc">
         dist/FindBin - synchronize Makefile.PL from cpan release
@@ -275,7 +678,7 @@ Tweaked license to be &#39;perl_5&#39; and not &#39;perl&#39;.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_8">
+          <div class="card" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/c5f0c656b477517a701ccd7b2e265c3223873905">
         dist/Locale-Maketext - synch Makefile.PL from CPAN
@@ -291,7 +694,7 @@ Tweaked license to be &#39;perl_5&#39; and not &#39;perl&#39;.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_9">
+          <div class="card" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75481467/how-to-distinguish-numbers-from-ip-addresses-in-regular-expressions">How to distinguish numbers from ip addresses in regular expressions?</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge badge-primary" style="float: left">Perl questions on StackOverflow</a>
@@ -329,7 +732,7 @@ And many other variations. But they are all match parts of ip.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_10">
+          <div class="card" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75620235/perl-grep-syntax">Perl grep syntax</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge badge-primary" style="float: left">Perl questions on StackOverflow</a>
@@ -353,7 +756,7 @@ $msg-&gt;parts(\@keep);
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card" id="card_11">
+          <div class="card" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://medium.com/@nediir/what-is-perl-3cf44720bc32?source=rss------perl-5">What is Perl?</a></h2>
 <a href="https://medium.com/tag/perl" class="badge badge-primary" style="float: left">Perl on Medium</a>
@@ -362,184 +765,6 @@ $msg-&gt;parts(\@keep);
  on Thursday 02 March 2023 16:10</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><div class="medium-feed-item"><p class="medium-feed-image"><a href="https://medium.com/@nediir/what-is-perl-3cf44720bc32?source=rss------perl-5"><img src="https://cdn-images-1.medium.com/max/1280/1*b0-VWhhifQolimiOjmNsbw.jpeg" width="1280"></a></p><p class="medium-feed-snippet">Perl is a general-purpose, high-level, interactive, and interpreted programming language created by Larry Wall in 1987, originally&#x2026;</p><p class="medium-feed-link"><a href="https://medium.com/@nediir/what-is-perl-3cf44720bc32?source=rss------perl-5">Continue reading on Medium »</a></p></div>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card" id="card_12">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://stackoverflow.com/questions/75589795/how-to-pass-perl-evloop-object-to-your-c-library">how to pass perl EV::Loop object to your C library</a></h2>
-<a href="https://stackoverflow.com/questions/tagged/perl" class="badge badge-primary" style="float: left">Perl questions on StackOverflow</a>
-
-              <p class="text-right"><small>Published by Mjöllnir
- on Thursday 02 March 2023 03:34</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-            <p>I need to pass loop object which is contained in perl EV::Loop module (EV::default_loop) to my C library.</p>
-<p>I have a test library written on C that has a function <strong>test</strong> that takes <strong>struct ev_loop</strong>* object as input (EV_DEFAULT).</p>
-<p>ev_lib/EvManager.h:</p>
-<pre><code>#pragma once
-
-#include&lt;stdio.h&gt;
-#include &lt;ev.h&gt;
-
-void test (struct ev_loop* loop);
-static void time_cb (EV_P_ ev_timer *w, int revents);
-
-static ev_timer timeout_watcher;
-</code></pre>
-<p>ev_lib/EvManager.c:</p>
-<pre><code>#include &quot;EvManager.h&quot;
-
-void test (struct ev_loop* loop)
-{
-  printf(&quot;%s\n&quot;, __PRETTY_FUNCTION__);
-  ev_verify(loop);
-  printf(&quot;%s\n&quot;, &quot;test(): ev_verify OK!&quot;);
-
-  ev_timer_init (&amp;timeout_watcher, time_cb, 2, 2);
-  ev_timer_start (loop, &amp;timeout_watcher);
-
-  return;
-};
-
-static void time_cb (EV_P_ ev_timer *w, int revents)
-{
-  printf(&quot;EvManager.c: time_cb&quot;);
-};
-</code></pre>
-<p>compile:</p>
-<pre><code>gcc -c -Wall -fpic EvManager.c
-gcc -shared -o libevmanager.so EvManager.o -lev
-</code></pre>
-<p>I wrote .xs module that used EVAPI.h to access the C loop object ( <a href="https://Ev::MakeMaker" rel="nofollow noreferrer">https://metacpan.org/pod/EV::MakeMaker</a>):</p>
-<p>EvTest.xs:</p>
-<pre><code>#include &quot;EXTERN.h&quot;
-#include &quot;perl.h&quot;
-#include &quot;XSUB.h&quot;
-
-#include &quot;EVAPI.h&quot;
-
-#include &quot;./ev_lib/EvManager.h&quot;
-
-static ev_timer timeout_watcher;
-
-static void time_cb (EV_P_ ev_timer *w, int revents)
-{
-  puts (&quot;ev_timer_start (EvTest.xs): is called roughly every 2s (repeat = 2)&quot;);
-};
-
-static HV *stash;
-
-MODULE = My::EvTest  PACKAGE = My::EvTest
-PROTOTYPES: ENABLE
-
-BOOT:
-{
-    stash     = gv_stashpv (&quot;My::EvTest&quot;    , 1);
-    I_EV_API (&quot;My::EvTest&quot;);
-}
-
-void pass_loop_to_lib()
-    CODE:
-{
-    ev_verify(EV_DEFAULT);
-    printf(&quot;%s\n&quot;, &quot;pass_loop_to_lib(): ev_verify OK!&quot;);
-
-    ev_timer_init (&amp;timeout_watcher, time_cb, 2, 2);
-    ev_timer_start (EV_DEFAULT, &amp;timeout_watcher);
-    ev_verify(EV_DEFAULT);
-
-    printf(&quot;%s\n&quot;, &quot;pass_loop_to_lib(): ev_verify (2) OK!&quot;);
-
-    test(EV_DEFAULT); // call ev_lib::test()
-}
-</code></pre>
-<p>lib/My/EvTest.pm:</p>
-<pre><code>package My::EvTest;
-use strict;
-use warnings;
-use Exporter qw(import);
-our %EXPORT_TAGS = ( 'all' =&gt; [ qw(    ) ] );
-our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
-our @EXPORT = qw(    );
-our $VERSION = 0.01;
-require XSLoader;
-
-XSLoader::load();
-1;
-</code></pre>
-<p>Makefile.PL:</p>
-<pre><code>use 5.020;
-use strict;
-use warnings;
-use utf8;
-use ExtUtils::MakeMaker 6.98; # for XSMULTI option
-use EV::MakeMaker qw(ev_args);
-
-WriteMakefile(ev_args(
-  NAME          =&gt; 'My::EvTest',
-  VERSION_FROM  =&gt; 'lib/My/EvTest.pm',
-  PREREQ_PM     =&gt; { 'ExtUtils::MakeMaker' =&gt; '6.98' },
-  ABSTRACT_FROM =&gt; 'lib/My/EvTest.pm',
-  OPTIMIZE      =&gt; '-O2',
-  LICENSE       =&gt; 'perl',
-  LIBS          =&gt;  [&quot;-L./ev_lib -levmanager -lev&quot;],
-  INC           =&gt; '-I. -I/usr/include -I./ev_lib/'));
-</code></pre>
-<p>compile:</p>
-<pre><code>perl Makefile.PL
-make -f Makefile
-</code></pre>
-<p>my perl script thats used module My::EvTest:</p>
-<pre><code>#!/usr/bin/perl -w
-
-use FindBin 1.51 qw( $RealBin );
-
-use strict;
-use warnings;
-
-use Devel::Peek;
-use ExtUtils::testlib;
-
-use EV;
-use My::EvTest;
-
-my $w = EV::timer 3, 3, sub
-{
-   warn &quot;EV::timer (.pm): is called roughly every 3s (repeat = 3)&quot;;
-};
-
-my $loop = EV::default_loop;
-Dump $loop;
-
-My::EvTest::pass_loop_to_lib();
-
-EV::run;
-
-exit(0);
-</code></pre>
-<p>And i have this output:</p>
-<pre><code>➜ ./test_ev
-SV = IV(0x9a8d30) at 0x9a8d40
-  REFCNT = 1
-  FLAGS = (PADMY,ROK)
-  RV = 0x9c6738
-  SV = PVMG(0x99eb60) at 0x9c6738
-    REFCNT = 3
-    FLAGS = (OBJECT,IOK,pIOK)
-    IV = 139812219366784
-    NV = 0
-    PV = 0
-    STASH = 0xa03ad0    &quot;EV::Loop&quot;
-pass_loop_to_lib(): ev_verify OK!
-pass_loop_to_lib(): ev_verify (2) OK!
-test
-perl: ev.c:2848: ev_verify: Assertion «((loop)-&gt;anfdmax) &gt;= 0» failed.
-Aborted
-</code></pre>
-<p>What i doing wrong?</p>
-
-               </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -34712,7 +34937,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 03 March 2023 11:30 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Friday 03 March 2023 12:48 UTC</address>
             </div>
           </div>
         </div><!-- container -->
