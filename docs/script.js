@@ -55,15 +55,18 @@ $(document).ready(function() {
     // If the checkbox value exists and is true, check the checkbox
     if (checkboxValue === "true") {
       $(this).prop('checked', true);
+      $('.' + checkboxId).show();
     } 
     // If the checkbox value exists and is false, uncheck the checkbox
     else if (checkboxValue === "false") {
       $(this).prop('checked', false);
+      $('.' + checkboxId).hide();
     } 
     // If the checkbox value doesn't exist, add it to localStorage and check the checkbox
     else {
       localStorage.setItem(checkboxId, "true");
       $(this).prop('checked', true);
+      $('.' + checkboxId).show();
     }
   });
   
@@ -73,6 +76,12 @@ $(document).ready(function() {
     var checkboxValue = $(this).prop('checked');
   
     localStorage.setItem(checkboxId, checkboxValue);
+
+    if (checkboxValue === true) {
+      $('.' + checkboxId).show();
+    } else {
+      $('.' + checkboxId).hide();
+    }
   });
 
 });
