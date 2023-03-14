@@ -41,6 +41,40 @@ $(document).ready(function() {
   if (showhide == 'hide') {
     $('.card-body').hide();
   }
+
+  // Get list of checkboxes by their class name
+  var checkboxes = $('.feed-checkbox');
+
+  // Loop through each checkbox and check localStorage for its value
+  checkboxes.each(function() {
+    var checkboxId = $(this).attr('id');
+  
+    // Check if checkbox id exists in localStorage and get its value
+    var checkboxValue = localStorage.getItem(checkboxId);
+  
+    // If the checkbox value exists and is true, check the checkbox
+    if (checkboxValue === "true") {
+      $(this).prop('checked', true);
+    } 
+    // If the checkbox value exists and is false, uncheck the checkbox
+    else if (checkboxValue === "false") {
+      $(this).prop('checked', false);
+    } 
+    // If the checkbox value doesn't exist, add it to localStorage and check the checkbox
+    else {
+      localStorage.setItem(checkboxId, "true");
+      $(this).prop('checked', true);
+    }
+  });
+  
+  // Update localStorage when a checkbox is clicked
+  checkboxes.on('click', function() {
+    var checkboxId = $(this).attr('id');
+    var checkboxValue = $(this).prop('checked');
+  
+    localStorage.setItem(checkboxId, checkboxValue);
+  });
+
 });
 
 function get_curr_card() {
@@ -55,8 +89,6 @@ function get_curr_card() {
     }
     prev_card = all_cards[i];
   }
-
-  console.log('Curr - ' + prev_card.id)
 
   return $(prev_card);
 }
