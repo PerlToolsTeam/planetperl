@@ -7,15 +7,436 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-03-15T16:43:37Z</updated>
+  <updated>2023-03-15T20:39:24Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Perl Weekly Challenge 208: Minimum Index Sum and Duplicate and Missing</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/laurent_r/2023/03/perl-weekly-challenge-208-minimum-index-sum-and-duplicate-and-missing.html"/>
+    <id>tag:blogs.perl.org,2023:/users/laurent_r//3226.11050</id>
+    <published>2023-03-15T22:16:29Z</published>
+    <updated>2023-03-15T22:22:01Z</updated>
+    <author>
+        <name>laurent_r</name>
+        <uri>https://laurent-rosenfeld.developpez.com/</uri>
+    </author>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/laurent_r/">
+        <![CDATA[<p>These are some answers to the Week 208 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-208/">Perl Weekly Challenge</a> organized by <a href="https://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
+
+<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on March 19, 2023 at 23:59). This blog post offers some solutions to this challenge. Please don’t read on if you intend to complete the challenge on your own.</p>
+
+<h2>Task 1: Minimum Index Sum</h2>
+
+<p><em>You are given two arrays of strings.</em></p>
+
+<p><em>Write a script to find out all common strings in the given two arrays with minimum index sum. If no common strings found returns an empty list.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: @list1 = ("Perl", "Raku", "Love")
+       @list2 = ("Raku", "Perl", "Hate")
+
+Output: ("Perl", "Raku")
+
+There are two common strings "Perl" and "Raku".
+Index sum of "Perl": 0 + 1 = 1
+Index sum of "Raku": 1 + 0 = 1
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: @list1 = ("A", "B", "C")
+       @list2 = ("D", "E", "F")
+
+Output: ()
+
+No common string found, so no result.
+</code></pre>
+
+<p><em>Example 3:</em></p>
+
+<pre><code>Input: @list1 = ("A", "B", "C")
+       @list2 = ("C", "A", "B")
+
+Output: ("A")
+
+There are three common strings "A", "B" and "C".
+Index sum of "A": 0 + 1 = 1
+Index sum of "B": 1 + 2 = 3
+Index sum of "C": 2 + 0 = 2
+</code></pre>
+
+<h3>Minimum Index Sum in Raku</h3>
+
+<p>We need to find the intersection between two arrays of strings. Once we&#8217;ve found the intersection, we need to keep the intersection items that have the smallest sum of indexes in the original array. So, it looked like it would be nice to use <a href="https://docs.raku.org/type/Bag.html">Bags</a> for the input (with the index as weight integer for each item), and the <code>∩</code> or <code>(&amp;)</code> <a href="https://docs.raku.org/language/operators.html#infix_(|">infix intersection operator</a>,<em>infix</em>%E2%88%AA) to generate the result. It turns out that this might not be the best choice, because the integer weight associated with a bag item is signifying how many copies of that element are considered &#8220;in the bag&#8221;. So, if the weight is 0, it means the item is not in the bag and is lost during bag construction. Since array indexes start at 0, we&#8217;d be losing the first item of each array. The problem is solved by assigning the index incremented by 1 to the weight. This easily solves the problem, but makes the solution slightly less elegant than I originally hoped it to be. </p>
+
+<pre><code>sub min-sum-idx (@s1, @s2) {
+    my $b1 = (map {@s1[$_] =&gt; $_ + 1}, 0..@s1.end).Bag;
+    my $b2 = (map {@s2[$_] =&gt; $_ + 1}, 0..@s2.end).Bag;
+    my $result = (map { $_ =&gt;  $b1{$_} + $b2{$_}},  
+        ($b1 ∩ $b2).keys).Bag;
+    my $min = $result.values.min;
+    return grep {$result{$_} == $min}, $result.keys;
+}
+
+for (&lt;Perl Raku Love&gt;, &lt;Raku Perl Hate&gt;), 
+    (&lt;A B C&gt;, &lt;D E F&gt;), (&lt;A B C&gt;, &lt;C A B&gt;) 
+        -&gt; @test {
+            say "@test[0] - @test[1]".fmt("%-35s =&gt; "), 
+                min-sum-idx |@test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./min-sum_idx.raku
+Perl Raku Love - Raku Perl Hate    =&gt; (Perl Raku)
+A B C - D E F                      =&gt; ()
+A B C - C A B                      =&gt; (A)
+</code></pre>
+
+<h3>Minimum Index Sum in Perl</h3>
+
+<p>For porting the above Raku program to Perl, we replace <code>Bags</code> with hashes. We use a <code>grep</code> to construct the <code>@result</code> intersection of the two input arrays, and a loop to compute the minimum array index sum. </p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub min_sum_idx {
+    my @s1 = @{$_[0]};
+    my @s2 = @{$_[1]};
+
+    my %h1 = map {$s1[$_] =&gt; $_ } 0..$#s1;
+    my %h2 = map {$s2[$_] =&gt; $_ } 0..$#s2;
+    my @result = grep { exists $h1{$_} } @s2;
+    return "()" unless @result;
+    my %res = map { $_ =&gt; $h1{$_} + $h2{$_} } @result;
+    my $min = $res{$result[0]};
+    for my $k (keys %res) { 
+        $min = $res{$k} if $res{$k} &lt; $min;
+    }
+    return grep {$res{$_} == $min} @result;
+}
+
+for my $test ( [[&lt;Perl Raku Love&gt;], [&lt;Raku Perl Hate&gt;]], 
+    [[&lt;A B C&gt;], [&lt;D E F&gt;]], [[&lt;A B C&gt;], [&lt;C A B&gt;]] ) {
+
+    printf "%-14s - %-16s =&gt; ", 
+        "@{$test-&gt;[0]}", "@{$test-&gt;[1]}";
+    say join " ", min_sum_idx @$test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl  ./min-sum-idx.pl
+Perl Raku Love - Raku Perl Hate   =&gt; Raku Perl
+A B C          - D E F            =&gt; ()
+A B C          - C A B            =&gt; A
+</code></pre>
+
+<h2>Task 2: Duplicate and Missing</h2>
+
+<p><em>You are given an array of integers in sequence with one missing and one duplicate.</em></p>
+
+<p><em>Write a script to find the duplicate and missing integer in the given array. Return -1 if none found.</em></p>
+
+<p><em>For the sake of this task, let us assume the array contains no more than one duplicate and missing.</em></p>
+
+<p><em>Example 1:</em></p>
+
+<pre><code>Input: @nums = (1,2,2,4)
+Output: (2,3)
+
+Duplicate is 2 and Missing is 3.
+</code></pre>
+
+<p><em>Example 2:</em></p>
+
+<pre><code>Input: @nums = (1,2,3,4)
+Output: -1
+
+No duplicate and missing found.
+</code></pre>
+
+<p><em>Example 3:</em></p>
+
+<pre><code>Input: @nums = (1,2,3,3)
+Output: (3,4)
+
+Duplicate is 3 and Missing is 4.
+</code></pre>
+
+<p>First, we are told that the integers are in sequence. This presumably means that they are sorted in ascending order. If not, we could just add a call to the  built-in <a href="https://docs.raku.org/routine/sort.html">sort</a> routine at the beginning of our code.</p>
+
+<p>Second, the task specification tells us what to do when there is no missing item and no duplicate, but not what to do when only one of these two values is missing. I&#8217;ve decided to report something like <code>(3, -)</code> when 3 is a duplicate and there is no missing item, and <code>(-, 3)</code> when 3 is a missing value and there is no duplicate.</p>
+
+<h3>Duplicate and Missing in Raku</h3>
+
+<p>We simply loop over the input array values and </p>
+
+<ol>
+<li>Report a duplicate if one value is equal to the previous one, and </li>
+<li><p>Report a missing item if the current item is not one more than the previous one.</p>
+
+<p>sub dupe-and-missing (@nums) {
+    my ($dupe, $missing);
+    for 1..@nums.end -> $i {
+        if @nums[$i] == @nums[$i-1] {
+            $dupe = @nums[$i];
+        } elsif @nums[$i] - @nums[$i-1] != 1 {
+            $missing = @nums[$i-1] + 1;
+        }
+    }
+    return &#8220;($dupe, $missing)&#8221; if $dupe and $missing;
+    return &#8220;-1&#8221; unless $dupe or $missing;
+    return &#8220;($dupe, -)&#8221; if $dupe;   # no missing item
+    return &#8220;(-, $missing)&#8221;;         # no dupe
+}</p>
+
+<p>for &lt;1 2 2 4>, &lt;1 2 3 4>, &lt;1 2 3 3>, &lt;1 2 4 5>,
+    &lt;1 1 3 4>, &lt;1 3 4 5>, &lt;1 2 2 3 5> -> @test {
+    say &#8220;@test[]&#8221;.fmt(&#8220;%-12s => &#8220;), dupe-and-missing @test;
+}</p></li>
+</ol>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ raku ./dupe_missing.raku
+1 2 2 4      =&gt; (2, 3)
+1 2 3 4      =&gt; -1
+1 2 3 3      =&gt; (3, -)
+1 2 4 5      =&gt; (-, 3)
+1 1 3 4      =&gt; (1, 2)
+1 3 4 5      =&gt; (-, 2)
+1 2 2 3 5    =&gt; (2, 4)
+</code></pre>
+
+<h3>Duplicate and Missing in Perl</h3>
+
+<p>This is a straight port to Perl of the Raku program above:</p>
+
+<pre><code>use strict;
+use warnings;
+use feature "say";
+
+sub dupe_and_missing {
+    my @nums = @_;
+    my ($dupe, $missing);
+    for my $i (1..$#nums) {
+        if ($nums[$i] == $nums[$i-1]) {
+            $dupe = $nums[$i];
+        } elsif ($nums[$i] - $nums[$i-1] != 1) {
+            $missing = $nums[$i-1] + 1;
+        }
+    }
+    return "($dupe, $missing)" if $dupe and $missing;
+    return "-1" unless $dupe or $missing;
+    return "($dupe, -)" if $dupe;
+    return "(-, $missing)";
+}
+
+for my $test ([&lt;1 2 2 4&gt;], [&lt;1 2 3 4&gt;], [&lt;1 2 3 3&gt;], 
+    [&lt;1 2 4 5&gt;], [&lt;1 1 3 4&gt;], [&lt;1 3 4 5&gt;], [&lt;1 2 2 3 5&gt;]) {
+    printf "%-12s =&gt; ", "@$test";
+    say dupe_and_missing @$test;
+}
+</code></pre>
+
+<p>This program displays the following output:</p>
+
+<pre><code>$ perl  ./dupe-missing.pl
+1 2 2 4      =&gt; (2, 3)
+1 2 3 4      =&gt; -1
+1 2 3 3      =&gt; (3, -)
+1 2 4 5      =&gt; (-, 3)
+1 1 3 4      =&gt; (1, 2)
+1 3 4 5      =&gt; (-, 2)
+1 2 2 3 5    =&gt; (2, 4)
+</code></pre>
+
+<h2>Wrapping up</h2>
+
+<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on March 26, 2023. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
+]]>
+        
+
+    </content>
+</entry>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75748810</id>
+        <re:rank scheme="https://stackoverflow.com">0</re:rank>
+        <title type="text">With perl open, how can I capture bash STDOUT &amp; STDERR without printing to disk?</title>
+            <category scheme="https://stackoverflow.com/tags" term="bash"/>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="system"/>
+            <category scheme="https://stackoverflow.com/tags" term="stderr"/>
+            <category scheme="https://stackoverflow.com/tags" term="filehandle"/>
+        <author>
+            <name>Jacob Wegelin</name>
+            <uri>https://stackoverflow.com/users/1461307</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75748810/with-perl-open-how-can-i-capture-bash-stdout-stderr-without-printing-to-disk"/>
+        <published>2023-03-15T18:35:12Z</published>
+        <updated>2023-03-15T20:20:11Z</updated>
+        <summary type="html">
+            &lt;p&gt;The perl script below invokes unix &lt;code&gt;find&lt;/code&gt; using
+the &lt;code&gt;open&lt;/code&gt; command.&lt;/p&gt;
+&lt;p&gt;STDOUT goes into the CMD filehandle and
+STDERR, if any, goes into a temporary file on disk.&lt;/p&gt;
+&lt;p&gt;STDERR will result if the user makes a mistake on the command  line.
+But even if the user makes a mistake, it is still possible that STDOUT could contain useful data, as in my example below.&lt;/p&gt;
+&lt;p&gt;Thus we want two separate variables in the perl script, holding
+respectively STDOUT and STDERR from the unix command.&lt;/p&gt;
+&lt;p&gt;In the current script, STDERR is only obtained by first printing
+it to a file on disk and subsequently reading the file.&lt;/p&gt;
+&lt;p&gt;Is there a way to capture both STDOUT and STDERR in separate variables without the intermediate step of printing STDERR to a physical file on disk? Can it somehow be printed directly to a perl filehandle or a perl variable?&lt;/p&gt;
+&lt;p&gt;I am aware that one can use &lt;code&gt;File::Find&lt;/code&gt; in perl instead of an explicit system call. But &lt;code&gt;open&lt;/code&gt; can be applied to other unix commands, so an answer to the current question could be applied to any number of unix commands.&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;&amp;gt; cat z.pl
+#!/usr/bin/env perl
+use strict; use warnings;
+use Data::Dumper qw(Dumper); $Data::Dumper::Sortkeys = 1;
+
+my$work={};
+$work-&amp;gt;{tmpfile}='./z';
+$work-&amp;gt;{command}=join(' ',
+    'find -s ',
+    @ARGV,
+    '2&amp;gt;',
+    $work-&amp;gt;{tmpfile},
+);
+
+open CMD, '-|', $work-&amp;gt;{command} or die $work-&amp;gt;{command},' cannot open';
+$work-&amp;gt;{return}{open}=$?;
+my@result;
+while(&amp;lt;CMD&amp;gt;)
+{
+    chomp;
+    push@result,$_;
+}
+close CMD;
+$work-&amp;gt;{return}{close}=$?;
+if(-s $work-&amp;gt;{tmpfile})
+{
+    open IN,'&amp;lt;',$work-&amp;gt;{tmpfile} or die 'cannot read ',$work-&amp;gt;{tmpfile},;
+    local$/=undef;
+    $work-&amp;gt;{stderr}=&amp;lt;IN&amp;gt;;
+    close IN;
+}
+print Dumper $work;
+print Dumper \@result;
+&amp;gt; ./z.pl . piggy
+$VAR1 = {
+          'command' =&amp;gt; 'find -s  . piggy 2&amp;gt; ./z',
+          'return' =&amp;gt; {
+                        'close' =&amp;gt; 256,
+                        'open' =&amp;gt; 0
+                      },
+          'stderr' =&amp;gt; 'find: piggy: No such file or directory
+',
+          'tmpfile' =&amp;gt; './z'
+        };
+$VAR1 = [
+          '.',
+          './.z.pl.swp',
+          './body',
+          './body~',
+          './snap',
+          './title',
+          './z',
+          './z.pl',
+          './z.pl~'
+        ];
+&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+        </summary>
+    </entry>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75748076</id>
+        <re:rank scheme="https://stackoverflow.com">0</re:rank>
+        <title type="text">Perl : print of $ is empty without \n</title>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="printing"/>
+            <category scheme="https://stackoverflow.com/tags" term="is-empty"/>
+        <author>
+            <name>Metharil</name>
+            <uri>https://stackoverflow.com/users/21405047</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75748076/perl-print-of-is-empty-without-n"/>
+        <published>2023-03-15T17:18:05Z</published>
+        <updated>2023-03-15T17:28:29Z</updated>
+        <summary type="html">
+            &lt;p&gt;I need help to understand a problem that will probably seem silly to you, that I encounter in the execution of this relatively basic perl script.&lt;/p&gt;
+&lt;p&gt;I want to extract information from a file in order to fill a hash that will be used later.&lt;/p&gt;
+&lt;p&gt;Below is an extract of the file used as input :&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;    edit &amp;quot;DNS&amp;quot;
+        set category &amp;quot;Network Services&amp;quot;
+        set tcp-portrange 53
+        set udp-portrange 53
+    next
+    edit &amp;quot;HTTP&amp;quot;
+        set category &amp;quot;Web Access&amp;quot;
+        set tcp-portrange 80
+    next
+    edit &amp;quot;HTTPS&amp;quot;
+        set category &amp;quot;Web Access&amp;quot;
+        set tcp-portrange 443
+    next
+    edit &amp;quot;IMAP&amp;quot;
+        set category &amp;quot;Email&amp;quot;
+        set tcp-portrange 143
+    next
+    edit &amp;quot;IMAPS&amp;quot;
+        set category &amp;quot;Email&amp;quot;
+        set tcp-portrange 993
+    next
+    edit &amp;quot;LDAP&amp;quot;
+        set category &amp;quot;Authentication&amp;quot;
+        set tcp-portrange 389
+    next
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;And here is the code (which is probably not optimal, I'm more than a beginner) used to extract the data from the input:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;#!/usr/local/bin/perl
+ 
+ use strict;
+ use warnings;
+  
+ my $InFile = &amp;quot;/mnt/c/Users/claidin/OneDrive - Hitachi Vantara/Desktop/Perso/Firewalling/log-rules/import-svc_objet.conf&amp;quot;;
+ open (InFile,&amp;quot;$InFile&amp;quot;) or die &amp;quot;Can't open file\n&amp;quot;;
+ my $Ligne;
+ my %svcDB =(); 
+ my $svcname;
+ my $service;
+ while ($Ligne=&amp;lt;InFile&amp;gt;)
+{
+if ($Ligne=~ /set\s(.*)\-portrange\s(.*)\n/)
+    {
+    $service = (uc($1).&amp;quot;_&amp;quot;.$2);
+    print $service;
+    #   print &amp;quot;$service\n&amp;quot;;
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;my problem concerns the variable $service (which will be used as a key to fill the hash I mentioned earlier).&lt;/p&gt;
+&lt;p&gt;Value of $service are only shown when I add I add \n to the print (line 18)&lt;/p&gt;
+&lt;p&gt;example:  &lt;a href="https://i.stack.imgur.com/uCGfg.png" rel="nofollow noreferrer"&gt;enter image description here&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;if I use the print on line 17 I get no return.&lt;/p&gt;
+&lt;p&gt;I must not have the \n set in the variable $service to fill the hash, but without the hash is empty.&lt;/p&gt;
+&lt;p&gt;Could you please explain me this behavior and give me some recommendations.&lt;/p&gt;
+&lt;p&gt;Thank you in advance for all the help you could give me.&lt;/p&gt;
+&lt;p&gt;Best Regards,&lt;/p&gt;
+&lt;p&gt;Cédric&lt;/p&gt;
+
+        </summary>
+    </entry>
   <entry>
     <title>Template Toolkit’s DEFAULT is not too useful</title>
     <link rel="alternate" href="https://blogs.perl.org/users/aristotle/2023/03/template-toolkit-default-directive.html"/>
     <id>tag:blogs.perl.org,2023:/users/aristotle//15.11049</id>
     <published>2023-03-15T12:06:17Z</published>
-    <updated>2023-03-15T16:40:39Z</updated>
+    <updated>2023-03-15T16:48:42Z</updated>
     <author>
         <name>Aristotle</name>
         <uri>http://plasmasturm.org/</uri>
@@ -39,7 +460,7 @@ DEFAULT foo = bar ;
 # compiles to: $stash-&gt;set('foo', $stash-&gt;get(['bar']), 1);
 </code></pre>
 
-<p>Namely, <code>DEFAULT</code> is not just similar to <code>SET</code>, it is literally the same thing. And as you can see, by the time the <code>set</code> method call gets to examine the value in <code>foo</code>, the <code>get</code> method call will already have been called. In the case of <code>SET</code>, the order in which things happen makes no difference, because <code>foo</code> will be set either way. But for <code>DEFAULT</code> the order most certainly matters.</p>
+<p>It turns out that <code>DEFAULT</code> is not just similar to <code>SET</code>, it is literally the same thing. And as you can see, by the time the <code>set</code> method call gets to examine the value in <code>foo</code>, the <code>get</code> method call will have already been called. In the case of <code>SET</code>, the order in which things happen makes no difference, because <code>foo</code> will be set either way. But for <code>DEFAULT</code> the order most certainly matters.</p>
 
 <p>In the example so far this results in at most a bit of wasted computation, but it becomes an actual problem in cases where short-circuiting actually affects the outcome, e.g.</p>
 
@@ -48,7 +469,7 @@ DEFAULT foo = bar ;
 # $stash-&gt;set('foo', $stash-&gt;get(['lookup_or_die', [$stash-&gt;get('bar')]]));
 </code></pre>
 
-<p>Here you might have hoped to be saying “if <code>foo</code> wasn’t passed, populate it from a lookup on <code>bar</code>” but what you’re really saying is “do a lookup on <code>bar</code> and then put that value in <code>foo</code> unless something is in there already”. So if <code>bar</code> contains a value where the lookup fails, and you were hoping that passing a value for <code>foo</code> would circumvent that, your hopes will be dashed. To say what you were hoping to say you have to be explicit:</p>
+<p>Here you might have hoped to be saying “if <code>foo</code> wasn’t passed, populate it from a lookup on <code>bar</code>” but what you actually ended up saying is “do a lookup on <code>bar</code> and then put that value in <code>foo</code> unless something is in there already”. So if <code>bar</code> contains a value for which you know the lookup fails, and you were hoping that passing a value for <code>foo</code> would allow you to sidestep that, your hopes will be dashed. To say what you were hoping to say, you have to be explicit:</p>
 
 <pre><code>SET foo = func_which_might_throw( bar ) UNLESS foo ;
 # compiles to:
@@ -205,99 +626,6 @@ final matrix ARRAY(0xddb038) 1 2 ARRAY(0xddb068) 3 4
 Use of uninitialized value in concatenation (.) or string at test.pl line 94, &amp;lt;&amp;gt; line 6.
 &lt;/code&gt;&lt;/pre&gt;
 &lt;p&gt;So basically I want the user to input 2 numbers (n and m) and then input an n*m matrix. I can get the 2 numbers. but when getting the numbers of the matrix, I am doing something wrong in pushing it (appending it) to the main matrix and I think I have not understood the difference of '$' and '@' and also [] and ().&lt;/p&gt;
-
-        </summary>
-    </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75718470</id>
-        <re:rank scheme="https://stackoverflow.com">1</re:rank>
-        <title type="text">get user input and print into file</title>
-            <category scheme="https://stackoverflow.com/tags" term="arrays"/>
-            <category scheme="https://stackoverflow.com/tags" term="loops"/>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-            <category scheme="https://stackoverflow.com/tags" term="tie"/>
-        <author>
-            <name>walker</name>
-            <uri>https://stackoverflow.com/users/21255401</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75718470/get-user-input-and-print-into-file"/>
-        <published>2023-03-13T06:00:41Z</published>
-        <updated>2023-03-15T05:45:21Z</updated>
-        <summary type="html">
-            &lt;p&gt;I would like to add a feature in below code to check if both fruit and info input provided by user in cmd exist in the file. Meanwhile to fullfill 3 requirements below, first and second are completed with code below.&lt;/p&gt;
-&lt;ul&gt;
-&lt;li&gt;If the fruit provided in cmd line not exist in file, then add it in with the info provided.&lt;/li&gt;
-&lt;li&gt;If the fruit provided in cmd already exist in file, then add in info provided into it. Info 1 is mapping fruit1&lt;/li&gt;
-&lt;li&gt;If both fruit and info provided in cmd already exist in file, skip it&lt;/li&gt;
-&lt;/ul&gt;
-&lt;p&gt;cmd: &lt;code&gt;&amp;lt;script&amp;gt; -fruit apple,orange,jackfruit -info y,c,a&lt;/code&gt;&lt;/p&gt;
-&lt;p&gt;File example:&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;apple
-     x
-     y
-
-orange
-     a
-     b
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Expected output (Since apple and y already in the file, skip it):&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;    apple
-         x
-         y
-
-    orange
-         a
-         b
-         c
-
-    jackfruit
-         a
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Code:&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;   use strict;
-    use warnings;
-    use Tie::File;
-    my $help=0;
-    my $info;
-    my $fruit;
-    use Getopt::Long;
-
-if (! GetOptions(
-     &amp;quot;fruit=s&amp;quot; =&amp;gt; \$fruit,
-     &amp;quot;info=s&amp;quot; =&amp;gt; \$info,  
-)){
-  print &amp;quot;\nEntered Arguments are not enough!\nPlease Use Switch '-help' or '-h' For More Information.\n&amp;quot;;
-   exit;
-}
-
-my $split_info;
-my $split_fruit;
-my @split_info = split(',', $info);
-my @split_fruit = split(',', $fruit);
-
-my %new_data;
-@new_data{@split_fruit}=@split_info;
-
-
-tie my @file, 'Tie::File', &amp;quot;/nfs/site/disks/ipg_da_00003/ip7nm/sungyuan/script/regression_indicator/testing/2022.12.SP1/config.txt&amp;quot; or die $!;
-
-for (0 .. $#file) {
-    next if /^\s/;
-
-    if (exists $new_data{$file[$_]}) {
-      splice @file, $_ + 1, 0, &amp;quot;\t$new_data{$file[$_]}\n&amp;quot;;
-      # Delete our current key/value pair from the hash
-      delete $new_data{$file[$_]};
-    }
-}
-
-# For each key left in the hash...
-for (keys %new_data) {
-  # Push two new lines into our tied file array
-  # (This adds new lines to the end of the file)
-  push @file, &amp;quot;$_\n&amp;quot;, &amp;quot;\t$new_data{$_}\n&amp;quot;;
-}
-&lt;/code&gt;&lt;/pre&gt;
 
         </summary>
     </entry>
@@ -642,30 +970,6 @@ So if there is anything else as the first two characters the line will not be ch
     <category term="productivity"/>
     <category term="beginners"/>
   </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75737211</id>
-        <re:rank scheme="https://stackoverflow.com">0</re:rank>
-        <title type="text">Find text in a file and print the text 3 lines before it after the word CHOICE</title>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-        <author>
-            <name>Jonathan</name>
-            <uri>https://stackoverflow.com/users/21398704</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75737211/find-text-in-a-file-and-print-the-text-3-lines-before-it-after-the-word-choice"/>
-        <published>2023-03-14T18:46:00Z</published>
-        <updated>2023-03-14T19:05:49Z</updated>
-        <summary type="html">
-            &lt;p&gt;I have a directory with multiple files in it and will be looking for a text pattern in the file.  Once I find the text I need to get the text that is 3 lines above it after the work CHOICE. For example below is 4 lines from one file.  I want to be able search for the text &amp;quot;intl_reg.jcl&amp;quot; find the below and get the 3rd line up text &amp;quot;registered international students with balances&amp;quot;. The word CHOICE will always be in front of the text I need.&lt;/p&gt;
-&lt;p&gt;CHOICE List registered international students with balances&lt;br /&gt;
-SHORTCUT 8&lt;br /&gt;
-PROCESS CHDIR /d3/locban/arsys&lt;br /&gt;
-PROCESS CMD ksh /d3/locban/arsys/intl_reg.jcl&lt;/p&gt;
-&lt;p&gt;The output would show the searched for text and then the 3rd line up text after the word CHOICE. Output example below:&lt;/p&gt;
-&lt;p&gt;intl_reg.jcl List registered international students with balances&lt;/p&gt;
-&lt;p&gt;I am new to PERL so I wasn't sure how to begin to do this.  Explanation as well as answers would be helpful.&lt;/p&gt;
-
-        </summary>
-    </entry>
   <entry>
     <title>Quiq - Weekly Travelling in CPAN</title>
     <link rel="alternate" href="https://blogs.perl.org/users/c_y_fung/2023/03/quiq---weekly-travelling-in-cpan.html"/>
@@ -2099,30 +2403,6 @@ phase</a>.</p>
     <category term="perl"/>
   </entry>
   <entry>
-    <title>This week in PSC (100)</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/psc/2023/03/this-week-in-psc-100.html"/>
-    <id>tag:blogs.perl.org,2023:/users/psc//4112.11045</id>
-    <published>2023-03-10T22:14:06Z</published>
-    <updated>2023-03-10T22:14:54Z</updated>
-    <author>
-        <name>Perl Steering Council</name>
-        
-    </author>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/psc/">
-        <![CDATA[<p>All three of us met, and were joined by Pete Krawczyk who first wanted to discuss some TPRF-related issues.</p>
-
-<p>Following on from this we discussed:</p>
-
-<ul>
-<li><p>Zefram's request to back out the strict-vs-VERSION changes. There's some merit here, he sent a PR to undo the whole thing. We feel there's two different issues that need looking at separately. Paul will explain some thoughts in more detail.</p></li>
-<li><p>Yves's request to reöpen discussions about "deprecated::" warning categories. There may be benefit here too. Paul will write a followup response.</p></li>
-</ul>
-]]>
-        
-
-    </content>
-</entry>
-  <entry>
     <title>Mendapatkan Username Login pada Wordpress versi 4.9.4</title>
     <link rel="alternate" href="https://medium.com/@CumaKuliXOnline/mendapatkan-username-login-pada-wordpress-6621547dc4bf?source=rss------perl-5" type="text/html"/>
     <content type="html">&lt;div class="medium-feed-item"&gt;&lt;p class="medium-feed-image"&gt;&lt;a href="https://medium.com/@CumaKuliXOnline/mendapatkan-username-login-pada-wordpress-6621547dc4bf?source=rss------perl-5"&gt;&lt;img src="https://cdn-images-1.medium.com/max/954/1*POyRpFXOGS0cmL9V8Dy0PQ.png" width="954"&gt;&lt;/a&gt;&lt;/p&gt;&lt;p class="medium-feed-snippet"&gt;Hai, disini saya akan menjelaskan cara mendapatkan username pada Login wordpress, yangmana cocok sekali apabila digabungkan dengan teknik&amp;#x2026;&lt;/p&gt;&lt;p class="medium-feed-link"&gt;&lt;a href="https://medium.com/@CumaKuliXOnline/mendapatkan-username-login-pada-wordpress-6621547dc4bf?source=rss------perl-5"&gt;Continue reading on Medium »&lt;/a&gt;&lt;/p&gt;&lt;/div&gt;</content>
@@ -3346,27 +3626,4 @@ The Perl Foundation is delighted to announce that the annual North American Perl
     <updated>2023-02-17T06:51:58.229000Z</updated>
     <category term="perl"/>
   </entry>
-  <entry>
-  <title>Perl and Raku Merchandise</title>
-  <link rel="alternate" type="text/html" href="https://news.perlfoundation.org/post/freewear"/>
-  <id>tag:news.perlfoundation.org,2023-02-15:/post/freewear</id>
-  <published>2023-02-15T20:15:42</published>
-  <updated>2023-02-15T20:15:42</updated>
-  <summary>
-  <![CDATA[
-     Freewear now has Perl and Raku merch. A donation to TPRF is made for each sale. Please everyone share it out via your favorite channels. https://www.freewear.org/PerlandRaku 
-   ]]>
-  </summary>
-  <author>
-    <name>Amber Deuel</name>
-  </author>  <content type="html" xml:lang="en-us" xml:base="http://news.perlfoundation.org/">
-   <![CDATA[
-     
-       <img src="_ra-rel-mnt_/simplecas/fetch_content/66cd095b5eeac285673c26906d11cd712f234d20/perl onion.png" style="max-width:100%;max-height:100%;padding:20px;" /><br>
-     
-     <p>Freewear now has Perl and Raku merch. A donation to TPRF is made for each sale. Please everyone share it out via your favorite channels. https://www.freewear.org/PerlandRaku</p>
-
-    ]]>
-  </content>
-</entry>
 </feed>
