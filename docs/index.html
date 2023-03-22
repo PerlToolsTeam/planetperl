@@ -145,7 +145,368 @@
           </p>
         </div><!-- col-md-2 -->
         <div class="col-md-8">
-          <div class="card perl-questions-on-stackoverflow" id="card_1">
+          <div class="card blogs-perl-org" id="card_1">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://blogs.perl.org/users/c_y_fung/2023/03/textextractword-msofficewordsurgeon---weekly-travelling-in-cpan.html">Text::Extract::Word, MsOffice::Word::Surgeon - Weekly Travelling in CPAN</a></h2>
+<a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
+
+              <p class="text-right"><small>Published by C.-Y. Fung
+ on Wednesday 22 March 2023 12:44</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+        <p></p>
+
+<div style="text-align: center;">Destination: <a href="https://metacpan.org/pod/Text::Extract::Word">Text::Extract::Word</a></div>
+
+<p></p>
+
+<div><strong>Date of Latest Release: Mar 09, 2012<br>
+Distribution: Text::Extract::Word<br>
+Module version: 0.02<br>
+Main Contributors: Stuart Watt (SNKWATT)<br>
+License: The Artistic License 2.0</strong></div>
+
+<p></p>
+
+<div style="text-align: center;">Destination: <a href="https://metacpan.org/pod/MsOffice::Word::Surgeon">MsOffice::Word::Surgeon</a></div>
+
+<p></p>
+
+<div><strong>Date of Latest Release: Jan 26, 2023<br>
+Distribution: MsOffice::Word::Surgeon<br>
+Module version: 2.01<br>
+Main Contributors: Laurent Dami (DAMI)<br>
+License: The Artistic License 2.0</strong></div>
+
+<hr>
+
+<p><b>Notice</b></p>
+
+<p>Thanks to demerphq and Sebastian Schleussner's comments, we should visit a better and easy way to do a regex matching in Perl now. It is not Regexp::Assemble introduced two weeks before - the Perl compiler after version 5.10 has already done the optimization for us! But we have to use the correct syntax. To see what happens, the bottom of this post gives a comparison of regexes for Roman numerals again; we give two more players in the race, <tt>/^($r_str_combine)$/</tt> [given <tt>my $r_str_combine = join "|", @roman;</tt>] and <tt>$rx = sprintf qr/^(?:%s)$/, join "|", @roman</tt>. We can see the former has almost the same performance as Regexp::Assemble, while the latter is usually the fastest. We do not need to import any modules and get a fast result!</p>
+
+<hr>
+
+<p>Today let us have a short tour on two modules which can perform a similar function: text searching in MS Office Word documents.</p>
+
+<p>Well, we know there are two common formats of MS Office Word document: .docx and the earlier .doc.</p>
+
+<p>Text::Extract::Word deals with .doc. You can use the function <tt>get_all_text</tt> to get all text (I'm a verbose tour guide...), or use its object oriented interface which get the text in different location of a document:</p>
+
+<pre>
+# taken from synopsis of the module:
+my $file = Text::Extract::Word->new("test1.doc");
+my $text = $file->get_text();
+my $body = $file->get_body();
+my $footnotes = $file->get_footnotes();
+my $headers = $file->get_headers();
+my $annotations = $file->get_annotations();
+my $bookmarks = $file->get_bookmarks();</pre>
+
+<p><br />
+MsOffice::Word::Surgeon deals with .docx. Besides functionalities to extract text, you can also replace text by regular expression, and write a new .docx file.</p>
+
+<p><br />
+Here comes a use case of the two modules. I was maintaining a collection of curricula vitae and database of candidate details, but due to a coding bug, some of the CV were missing or overwritten by others' CV. The CVs are in .doc, .docx or .pdf format, and have filenames as <tt>CV[number].[extension]</tt>. I use Text::Extract::Word and MsOffice::Word::Surgeon to check the MS Office documents.</p>
+
+<p>Note that in the database, since I am physically located in Hong Kong, each candidate name is stored with Chinese characters and English alphabets. And names of some people consist of only two Chinese characters (some, like me, have 3; some people have 4(two characters for the surname, two characters for the given name)), so I chose to take the first two English words in the candidate name field and checked whether the two words are in the corresponding document. ID of each suspicious record will be printed.</p>
+
+<p>Script one:</p>
+
+<pre>
+use utf8;
+use DBI;
+use Text::Extract::Word qw(get_all_text);
+use v5.30.0;
+
+<p>for my $num (1..999) {<br />
+    search_cv($num) if -e "CV".$num.".doc" || -e "CV".$num.".DOC";<br />
+}</p>
+
+<p>sub search_cv {</p>
+
+<p>    my $cv_id = $_[0];<br />
+    my $filename = "CV".$cv_id.".doc";</p>
+
+<p>    my $dsn = "DBI:mysql:database=cvdb;host=127.0.0.1";<br />
+    my $dbh = DBI->connect($dsn, 'mydatabaseadmin', 'mypassword', { mysql_enable_utf8 => 1 });</p>
+
+<p>    my $fullname;<br />
+    my $first_two_eng;<br />
+    my $sth = $dbh->prepare("SELECT name FROM candidate WHERE id=".$cv_id);<br />
+    $sth->execute;<br />
+    while (my $ref = $sth->fetchrow_hashref) {<br />
+        $fullname = $ref->{'name'};<br />
+    }</p>
+
+<p>    $fullname !~ s/[^[:ascii:]]//g;</p>
+
+<p>    my $engname = $fullname;</p>
+
+<p>    my $second_space = index($engname, " ", index($engname, " ")+1 );</p>
+
+<p>    my $first_two_eng = ($second_space != -1) ? (substr $engname, 0, $second_space) : (substr $engname, 0);</p>
+
+<p>    my $found;</p>
+
+<p>    my $text = get_all_text($filename);<br />
+    $found = index($text, $first_two_eng);</p>
+
+<p>    if ($found != -1) {<br />
+#        say "found: ". $cv_id;<br />
+    }<br />
+    else {<br />
+        say "SUSPICIOUS: ". $cv_id;<br />
+    }<br />
+}</p>
+
+</pre>
+
+<p>Script two</p>
+
+<pre>
+
+<p>use utf8;<br />
+use DBI;<br />
+use MsOffice::Word::Surgeon;<br />
+use v5.30.0;</p>
+
+<p>for my $num (1..999) {<br />
+    search_cv($num) if -e "CV".$num.".docx";<br />
+}</p>
+
+<p>sub search_cv {</p>
+
+<p>    my $cv_id = $_[0];<br />
+    my $filename = "CV".$cv_id.".docx";</p>
+
+<p>    my $dsn = "DBI:mysql:database=cvdb;host=127.0.0.1";<br />
+    my $dbh = DBI->connect($dsn, 'mydatabaseadmin',  'mypassword', { mysql_enable_utf8 => 1 });</p>
+
+<p>    my $fullname;<br />
+    my $first_two_eng;<br />
+    my $sth = $dbh->prepare("SELECT name FROM candidate WHERE id=".$cv_id);<br />
+    $sth->execute;<br />
+    while (my $ref = $sth->fetchrow_hashref) {<br />
+        $fullname = $ref->{'name'};<br />
+    }</p>
+
+<p>    $fullname !~ s/[^[:ascii:]]//g;</p>
+
+<p>    my $engname = $fullname;</p>
+
+<p>    my $second_space = index($engname, " ", index($engname, " ")+1 );</p>
+
+<p>    my $first_two_eng = ($second_space != -1) ? (substr $engname, 0, $second_space) : (substr $engname, 0);</p>
+
+<p>    my $found;</p>
+
+<p>    my $surgeon = MsOffice::Word::Surgeon->new(docx => $filename);</p>
+
+<p>    my $text =  $surgeon->document->plain_text;<br />
+    $found = index($text, $first_two_eng);</p>
+
+<p><br />
+    if ($found != -1) {<br />
+#        say "found: ". $cv_id;<br />
+    }<br />
+    else {<br />
+        say "SUSPICIOUS: ". $cv_id;<br />
+    }</p>
+
+<p>}</p>
+
+</pre>
+The above is just a very straightforward use case of these two modules. You may explore their POD and use them to suit your need!
+
+<p># For PDF text search, I will introduce modules later.</p>
+
+<div style="text-align: center;">THE HIGHLIGHTED PERL MODULES OF WEEK 12 OF 2023:<br>Text::Extract::Word, MsOffice::Word::Surgeon</div>
+
+<hr>
+
+<p><b>Comparison of Regexes for Roman Numerals</b><br />
+<pre><br />
+use v5.30.0;<br />
+use List::Util qw/shuffle sample any/;<br />
+use Regexp::Assemble;<br />
+use Regexp::Trie;<br />
+use feature 'say';</p>
+
+<p>my @roman = qw/I II III IV V<br />
+               VI VII VIII IX X<br />
+               XI XII XIII XIV XV<br />
+               XVI XVII XVIII IXX XX/;</p>
+
+<p>sub repr {<br />
+    return sample int 4*rand(), <br />
+        shuffle('I' x (int 4*rand()), 'V', 'X');<br />
+}</p>
+
+<p>my $size = 1000;</p>
+
+<p>sub c0 {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        my $letters = repr();<br />
+        $count++ if any {$letters =~ /^$_$/} @roman;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>my $ra = Regexp::Assemble->new;<br />
+$ra->anchor_line;<br />
+$ra->add(@roman);<br />
+my $ra_computed = $ra->re;</p>
+
+<p>sub c1 {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ $ra_computed;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>my $rt = Regexp::Trie->new;<br />
+$rt->add($_) for @roman;<br />
+my $rt_computed = $rt->regexp;</p>
+
+<p>sub c2 {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ /^$rt_computed$/;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p><br />
+my $r_str_combine = join "|", @roman;</p>
+
+<p>sub cn {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ /^($r_str_combine)$/;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>my $rx = sprintf qr/^(?:%s)$/, join "|", @roman;</p>
+
+<p>sub cx {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ $rx;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>say c0()/$size;<br />
+say c1()/$size;<br />
+say c2()/$size;<br />
+say cn()/$size;<br />
+say cx()/$size;</p>
+
+<p><br />
+use Benchmark q/cmpthese/;<br />
+cmpthese(10_000, {<br />
+    RAW => sub {c0},<br />
+    Assemble => sub {c1},<br />
+    Trie => sub {c2},<br />
+    naive => sub {cn},<br />
+    QR => sub {cx}<br />
+});</pre></p>
+
+<p><br />
+<b>Result:</b><br />
+<pre>0.705<br />
+0.691<br />
+0.68<br />
+0.681<br />
+0.708<br />
+           Rate      RAW     Trie    naive Assemble       QR<br />
+RAW      42.7/s       --     -94%     -94%     -94%     -95%<br />
+Trie      669/s    1468%       --      -6%      -7%     -23%<br />
+naive     711/s    1565%       6%       --      -2%     -18%<br />
+Assemble  724/s    1595%       8%       2%       --     -17%<br />
+QR        867/s    1932%      30%      22%      20%       --</pre><br />
+</p>
+        
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card perl-questions-on-stackoverflow" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://stackoverflow.com/questions/75812094/unpackq-1-62-resulting-in-negative-value-with-use-integer-on">`unpack('Q', ...) % (1 &lt;&lt; 62)` resulting in negative value with `use integer` on x86_64</a></h2>
+<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
+
+              <p class="text-right"><small>Published by U. Windl
+ on Wednesday 22 March 2023 12:11</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+            <p>Testing a random number function I wrote in the debugger I'm getting unexpected results.
+Specifically for <code>use integer</code> the result of <code>unpack('Q', random_bytes(...)) % (1 &lt;&lt; 62)</code> seems to be negative.</p>
+<p>Here's a part of the debugger session:</p>
+<pre class="lang-perl prettyprint-override"><code>  DB&lt;3&gt; x Random::random_number(0, 1 &lt;&lt; 62)
+Random::random_number(lib/Random.pm:95):
+95:             $result = unpack('Q', random_bytes($type, 8)) % $limit;
+  DB&lt;&lt;4&gt;&gt; x $limit
+0  4611686018427387904
+  DB&lt;&lt;5&gt;&gt; c
+
+  DB&lt;5&gt; x Random::random_number(0, 1 &lt;&lt; 62)
+Random::random_number(lib/Random.pm:95):
+95:             $result = unpack('Q', random_bytes($type, 8)) % $limit;
+  DB&lt;&lt;6&gt;&gt; c
+0  '-2479142448669864359'
+</code></pre>
+<p>The first parameter (<code>$type</code>) specified the random generator to use in <code>random_bytes()</code>, while the second parameter specified how many bytes to return.</p>
+<p>So I wonder:
+If <code>unpack('Q', ...)</code> returns an unsigned 64 bit number and <code>$limit</code> is positive, how can the result of <code>%</code> be negative?</p>
+<p>Happened in Perl 5.18.2 on x86_64.</p>
+
+               </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card perl-commits-on-github" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/0d292c706462f0a0e7cd64ef002bd8d21513295d">
+        perl.h - remove redundant /*EMPTY*/ comment
+    </a></h2>
+<a href="https://github.com/Perl/perl5/commits/blead" class="badge rounded-pill bg-primary" style="float: right">Perl commits on GitHub</a> 
+
+              <p class="text-right"><small>Published by demerphq
+ on Wednesday 22 March 2023 10:39</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+      <pre style='white-space:pre-wrap;width:81ex'>perl.h - remove redundant /*EMPTY*/ comment
+
+mauke: it was added by Andy Lester in 6f207bd3ddac24959aa7f00f2d7a66f116dcc7ed
+mauke: when he replaced &#39;/*EMPTY*/;&#39; statements by &#39;NOOP;&#39;
+mauke: I would also remove the comment</pre>
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card perl-commits-on-github" id="card_4">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/3f1952ebf5b2e1ced993bb7c0a9ff6bc1eb53ef2">
+        fix precedence issue with NOOP
+    </a></h2>
+<a href="https://github.com/Perl/perl5/commits/blead" class="badge rounded-pill bg-primary" style="float: right">Perl commits on GitHub</a> 
+
+              <p class="text-right"><small>Published
+ on Wednesday 22 March 2023 10:19</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+      <pre style='white-space:pre-wrap;width:81ex'>fix precedence issue with NOOP
+
+Parens are required or precedence issues can occur.</pre>
+           </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card perl-questions-on-stackoverflow" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75794238/alternative-to-find-which-supports-pcre">Alternative to 'find' which supports PCRE [closed]</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -162,7 +523,7 @@ Is there an alternative that can do that that is concise to use (one line on com
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_2">
+          <div class="card perl-questions-on-stackoverflow" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75807504/perl-gtk2window-list-toplevels">Perl Gtk2::Window-&gt;list_toplevels</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -192,7 +553,7 @@ I'm looking to get the name (or some kind of unique indicator) of each of the to
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_3">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/03/22/autohotkey/">AutoHotKey</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -249,7 +610,7 @@ to not settle with such nonsense.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_4">
+          <div class="card perl-questions-on-stackoverflow" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75798125/docker-502-connection-refused-error-when-connecting-to-perl-container-from-ngin">Docker: 502 Connection refused Error when connecting to Perl container from nginx</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -339,7 +700,7 @@ nginx-mt_1  | 172.18.0.1 - - [21/Mar/2023:06:37:13 +0000] &quot;GET /perl.cgi HT
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_5">
+          <div class="card perl-questions-on-stackoverflow" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/75796802/perl-how-to-substitute-non-matching-words-with-none">Perl - How to substitute non matching words with none</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -363,7 +724,7 @@ print $variable;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_6">
+          <div class="card dev-to-perl" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/fixing-code-and-documentation-setting-up-ci-a-session-in-osdc-6pk">Fixing code and documentation, setting up CI - Sending Pull-Requests</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -519,7 +880,7 @@ dzil cover
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_7">
+          <div class="card perl-commits-on-github" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/ca54131a969bed4c2fa42de7cb41620de2e9ea01">
         t/porting/test_testlist.t - test that we test the same thing with t/h…
@@ -541,7 +902,7 @@ even though it is the name of an extension. Same for Cwd.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_8">
+          <div class="card perl-commits-on-github" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/03d84c69373359fcef54157b6459b1ce357daf09">
         t/TEST - rework poor mans getopt
@@ -559,7 +920,7 @@ Less cryptic and repetitive code.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_9">
+          <div class="card perl-commits-on-github" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/8312884dcdcc6d91617ebb943c385021054627d0">
         t/TEST - glob @ARGV after we setup @INC properly (win32 only)
@@ -589,244 +950,7 @@ that the entire script dies as well.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_10">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/3c0bfcec550c59c81df397902a1fdea23ec37edc">
-        Cast to avoid a signedness-comparison warning
-    </a></h2>
-<a href="https://github.com/Perl/perl5/commits/blead" class="badge rounded-pill bg-primary" style="float: right">Perl commits on GitHub</a> 
-
-              <p class="text-right"><small>Published by leonerd
- on Tuesday 21 March 2023 18:45</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-      <pre style='white-space:pre-wrap;width:81ex'>Cast to avoid a signedness-comparison warning</pre>
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_11">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/d2d18d7c6a9fadeabbaed9338d93c320eb97f109">
-        Cast result of hv_store_ent() to (void) to quiet an HPUX compiler war…
-    </a></h2>
-<a href="https://github.com/Perl/perl5/commits/blead" class="badge rounded-pill bg-primary" style="float: right">Perl commits on GitHub</a> 
-
-              <p class="text-right"><small>Published by leonerd
- on Tuesday 21 March 2023 18:45</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-      <pre style='white-space:pre-wrap;width:81ex'>Cast result of hv_store_ent() to (void) to quiet an HPUX compiler warning</pre>
-           </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_12">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://stackoverflow.com/questions/75804663/running-perl-script-and-getting-error-in-option-spec">Running perl script and getting &quot;Error in option spec:&quot;</a></h2>
-<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
-
-              <p class="text-right"><small>Published by Froggy01
- on Tuesday 21 March 2023 17:46</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-            <p>I am very new to running perl scripts and I am running into problems that I suspect are due to the assignment of variables.</p>
-<p>Here is the beginning of the original script:</p>
-<pre><code>#!/usr/bin/perl -w
-
-#####################################
-# gbstrim.pl 
-# John Garbe
-# June 2016
-# 
-#
-#####################################
-
-=head1 NAME
-
-gbstrim.pl - 
- - Trim padding and/or cut site residue from beginning of reads
- - Trim sequencing adapter from ends of reads
- - Trim all reads to length
-
-NOTE: this doesn't handle paired-end data
-
-=head1 SYNOPSIS
-
-gbstrim.pl --enzyme1 bamhi --enzyme2 psti --read R1 [--threads 1] [--minlength 20] --fastqfile file.fastq --outputfile out.fastq 
-
-=head1 DESCRIPTION
-
-Options:
-    --fastqfile sample.fastq : fastq file of reads to process, can be gz compressed
-    --outputfile sample.gbstrim.fastq : fastq file of processed reads
-    --enzyme1 bamhi : First restriciton enzyme used in library creation
-    --enzyme2 psti : Second restriciton enzyme used in library creation
-    --read R1 : Specify if the provided fastq file is the R1 or R2 read
-    --minlength 20 : discard reads shorter than minlength (default: 20)
-    --maxlength 95 : trim all reads longer than maxlength to maxlength (default: readlength - length of longest padding sequence)
-    --croplength 95 : trim down longer reads and discard shorter reads
-    --removecutsite : trim off cut sites as well
-    --threads 1 : Number of cpu cores cutadapt should use (default: 1)
-    --verbose : Print additional details while running
-    --help : Display usage information
-
-Advanced options:
-    --r1padding C,TG,AAG,GCTC : comma-separated list of 5' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r2padding C,TG,AAG,GCTC : comma-separated list of 3' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r1overhang AGCT : Overhang sequence left by first restriction enzyme
-    --r2overhang AGCT : Overhang sequence left by second restriction enzyme
-    --adapter CTGTCTCTTATACACATCTCCGAG : sequencing primer adapter to trim from 3' end of reads
-    --debug : Print output useful for debugging
-=cut
-
-##################### Initialize ###############################
-
-use Getopt::Long;
-use Pod::Usage;
-use FindBin;
-use lib &quot;$FindBin::RealBin&quot;;
-
-# set defaults
-$r1adapter = &quot;CTGTCTCTTATACACATCTCCGAG&quot;;
-$r2adapter = &quot;CTGTCTCTTATACACATCTGACGC&quot;;
-$minlength = 20;
-GetOptions(&quot;help&quot; =&gt; \$help,
-       &quot;verbose&quot; =&gt; \$verbose,
-       &quot;threads=i&quot; =&gt; \$threads,
-       &quot;fastqfile=s&quot; =&gt; \$fastqfile,
-       &quot;outputfile=s&quot; =&gt; \$outputfile,
-       &quot;enzyme1=s&quot; =&gt; \$r1enzyme,
-       &quot;enzyme2=s&quot; =&gt; \$r2enzyme,
-       &quot;read=s&quot; =&gt; \$read,
-       &quot;croplength=i&quot; =&gt; \$croplength,
-       &quot;removecutsite&quot; =&gt; \$removecutsite,
-
-       # advanced options
-       &quot;r1overhang=s&quot; =&gt; \$r1overhang,
-       &quot;r2overhang=s&quot; =&gt; \$r2overhang,
-       &quot;r1padding=s&quot; =&gt; \$r1padding,
-       &quot;r2padding=s&quot; =&gt; \$r2padding,
-       &quot;debug&quot; =&gt; \$debug,
-       &quot;minlength=i&quot; =&gt; \$minlength,
-       &quot;maxlength=i&quot; =&gt; \$maxlength,
-       &quot;r1adapter=s&quot; =&gt; \$r1adapter,
-       &quot;r2adapter=s&quot; =&gt; \$r2adapter,
-    ) or pod2usage;
-pod2usage(q(-verbose) =&gt; 3) if ($help);
-if ($#ARGV &gt;= 0) {
-    print &quot;Unknown commandline parameters: @ARGV\n&quot;;
-    pod2usage;
-}
-if (! ($fastqfile and $outputfile and $read and $r1enzyme)) {
-    print &quot;--fastqfile, --outputfile, --read, --enzyme1 and enzyme2 are required\n&quot;;
-    pod2usage;
-}
-die &quot;Cannot find fastq file $fastqfile\n&quot; if (! -e $fastqfile);
-</code></pre>
-<p>This is the script I attempted to run after editing and specifying my input files and enzymes. The input file I am working with is &quot;test.fastq.gz&quot;</p>
-<pre><code>
-#!/usr/bin/perl -w
-
-#####################################
-# gbstrim.pl 
-# John Garbe
-# June 2016
-# 
-#
-#####################################
-
-=head1 NAME
-
-gbstrim.pl - 
- - Trim padding and/or cut site residue from beginning of reads
- - Trim sequencing adapter from ends of reads
- - Trim all reads to length
-
-NOTE: this doesn't handle paired-end data
-
-=head1 SYNOPSIS
-
-gbstrim.pl --enzyme1 bamhi --enzyme2 nsii --read R1 [--threads 1] [--minlength 20] --fastqfile test.fastq.gz --outputfile trim_test.fastq.gz
-
-=head1 DESCRIPTION
-
-Options:
-    --fastqfile test.fastq.gz : fastq file of reads to process, can be gz compressed
-    --outputfile outputfile trim_test.fastq.gz : fastq file of processed reads
-    --enzyme1 bamhi : First restriciton enzyme used in library creation
-    --enzyme2 nsii : Second restriciton enzyme used in library creation
-    --read R1 : Specify if the provided fastq file is the R1 or R2 read
-    --minlength 20 : discard reads shorter than minlength (default: 20)
-    --maxlength 95 : trim all reads longer than maxlength to maxlength (default: readlength - length of longest padding sequence)
-    --croplength 95 : trim down longer reads and discard shorter reads
-    --removecutsite : trim off cut sites as well
-    --threads 1 : Number of cpu cores cutadapt should use (default: 1)
-    --verbose : Print additional details while running
-    --help : Display usage information
-
-Advanced options:
-    --r1padding C,TG,AAG,GCTC : comma-separated list of 5' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r2padding C,TG,AAG,GCTC : comma-separated list of 3' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r1overhang AGCT : Overhang sequence left by first restriction enzyme
-    --r2overhang AGCT : Overhang sequence left by second restriction enzyme
-    --adapter CTGTCTCTTATACACATCTCCGAG : sequencing primer adapter to trim from 3' end of reads
-    --debug : Print output useful for debugging
-=cut
-
-##################### Initialize ###############################
-
-use Getopt::Long;
-use Pod::Usage;
-use FindBin;
-use lib &quot;$FindBin::RealBin&quot;;
-
-# set defaults
-$r1adapter = &quot;CTGTCTCTTATACACATCTCCGAG&quot;;
-$r2adapter = &quot;CTGTCTCTTATACACATCTGACGC&quot;;
-$minlength = 20;
-GetOptions(&quot;help&quot; =&gt; \$help,
-       &quot;verbose&quot; =&gt; \$verbose,
-       &quot;threads=i&quot; =&gt; \$threads,
-       &quot;test.fastq.gz=s&quot; =&gt; \$fastqfile,
-       &quot;trim_test.fastq.gz=s&quot; =&gt; \$outputfile,
-       &quot;bamhi=s&quot; =&gt; \$r1enzyme,
-       &quot;nsii=s&quot; =&gt; \$r2enzyme,
-       &quot;R1&quot; =&gt; \$read,
-       &quot;croplength=i&quot; =&gt; \$croplength,
-       &quot;removecutsite&quot; =&gt; \$removecutsite,
-
-       # advanced options
-       &quot;r1overhang=s&quot; =&gt; \$r1overhang,
-       &quot;r2overhang=s&quot; =&gt; \$r2overhang,
-       &quot;r1padding=s&quot; =&gt; \$r1padding,
-       &quot;r2padding=s&quot; =&gt; \$r2padding,
-       &quot;debug&quot; =&gt; \$debug,
-       &quot;minlength=i&quot; =&gt; \$minlength,
-       &quot;maxlength=i&quot; =&gt; \$maxlength,
-       &quot;r1adapter=s&quot; =&gt; \$r1adapter,
-       &quot;r2adapter=s&quot; =&gt; \$r2adapter,
-    ) or pod2usage;
-pod2usage(q(-verbose) =&gt; 3) if ($help);
-if ($#ARGV &gt;= 0) {
-    print &quot;Unknown commandline parameters: @ARGV\n&quot;;
-    pod2usage;
-}
-if (! ($fastqfile and $outputfile and $read and $r1enzyme)) {
-    print &quot;--fastqfile, --outputfile, --read, --enzyme1 and enzyme2 are required\n&quot;;
-    pod2usage;
-}
-die &quot;Cannot find fastq file $fastqfile\n&quot; if (! -e $fastqfile);
-</code></pre>
-<p>This is the error message I received:</p>
-<p><code>Error in option spec: &quot;test.fastq.gz=s&quot;</code></p>
-<p><code> Error in option spec: &quot;trim_test.fastq.gz=s&quot;</code></p>
-
-               </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card dev-to-perl" id="card_13">
+          <div class="card dev-to-perl" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/austin_62/analyzing-new-york-city-traffic-collisions-with-perl-one-liners-and-linux-pnn">Analyzing New York City Traffic Collisions with Perl One-Liners and Linux</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -2178,7 +2302,7 @@ Most of the solutions are obvious from a logical point of view, but not a politi
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-foundation-news" id="card_14">
+          <div class="card perl-foundation-news" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/reportonperlvolunteerism">Report on Volunteerism in the Perl Community</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge rounded-pill bg-primary" style="float: right">Perl Foundation News</a> 
@@ -2207,7 +2331,7 @@ We hope to see you at the meeting and look forward to your input. <p> </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_15">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/03/21/fantasyname/">Fantasy Name Generator</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -2242,7 +2366,7 @@ reduced attention that the project got in these latest years.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_16">
+          <div class="card blogs-perl-org" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2023/03/perl-weekly-challenge-209-special-bit-characters-and-merge-account.html">Perl Weekly Challenge 209: Special Bit Characters and Merge Account</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -2499,7 +2623,7 @@ A a1@a.com a2@a.com - B b1@b.com - A a3@a.com - B b2@b.com b1@b.com -  =&gt;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-foundation-news" id="card_17">
+          <div class="card perl-foundation-news" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/websiteproposalcall">Community Input Requested - Future of TPRF website(s)</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge rounded-pill bg-primary" style="float: right">Perl Foundation News</a> 
@@ -2533,7 +2657,7 @@ You can submit your ideas using our form template at https://forms.gle/s9uKWorzQ
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-weekly" id="card_18">
+          <div class="card perl-weekly" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlweekly.com/archive/608.html">#608 - Love You Perl!!!</a></h2>
 <a href="https://perlweekly.com/" class="badge rounded-pill bg-primary" style="float: right">Perl Weekly</a> 
@@ -2550,7 +2674,7 @@ You can submit your ideas using our form template at https://forms.gle/s9uKWorzQ
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_19">
+          <div class="card dev-to-perl" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/perl-weekly-608-love-you-perl-46eh">Perl Weekly #608 - Love You Perl!!!</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -2918,7 +3042,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_20">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/03/20/modulabile/">Modulabile</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -3016,7 +3140,7 @@ command line, so why not enrich our module and make it a… <em>modulabile</em>?
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card the-weekly-challenge" id="card_21">
+          <div class="card the-weekly-challenge" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/recap-challenge-208/">RECAP - The Weekly Challenge - 208</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge rounded-pill bg-primary" style="float: right">The Weekly Challenge</a> 
@@ -3029,7 +3153,7 @@ STAR CONTRIBUTORS  Following members shared solutions to both tasks in Perl and 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card the-weekly-challenge" id="card_22">
+          <div class="card the-weekly-challenge" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-209/">The Weekly Challenge - 209</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge rounded-pill bg-primary" style="float: right">The Weekly Challenge</a> 
@@ -3043,7 +3167,7 @@ E. Alvarez blog post sharing Javascript magic once again.       </div><!-- card-
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_23">
+          <div class="card blogs-perl-org" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/oldtechaa/2023/03/perl-weekly-challenge-208.html">Perl Weekly Challenge #208</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -3121,7 +3245,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_24">
+          <div class="card dev-to-perl" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/oldtechaa/perl-weekly-challenge-208-1gc3">Perl Weekly Challenge #208</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -3200,7 +3324,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_25">
+          <div class="card dev-to-perl" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/simongreennet/weekly-challenge-208-3i23">Weekly Challenge 208</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -3327,7 +3451,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_26">
+          <div class="card niceperl" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/03/cdxxxvi-10-great-cpan-modules-released.html">(cdxxxvi) 10 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3339,7 +3463,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_27">
+          <div class="card niceperl" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/03/dxlix-metacpan-weekly-report-playwright.html">(dxlix) metacpan weekly report - Playwright</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3351,7 +3475,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_28">
+          <div class="card niceperl" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/03/dlxxvi-stackoverflow-perl-report.html">(dlxxvi) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3363,7 +3487,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-on-medium" id="card_29">
+          <div class="card perl-on-medium" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://medium.com/@surajtaradale/perl-interview-question-and-answers-2023-ec4458f6f26a?source=rss------perl-5">Perl Interview question and answers 2023</a></h2>
 <a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
@@ -3375,7 +3499,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-on-medium" id="card_30">
+          <div class="card perl-on-medium" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://medium.com/@surajtaradale/perl-coding-interview-question-and-answers-a7c5b8e823e1?source=rss------perl-5">Perl Coding Interview Question and Answers</a></h2>
 <a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
@@ -3387,7 +3511,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card the-weekly-challenge" id="card_31">
+          <div class="card the-weekly-challenge" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://theweeklychallenge.org/blog/guest-contribution/">The Weekly Challenge - Guest Contributions</a></h2>
 <a href="https://theweeklychallenge.org/blog/" class="badge rounded-pill bg-primary" style="float: right">The Weekly Challenge</a> 
@@ -3399,7 +3523,7 @@ defined($duplicate) &amp;&amp; defined($missing) ? say ("Duplicate is $duplicate
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_32">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/03/19/validate-codicefiscale/">First release of Validate::CodiceFiscale</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -3504,7 +3628,7 @@ far. Let’s see.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_33">
+          <div class="card blogs-perl-org" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/kido_mitsuru/2023/03/the-first-line-of-perl-cgi-script-env-perl-vs-perl-only-how-different.html">The first line of Perl_CGI script, env perl vs perl only, how different?</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -3531,7 +3655,7 @@ far. Let’s see.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_34">
+          <div class="card blogs-perl-org" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/aristotle/2023/03/template-toolkit-default-directive.html">Template Toolkit’s DEFAULT is not too useful</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -3583,7 +3707,7 @@ DEFAULT foo = bar ;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_35">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/03/18/pwc208-duplicate-and-missing/">PWC208 - Duplicate and Missing</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -3775,7 +3899,7 @@ sub duplicate-and-missing (@list, $short-circuit is copy = Nil) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-foundation-news" id="card_36">
+          <div class="card perl-foundation-news" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tprctalks">Deadline for TPRC </a></h2>
 <a href="https://news.perlfoundation.org/" class="badge rounded-pill bg-primary" style="float: right">Perl Foundation News</a> 
@@ -3796,260 +3920,6 @@ sub duplicate-and-missing (@list, $short-circuit is copy = Nil) {
 
     
          </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_37">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2023/03/perl-weekly-challenge-208-minimum-index-sum-and-duplicate-and-missing.html">Perl Weekly Challenge 208: Minimum Index Sum and Duplicate and Missing</a></h2>
-<a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
-
-              <p class="text-right"><small>Published by laurent_r
- on Wednesday 15 March 2023 22:22</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-        <p>These are some answers to the Week 208 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-208/">Perl Weekly Challenge</a> organized by <a href="https://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on March 19, 2023 at 23:59). This blog post offers some solutions to this challenge. Please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Minimum Index Sum</h2>
-
-<p><em>You are given two arrays of strings.</em></p>
-
-<p><em>Write a script to find out all common strings in the given two arrays with minimum index sum. If no common strings found returns an empty list.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: @list1 = ("Perl", "Raku", "Love")
-       @list2 = ("Raku", "Perl", "Hate")
-
-Output: ("Perl", "Raku")
-
-There are two common strings "Perl" and "Raku".
-Index sum of "Perl": 0 + 1 = 1
-Index sum of "Raku": 1 + 0 = 1
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: @list1 = ("A", "B", "C")
-       @list2 = ("D", "E", "F")
-
-Output: ()
-
-No common string found, so no result.
-</code></pre>
-
-<p><em>Example 3:</em></p>
-
-<pre><code>Input: @list1 = ("A", "B", "C")
-       @list2 = ("C", "A", "B")
-
-Output: ("A")
-
-There are three common strings "A", "B" and "C".
-Index sum of "A": 0 + 1 = 1
-Index sum of "B": 1 + 2 = 3
-Index sum of "C": 2 + 0 = 2
-</code></pre>
-
-<h3>Minimum Index Sum in Raku</h3>
-
-<p>We need to find the intersection between two arrays of strings. Once we&#8217;ve found the intersection, we need to keep the intersection items that have the smallest sum of indexes in the original array. So, it looked like it would be nice to use <a href="https://docs.raku.org/type/Bag.html">Bags</a> for the input (with the index as weight integer for each item), and the <code>∩</code> or <code>(&amp;)</code> <a href="https://docs.raku.org/language/operators.html#infix_(|">infix intersection operator</a>,<em>infix</em>%E2%88%AA) to generate the result. It turns out that this might not be the best choice, because the integer weight associated with a bag item is signifying how many copies of that element are considered &#8220;in the bag&#8221;. So, if the weight is 0, it means the item is not in the bag and is lost during bag construction. Since array indexes start at 0, we&#8217;d be losing the first item of each array. The problem is solved by assigning the index incremented by 1 to the weight. This easily solves the problem, but makes the solution slightly less elegant than I originally hoped it to be. </p>
-
-<pre><code>sub min-sum-idx (@s1, @s2) {
-    my $b1 = (map {@s1[$_] =&gt; $_ + 1}, 0..@s1.end).Bag;
-    my $b2 = (map {@s2[$_] =&gt; $_ + 1}, 0..@s2.end).Bag;
-    my $result = (map { $_ =&gt;  $b1{$_} + $b2{$_}},  
-        ($b1 ∩ $b2).keys).Bag;
-    my $min = $result.values.min;
-    return grep {$result{$_} == $min}, $result.keys;
-}
-
-for (&lt;Perl Raku Love&gt;, &lt;Raku Perl Hate&gt;), 
-    (&lt;A B C&gt;, &lt;D E F&gt;), (&lt;A B C&gt;, &lt;C A B&gt;) 
-        -&gt; @test {
-            say "@test[0] - @test[1]".fmt("%-35s =&gt; "), 
-                min-sum-idx |@test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./min-sum_idx.raku
-Perl Raku Love - Raku Perl Hate    =&gt; (Perl Raku)
-A B C - D E F                      =&gt; ()
-A B C - C A B                      =&gt; (A)
-</code></pre>
-
-<h3>Minimum Index Sum in Perl</h3>
-
-<p>For porting the above Raku program to Perl, we replace <code>Bags</code> with hashes. We use a <code>grep</code> to construct the <code>@result</code> intersection of the two input arrays, and a loop to compute the minimum array index sum. </p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub min_sum_idx {
-    my @s1 = @{$_[0]};
-    my @s2 = @{$_[1]};
-
-    my %h1 = map {$s1[$_] =&gt; $_ } 0..$#s1;
-    my %h2 = map {$s2[$_] =&gt; $_ } 0..$#s2;
-    my @result = grep { exists $h1{$_} } @s2;
-    return "()" unless @result;
-    my %res = map { $_ =&gt; $h1{$_} + $h2{$_} } @result;
-    my $min = $res{$result[0]};
-    for my $k (keys %res) { 
-        $min = $res{$k} if $res{$k} &lt; $min;
-    }
-    return grep {$res{$_} == $min} @result;
-}
-
-for my $test ( [[&lt;Perl Raku Love&gt;], [&lt;Raku Perl Hate&gt;]], 
-    [[&lt;A B C&gt;], [&lt;D E F&gt;]], [[&lt;A B C&gt;], [&lt;C A B&gt;]] ) {
-
-    printf "%-14s - %-16s =&gt; ", 
-        "@{$test-&gt;[0]}", "@{$test-&gt;[1]}";
-    say join " ", min_sum_idx @$test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./min-sum-idx.pl
-Perl Raku Love - Raku Perl Hate   =&gt; Raku Perl
-A B C          - D E F            =&gt; ()
-A B C          - C A B            =&gt; A
-</code></pre>
-
-<h2>Task 2: Duplicate and Missing</h2>
-
-<p><em>You are given an array of integers in sequence with one missing and one duplicate.</em></p>
-
-<p><em>Write a script to find the duplicate and missing integer in the given array. Return -1 if none found.</em></p>
-
-<p><em>For the sake of this task, let us assume the array contains no more than one duplicate and missing.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: @nums = (1,2,2,4)
-Output: (2,3)
-
-Duplicate is 2 and Missing is 3.
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: @nums = (1,2,3,4)
-Output: -1
-
-No duplicate and missing found.
-</code></pre>
-
-<p><em>Example 3:</em></p>
-
-<pre><code>Input: @nums = (1,2,3,3)
-Output: (3,4)
-
-Duplicate is 3 and Missing is 4.
-</code></pre>
-
-<p>First, we are told that the integers are in sequence. This presumably means that they are sorted in ascending order. If not, we could just add a call to the  built-in <a href="https://docs.raku.org/routine/sort.html">sort</a> routine at the beginning of our code.</p>
-
-<p>Second, the task specification tells us what to do when there is no missing item and no duplicate, but not what to do when only one of these two values is missing. I&#8217;ve decided to report something like <code>(3, -)</code> when 3 is a duplicate and there is no missing item, and <code>(-, 3)</code> when 3 is a missing value and there is no duplicate.</p>
-
-<h3>Duplicate and Missing in Raku</h3>
-
-<p>We simply loop over the input array values and </p>
-
-<ol>
-<li>Report a duplicate if one value is equal to the previous one, and </li>
-<li><p>Report a missing item if the current item is not one more than the previous one.</p>
-
-<p>sub dupe-and-missing (@nums) {
-    my ($dupe, $missing);
-    for 1..@nums.end -> $i {
-        if @nums[$i] == @nums[$i-1] {
-            $dupe = @nums[$i];
-        } elsif @nums[$i] - @nums[$i-1] != 1 {
-            $missing = @nums[$i-1] + 1;
-        }
-    }
-    return &#8220;($dupe, $missing)&#8221; if $dupe and $missing;
-    return &#8220;-1&#8221; unless $dupe or $missing;
-    return &#8220;($dupe, -)&#8221; if $dupe;   # no missing item
-    return &#8220;(-, $missing)&#8221;;         # no dupe
-}</p>
-
-<p>for &lt;1 2 2 4>, &lt;1 2 3 4>, &lt;1 2 3 3>, &lt;1 2 4 5>,
-    &lt;1 1 3 4>, &lt;1 3 4 5>, &lt;1 2 2 3 5> -> @test {
-    say &#8220;@test[]&#8221;.fmt(&#8220;%-12s => &#8220;), dupe-and-missing @test;
-}</p></li>
-</ol>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./dupe_missing.raku
-1 2 2 4      =&gt; (2, 3)
-1 2 3 4      =&gt; -1
-1 2 3 3      =&gt; (3, -)
-1 2 4 5      =&gt; (-, 3)
-1 1 3 4      =&gt; (1, 2)
-1 3 4 5      =&gt; (-, 2)
-1 2 2 3 5    =&gt; (2, 4)
-</code></pre>
-
-<h3>Duplicate and Missing in Perl</h3>
-
-<p>This is a straight port to Perl of the Raku program above:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub dupe_and_missing {
-    my @nums = @_;
-    my ($dupe, $missing);
-    for my $i (1..$#nums) {
-        if ($nums[$i] == $nums[$i-1]) {
-            $dupe = $nums[$i];
-        } elsif ($nums[$i] - $nums[$i-1] != 1) {
-            $missing = $nums[$i-1] + 1;
-        }
-    }
-    return "($dupe, $missing)" if $dupe and $missing;
-    return "-1" unless $dupe or $missing;
-    return "($dupe, -)" if $dupe;
-    return "(-, $missing)";
-}
-
-for my $test ([&lt;1 2 2 4&gt;], [&lt;1 2 3 4&gt;], [&lt;1 2 3 3&gt;], 
-    [&lt;1 2 4 5&gt;], [&lt;1 1 3 4&gt;], [&lt;1 3 4 5&gt;], [&lt;1 2 2 3 5&gt;]) {
-    printf "%-12s =&gt; ", "@$test";
-    say dupe_and_missing @$test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./dupe-missing.pl
-1 2 2 4      =&gt; (2, 3)
-1 2 3 4      =&gt; -1
-1 2 3 3      =&gt; (3, -)
-1 2 4 5      =&gt; (-, 3)
-1 1 3 4      =&gt; (1, 2)
-1 3 4 5      =&gt; (-, 2)
-1 2 2 3 5    =&gt; (2, 4)
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on March 26, 2023. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-
-        
-
-           </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -5225,7 +5095,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 22 March 2023 08:40 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Wednesday 22 March 2023 12:46 UTC</address>
             </div>
           </div>
         </div><!-- container -->

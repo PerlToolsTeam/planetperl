@@ -7,9 +7,376 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-03-22T08:40:01Z</updated>
+  <updated>2023-03-22T12:46:56Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Text::Extract::Word, MsOffice::Word::Surgeon - Weekly Travelling in CPAN</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/c_y_fung/2023/03/textextractword-msofficewordsurgeon---weekly-travelling-in-cpan.html"/>
+    <id>tag:blogs.perl.org,2023:/users/c_y_fung//3481.11054</id>
+    <published>2023-03-22T12:26:21Z</published>
+    <updated>2023-03-22T12:44:08Z</updated>
+    <author>
+        <name>C.-Y. Fung</name>
+        <uri>https://e7-87-83.github.io/</uri>
+    </author>
+    <category term="cpan" label="cpan" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/c_y_fung/">
+        <![CDATA[<p></p>
+
+<div style="text-align: center;">Destination: <a href="https://metacpan.org/pod/Text::Extract::Word">Text::Extract::Word</a></div>
+
+<p></p>
+
+<div><strong>Date of Latest Release: Mar 09, 2012<br>
+Distribution: Text::Extract::Word<br>
+Module version: 0.02<br>
+Main Contributors: Stuart Watt (SNKWATT)<br>
+License: The Artistic License 2.0</strong></div>
+
+<p></p>
+
+<div style="text-align: center;">Destination: <a href="https://metacpan.org/pod/MsOffice::Word::Surgeon">MsOffice::Word::Surgeon</a></div>
+
+<p></p>
+
+<div><strong>Date of Latest Release: Jan 26, 2023<br>
+Distribution: MsOffice::Word::Surgeon<br>
+Module version: 2.01<br>
+Main Contributors: Laurent Dami (DAMI)<br>
+License: The Artistic License 2.0</strong></div>
+
+<hr>
+
+<p><b>Notice</b></p>
+
+<p>Thanks to demerphq and Sebastian Schleussner's comments, we should visit a better and easy way to do a regex matching in Perl now. It is not Regexp::Assemble introduced two weeks before - the Perl compiler after version 5.10 has already done the optimization for us! But we have to use the correct syntax. To see what happens, the bottom of this post gives a comparison of regexes for Roman numerals again; we give two more players in the race, <tt>/^($r_str_combine)$/</tt> [given <tt>my $r_str_combine = join "|", @roman;</tt>] and <tt>$rx = sprintf qr/^(?:%s)$/, join "|", @roman</tt>. We can see the former has almost the same performance as Regexp::Assemble, while the latter is usually the fastest. We do not need to import any modules and get a fast result!</p>
+
+<hr>
+
+<p>Today let us have a short tour on two modules which can perform a similar function: text searching in MS Office Word documents.</p>
+
+<p>Well, we know there are two common formats of MS Office Word document: .docx and the earlier .doc.</p>
+
+<p>Text::Extract::Word deals with .doc. You can use the function <tt>get_all_text</tt> to get all text (I'm a verbose tour guide...), or use its object oriented interface which get the text in different location of a document:</p>
+
+<pre>
+# taken from synopsis of the module:
+my $file = Text::Extract::Word->new("test1.doc");
+my $text = $file->get_text();
+my $body = $file->get_body();
+my $footnotes = $file->get_footnotes();
+my $headers = $file->get_headers();
+my $annotations = $file->get_annotations();
+my $bookmarks = $file->get_bookmarks();</pre>
+
+<p><br />
+MsOffice::Word::Surgeon deals with .docx. Besides functionalities to extract text, you can also replace text by regular expression, and write a new .docx file.</p>
+
+<p><br />
+Here comes a use case of the two modules. I was maintaining a collection of curricula vitae and database of candidate details, but due to a coding bug, some of the CV were missing or overwritten by others' CV. The CVs are in .doc, .docx or .pdf format, and have filenames as <tt>CV[number].[extension]</tt>. I use Text::Extract::Word and MsOffice::Word::Surgeon to check the MS Office documents.</p>
+
+<p>Note that in the database, since I am physically located in Hong Kong, each candidate name is stored with Chinese characters and English alphabets. And names of some people consist of only two Chinese characters (some, like me, have 3; some people have 4(two characters for the surname, two characters for the given name)), so I chose to take the first two English words in the candidate name field and checked whether the two words are in the corresponding document. ID of each suspicious record will be printed.</p>
+
+<p>Script one:</p>
+
+<pre>
+use utf8;
+use DBI;
+use Text::Extract::Word qw(get_all_text);
+use v5.30.0;
+
+<p>for my $num (1..999) {<br />
+    search_cv($num) if -e "CV".$num.".doc" || -e "CV".$num.".DOC";<br />
+}</p>
+
+<p>sub search_cv {</p>
+
+<p>    my $cv_id = $_[0];<br />
+    my $filename = "CV".$cv_id.".doc";</p>
+
+<p>    my $dsn = "DBI:mysql:database=cvdb;host=127.0.0.1";<br />
+    my $dbh = DBI->connect($dsn, 'mydatabaseadmin', 'mypassword', { mysql_enable_utf8 => 1 });</p>
+
+<p>    my $fullname;<br />
+    my $first_two_eng;<br />
+    my $sth = $dbh->prepare("SELECT name FROM candidate WHERE id=".$cv_id);<br />
+    $sth->execute;<br />
+    while (my $ref = $sth->fetchrow_hashref) {<br />
+        $fullname = $ref->{'name'};<br />
+    }</p>
+
+<p>    $fullname !~ s/[^[:ascii:]]//g;</p>
+
+<p>    my $engname = $fullname;</p>
+
+<p>    my $second_space = index($engname, " ", index($engname, " ")+1 );</p>
+
+<p>    my $first_two_eng = ($second_space != -1) ? (substr $engname, 0, $second_space) : (substr $engname, 0);</p>
+
+<p>    my $found;</p>
+
+<p>    my $text = get_all_text($filename);<br />
+    $found = index($text, $first_two_eng);</p>
+
+<p>    if ($found != -1) {<br />
+#        say "found: ". $cv_id;<br />
+    }<br />
+    else {<br />
+        say "SUSPICIOUS: ". $cv_id;<br />
+    }<br />
+}</p>
+
+</pre>
+
+<p>Script two</p>
+
+<pre>
+
+<p>use utf8;<br />
+use DBI;<br />
+use MsOffice::Word::Surgeon;<br />
+use v5.30.0;</p>
+
+<p>for my $num (1..999) {<br />
+    search_cv($num) if -e "CV".$num.".docx";<br />
+}</p>
+
+<p>sub search_cv {</p>
+
+<p>    my $cv_id = $_[0];<br />
+    my $filename = "CV".$cv_id.".docx";</p>
+
+<p>    my $dsn = "DBI:mysql:database=cvdb;host=127.0.0.1";<br />
+    my $dbh = DBI->connect($dsn, 'mydatabaseadmin',  'mypassword', { mysql_enable_utf8 => 1 });</p>
+
+<p>    my $fullname;<br />
+    my $first_two_eng;<br />
+    my $sth = $dbh->prepare("SELECT name FROM candidate WHERE id=".$cv_id);<br />
+    $sth->execute;<br />
+    while (my $ref = $sth->fetchrow_hashref) {<br />
+        $fullname = $ref->{'name'};<br />
+    }</p>
+
+<p>    $fullname !~ s/[^[:ascii:]]//g;</p>
+
+<p>    my $engname = $fullname;</p>
+
+<p>    my $second_space = index($engname, " ", index($engname, " ")+1 );</p>
+
+<p>    my $first_two_eng = ($second_space != -1) ? (substr $engname, 0, $second_space) : (substr $engname, 0);</p>
+
+<p>    my $found;</p>
+
+<p>    my $surgeon = MsOffice::Word::Surgeon->new(docx => $filename);</p>
+
+<p>    my $text =  $surgeon->document->plain_text;<br />
+    $found = index($text, $first_two_eng);</p>
+
+<p><br />
+    if ($found != -1) {<br />
+#        say "found: ". $cv_id;<br />
+    }<br />
+    else {<br />
+        say "SUSPICIOUS: ". $cv_id;<br />
+    }</p>
+
+<p>}</p>
+
+</pre>
+The above is just a very straightforward use case of these two modules. You may explore their POD and use them to suit your need!
+
+<p># For PDF text search, I will introduce modules later.</p>
+
+<div style="text-align: center;">THE HIGHLIGHTED PERL MODULES OF WEEK 12 OF 2023:<br>Text::Extract::Word, MsOffice::Word::Surgeon</div>
+
+<hr>
+
+<p><b>Comparison of Regexes for Roman Numerals</b><br />
+<pre><br />
+use v5.30.0;<br />
+use List::Util qw/shuffle sample any/;<br />
+use Regexp::Assemble;<br />
+use Regexp::Trie;<br />
+use feature 'say';</p>
+
+<p>my @roman = qw/I II III IV V<br />
+               VI VII VIII IX X<br />
+               XI XII XIII XIV XV<br />
+               XVI XVII XVIII IXX XX/;</p>
+
+<p>sub repr {<br />
+    return sample int 4*rand(), <br />
+        shuffle('I' x (int 4*rand()), 'V', 'X');<br />
+}</p>
+
+<p>my $size = 1000;</p>
+
+<p>sub c0 {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        my $letters = repr();<br />
+        $count++ if any {$letters =~ /^$_$/} @roman;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>my $ra = Regexp::Assemble->new;<br />
+$ra->anchor_line;<br />
+$ra->add(@roman);<br />
+my $ra_computed = $ra->re;</p>
+
+<p>sub c1 {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ $ra_computed;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>my $rt = Regexp::Trie->new;<br />
+$rt->add($_) for @roman;<br />
+my $rt_computed = $rt->regexp;</p>
+
+<p>sub c2 {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ /^$rt_computed$/;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p><br />
+my $r_str_combine = join "|", @roman;</p>
+
+<p>sub cn {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ /^($r_str_combine)$/;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>my $rx = sprintf qr/^(?:%s)$/, join "|", @roman;</p>
+
+<p>sub cx {<br />
+    my $count = 0;<br />
+    for (1..$size) {<br />
+        $count++ if repr() =~ $rx;<br />
+    }<br />
+    return $count;<br />
+}</p>
+
+<p>say c0()/$size;<br />
+say c1()/$size;<br />
+say c2()/$size;<br />
+say cn()/$size;<br />
+say cx()/$size;</p>
+
+<p><br />
+use Benchmark q/cmpthese/;<br />
+cmpthese(10_000, {<br />
+    RAW => sub {c0},<br />
+    Assemble => sub {c1},<br />
+    Trie => sub {c2},<br />
+    naive => sub {cn},<br />
+    QR => sub {cx}<br />
+});</pre></p>
+
+<p><br />
+<b>Result:</b><br />
+<pre>0.705<br />
+0.691<br />
+0.68<br />
+0.681<br />
+0.708<br />
+           Rate      RAW     Trie    naive Assemble       QR<br />
+RAW      42.7/s       --     -94%     -94%     -94%     -95%<br />
+Trie      669/s    1468%       --      -6%      -7%     -23%<br />
+naive     711/s    1565%       6%       --      -2%     -18%<br />
+Assemble  724/s    1595%       8%       2%       --     -17%<br />
+QR        867/s    1932%      30%      22%      20%       --</pre><br />
+</p>]]>
+        
+    </content>
+</entry>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75812094</id>
+        <re:rank scheme="https://stackoverflow.com">0</re:rank>
+        <title type="text">`unpack('Q', ...) % (1 &lt;&lt; 62)` resulting in negative value with `use integer` on x86_64</title>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="64-bit"/>
+            <category scheme="https://stackoverflow.com/tags" term="modulo"/>
+            <category scheme="https://stackoverflow.com/tags" term="unpack"/>
+        <author>
+            <name>U. Windl</name>
+            <uri>https://stackoverflow.com/users/6607497</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75812094/unpackq-1-62-resulting-in-negative-value-with-use-integer-on"/>
+        <published>2023-03-22T12:11:59Z</published>
+        <updated>2023-03-22T12:11:59Z</updated>
+        <summary type="html">
+            &lt;p&gt;Testing a random number function I wrote in the debugger I'm getting unexpected results.
+Specifically for &lt;code&gt;use integer&lt;/code&gt; the result of &lt;code&gt;unpack('Q', random_bytes(...)) % (1 &amp;lt;&amp;lt; 62)&lt;/code&gt; seems to be negative.&lt;/p&gt;
+&lt;p&gt;Here's a part of the debugger session:&lt;/p&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;  DB&amp;lt;3&amp;gt; x Random::random_number(0, 1 &amp;lt;&amp;lt; 62)
+Random::random_number(lib/Random.pm:95):
+95:             $result = unpack('Q', random_bytes($type, 8)) % $limit;
+  DB&amp;lt;&amp;lt;4&amp;gt;&amp;gt; x $limit
+0  4611686018427387904
+  DB&amp;lt;&amp;lt;5&amp;gt;&amp;gt; c
+
+  DB&amp;lt;5&amp;gt; x Random::random_number(0, 1 &amp;lt;&amp;lt; 62)
+Random::random_number(lib/Random.pm:95):
+95:             $result = unpack('Q', random_bytes($type, 8)) % $limit;
+  DB&amp;lt;&amp;lt;6&amp;gt;&amp;gt; c
+0  '-2479142448669864359'
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;The first parameter (&lt;code&gt;$type&lt;/code&gt;) specified the random generator to use in &lt;code&gt;random_bytes()&lt;/code&gt;, while the second parameter specified how many bytes to return.&lt;/p&gt;
+&lt;p&gt;So I wonder:
+If &lt;code&gt;unpack('Q', ...)&lt;/code&gt; returns an unsigned 64 bit number and &lt;code&gt;$limit&lt;/code&gt; is positive, how can the result of &lt;code&gt;%&lt;/code&gt; be negative?&lt;/p&gt;
+&lt;p&gt;Happened in Perl 5.18.2 on x86_64.&lt;/p&gt;
+
+        </summary>
+    </entry>
+  <entry xmlns:media="http://search.yahoo.com/mrss/">
+    <id>tag:github.com,2008:Grit::Commit/0d292c706462f0a0e7cd64ef002bd8d21513295d</id>
+    <link type="text/html" rel="alternate" href="https://github.com/Perl/perl5/commit/0d292c706462f0a0e7cd64ef002bd8d21513295d"/>
+    <title>
+        perl.h - remove redundant /*EMPTY*/ comment
+    </title>
+    <updated>2023-03-22T10:39:08Z</updated>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/106183?s=30&amp;v=4"/>
+    <author>
+      <name>demerphq</name>
+      <uri>https://github.com/demerphq</uri>
+    </author>
+    <content type="html">
+      &lt;pre style='white-space:pre-wrap;width:81ex'&gt;perl.h - remove redundant /*EMPTY*/ comment
+
+mauke: it was added by Andy Lester in 6f207bd3ddac24959aa7f00f2d7a66f116dcc7ed
+mauke: when he replaced &amp;#39;/*EMPTY*/;&amp;#39; statements by &amp;#39;NOOP;&amp;#39;
+mauke: I would also remove the comment&lt;/pre&gt;
+    </content>
+  </entry>
+  <entry xmlns:media="http://search.yahoo.com/mrss/">
+    <id>tag:github.com,2008:Grit::Commit/3f1952ebf5b2e1ced993bb7c0a9ff6bc1eb53ef2</id>
+    <link type="text/html" rel="alternate" href="https://github.com/Perl/perl5/commit/3f1952ebf5b2e1ced993bb7c0a9ff6bc1eb53ef2"/>
+    <title>
+        fix precedence issue with NOOP
+    </title>
+    <updated>2023-03-22T10:19:20Z</updated>
+    <media:thumbnail height="30" width="30" url="https://0.gravatar.com/avatar/a0ad13dcd5c91feafe817191dd3929eb?d=https%3A%2F%2Fgithub.githubassets.com%2Fimages%2Fgravatars%2Fgravatar-user-420.png&amp;r=g&amp;s=30"/>
+    <author>
+      <name/>
+      <email>zefram@fysh.org</email>
+    </author>
+    <content type="html">
+      &lt;pre style='white-space:pre-wrap;width:81ex'&gt;fix precedence issue with NOOP
+
+Parens are required or precedence issues can occur.&lt;/pre&gt;
+    </content>
+  </entry>
   <entry xmlns:re="http://purl.org/atompub/rank/1.0">
         <id>https://stackoverflow.com/q/75794238</id>
         <re:rank scheme="https://stackoverflow.com">0</re:rank>
@@ -34,7 +401,7 @@ Is there an alternative that can do that that is concise to use (one line on com
     </entry>
   <entry xmlns:re="http://purl.org/atompub/rank/1.0">
         <id>https://stackoverflow.com/q/75807504</id>
-        <re:rank scheme="https://stackoverflow.com">0</re:rank>
+        <re:rank scheme="https://stackoverflow.com">2</re:rank>
         <title type="text">Perl Gtk2::Window-&gt;list_toplevels</title>
             <category scheme="https://stackoverflow.com/tags" term="perl"/>
             <category scheme="https://stackoverflow.com/tags" term="gtk2"/>
@@ -472,247 +839,6 @@ chance it dies. It also reworks the logic so that if the eval does die
 that the entire script dies as well.&lt;/pre&gt;
     </content>
   </entry>
-  <entry xmlns:media="http://search.yahoo.com/mrss/">
-    <id>tag:github.com,2008:Grit::Commit/3c0bfcec550c59c81df397902a1fdea23ec37edc</id>
-    <link type="text/html" rel="alternate" href="https://github.com/Perl/perl5/commit/3c0bfcec550c59c81df397902a1fdea23ec37edc"/>
-    <title>
-        Cast to avoid a signedness-comparison warning
-    </title>
-    <updated>2023-03-21T18:45:54Z</updated>
-    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/350941?s=30&amp;v=4"/>
-    <author>
-      <name>leonerd</name>
-      <uri>https://github.com/leonerd</uri>
-    </author>
-    <content type="html">
-      &lt;pre style='white-space:pre-wrap;width:81ex'&gt;Cast to avoid a signedness-comparison warning&lt;/pre&gt;
-    </content>
-  </entry>
-  <entry xmlns:media="http://search.yahoo.com/mrss/">
-    <id>tag:github.com,2008:Grit::Commit/d2d18d7c6a9fadeabbaed9338d93c320eb97f109</id>
-    <link type="text/html" rel="alternate" href="https://github.com/Perl/perl5/commit/d2d18d7c6a9fadeabbaed9338d93c320eb97f109"/>
-    <title>
-        Cast result of hv_store_ent() to (void) to quiet an HPUX compiler war…
-    </title>
-    <updated>2023-03-21T18:45:54Z</updated>
-    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/350941?s=30&amp;v=4"/>
-    <author>
-      <name>leonerd</name>
-      <uri>https://github.com/leonerd</uri>
-    </author>
-    <content type="html">
-      &lt;pre style='white-space:pre-wrap;width:81ex'&gt;Cast result of hv_store_ent() to (void) to quiet an HPUX compiler warning&lt;/pre&gt;
-    </content>
-  </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75804663</id>
-        <re:rank scheme="https://stackoverflow.com">2</re:rank>
-        <title type="text">Running perl script and getting "Error in option spec:"</title>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-            <category scheme="https://stackoverflow.com/tags" term="bioinformatics"/>
-            <category scheme="https://stackoverflow.com/tags" term="getopt"/>
-        <author>
-            <name>Froggy01</name>
-            <uri>https://stackoverflow.com/users/21449860</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75804663/running-perl-script-and-getting-error-in-option-spec"/>
-        <published>2023-03-21T17:40:42Z</published>
-        <updated>2023-03-21T17:46:08Z</updated>
-        <summary type="html">
-            &lt;p&gt;I am very new to running perl scripts and I am running into problems that I suspect are due to the assignment of variables.&lt;/p&gt;
-&lt;p&gt;Here is the beginning of the original script:&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;#!/usr/bin/perl -w
-
-#####################################
-# gbstrim.pl 
-# John Garbe
-# June 2016
-# 
-#
-#####################################
-
-=head1 NAME
-
-gbstrim.pl - 
- - Trim padding and/or cut site residue from beginning of reads
- - Trim sequencing adapter from ends of reads
- - Trim all reads to length
-
-NOTE: this doesn't handle paired-end data
-
-=head1 SYNOPSIS
-
-gbstrim.pl --enzyme1 bamhi --enzyme2 psti --read R1 [--threads 1] [--minlength 20] --fastqfile file.fastq --outputfile out.fastq 
-
-=head1 DESCRIPTION
-
-Options:
-    --fastqfile sample.fastq : fastq file of reads to process, can be gz compressed
-    --outputfile sample.gbstrim.fastq : fastq file of processed reads
-    --enzyme1 bamhi : First restriciton enzyme used in library creation
-    --enzyme2 psti : Second restriciton enzyme used in library creation
-    --read R1 : Specify if the provided fastq file is the R1 or R2 read
-    --minlength 20 : discard reads shorter than minlength (default: 20)
-    --maxlength 95 : trim all reads longer than maxlength to maxlength (default: readlength - length of longest padding sequence)
-    --croplength 95 : trim down longer reads and discard shorter reads
-    --removecutsite : trim off cut sites as well
-    --threads 1 : Number of cpu cores cutadapt should use (default: 1)
-    --verbose : Print additional details while running
-    --help : Display usage information
-
-Advanced options:
-    --r1padding C,TG,AAG,GCTC : comma-separated list of 5' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r2padding C,TG,AAG,GCTC : comma-separated list of 3' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r1overhang AGCT : Overhang sequence left by first restriction enzyme
-    --r2overhang AGCT : Overhang sequence left by second restriction enzyme
-    --adapter CTGTCTCTTATACACATCTCCGAG : sequencing primer adapter to trim from 3' end of reads
-    --debug : Print output useful for debugging
-=cut
-
-##################### Initialize ###############################
-
-use Getopt::Long;
-use Pod::Usage;
-use FindBin;
-use lib &amp;quot;$FindBin::RealBin&amp;quot;;
-
-# set defaults
-$r1adapter = &amp;quot;CTGTCTCTTATACACATCTCCGAG&amp;quot;;
-$r2adapter = &amp;quot;CTGTCTCTTATACACATCTGACGC&amp;quot;;
-$minlength = 20;
-GetOptions(&amp;quot;help&amp;quot; =&amp;gt; \$help,
-       &amp;quot;verbose&amp;quot; =&amp;gt; \$verbose,
-       &amp;quot;threads=i&amp;quot; =&amp;gt; \$threads,
-       &amp;quot;fastqfile=s&amp;quot; =&amp;gt; \$fastqfile,
-       &amp;quot;outputfile=s&amp;quot; =&amp;gt; \$outputfile,
-       &amp;quot;enzyme1=s&amp;quot; =&amp;gt; \$r1enzyme,
-       &amp;quot;enzyme2=s&amp;quot; =&amp;gt; \$r2enzyme,
-       &amp;quot;read=s&amp;quot; =&amp;gt; \$read,
-       &amp;quot;croplength=i&amp;quot; =&amp;gt; \$croplength,
-       &amp;quot;removecutsite&amp;quot; =&amp;gt; \$removecutsite,
-
-       # advanced options
-       &amp;quot;r1overhang=s&amp;quot; =&amp;gt; \$r1overhang,
-       &amp;quot;r2overhang=s&amp;quot; =&amp;gt; \$r2overhang,
-       &amp;quot;r1padding=s&amp;quot; =&amp;gt; \$r1padding,
-       &amp;quot;r2padding=s&amp;quot; =&amp;gt; \$r2padding,
-       &amp;quot;debug&amp;quot; =&amp;gt; \$debug,
-       &amp;quot;minlength=i&amp;quot; =&amp;gt; \$minlength,
-       &amp;quot;maxlength=i&amp;quot; =&amp;gt; \$maxlength,
-       &amp;quot;r1adapter=s&amp;quot; =&amp;gt; \$r1adapter,
-       &amp;quot;r2adapter=s&amp;quot; =&amp;gt; \$r2adapter,
-    ) or pod2usage;
-pod2usage(q(-verbose) =&amp;gt; 3) if ($help);
-if ($#ARGV &amp;gt;= 0) {
-    print &amp;quot;Unknown commandline parameters: @ARGV\n&amp;quot;;
-    pod2usage;
-}
-if (! ($fastqfile and $outputfile and $read and $r1enzyme)) {
-    print &amp;quot;--fastqfile, --outputfile, --read, --enzyme1 and enzyme2 are required\n&amp;quot;;
-    pod2usage;
-}
-die &amp;quot;Cannot find fastq file $fastqfile\n&amp;quot; if (! -e $fastqfile);
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;This is the script I attempted to run after editing and specifying my input files and enzymes. The input file I am working with is &amp;quot;test.fastq.gz&amp;quot;&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;
-#!/usr/bin/perl -w
-
-#####################################
-# gbstrim.pl 
-# John Garbe
-# June 2016
-# 
-#
-#####################################
-
-=head1 NAME
-
-gbstrim.pl - 
- - Trim padding and/or cut site residue from beginning of reads
- - Trim sequencing adapter from ends of reads
- - Trim all reads to length
-
-NOTE: this doesn't handle paired-end data
-
-=head1 SYNOPSIS
-
-gbstrim.pl --enzyme1 bamhi --enzyme2 nsii --read R1 [--threads 1] [--minlength 20] --fastqfile test.fastq.gz --outputfile trim_test.fastq.gz
-
-=head1 DESCRIPTION
-
-Options:
-    --fastqfile test.fastq.gz : fastq file of reads to process, can be gz compressed
-    --outputfile outputfile trim_test.fastq.gz : fastq file of processed reads
-    --enzyme1 bamhi : First restriciton enzyme used in library creation
-    --enzyme2 nsii : Second restriciton enzyme used in library creation
-    --read R1 : Specify if the provided fastq file is the R1 or R2 read
-    --minlength 20 : discard reads shorter than minlength (default: 20)
-    --maxlength 95 : trim all reads longer than maxlength to maxlength (default: readlength - length of longest padding sequence)
-    --croplength 95 : trim down longer reads and discard shorter reads
-    --removecutsite : trim off cut sites as well
-    --threads 1 : Number of cpu cores cutadapt should use (default: 1)
-    --verbose : Print additional details while running
-    --help : Display usage information
-
-Advanced options:
-    --r1padding C,TG,AAG,GCTC : comma-separated list of 5' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r2padding C,TG,AAG,GCTC : comma-separated list of 3' padding sequences. To include a pad of zero start with a comma: ,C,TG,AAG,GCTC
-    --r1overhang AGCT : Overhang sequence left by first restriction enzyme
-    --r2overhang AGCT : Overhang sequence left by second restriction enzyme
-    --adapter CTGTCTCTTATACACATCTCCGAG : sequencing primer adapter to trim from 3' end of reads
-    --debug : Print output useful for debugging
-=cut
-
-##################### Initialize ###############################
-
-use Getopt::Long;
-use Pod::Usage;
-use FindBin;
-use lib &amp;quot;$FindBin::RealBin&amp;quot;;
-
-# set defaults
-$r1adapter = &amp;quot;CTGTCTCTTATACACATCTCCGAG&amp;quot;;
-$r2adapter = &amp;quot;CTGTCTCTTATACACATCTGACGC&amp;quot;;
-$minlength = 20;
-GetOptions(&amp;quot;help&amp;quot; =&amp;gt; \$help,
-       &amp;quot;verbose&amp;quot; =&amp;gt; \$verbose,
-       &amp;quot;threads=i&amp;quot; =&amp;gt; \$threads,
-       &amp;quot;test.fastq.gz=s&amp;quot; =&amp;gt; \$fastqfile,
-       &amp;quot;trim_test.fastq.gz=s&amp;quot; =&amp;gt; \$outputfile,
-       &amp;quot;bamhi=s&amp;quot; =&amp;gt; \$r1enzyme,
-       &amp;quot;nsii=s&amp;quot; =&amp;gt; \$r2enzyme,
-       &amp;quot;R1&amp;quot; =&amp;gt; \$read,
-       &amp;quot;croplength=i&amp;quot; =&amp;gt; \$croplength,
-       &amp;quot;removecutsite&amp;quot; =&amp;gt; \$removecutsite,
-
-       # advanced options
-       &amp;quot;r1overhang=s&amp;quot; =&amp;gt; \$r1overhang,
-       &amp;quot;r2overhang=s&amp;quot; =&amp;gt; \$r2overhang,
-       &amp;quot;r1padding=s&amp;quot; =&amp;gt; \$r1padding,
-       &amp;quot;r2padding=s&amp;quot; =&amp;gt; \$r2padding,
-       &amp;quot;debug&amp;quot; =&amp;gt; \$debug,
-       &amp;quot;minlength=i&amp;quot; =&amp;gt; \$minlength,
-       &amp;quot;maxlength=i&amp;quot; =&amp;gt; \$maxlength,
-       &amp;quot;r1adapter=s&amp;quot; =&amp;gt; \$r1adapter,
-       &amp;quot;r2adapter=s&amp;quot; =&amp;gt; \$r2adapter,
-    ) or pod2usage;
-pod2usage(q(-verbose) =&amp;gt; 3) if ($help);
-if ($#ARGV &amp;gt;= 0) {
-    print &amp;quot;Unknown commandline parameters: @ARGV\n&amp;quot;;
-    pod2usage;
-}
-if (! ($fastqfile and $outputfile and $read and $r1enzyme)) {
-    print &amp;quot;--fastqfile, --outputfile, --read, --enzyme1 and enzyme2 are required\n&amp;quot;;
-    pod2usage;
-}
-die &amp;quot;Cannot find fastq file $fastqfile\n&amp;quot; if (! -e $fastqfile);
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;This is the error message I received:&lt;/p&gt;
-&lt;p&gt;&lt;code&gt;Error in option spec: &amp;quot;test.fastq.gz=s&amp;quot;&lt;/code&gt;&lt;/p&gt;
-&lt;p&gt;&lt;code&gt; Error in option spec: &amp;quot;trim_test.fastq.gz=s&amp;quot;&lt;/code&gt;&lt;/p&gt;
-
-        </summary>
-    </entry>
   <entry>
     <title>Analyzing New York City Traffic Collisions with Perl One-Liners and Linux</title>
     <link rel="alternate" href="https://dev.to/austin_62/analyzing-new-york-city-traffic-collisions-with-perl-one-liners-and-linux-pnn" type="text/html"/>
@@ -3734,260 +3860,6 @@ sub duplicate-and-missing (@list, $short-circuit is copy = Nil) {
 
     ]]>
   </content>
-</entry>
-  <entry>
-    <title>Perl Weekly Challenge 208: Minimum Index Sum and Duplicate and Missing</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/laurent_r/2023/03/perl-weekly-challenge-208-minimum-index-sum-and-duplicate-and-missing.html"/>
-    <id>tag:blogs.perl.org,2023:/users/laurent_r//3226.11050</id>
-    <published>2023-03-15T22:16:29Z</published>
-    <updated>2023-03-15T22:22:01Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 208 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-208/">Perl Weekly Challenge</a> organized by <a href="https://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on March 19, 2023 at 23:59). This blog post offers some solutions to this challenge. Please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Minimum Index Sum</h2>
-
-<p><em>You are given two arrays of strings.</em></p>
-
-<p><em>Write a script to find out all common strings in the given two arrays with minimum index sum. If no common strings found returns an empty list.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: @list1 = ("Perl", "Raku", "Love")
-       @list2 = ("Raku", "Perl", "Hate")
-
-Output: ("Perl", "Raku")
-
-There are two common strings "Perl" and "Raku".
-Index sum of "Perl": 0 + 1 = 1
-Index sum of "Raku": 1 + 0 = 1
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: @list1 = ("A", "B", "C")
-       @list2 = ("D", "E", "F")
-
-Output: ()
-
-No common string found, so no result.
-</code></pre>
-
-<p><em>Example 3:</em></p>
-
-<pre><code>Input: @list1 = ("A", "B", "C")
-       @list2 = ("C", "A", "B")
-
-Output: ("A")
-
-There are three common strings "A", "B" and "C".
-Index sum of "A": 0 + 1 = 1
-Index sum of "B": 1 + 2 = 3
-Index sum of "C": 2 + 0 = 2
-</code></pre>
-
-<h3>Minimum Index Sum in Raku</h3>
-
-<p>We need to find the intersection between two arrays of strings. Once we&#8217;ve found the intersection, we need to keep the intersection items that have the smallest sum of indexes in the original array. So, it looked like it would be nice to use <a href="https://docs.raku.org/type/Bag.html">Bags</a> for the input (with the index as weight integer for each item), and the <code>∩</code> or <code>(&amp;)</code> <a href="https://docs.raku.org/language/operators.html#infix_(|">infix intersection operator</a>,<em>infix</em>%E2%88%AA) to generate the result. It turns out that this might not be the best choice, because the integer weight associated with a bag item is signifying how many copies of that element are considered &#8220;in the bag&#8221;. So, if the weight is 0, it means the item is not in the bag and is lost during bag construction. Since array indexes start at 0, we&#8217;d be losing the first item of each array. The problem is solved by assigning the index incremented by 1 to the weight. This easily solves the problem, but makes the solution slightly less elegant than I originally hoped it to be. </p>
-
-<pre><code>sub min-sum-idx (@s1, @s2) {
-    my $b1 = (map {@s1[$_] =&gt; $_ + 1}, 0..@s1.end).Bag;
-    my $b2 = (map {@s2[$_] =&gt; $_ + 1}, 0..@s2.end).Bag;
-    my $result = (map { $_ =&gt;  $b1{$_} + $b2{$_}},  
-        ($b1 ∩ $b2).keys).Bag;
-    my $min = $result.values.min;
-    return grep {$result{$_} == $min}, $result.keys;
-}
-
-for (&lt;Perl Raku Love&gt;, &lt;Raku Perl Hate&gt;), 
-    (&lt;A B C&gt;, &lt;D E F&gt;), (&lt;A B C&gt;, &lt;C A B&gt;) 
-        -&gt; @test {
-            say "@test[0] - @test[1]".fmt("%-35s =&gt; "), 
-                min-sum-idx |@test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./min-sum_idx.raku
-Perl Raku Love - Raku Perl Hate    =&gt; (Perl Raku)
-A B C - D E F                      =&gt; ()
-A B C - C A B                      =&gt; (A)
-</code></pre>
-
-<h3>Minimum Index Sum in Perl</h3>
-
-<p>For porting the above Raku program to Perl, we replace <code>Bags</code> with hashes. We use a <code>grep</code> to construct the <code>@result</code> intersection of the two input arrays, and a loop to compute the minimum array index sum. </p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub min_sum_idx {
-    my @s1 = @{$_[0]};
-    my @s2 = @{$_[1]};
-
-    my %h1 = map {$s1[$_] =&gt; $_ } 0..$#s1;
-    my %h2 = map {$s2[$_] =&gt; $_ } 0..$#s2;
-    my @result = grep { exists $h1{$_} } @s2;
-    return "()" unless @result;
-    my %res = map { $_ =&gt; $h1{$_} + $h2{$_} } @result;
-    my $min = $res{$result[0]};
-    for my $k (keys %res) { 
-        $min = $res{$k} if $res{$k} &lt; $min;
-    }
-    return grep {$res{$_} == $min} @result;
-}
-
-for my $test ( [[&lt;Perl Raku Love&gt;], [&lt;Raku Perl Hate&gt;]], 
-    [[&lt;A B C&gt;], [&lt;D E F&gt;]], [[&lt;A B C&gt;], [&lt;C A B&gt;]] ) {
-
-    printf "%-14s - %-16s =&gt; ", 
-        "@{$test-&gt;[0]}", "@{$test-&gt;[1]}";
-    say join " ", min_sum_idx @$test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./min-sum-idx.pl
-Perl Raku Love - Raku Perl Hate   =&gt; Raku Perl
-A B C          - D E F            =&gt; ()
-A B C          - C A B            =&gt; A
-</code></pre>
-
-<h2>Task 2: Duplicate and Missing</h2>
-
-<p><em>You are given an array of integers in sequence with one missing and one duplicate.</em></p>
-
-<p><em>Write a script to find the duplicate and missing integer in the given array. Return -1 if none found.</em></p>
-
-<p><em>For the sake of this task, let us assume the array contains no more than one duplicate and missing.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: @nums = (1,2,2,4)
-Output: (2,3)
-
-Duplicate is 2 and Missing is 3.
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: @nums = (1,2,3,4)
-Output: -1
-
-No duplicate and missing found.
-</code></pre>
-
-<p><em>Example 3:</em></p>
-
-<pre><code>Input: @nums = (1,2,3,3)
-Output: (3,4)
-
-Duplicate is 3 and Missing is 4.
-</code></pre>
-
-<p>First, we are told that the integers are in sequence. This presumably means that they are sorted in ascending order. If not, we could just add a call to the  built-in <a href="https://docs.raku.org/routine/sort.html">sort</a> routine at the beginning of our code.</p>
-
-<p>Second, the task specification tells us what to do when there is no missing item and no duplicate, but not what to do when only one of these two values is missing. I&#8217;ve decided to report something like <code>(3, -)</code> when 3 is a duplicate and there is no missing item, and <code>(-, 3)</code> when 3 is a missing value and there is no duplicate.</p>
-
-<h3>Duplicate and Missing in Raku</h3>
-
-<p>We simply loop over the input array values and </p>
-
-<ol>
-<li>Report a duplicate if one value is equal to the previous one, and </li>
-<li><p>Report a missing item if the current item is not one more than the previous one.</p>
-
-<p>sub dupe-and-missing (@nums) {
-    my ($dupe, $missing);
-    for 1..@nums.end -> $i {
-        if @nums[$i] == @nums[$i-1] {
-            $dupe = @nums[$i];
-        } elsif @nums[$i] - @nums[$i-1] != 1 {
-            $missing = @nums[$i-1] + 1;
-        }
-    }
-    return &#8220;($dupe, $missing)&#8221; if $dupe and $missing;
-    return &#8220;-1&#8221; unless $dupe or $missing;
-    return &#8220;($dupe, -)&#8221; if $dupe;   # no missing item
-    return &#8220;(-, $missing)&#8221;;         # no dupe
-}</p>
-
-<p>for &lt;1 2 2 4>, &lt;1 2 3 4>, &lt;1 2 3 3>, &lt;1 2 4 5>,
-    &lt;1 1 3 4>, &lt;1 3 4 5>, &lt;1 2 2 3 5> -> @test {
-    say &#8220;@test[]&#8221;.fmt(&#8220;%-12s => &#8220;), dupe-and-missing @test;
-}</p></li>
-</ol>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ raku ./dupe_missing.raku
-1 2 2 4      =&gt; (2, 3)
-1 2 3 4      =&gt; -1
-1 2 3 3      =&gt; (3, -)
-1 2 4 5      =&gt; (-, 3)
-1 1 3 4      =&gt; (1, 2)
-1 3 4 5      =&gt; (-, 2)
-1 2 2 3 5    =&gt; (2, 4)
-</code></pre>
-
-<h3>Duplicate and Missing in Perl</h3>
-
-<p>This is a straight port to Perl of the Raku program above:</p>
-
-<pre><code>use strict;
-use warnings;
-use feature "say";
-
-sub dupe_and_missing {
-    my @nums = @_;
-    my ($dupe, $missing);
-    for my $i (1..$#nums) {
-        if ($nums[$i] == $nums[$i-1]) {
-            $dupe = $nums[$i];
-        } elsif ($nums[$i] - $nums[$i-1] != 1) {
-            $missing = $nums[$i-1] + 1;
-        }
-    }
-    return "($dupe, $missing)" if $dupe and $missing;
-    return "-1" unless $dupe or $missing;
-    return "($dupe, -)" if $dupe;
-    return "(-, $missing)";
-}
-
-for my $test ([&lt;1 2 2 4&gt;], [&lt;1 2 3 4&gt;], [&lt;1 2 3 3&gt;], 
-    [&lt;1 2 4 5&gt;], [&lt;1 1 3 4&gt;], [&lt;1 3 4 5&gt;], [&lt;1 2 2 3 5&gt;]) {
-    printf "%-12s =&gt; ", "@$test";
-    say dupe_and_missing @$test;
-}
-</code></pre>
-
-<p>This program displays the following output:</p>
-
-<pre><code>$ perl  ./dupe-missing.pl
-1 2 2 4      =&gt; (2, 3)
-1 2 3 4      =&gt; -1
-1 2 3 3      =&gt; (3, -)
-1 2 4 5      =&gt; (-, 3)
-1 1 3 4      =&gt; (1, 2)
-1 3 4 5      =&gt; (-, 2)
-1 2 2 3 5    =&gt; (2, 4)
-</code></pre>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on March 26, 2023. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
-    </content>
 </entry>
   <entry>
   <title>One-liner: Remove first two characters of every line</title>
