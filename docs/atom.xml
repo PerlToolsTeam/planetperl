@@ -7,9 +7,107 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-04-12T16:40:43Z</updated>
+  <updated>2023-04-12T20:39:29Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75999522</id>
+        <re:rank scheme="https://stackoverflow.com">0</re:rank>
+        <title type="text">Perl Mojolicious, what's the correct way to render a response from a Promise?</title>
+            <category scheme="https://stackoverflow.com/tags" term="rest"/>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="promise"/>
+            <category scheme="https://stackoverflow.com/tags" term="concurrency"/>
+            <category scheme="https://stackoverflow.com/tags" term="mojolicious"/>
+        <author>
+            <name>h q</name>
+            <uri>https://stackoverflow.com/users/2035207</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75999522/perl-mojolicious-whats-the-correct-way-to-render-a-response-from-a-promise"/>
+        <published>2023-04-12T20:23:22Z</published>
+        <updated>2023-04-12T20:23:22Z</updated>
+        <summary type="html">
+            &lt;p&gt;In Mojolicious, what's the correct way to render a response from a Promise? In my code below, I get:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;[2023-04-12] [trace] Template &amp;quot;example/search.html.ep&amp;quot; not found
+[2023-04-12] [trace] Nothing has been rendered, expecting delayed response
+&lt;/code&gt;&lt;/pre&gt;
+&lt;ol&gt;
+&lt;li&gt;Why is it looking for &lt;code&gt;example/search.html.ep&lt;/code&gt;? I didn't ask for it.&lt;/li&gt;
+&lt;li&gt;I am rendering content... Mojo couldn't wait?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;My sample app has 3 files:&lt;/p&gt;
+&lt;h3&gt;1. &lt;code&gt;script/my_app&lt;/code&gt;&lt;/h3&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Mojo::File qw(curfile);
+use lib curfile-&amp;gt;dirname-&amp;gt;sibling('lib')-&amp;gt;to_string;
+use Mojolicious::Commands;
+
+Mojolicious::Commands-&amp;gt;start_app('MyApp');
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3&gt;2. &lt;code&gt;lib/MyApp.pm&lt;/code&gt;&lt;/h3&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;package MyApp;
+use Mojo::Base 'Mojolicious', -signatures;
+
+sub startup ($self) {
+    $self-&amp;gt;secrets('s3cret');
+    my $r = $self-&amp;gt;routes;
+    $r-&amp;gt;get('/')-&amp;gt;to('Example#index');
+    $r-&amp;gt;post('/')-&amp;gt;to('Example#search');
+}
+
+1;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3&gt;3. &lt;code&gt;lib/MyApp/Controller/Example.pm&lt;/code&gt;&lt;/h3&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;package MyApp::Controller::Example;
+use Mojo::Base 'Mojolicious::Controller', -signatures;
+
+sub index ($self)
+{
+    return $self-&amp;gt;render(inline =&amp;gt; '&amp;lt;html&amp;gt;&amp;lt;body&amp;gt;&amp;lt;form method=&amp;quot;post&amp;quot;&amp;gt;&amp;lt;textarea name=&amp;quot;numbers&amp;quot; maxlength=&amp;quot;11&amp;quot;&amp;gt;123&amp;lt;/textarea&amp;gt;&amp;lt;button type=&amp;quot;submit&amp;quot;&amp;gt;Go&amp;lt;/button&amp;gt;&amp;lt;/form&amp;gt;&amp;lt;/body&amp;gt;&amp;lt;/html&amp;gt;');
+}
+
+sub search ($self)
+{
+    my $v = $self-&amp;gt;validation;
+    $v-&amp;gt;required(&amp;quot;numbers&amp;quot;);
+    return $self-&amp;gt;render(text=&amp;gt;&amp;quot;Validation Error&amp;quot;) if $v-&amp;gt;has_error;
+    my $numbers = $v-&amp;gt;param(&amp;quot;numbers&amp;quot;);
+    my @numbers = split(/\r?\n/, $numbers);
+
+    Mojo::Promise
+    -&amp;gt;map(
+    {concurrency =&amp;gt; 2},
+    sub {
+        $self-&amp;gt;ua-&amp;gt;get_p(&amp;quot;https://httpbin.org/delay/1?q=$_&amp;quot; =&amp;gt; {'api-key'=&amp;gt;'shhh'});
+    }, @numbers)
+    -&amp;gt;then(
+    sub{
+        my @results = @_;
+        my @json = map { $_-&amp;gt;[0]-&amp;gt;res-&amp;gt;json } @results;
+        return $self-&amp;gt;render(json =&amp;gt; \@json);
+    })
+    -&amp;gt;catch(
+    sub {
+        my $err = shift;
+        return $self-&amp;gt;render(text =&amp;gt; $err);
+    })
+    -&amp;gt;wait;
+    #return $self-&amp;gt;render(text =&amp;gt; &amp;quot;This shall result is 'Unhandled rejected promise: A response has already been rendered'&amp;quot;);
+}
+
+1;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;To run the app, I do:&lt;/p&gt;
+&lt;pre class="lang-bash prettyprint-override"&gt;&lt;code&gt;morbo script/my_app
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;then navigate to &lt;a href="http://localhost:3000" rel="nofollow noreferrer"&gt;&lt;code&gt;http://localhost:3000&lt;/code&gt;&lt;/a&gt; and post the form. Multiple lines will result in concurrent calls.&lt;/p&gt;
+
+        </summary>
+    </entry>
   <entry>
     <title>Perl Weekly Challenge #212 - Spinning Letters and Chopping Numbers</title>
     <link rel="alternate" href="https://blogs.perl.org/users/oldtechaa/2023/04/perl-weekly-challenge-212---spinning-letters-and-chopping-numbers.html"/>
@@ -444,47 +542,6 @@ my $year=$timestamp;
 &lt;/code&gt;&lt;/pre&gt;
 &lt;p&gt;the timestamp is displayed correctly in the &lt;code&gt;print&lt;/code&gt; section with &lt;code&gt;$year&lt;/code&gt;.&lt;/p&gt;
 &lt;p&gt;How do I have to define &lt;code&gt;$year&lt;/code&gt; so that the date, e.g. &lt;code&gt;date(Y)&lt;/code&gt; is output?&lt;/p&gt;
-
-        </summary>
-    </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75989888</id>
-        <re:rank scheme="https://stackoverflow.com">1</re:rank>
-        <title type="text">Why doesn't Perl sort numbers in numerical order?</title>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-        <author>
-            <name>user1211092</name>
-            <uri>https://stackoverflow.com/users/20661227</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75989888/why-doesnt-perl-sort-numbers-in-numerical-order"/>
-        <published>2023-04-11T20:26:13Z</published>
-        <updated>2023-04-12T06:03:21Z</updated>
-        <summary type="html">
-            &lt;p&gt;I have to write code that takes user input and turns it into an array, then have the largest number multiply everything in the array. When I input any number &amp;lt;=9 the code runs fine. But when I enter anything over 9 the code &amp;quot;drops&amp;quot; it as the largest value, if that makes any sense.&lt;/p&gt;
-&lt;p&gt;In my code, I sorted the array then had the last value (the largest) multiply the whole array&lt;/p&gt;
-&lt;p&gt;input numbers (user input): 1 3 5 7 2 4 6 8 10&lt;/p&gt;
-&lt;p&gt;final (after being sorted and multiplied: 8, 80, 16, 24, 32, 40, 48, 56, 64&lt;/p&gt;
-&lt;p&gt;You can see that 10 is the largest number (and should be the last because of the sort), but for some reason 10 is pushed to the first position and 8 is made the last/largest value. If I were to add 9 anywhere in the input, 9 would be made the last/largest number instead of 8, as it should.&lt;/p&gt;
-&lt;p&gt;I even tried this on an online complier and the result was the same&lt;/p&gt;
-&lt;p&gt;Why is anything greater than 9 doing this? And how do I fix this?&lt;/p&gt;
-&lt;p&gt;Also, code looks bad because this is my first day touching Perl lol&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;print(&amp;quot;input numbers: &amp;quot;);
-$nums = &amp;lt;STDIN&amp;gt;;
-
-@converted = split(' ', $nums); #turned user input into an array
-
-@sorted = sort(@converted);
-
-$multi = @sorted[-1]; #puts the last/largest number of the array in $multi
-
-foreach $x (@sorted){ #loops through the array and multiplies everything by the last/largest value
-    $x = $x * $multi
-}
-
-print(&amp;quot;final: &amp;quot;);
-print join(', ', @sorted); #just added commas to make it readable
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;I know there's an easier way to do this with the min max stuff but it wasn't working when I tried it&lt;/p&gt;
 
         </summary>
     </entry>
