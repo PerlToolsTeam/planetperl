@@ -7,9 +7,446 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-04-13T04:39:31Z</updated>
+  <updated>2023-04-13T08:39:37Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75999522</id>
+        <re:rank scheme="https://stackoverflow.com">1</re:rank>
+        <title type="text">Perl Mojolicious, what's the correct way to render a response from a Promise?</title>
+            <category scheme="https://stackoverflow.com/tags" term="rest"/>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="promise"/>
+            <category scheme="https://stackoverflow.com/tags" term="concurrency"/>
+            <category scheme="https://stackoverflow.com/tags" term="mojolicious"/>
+        <author>
+            <name>h q</name>
+            <uri>https://stackoverflow.com/users/2035207</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75999522/perl-mojolicious-whats-the-correct-way-to-render-a-response-from-a-promise"/>
+        <published>2023-04-12T20:23:22Z</published>
+        <updated>2023-04-13T07:35:26Z</updated>
+        <summary type="html">
+            &lt;p&gt;In Mojolicious, what's the correct way to render a response from a Promise? In my code below, I get:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;[2023-04-12] [trace] Template &amp;quot;example/search.html.ep&amp;quot; not found
+[2023-04-12] [trace] Nothing has been rendered, expecting delayed response
+&lt;/code&gt;&lt;/pre&gt;
+&lt;ol&gt;
+&lt;li&gt;Why is it looking for &lt;code&gt;example/search.html.ep&lt;/code&gt;? I didn't ask for it.&lt;/li&gt;
+&lt;li&gt;I am rendering content... Mojo couldn't wait?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;My sample app has 3 files:&lt;/p&gt;
+&lt;h3&gt;1. &lt;code&gt;script/my_app&lt;/code&gt;&lt;/h3&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Mojo::File qw(curfile);
+use lib curfile-&amp;gt;dirname-&amp;gt;sibling('lib')-&amp;gt;to_string;
+use Mojolicious::Commands;
+
+Mojolicious::Commands-&amp;gt;start_app('MyApp');
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3&gt;2. &lt;code&gt;lib/MyApp.pm&lt;/code&gt;&lt;/h3&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;package MyApp;
+use Mojo::Base 'Mojolicious', -signatures;
+
+sub startup ($self) {
+    $self-&amp;gt;secrets('s3cret');
+    my $r = $self-&amp;gt;routes;
+    $r-&amp;gt;get('/')-&amp;gt;to('Example#index');
+    $r-&amp;gt;post('/')-&amp;gt;to('Example#search');
+}
+
+1;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3&gt;3. &lt;code&gt;lib/MyApp/Controller/Example.pm&lt;/code&gt;&lt;/h3&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;package MyApp::Controller::Example;
+use Mojo::Base 'Mojolicious::Controller', -signatures;
+
+sub index ($self)
+{
+    return $self-&amp;gt;render(inline =&amp;gt; '&amp;lt;html&amp;gt;&amp;lt;body&amp;gt;&amp;lt;form method=&amp;quot;post&amp;quot;&amp;gt;&amp;lt;textarea name=&amp;quot;numbers&amp;quot; maxlength=&amp;quot;11&amp;quot;&amp;gt;123&amp;lt;/textarea&amp;gt;&amp;lt;button type=&amp;quot;submit&amp;quot;&amp;gt;Go&amp;lt;/button&amp;gt;&amp;lt;/form&amp;gt;&amp;lt;/body&amp;gt;&amp;lt;/html&amp;gt;');
+}
+
+sub search ($self)
+{
+    my $v = $self-&amp;gt;validation;
+    $v-&amp;gt;required(&amp;quot;numbers&amp;quot;);
+    return $self-&amp;gt;render(text=&amp;gt;&amp;quot;Validation Error&amp;quot;) if $v-&amp;gt;has_error;
+    my $numbers = $v-&amp;gt;param(&amp;quot;numbers&amp;quot;);
+    my @numbers = split(/\r?\n/, $numbers);
+
+    Mojo::Promise
+    -&amp;gt;map(
+    {concurrency =&amp;gt; 2},
+    sub {
+        $self-&amp;gt;ua-&amp;gt;get_p(&amp;quot;https://httpbin.org/delay/1?q=$_&amp;quot; =&amp;gt; {'api-key'=&amp;gt;'shhh'});
+    }, @numbers)
+    -&amp;gt;then(
+    sub{
+        my @results = @_;
+        my @json = map { $_-&amp;gt;[0]-&amp;gt;res-&amp;gt;json } @results;
+        return $self-&amp;gt;render(json =&amp;gt; \@json);
+    })
+    -&amp;gt;catch(
+    sub {
+        my $err = shift;
+        return $self-&amp;gt;render(text =&amp;gt; $err);
+    })
+    -&amp;gt;wait;
+    #return $self-&amp;gt;render(text =&amp;gt; &amp;quot;This shall result is 'Unhandled rejected promise: A response has already been rendered'&amp;quot;);
+}
+
+1;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;To run the app, I do:&lt;/p&gt;
+&lt;pre class="lang-bash prettyprint-override"&gt;&lt;code&gt;morbo script/my_app
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;then navigate to &lt;a href="http://localhost:3000" rel="nofollow noreferrer"&gt;&lt;code&gt;http://localhost:3000&lt;/code&gt;&lt;/a&gt; and post the form. Multiple lines will result in concurrent calls.&lt;/p&gt;
+
+        </summary>
+    </entry>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75983186</id>
+        <re:rank scheme="https://stackoverflow.com">3</re:rank>
+        <title type="text">Install &amp; update a Perl module as "universal" (x86_64, arm64)?</title>
+            <category scheme="https://stackoverflow.com/tags" term="macos"/>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="x86-64"/>
+            <category scheme="https://stackoverflow.com/tags" term="cpan"/>
+            <category scheme="https://stackoverflow.com/tags" term="apple-silicon"/>
+        <author>
+            <name>l --marc l</name>
+            <uri>https://stackoverflow.com/users/3103448</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75983186/install-update-a-perl-module-as-universal-x86-64-arm64"/>
+        <published>2023-04-11T06:59:38Z</published>
+        <updated>2023-04-13T06:21:24Z</updated>
+        <summary type="html">
+            &lt;p&gt;Is is possible to install and update Perl (CPAN) modules with universal (x86_64, arm64) architecture support? If yes, then how?&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;background&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;On an arm-based macOS computer, a Perl CPAN module can be installed for exactly one designated architecture as follows:&lt;/p&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;sudo cpan -i Encode
+### equivalent since `-arm64` is the native processor in this situation:
+sudo arch -arm64 cpan -i Encode
+
+file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
+#     Mach-O 64-bit bundle arm64
+
+sudo arch -x86_64 cpan -i Encode
+
+file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
+#     Mach-O 64-bit bundle x86_64
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Notice, however,  &lt;code&gt;perl&lt;/code&gt; itself is a &amp;quot;universal binary&amp;quot;:&lt;/p&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;file /usr/bin/perl
+
+# /usr/bin/perl: Mach-O universal binary with 2 architectures: 
+#    [x86_64:Mach-O 64-bit executable x86_64] 
+#    [arm64e:Mach-O 64-bit executable arm64e]
+# /usr/bin/perl (for architecture x86_64):  
+#     Mach-O 64-bit executable x86_64
+# /usr/bin/perl (for architecture arm64e):  
+#     Mach-O 64-bit executable arm64e
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;The XOR of either one architecture or the other presents a conflict when native and non-native applications share the same Perl dependency.&lt;/em&gt; For example, &lt;a href="https://wiki.gnucash.org/wiki/Online_Quotes#Installing_Finance::Quote_on_macOS" rel="nofollow noreferrer"&gt;GnuCash Finance::Quote&lt;/a&gt; &lt;em&gt;does not&lt;/em&gt; run on natively on Arm while &lt;a href="https://www.tug.org/mactex/" rel="nofollow noreferrer"&gt;MacTeX LaTeX Live Update&lt;/a&gt; can run natively on either Intel or Arm processors. Both applications use the &lt;a href="https://metacpan.org/pod/Encode" rel="nofollow noreferrer"&gt;Pearl Encode module&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;The application log error message will be one of the following if the required architecture version is not found:&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;'/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;blockquote&gt;
+&lt;p&gt;'/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle' (mach-o file, but is an incompatible architecture (have 'x86_64', need 'arm64'))&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr /&gt;
+&lt;p&gt;Note: A workaround for running the applications is to install the common Perl module dependancy for the &lt;code&gt;x86_64&lt;/code&gt; architecture, and then run the universal capable application in Rosetta2 (x86_64) mode.&lt;/p&gt;
+&lt;hr /&gt;
+&lt;h4&gt;Additional Findings&lt;/h4&gt;
+&lt;p&gt;&lt;strong&gt;cc option '-bundle'&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;cc -bundle&lt;/code&gt; was found in the saved install log.&lt;/p&gt;
+&lt;pre class="lang-text prettyprint-override"&gt;&lt;code&gt;rm -f blib/arch/auto/Encode/Encode.bundle
+cc  -bundle -undefined dynamic_lookup  Encode.o def_t.o encengine.o  -o blib/arch/auto/Encode/Encode.bundle 
+chmod 755 blib/arch/auto/Encode/Encode.bundle
+…
+Manifying 18 pod documents
+Files found in blib/arch: installing files in blib/lib into architecture dependent library tree
+Installing /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;However, &lt;code&gt;man cc&lt;/code&gt; and &lt;code&gt;cc --help&lt;/code&gt; do not provide any developer information about a &lt;code&gt;-bundle&lt;/code&gt; option for the cc clang LLVM compiler. So, it's not clear what &lt;code&gt;-bundle&lt;/code&gt; is actually doing, or how a Perl novice might use this piece of information.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;lipo&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;It would appear that the &amp;quot;safest way to build Universal binaries is to compile the modules separately and then use &lt;code&gt;lipo&lt;/code&gt; to merge the resulting &lt;code&gt;.bundle&lt;/code&gt; files.&amp;quot; See: &lt;a href="https://metacpan.org/dist/ExtUtils-FakeConfig/source/lib/Config_u.pm" rel="nofollow noreferrer"&gt;meta::cpan Config_u.pm&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;The Apple article &lt;a href="https://developer.apple.com/documentation/apple-silicon/building-a-universal-macos-binary" rel="nofollow noreferrer"&gt;&amp;quot;Building a Universal macOS Binary&amp;quot;&lt;/a&gt; provides a such multi-step example:&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;The following example shows a makefile that compiles a single-source file twice—once for each architecture. It then creates a universal binary by merging the resulting executable files together with the &lt;code&gt;lipo&lt;/code&gt; tool.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;pre class="lang-makefile prettyprint-override"&gt;&lt;code&gt;x86_app: main.c
+    $(CC) main.c -o x86_app -target x86_64-apple-macos10.12
+arm_app: main.c
+    $(CC) main.c -o arm_app -target arm64-apple-macos11
+universal_app: x86_app arm_app
+    lipo -create -output universal_app x86_app arm_app
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;&lt;code&gt;lipo&lt;/code&gt; requires the individual architecture files as inputs to &lt;code&gt;-create&lt;/code&gt; the universal file.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;file Encode.bundle&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;A search and review for all &lt;code&gt;Encode.bundle&lt;/code&gt; files found a mixture of universal and non-universal binaries.&lt;/p&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;find / -name &amp;quot;Encode.bundle&amp;quot;
+
+file /Applications/FreeCAD_0.20.app/Contents/Resources/lib/perl5/5.32/core_perl/auto/Encode/Encode.bundle
+file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+file /System/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+file /System/Library/Perl/5.34/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+file /Users/USERNAME/.cpan/build/Encode-3.19-0/blib/arch/auto/Encode/Encode.bundle
+
+# /Applications/FreeCAD_0.20.app/…/core_perl/auto/Encode/Encode.bundle: 
+#     Mach-O 64-bit bundle x86_64
+
+# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle: 
+#     Mach-O 64-bit bundle x86_64
+
+# /System/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle: 
+#     Mach-O universal binary with 2 architectures: 
+#         [x86_64:Mach-O 64-bit bundle x86_64] 
+#         [arm64e:Mach-O 64-bit bundle arm64e]
+
+# /System/Library/Perl/5.34/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
+#     Mach-O universal binary with 2 architectures: 
+#         [x86_64:Mach-O 64-bit bundle x86_64]
+#         [arm64e:Mach-O 64-bit bundle arm64e]
+
+# /Users/USERNAME/.cpan/build/Encode-3.19-0/blib/arch/auto/Encode/Encode.bundle: 
+#     Mach-O 64-bit bundle x86_64
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;observations:&lt;/em&gt;&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;file /System/Library/Perl/…Encode.bundle&lt;/code&gt; shows that universal binary use does indeed exist for Pearl.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;file /Library/Perl/…Encode.bundle&lt;/code&gt; indicate that a user install and/or update may be masking the universal &lt;code&gt;/System/Library/Perl/…Encode.bundle&lt;/code&gt; from shared application use.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;strong&gt;objectives&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;Ideally, an overall solution would:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;be generally enough to not require modification of each individual module which gets added.&lt;/li&gt;
+&lt;li&gt;work for both an initial module installation and any subsequent updates.&lt;/li&gt;
+&lt;li&gt;does not create dependency conflicts with in the Perl installation.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;strong&gt;possible approaches&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;Whether implicitly or expressly invoked, &lt;code&gt;lipo&lt;/code&gt; appear to be needed to create the univeral binary.&lt;/p&gt;
+&lt;p&gt;Just thinking out-loud about some approach directions:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;modify the Perl make file? (how would one safely do this? is this a practical approach?)&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;create an updated version of &lt;a href="https://metacpan.org/pod/Config_u" rel="nofollow noreferrer"&gt;Config_u&lt;/a&gt;?&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;perl -MConfig_u Makefile.PL
+&lt;/code&gt;&lt;/pre&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;have parallel &lt;code&gt;/Perl/arm64/…&lt;/code&gt; and &lt;code&gt;/Perl/x86_64/…&lt;/code&gt; trees which are then &lt;code&gt;lipo&lt;/code&gt; merged into some &lt;code&gt;/Perl/some_universal_version/…&lt;/code&gt; via a script.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;Could this be a easy as &lt;code&gt;sudo arch -x86_64 -arm64 -arm64e cpan -i Encode&lt;/code&gt;?&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+
+        </summary>
+    </entry>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/76002027</id>
+        <re:rank scheme="https://stackoverflow.com">1</re:rank>
+        <title type="text">Getting blank screen in Perl CGI when it does some pre-processing and spinner is shown much later</title>
+            <category scheme="https://stackoverflow.com/tags" term="javascript"/>
+            <category scheme="https://stackoverflow.com/tags" term="html"/>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="cgi"/>
+        <author>
+            <name>Manoj Agarwal</name>
+            <uri>https://stackoverflow.com/users/1844133</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/76002027/getting-blank-screen-in-perl-cgi-when-it-does-some-pre-processing-and-spinner-is"/>
+        <published>2023-04-13T05:48:06Z</published>
+        <updated>2023-04-13T05:48:06Z</updated>
+        <summary type="html">
+            &lt;p&gt;I have added a spinner in Perl CGI script that is shown when the page gets loaded using onload() event.  Before the page loads, it has to do some pre-processing to generate the results to be shown on the screen. For that duration a blank screen is shown and much later the spinner pops up.  How to show the spinner before the pre-processing starts so that blank screen is never shown?&lt;/p&gt;
+&lt;p&gt;The code towards spinner is:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;#!/usr/bin/perl
+
+Database processing....
+
+    print &amp;lt;&amp;lt;END_HTML;
+    &amp;lt;!DOCTYPE html&amp;gt;
+    &amp;lt;html&amp;gt;
+    &amp;lt;head&amp;gt;
+        &amp;lt;script type=&amp;quot;text/javascript&amp;quot;&amp;gt;
+        function showSpinnerTop() {
+                document.getElementById('spinner_top').style.display = 'inline';
+        }
+        
+        function hideSpinnerTop() {
+                document.getElementById('spinner_top').style.display = 'none';
+        }
+        &amp;lt;/script&amp;gt;
+    &amp;lt;/head&amp;gt;  
+        
+    &amp;lt;body onLoad=&amp;quot;showSpinnerTop();&amp;quot;&amp;gt;
+            &amp;lt;div id=&amp;quot;spinner_top&amp;quot; style=&amp;quot;display: none;&amp;quot;&amp;gt;
+            &amp;lt;img class=&amp;quot;centered&amp;quot; src=&amp;quot;spinner.gif&amp;quot; height=&amp;quot;20px&amp;quot; width=&amp;quot;20px&amp;quot;&amp;gt;
+            &amp;lt;p class=&amp;quot;centered&amp;quot; style=&amp;quot;top:53%&amp;quot;&amp;gt;Updating...&amp;lt;/p&amp;gt;
+            &amp;lt;/div&amp;gt;
+    &amp;lt;/body&amp;gt;
+    &amp;lt;/html&amp;gt;
+END_HTML
+&lt;/code&gt;&lt;/pre&gt;
+
+        </summary>
+    </entry>
+  <entry>
+    <title>PWC212 - Jumping Letters</title>
+    <link rel="alternate" href="https://github.polettix.it/ETOOBUSY/2023/04/13/pwc212-jumping-letters/" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml"><p><strong>TL;DR</strong></p>
+
+<blockquote>
+  <p>Here we are with <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-212/#TASK1">TASK #1</a> from <a href="https://theweeklychallenge.org/">The Weekly Challenge</a>
+<a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-212/">#212</a>. Enjoy!</p>
+</blockquote>
+
+<h1 id="the-challenge">The challenge</h1>
+
+<blockquote>
+  <p>You are given a word having alphabetic characters only, and a list of
+positive integers of the same length</p>
+
+  <p>Write a script to print the new word generated after jumping forward each
+letter in the given word by the integer in the list. The given list would
+have exactly the number as the total alphabets in the given word.</p>
+
+  <p><strong>Example 1</strong></p>
+
+  <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Input: $word = 'Perl' and @jump = (2,22,19,9)
+Output: Raku
+
+'P' jumps 2 place forward and becomes 'R'.
+'e' jumps 22 place forward and becomes 'a'. (jump is cyclic i.e. after 'z' you go back to 'a')
+'r' jumps 19 place forward and becomes 'k'.
+'l' jumps 9 place forward and becomes 'u'.
+</code></pre></div>  </div>
+
+  <p><strong>Example 2</strong></p>
+
+  <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Input: $word = 'Raku' and @jump = (24,4,7,17)
+Output: 'Perl'
+</code></pre></div>  </div>
+</blockquote>
+
+<h1 id="the-questions">The questions</h1>
+
+<p>One thing that is missing in the <em>text</em> is the behaviour upon going
+off-edge, i.e. cycling back to either <code class="language-plaintext highlighter-rouge">a</code> or <code class="language-plaintext highlighter-rouge">A</code> (depending on the letter’s
+case). This is later explained in the first example, <em>although</em> it
+techically only covers lowercase letters, and nothing is said about upper
+case. The second example seems to confirm this approach for uppercase
+letters too.</p>
+
+<h1 id="the-solution">The solution</h1>
+
+<p>There are two main <em>things</em> going on here:</p>
+
+<ul>
+  <li>lowercase and uppercase letters have to be dealt with separately;</li>
+  <li>jump operations have to wrap when going off-edge.</li>
+</ul>
+
+<p>The first issue will require us to tell the difference, which we can do by
+comparing the <code class="language-plaintext highlighter-rouge">ord</code> of the character (i.e. its numerical value according to
+ASCII) against that of the letter <code class="language-plaintext highlighter-rouge">a</code>:</p>
+
+<ul>
+  <li>if greater or equal, it’s a lowercase letter;</li>
+  <li>otherwise, it’s uppercase.</li>
+</ul>
+
+<p>This leverages an <em>offline knowledge</em> about the values for those two base
+letters, of course.</p>
+
+<p>The second issue can be addressed by summing the jump and resetting to the
+respective base for uppercase or lowercase letters as applicable. This
+assumes that letters are consecutive and contiguous, which is true in ASCII.</p>
+
+<p>All in all, if we’re on some system that <em>does not</em> adopt ASCII, the
+solution below will fail miserably.</p>
+
+<p><a href="https://raku.org/">Raku</a> first:</p>
+
+<pre><code class="language-raku">#!/usr/bin/env raku
+use v6;
+sub MAIN (*@jumps) {
+   @jumps = 'Perl', 2, 22, 19, 9 unless @jumps;
+   my $word = @jumps.shift;
+   put jumping-letters($word, @jumps);
+}
+
+sub jumping-letters ($word, @jumps) {
+   state @bases = 'A'.ord, 'a'.ord;
+   ($word.comb Z @jumps).map(-&gt; ($c, $j) {
+      my $old = $c.ord;
+      my $base = @bases[$old &gt;= @bases[1] ?? 1 !! 0];
+      my $new = $base + (($old - $base + $j) % 26);
+      $new.chr;
+   }).join('');
+}
+</code></pre>
+
+<p><a href="https://www.perl.org/">Perl</a> is the usual translation, with a bit less of sophistication:</p>
+
+<div class="language-perl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">#!/usr/bin/env perl</span>
+<span class="k">use</span> <span class="nv">v5</span><span class="mf">.24</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
+<span class="k">use</span> <span class="nv">experimental</span> <span class="p">'</span><span class="s1">signatures</span><span class="p">';</span>
+
+<span class="k">my</span> <span class="p">(</span><span class="nv">$word</span><span class="p">,</span> <span class="nv">@jumps</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@ARGV</span> <span class="p">?</span> <span class="nv">@ARGV</span> <span class="p">:</span> <span class="sx">qw&lt; Perl 2 22 19 9 &gt;</span><span class="p">;</span>
+<span class="nv">say</span> <span class="nv">jumping_letters</span><span class="p">(</span><span class="nv">$word</span><span class="p">,</span> <span class="nv">@jumps</span><span class="p">);</span>
+
+<span class="k">sub </span><span class="nf">jumping_letters</span> <span class="p">($word, @jumps) {</span>
+   <span class="nv">state</span> <span class="nv">$bases</span> <span class="o">=</span> <span class="p">[</span><span class="nb">ord</span><span class="p">('</span><span class="s1">A</span><span class="p">'),</span> <span class="nb">ord</span><span class="p">('</span><span class="s1">a</span><span class="p">')];</span>
+   <span class="nb">join</span> <span class="p">'',</span> <span class="nb">map</span> <span class="p">{</span>
+      <span class="k">my</span> <span class="nv">$old</span> <span class="o">=</span> <span class="nb">ord</span><span class="p">(</span><span class="nb">substr</span><span class="p">(</span><span class="nv">$word</span><span class="p">,</span> <span class="vg">$_</span><span class="p">,</span> <span class="mi">1</span><span class="p">));</span>
+      <span class="k">my</span> <span class="nv">$base</span> <span class="o">=</span> <span class="nv">$bases</span><span class="o">-&gt;</span><span class="p">[</span><span class="nv">$old</span> <span class="o">&gt;=</span> <span class="nv">$bases</span><span class="o">-&gt;</span><span class="p">[</span><span class="mi">1</span><span class="p">]];</span>
+      <span class="k">my</span> <span class="nv">$new</span> <span class="o">=</span> <span class="nv">$base</span> <span class="o">+</span> <span class="p">((</span><span class="nv">$old</span> <span class="o">-</span> <span class="nv">$base</span> <span class="o">+</span> <span class="nv">$jumps</span><span class="p">[</span><span class="vg">$_</span><span class="p">])</span> <span class="o">%</span> <span class="mi">26</span><span class="p">);</span>
+      <span class="nb">chr</span><span class="p">(</span><span class="nv">$new</span><span class="p">);</span>
+   <span class="p">}</span> <span class="mi">0</span> <span class="o">..</span> <span class="nv">$#jumps</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>What should we do to remove the dependency on ASCII encoding? I have a few
+ideas, but the simpler one is to pre-build two arrays, one for lowercase
+letters and the other one for uppercase ones, to be used both for figuring
+out the case and doing the whole jump trick. Something along the lines of
+the following <strong>untested</strong> <a href="https://raku.org/">Raku</a> code:</p>
+
+<pre><code class="language-raku">sub jump-letter ($letter, $jump) {
+    state @cases = 'abcdefghijklmnopqrstuvwxyz',
+                   'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    for @cases -&gt; $case {
+        my $old = $case.index($letter);
+        next if $old &lt; 0;
+        my $new = ($old + $jump) % $case.chars;
+        return $case.substr($new, 1);
+    }
+}
+</code></pre>
+
+<p>Stay safe!</p>
+
+</div>
+    </content>
+    <id>https://github.polettix.it/ETOOBUSY/2023/04/13/pwc212-jumping-letters/</id>
+    <published>2023-04-13T06:00:00+02:00</published>
+    <updated>2023-04-13T06:00:00+02:00</updated>
+    <category term="the weekly challenge"/>
+    <category term="Perl"/>
+    <category term="RakuLang"/>
+  </entry>
   <entry xmlns:media="http://search.yahoo.com/mrss/">
     <author>
       <name>/u/PerlRaku</name>
@@ -128,104 +565,6 @@ hopefulMatch = 'verbose!' =&amp;gt; $VAR1 = [
 &lt;p&gt;No.  I was using a regex for syntax checking and got carried away.&lt;/p&gt;
 &lt;p&gt;I learned a good deal, though.  I hope moderators see fit to keep this post as a cautionary tale.&lt;/p&gt;
 &lt;p&gt;Everyone deserves points on this one, and can claim that they were robbed, citing this paragraph.  @Schwern gets the points for being first.  Thanks.&lt;/p&gt;
-
-        </summary>
-    </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75999522</id>
-        <re:rank scheme="https://stackoverflow.com">0</re:rank>
-        <title type="text">Perl Mojolicious, what's the correct way to render a response from a Promise?</title>
-            <category scheme="https://stackoverflow.com/tags" term="rest"/>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-            <category scheme="https://stackoverflow.com/tags" term="promise"/>
-            <category scheme="https://stackoverflow.com/tags" term="concurrency"/>
-            <category scheme="https://stackoverflow.com/tags" term="mojolicious"/>
-        <author>
-            <name>h q</name>
-            <uri>https://stackoverflow.com/users/2035207</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75999522/perl-mojolicious-whats-the-correct-way-to-render-a-response-from-a-promise"/>
-        <published>2023-04-12T20:23:22Z</published>
-        <updated>2023-04-12T20:23:22Z</updated>
-        <summary type="html">
-            &lt;p&gt;In Mojolicious, what's the correct way to render a response from a Promise? In my code below, I get:&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;[2023-04-12] [trace] Template &amp;quot;example/search.html.ep&amp;quot; not found
-[2023-04-12] [trace] Nothing has been rendered, expecting delayed response
-&lt;/code&gt;&lt;/pre&gt;
-&lt;ol&gt;
-&lt;li&gt;Why is it looking for &lt;code&gt;example/search.html.ep&lt;/code&gt;? I didn't ask for it.&lt;/li&gt;
-&lt;li&gt;I am rendering content... Mojo couldn't wait?&lt;/li&gt;
-&lt;/ol&gt;
-&lt;p&gt;My sample app has 3 files:&lt;/p&gt;
-&lt;h3&gt;1. &lt;code&gt;script/my_app&lt;/code&gt;&lt;/h3&gt;
-&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;#!/usr/bin/env perl
-
-use strict;
-use warnings;
-
-use Mojo::File qw(curfile);
-use lib curfile-&amp;gt;dirname-&amp;gt;sibling('lib')-&amp;gt;to_string;
-use Mojolicious::Commands;
-
-Mojolicious::Commands-&amp;gt;start_app('MyApp');
-&lt;/code&gt;&lt;/pre&gt;
-&lt;h3&gt;2. &lt;code&gt;lib/MyApp.pm&lt;/code&gt;&lt;/h3&gt;
-&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;package MyApp;
-use Mojo::Base 'Mojolicious', -signatures;
-
-sub startup ($self) {
-    $self-&amp;gt;secrets('s3cret');
-    my $r = $self-&amp;gt;routes;
-    $r-&amp;gt;get('/')-&amp;gt;to('Example#index');
-    $r-&amp;gt;post('/')-&amp;gt;to('Example#search');
-}
-
-1;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;h3&gt;3. &lt;code&gt;lib/MyApp/Controller/Example.pm&lt;/code&gt;&lt;/h3&gt;
-&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;package MyApp::Controller::Example;
-use Mojo::Base 'Mojolicious::Controller', -signatures;
-
-sub index ($self)
-{
-    return $self-&amp;gt;render(inline =&amp;gt; '&amp;lt;html&amp;gt;&amp;lt;body&amp;gt;&amp;lt;form method=&amp;quot;post&amp;quot;&amp;gt;&amp;lt;textarea name=&amp;quot;numbers&amp;quot; maxlength=&amp;quot;11&amp;quot;&amp;gt;123&amp;lt;/textarea&amp;gt;&amp;lt;button type=&amp;quot;submit&amp;quot;&amp;gt;Go&amp;lt;/button&amp;gt;&amp;lt;/form&amp;gt;&amp;lt;/body&amp;gt;&amp;lt;/html&amp;gt;');
-}
-
-sub search ($self)
-{
-    my $v = $self-&amp;gt;validation;
-    $v-&amp;gt;required(&amp;quot;numbers&amp;quot;);
-    return $self-&amp;gt;render(text=&amp;gt;&amp;quot;Validation Error&amp;quot;) if $v-&amp;gt;has_error;
-    my $numbers = $v-&amp;gt;param(&amp;quot;numbers&amp;quot;);
-    my @numbers = split(/\r?\n/, $numbers);
-
-    Mojo::Promise
-    -&amp;gt;map(
-    {concurrency =&amp;gt; 2},
-    sub {
-        $self-&amp;gt;ua-&amp;gt;get_p(&amp;quot;https://httpbin.org/delay/1?q=$_&amp;quot; =&amp;gt; {'api-key'=&amp;gt;'shhh'});
-    }, @numbers)
-    -&amp;gt;then(
-    sub{
-        my @results = @_;
-        my @json = map { $_-&amp;gt;[0]-&amp;gt;res-&amp;gt;json } @results;
-        return $self-&amp;gt;render(json =&amp;gt; \@json);
-    })
-    -&amp;gt;catch(
-    sub {
-        my $err = shift;
-        return $self-&amp;gt;render(text =&amp;gt; $err);
-    })
-    -&amp;gt;wait;
-    #return $self-&amp;gt;render(text =&amp;gt; &amp;quot;This shall result is 'Unhandled rejected promise: A response has already been rendered'&amp;quot;);
-}
-
-1;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;To run the app, I do:&lt;/p&gt;
-&lt;pre class="lang-bash prettyprint-override"&gt;&lt;code&gt;morbo script/my_app
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;then navigate to &lt;a href="http://localhost:3000" rel="nofollow noreferrer"&gt;&lt;code&gt;http://localhost:3000&lt;/code&gt;&lt;/a&gt; and post the form. Multiple lines will result in concurrent calls.&lt;/p&gt;
 
         </summary>
     </entry>
@@ -497,68 +836,6 @@ for (my $k = 0; $k &lt;= $#results; $k++) {
       &lt;pre style='white-space:pre-wrap;width:81ex'&gt;perl5376delta - Remove erroneous hyphen (fixes #21014)&lt;/pre&gt;
     </content>
   </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75990100</id>
-        <re:rank scheme="https://stackoverflow.com">2</re:rank>
-        <title type="text">Find minimum and maximum values in a hash</title>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-            <category scheme="https://stackoverflow.com/tags" term="hashmap"/>
-        <author>
-            <name>Callie</name>
-            <uri>https://stackoverflow.com/users/9788900</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75990100/find-minimum-and-maximum-values-in-a-hash"/>
-        <published>2023-04-11T21:00:26Z</published>
-        <updated>2023-04-12T08:43:37Z</updated>
-        <summary type="html">
-            &lt;p&gt;I have a hash which stores strings as keys and their occurrence as values.&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;$VAR1 = {
-          'ABCD' =&amp;gt; 2,
-          'EFGH' =&amp;gt; 7,
-          'IJKL' =&amp;gt; 17,
-          'MNOP' =&amp;gt; 2,
-           'OPMN' =&amp;gt; 300,
-           'QRST' =&amp;gt; 300,
-           'DEAC' =&amp;gt; 300
-}
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;I want to find minimum and maximum of the values for this hash. Eg min = 2 and max = 300&lt;/p&gt;
-&lt;p&gt;I tried following code which gave error &lt;code&gt;Can't use string (&amp;quot;17&amp;quot;) as an ARRAY ref while &amp;quot;strict refs&amp;quot; in use at&lt;/code&gt;&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;$minAssigned = min(@{$countPat{$pat4C}});
-
-$maxAssigned = max(@{$countPat{$pat4C}});
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;How can I resolve this error. Also once I have these numbers I want to loop through the values of the same hash minAssigned to maxAssigned times and print the total occurrence of the values. For example the value 2 occurs 2 times, Value 17 occurs 1 time, value 300 occurs 3 times.&lt;/p&gt;
-
-        </summary>
-    </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75874475</id>
-        <re:rank scheme="https://stackoverflow.com">0</re:rank>
-        <title type="text">How do I get the current year with Perl?</title>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-        <author>
-            <name>Fontane</name>
-            <uri>https://stackoverflow.com/users/16726223</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75874475/how-do-i-get-the-current-year-with-perl"/>
-        <published>2023-03-29T07:46:27Z</published>
-        <updated>2023-04-12T06:23:49Z</updated>
-        <summary type="html">
-            &lt;p&gt;in a script, the variables are defined with &amp;quot;my&amp;quot;.&lt;/p&gt;
-&lt;p&gt;I now have the variable&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;my $timestamp = time();
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;inserted and would now like to output the year.&lt;/p&gt;
-&lt;p&gt;With&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;my $timestamp = time();
-my $year=$timestamp;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;the timestamp is displayed correctly in the &lt;code&gt;print&lt;/code&gt; section with &lt;code&gt;$year&lt;/code&gt;.&lt;/p&gt;
-&lt;p&gt;How do I have to define &lt;code&gt;$year&lt;/code&gt; so that the date, e.g. &lt;code&gt;date(Y)&lt;/code&gt; is output?&lt;/p&gt;
-
-        </summary>
-    </entry>
   <entry>
     <title>Technical Log of Open Source Contribution: Quine in Perl</title>
     <link rel="alternate" href="https://medium.com/@gustavohigueram/technical-log-of-open-source-contribution-quine-in-perl-6d9b5c47bae1?source=rss------perl-5" type="text/html"/>
@@ -2466,109 +2743,6 @@ Build date: 2023-04-08 19:30:39 GMT&lt;/p&gt;
       <gd:image rel="http://schemas.google.com/g/2005#thumbnail" width="16" height="16" src="https://img1.blogblog.com/img/b16-rounded.gif"/>
     </author>
     <thr:total>0</thr:total>
-  </entry>
-  <entry>
-    <title>Romeo time</title>
-    <link rel="alternate" href="https://github.polettix.it/ETOOBUSY/2023/04/08/romeo-time/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p><strong>TL;DR</strong></p>
-
-<blockquote>
-  <p>Some notes about the <code class="language-plaintext highlighter-rouge">time</code> sub-command in <a href="/ETOOBUSY/2023/03/07/fun-with-romeo/">Romeo</a>.</p>
-</blockquote>
-
-<p>As a small note to future me, and to excercise my muscle memory a bit, some
-usage examples on using the <code class="language-plaintext highlighter-rouge">time</code> sub-command.</p>
-
-<p>The main goal is to transform… time across different representations:
-epoch, ISO-8601(ish) strings, Active Directory monstrous integers.</p>
-
-<p>It aims at being useful while not taking itself too seriously, so beware:
-anything before the start of the Unix epoch (<code class="language-plaintext highlighter-rouge">1970-01-01T00:00:00</code>) or
-sufficiently ahead in the future is officially unsupported.</p>
-
-<p>I played a bit with the interface, eventually settling on a <em>dwim</em> default
-where it’s possible to specify the input format directly (defaulting to
-epochs if it’s just a bunch of digits). So…</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ romeo time iso:2023-04-01 1680300000 ad:133247736000000000
-2023-04-01T00:00:00+0200
-2023-04-01T00:00:00+0200
-2023-04-01T00:00:00+0200
-</code></pre></div></div>
-
-<p>As it’s clear, the output defaults to my favourite flavor of ISO-8601
-format. This is in the spirit that most of the time <em>I</em> want to figure out
-what an epoch or an AD time <em>mean</em> in my local time.</p>
-
-<p>It’s possible that some different conversion is needed, though. Especially
-when we’re <em>starting</em> from an ISO-8601 date/datetime, right? It’s of course
-possible to set a differnet target format:</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ romeo time iso:2023-04-01 -t epoch
-1680300000
-
-$ romeo time iso:2023-04-01 -output-format ad
-133247736000000000
-
-# Look! No offset!
-$ romeo time iso:2023-04-01 -t gm
-2023-03-31T22:00:00+0000
-</code></pre></div></div>
-
-<p>There’s also some rudimentary arithmetic capability, where it’s possible to
-add offsets either directly when providing an input:</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ romeo time iso:2023-04-01+2w-1d
-2023-04-14T00:00:00+0200
-</code></pre></div></div>
-
-<p>or using the specific offset option <code class="language-plaintext highlighter-rouge">-D</code>/<code class="language-plaintext highlighter-rouge">--offset</code>:</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ romeo time iso:2023-04-01 -D +2w-1d
-2023-04-14T00:00:00+0200
-</code></pre></div></div>
-
-<p>What’s the difference? Well, the option is applied to all inputs, so it’s
-useful if we want to apply a specific offset to a bunch of input dates:</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ romeo time iso:2023-04-01 1680300000 ad:133247736000000000 -D +2w-1d
-2023-04-14T00:00:00+0200
-2023-04-14T00:00:00+0200
-2023-04-14T00:00:00+0200
-</code></pre></div></div>
-
-<p>The other alternative is more a shorthand to set a specific point in time,
-so to say. This is because there’s more to the <em>do what I mean</em> interface,
-like using words like <code class="language-plaintext highlighter-rouge">now</code>, <code class="language-plaintext highlighter-rouge">today</code>, <code class="language-plaintext highlighter-rouge">yesterday</code>, and <code class="language-plaintext highlighter-rouge">tomorrow</code>:</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ romeo time now today yesterday tomorrow
-2023-04-07T17:51:36+0200
-2023-04-07T00:00:00+0200
-2023-04-06T00:00:00+0200
-2023-04-08T00:00:00+0200
-</code></pre></div></div>
-
-<p>This makes it easy to express <em>the day before yesterday</em> (<a href="https://en.wiktionary.org/wiki/ereyesterday">ereyesterday</a>
-seemed a bit too archaic) or <em>the day after tomorrow</em>:</p>
-
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ romeo time yesterday-1d today-2d today+2d tomorrow+1d
-2023-04-05T00:00:00+0200
-2023-04-05T00:00:00+0200
-2023-04-09T00:00:00+0200
-2023-04-09T00:00:00+0200
-</code></pre></div></div>
-
-<p>OK, I hope this will be a useful refresher… bye bye, future me!</p>
-
-<p>Everyone else stay safe!</p>
-
-</div>
-    </content>
-    <id>https://github.polettix.it/ETOOBUSY/2023/04/08/romeo-time/</id>
-    <published>2023-04-08T06:00:00+02:00</published>
-    <updated>2023-04-08T06:00:00+02:00</updated>
-    <category term="perl"/>
   </entry>
   <entry>
     <title>The Top 3 Worst Programming Languages in March 2023</title>
