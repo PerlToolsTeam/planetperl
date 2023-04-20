@@ -147,6 +147,414 @@
         <div class="col-md-8">
           <div class="card perl-questions-on-stackoverflow" id="card_1">
             <div class="card-header">
+              <h2 class="card-title"><a href="https://stackoverflow.com/questions/76055472/issue-with-perl-scripts-xml">Issue with Perl Scripts / XML</a></h2>
+<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
+
+              <p class="text-right"><small>Published by JeyJim
+ on Thursday 20 April 2023 15:41</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+            <p>I'm fairly new at Perl / XML and i got assign the task to migrate from one server to another some of the perl functionality that we use in our application, i was able to migrate part of it (create and excel file) but i can't get the part to actually parse an excel file done...<br />
+I keep getting this error no matter what modules i installed in my perl/site/lib folder..</p>
+<p>Software error:
+not well-formed (invalid token) at line 1, column 3, byte 3 at C:/Strawberry/perl/site/lib/XML/Parser.pm line 187.
+at C:\inetpub\wwwroot\cgi-bin\carestreamhealth\importParts_test2test.pl line 255.</p>
+<p>This is the file that i'm using to send the parameters to importsParts_test2test.pl</p>
+<pre><code>    #!/usr/bin/perl --
+    use lib qw(.);
+    use CGI qw(:standard);
+    $sessionId = param(&quot;sessionId&quot;);
+    $transactionId = param('bsId');
+    $countryCode = param('countryCode');
+    $quoteNumber = param(&quot;quoteNumber&quot;);
+    $bmiSite = lc(param(&quot;bmiSite&quot;));
+
+    print &quot;Content-type: text/html\n\n&quot;;  
+
+    print &lt;&lt;END_HTML;  
+    &lt;!DOCTYPE html PUBLIC &quot;-//W3C//DTD XHTML 1.0 Strict//EN&quot; &quot;DTD/xhtml1-strict.dtd&quot;&gt;  
+    &lt;html xmlns=&quot;http://www.w3.org/1999/xhtml&quot; xml:lang=&quot;en&quot; lang=&quot;en&quot;&gt;  
+    &lt;head&gt;  
+    &lt;meta http-equiv=&quot;Content-Type&quot; content=&quot;text/html; charset=utf-8&quot; /&gt;  
+    &lt;title&gt;Import Configuration Sheet&lt;/title&gt;  
+    &lt;/head&gt;  
+    &lt;body&gt;  
+    &lt;FORM ACTION=&quot;importParts_test2test.pl&quot; METHOD=&quot;POST&quot; ENCTYPE=&quot;multipart/form-data&quot;&gt;
+    Upload Configuration Sheet: &lt;INPUT TYPE=&quot;file&quot; NAME=&quot;configSheet&quot;&gt;
+    &lt;br&gt;
+    &lt;INPUT TYPE=&quot;submit&quot; NAME=&quot;Submit&quot; VALUE=&quot;Submit Form&quot;&gt;
+    &lt;input name=&quot;bsId&quot; type=&quot;hidden&quot; value=&quot;$transactionId&quot;&gt;&lt;/input&gt;
+    &lt;input name=&quot;sessionId&quot; type=&quot;hidden&quot; value=&quot;$sessionId&quot;&gt;&lt;/input&gt;
+    &lt;input name=&quot;countryCode&quot; type=&quot;hidden&quot; value=&quot;$countryCode&quot;&gt;&lt;/input&gt;
+    &lt;input name=&quot;quoteNumber&quot; type=&quot;hidden&quot; value=&quot;$quoteNumber&quot;&gt;&lt;/input&gt;
+    &lt;input name=&quot;bmiSite&quot; type=&quot;hidden&quot; value=&quot;$bmiSite&quot;&gt;&lt;/input&gt;
+    &lt;/FORM&gt;  
+    &lt;/body&gt;  
+    &lt;/html&gt;  
+    END_HTML
+</code></pre>
+<p>And this is the file that is picking up the parameters</p>
+<pre><code>     #!/usr/bin/perl --
+     ################################################################################
+     # Import Configuration Sheet
+     #################################################################################
+
+     use lib qw(.);
+     use CGI qw(:standard);
+     use CGI::Carp qw(fatalsToBrowser); # redirect error messages to browser output
+
+     use utf8;
+     use Encode;
+
+     use SOAP::Lite;
+     use XML::Twig;
+     use Spreadsheet::ParseExcel;
+     use Text::CSV_XS;
+
+
+     $query = new CGI;  #initialize the test of whether the form ,has been submitted
+
+
+     $sessionId = param(&quot;sessionId&quot;);
+     $bsId = param('bsId');
+     $countryCode = param(&quot;countryCode&quot;);
+     $quoteNumber = param(&quot;quoteNumber&quot;);
+     my $file = param('configSheet') or die(&quot;Please select a file.&quot;);
+     my $bmiSite = lc(param(&quot;bmiSite&quot;));
+     my $successInsert = 1;
+     $emptyString = &quot;&quot;;
+
+     # SOAP Server URL
+     $PROXY = &quot;http://$bmiSite.bigmachines.com/v1_0/receiver&quot;;
+     # Set the filename and send the content type
+     print &quot;Content-Type: text/html\n\n&quot;;
+     my $oExcel = new Spreadsheet::ParseExcel;
+     my $oBook;
+     my $oWkS;
+     my $partsAdded;
+     my $partsAddedDiscount;
+     my $partsAddedGroup;
+     my $partsAddedQty;
+     my $prevGroup;
+     my $partialFailed = 0;
+
+     if($file =~ m/\.xls$/) {   
+     $oBook = $oExcel-&gt;Parse($file) or die(&quot;unable to open file, stopped at&quot;);
+     $oWkS = $oBook-&gt;{Worksheet}[0];
+     }
+     else {
+     print &quot;Unable to read file. Please upload an excel file .xls&quot;;
+     exit(0);
+     }
+
+
+      my $errorMessage = &quot;&quot;;
+
+      if($sessionId eq &quot;Error&quot;) {
+      $errorMessage = $errorMessage.&quot;Error: No Session ID.\n&quot;;
+      }
+      if ($quoteNumber eq &quot;Error&quot; or $quoteNumber eq &quot;&quot;){
+      $errorMessage = $errorMessage.&quot;Error: This action is only available on a valid quote.\n&quot;;
+      }
+
+      if($errorMessage eq &quot;&quot;) {
+        
+       #    Grouping    
+       #    Quantity    
+       #    Catalog Number  
+       #    Price   
+       #    Discount(%)
+       my $counter = 0;
+       #print &quot;maxrow:$oWkS-&gt;{MaxRow}&quot;;
+       foreach $row (1 .. $oWkS-&gt;{MaxRow}) {    
+
+        $counter = $counter + 1;
+    
+        my $groupName = $oWkS-&gt;{Cells}[$row][0]-&gt;{Val};
+    
+        my $catNumberQty = $oWkS-&gt;{Cells}[$row][2]-&gt;{Val};
+        my $catNumber = $oWkS-&gt;{Cells}[$row][3]-&gt;{Val};
+        my $discount = $oWkS-&gt;{Cells}[$row][6]-&gt;{Val};
+    
+        if ($catNumberQty eq &quot;&quot;) { $catNumberQty = 1; }
+        else { $catNumberQty = sprintf(&quot;%d&quot;,$catNumberQty); }
+    
+        if ($discount eq &quot;&quot;) { $discount = 0; }
+        if ($prevGroup ne $groupName) {
+        # call configure API
+        if ($partsAdded ne &quot;&quot;) {                
+            callConfigure($partsAdded,$partsAddedQty, $partsAddedDiscount,$partsAddedGroup);
+        }
+        $partsAdded = &quot;&quot;;
+        $partsAddedDiscount = &quot;&quot;;
+        $partsAddedGroup = &quot;&quot;;
+        $partsAddedQty = &quot;&quot;;    
+        
+        if($catNumber ne &quot;&quot; and $catNumberQty ne &quot;&quot; and $groupName ne &quot;&quot;) { 
+            $partsAdded = $catNumber;
+            $partsAddedDiscount = $discount;
+            $partsAddedGroup = $groupName;
+            $partsAddedQty = $catNumberQty;
+        }
+    }           
+    else {
+        if($catNumber ne &quot;&quot; and $catNumberQty ne &quot;&quot; and $groupName ne &quot;&quot;) {     
+            $partsAdded = $partsAdded.&quot;;&quot;.$catNumber;
+            $partsAddedDiscount = $partsAddedDiscount.&quot;;&quot;.$discount;                
+            $partsAddedQty = $partsAddedQty.&quot;;&quot;.$catNumberQty;
+        }   
+    }   
+    if ($counter == $oWkS-&gt;{MaxRow} and $partsAdded ne &quot;&quot;) {
+        callConfigure($partsAdded,$partsAddedQty, $partsAddedDiscount,$partsAddedGroup);            
+    }
+    $prevGroup = $groupName;        
+}
+
+if ($successInsert) {   
+    print &quot; &quot;;  
+    updateTransaction(&quot;importPartsForConfiguration&quot;);
+    updateTransaction(&quot;_update_line_items&quot;);        
+    
+    if (not $partialFailed) {
+        print &quot;Configuration Sheet imported successfully for transaction $quoteNumber.&quot;;
+    }
+
+    my $refreshPage = qq~
+        &lt;script&gt;
+        if (opener &amp;&amp; !opener.closed) {
+         opener.location = &quot;https://$bmiSite.bigmachines.com/commerce/buyside/document.jsp?document_id=4127156&amp;action_id=4127157&amp;version_id=4575271&amp;document_number=-1&amp;id=$bsId&amp;formaction=performAction&quot;;          
+                
+         opener.focus();
+        }
+        &lt;/script&gt;
+        ~;
+    print $refreshPage;
+}   
+
+   } else {
+    print &quot;Please login in the site and upload the configuration sheet&quot;;
+   exit 0;
+   }
+
+     # Get Line Item Data
+    sub updateTransaction {
+
+     my $actionName = shift;
+     my $s = SOAP::Lite
+     -&gt;ns(&quot;urn:soap.bigmachines.com&quot;,&quot;bm&quot;)
+     -&gt;proxy($PROXY)
+   
+     -&gt;encoding('iso-8859-1')
+     -&gt;envprefix(&quot;soapenv&quot;)
+     -&gt;readable(1)
+      -&gt;on_action( sub { join '#', &quot;urn:soap.bigmachines.com&quot;,&quot;updateTransaction&quot; } ) 
+      -&gt;outputxml('true')
+       ;
+
+      #soapenv:Header content
+      my $envHeader = qq~
+      &lt;bm:userInfo xmlns:bm=&quot;urn:soap.bigmachines.com&quot; soapenv:actor=&quot;http://schemas.xmlsoap.org/soap/actor/next&quot; soapenv:mustUnderstand=&quot;0&quot;&gt;
+      &lt;bm:sessionId&gt;$sessionId&lt;/bm:sessionId&gt;
+      &lt;/bm:userInfo&gt;
+      &lt;bm:category xmlns:bm=&quot;urn:soap.bigmachines.com&quot; soapenv:actor=&quot;http://schemas.xmlsoap.org/soap/actor/next&quot; soapenv:mustUnderstand=&quot;0&quot;&gt;Commerce&lt;/bm:category&gt;
+      &lt;bm:xsdInfo xmlns:bm=&quot;urn:soap.bigmachines.com&quot; soapenv:actor=&quot;http://schemas.xmlsoap.org/soap/actor/next&quot; soapenv:mustUnderstand=&quot;0&quot;&gt;
+       &lt;bm:schemaLocation&gt;https://$bmiSite.bigmachines.com/bmfsweb/$bmiSite/schema/v1_0/commerce/transaction.xsd&lt;/bm:schemaLocation&gt;
+      &lt;/bm:xsdInfo&gt;
+       ~;
+
+
+       my $envBody = qq~
+       &lt;bm:transaction&gt;
+       &lt;bm:id&gt;$bsId&lt;/bm:id&gt;
+       &lt;bm:process_var_name&gt;transaction&lt;/bm:process_var_name&gt;
+       &lt;bm:data_xml&gt;
+       &lt;bm:quote bm:bs_id=&quot;$bsId&quot; bm:data_type=&quot;0&quot;  bm:document_name=&quot;Quote&quot; bm:document_number=&quot;1&quot; bm:document_var_name=&quot;quote&quot;&gt;
+        &lt;bm:status&gt;Pending&lt;/bm:status&gt;
+        &lt;bm:updatedViaImportScript_quote&gt;true&lt;/bm:updatedViaImportScript_quote&gt;
+        &lt;/bm:quote&gt;
+        &lt;/bm:data_xml&gt;
+        &lt;bm:action_data&gt;
+        &lt;bm:action_var_name&gt;$actionName&lt;/bm:action_var_name&gt;
+        &lt;/bm:action_data&gt;
+        &lt;/bm:transaction&gt;
+         ~;
+    
+
+        my $resultXML = $s-&gt;call(&quot;bm:updateTransaction&quot;=&gt;(SOAP::Header-&gt;type('xml' =&gt; $envHeader)-&gt;uri(&quot;urn:soap.bigmachines.com&quot;)-&gt;prefix(&quot;bm&quot;) ,
+                                                                SOAP::Data-&gt;type('xml' =&gt; $envBody)-&gt;uri(&quot;urn:soap.bigmachines.com&quot;)-&gt;prefix(&quot;bm&quot;) 
+                                                                ));
+
+         return &quot;&quot;;
+         }
+
+        sub callConfigure {
+        my $partsAdded = shift;
+        my $partsAddedQty = shift;
+        my $partsAddedDiscount = shift;
+        my $partToUploadGroup = shift;  
+
+        $partToUploadGroup =~ s/\&amp;/&amp;amp;/g; 
+
+        my $s = SOAP::Lite
+        -&gt;ns(&quot;urn:soap.bigmachines.com&quot;,&quot;bm&quot;)
+        -&gt;proxy($PROXY)
+   
+        -&gt;encoding('iso-8859-1')
+        -&gt;envprefix(&quot;soapenv&quot;)
+        -&gt;readable(1)
+        -&gt;on_action( sub { join '#', &quot;urn:soap.bigmachines.com&quot;,&quot;configure&quot; } ) 
+        -&gt;outputxml('true')
+         ;
+
+        #soapenv:Header content
+        my $envHeader = qq~
+          &lt;bm:userInfo xmlns:bm=&quot;urn:soap.bigmachines.com&quot; soapenv:actor=&quot;http://schemas.xmlsoap.org/soap/actor/next&quot; soapenv:mustUnderstand=&quot;0&quot;&gt;
+          &lt;bm:sessionId&gt;$sessionId&lt;/bm:sessionId&gt;
+          &lt;/bm:userInfo&gt;
+          &lt;bm:category xmlns:bm=&quot;urn:soap.bigmachines.com&quot; soapenv:actor=&quot;http://schemas.xmlsoap.org/soap/actor/next&quot; soapenv:mustUnderstand=&quot;0&quot;&gt;Configuration&lt;/bm:category&gt;
+          &lt;bm:xsdInfo xmlns:bm=&quot;urn:soap.bigmachines.com&quot; soapenv:actor=&quot;http://schemas.xmlsoap.org/soap/actor/next&quot; soapenv:mustUnderstand=&quot;0&quot;&gt;
+          &lt;bm:schemaLocation&gt;https://$bmiSite.bigmachines.com/bmfsweb/$bmiSite/schema/v1_0/config/HCIS/manualUpload_manualUpload.xsd&lt;/bm:schemaLocation&gt;
+          &lt;/bm:xsdInfo&gt;
+           ~;                   
+
+
+my $envBody = qq~   
+    &lt;bm:item&gt;
+        &lt;bm:segment&gt;HCIS&lt;/bm:segment&gt;
+        &lt;bm:product_line&gt;manualUpload&lt;/bm:product_line&gt;
+        &lt;bm:model&gt;manualUpload&lt;/bm:model&gt;
+    &lt;/bm:item&gt;
+    &lt;bm:responseIncludes&gt;
+        &lt;bm:price&gt;true&lt;/bm:price&gt;
+        &lt;bm:spare&gt;true&lt;/bm:spare&gt;
+        &lt;bm:bom&gt;true&lt;/bm:bom&gt;
+        &lt;bm:attributeLabel&gt;false&lt;/bm:attributeLabel&gt;
+        &lt;bm:previousValue&gt;false&lt;/bm:previousValue&gt;
+        &lt;bm:displayedValue&gt;false&lt;/bm:displayedValue&gt;
+        &lt;bm:transaction&gt;
+            &lt;bm:process_var_name&gt;transaction&lt;/bm:process_var_name&gt;
+            &lt;bm:document_var_name&gt;quote&lt;/bm:document_var_name&gt;
+            &lt;bm:id&gt;$bsId&lt;/bm:id&gt;
+        &lt;/bm:transaction&gt;   
+    &lt;/bm:responseIncludes&gt;
+    &lt;bm:price_book_var_name&gt;_default_price_book&lt;/bm:price_book_var_name&gt;        
+    &lt;bm:attributes&gt;
+        &lt;bm:attribute bm:_variableName=&quot;partsToUpload&quot; bm:locked=&quot;true&quot;&gt;
+            &lt;bm:value&gt;$partsAdded&lt;/bm:value&gt;
+        &lt;/bm:attribute&gt;
+        &lt;bm:attribute bm:_variableName=&quot;partsToUploadQty&quot; bm:locked=&quot;true&quot;&gt;
+            &lt;bm:value&gt;$partsAddedQty&lt;/bm:value&gt;
+        &lt;/bm:attribute&gt;
+        &lt;bm:attribute bm:_variableName=&quot;partsToUploadDiscount&quot; bm:locked=&quot;true&quot;&gt;
+            &lt;bm:value&gt;$partsAddedDiscount&lt;/bm:value&gt;
+        &lt;/bm:attribute&gt; 
+        &lt;bm:attribute bm:_variableName=&quot;partToUploadGroup&quot; bm:locked=&quot;true&quot;&gt;
+            &lt;bm:value&gt;$partToUploadGroup&lt;/bm:value&gt;
+        &lt;/bm:attribute&gt;             
+    &lt;/bm:attributes&gt;        
+    ~;
+
+    my $resultXML = $s-&gt;call(&quot;bm:configure&quot;=&gt;(SOAP::Header-&gt;type('xml' =&gt; $envHeader)-&gt;uri(&quot;urn:soap.bigmachines.com&quot;)-&gt;prefix(&quot;bm&quot;) ,
+                                                                SOAP::Data-&gt;type('xml' =&gt; $envBody)-&gt;uri(&quot;urn:soap.bigmachines.com&quot;)-&gt;prefix(&quot;bm&quot;) 
+                                                                ));
+
+      my $twig = XML::Twig-&gt;new();
+
+      $twig-&gt;parse($resultXML);
+    
+      $err = $twig-&gt;get_xpath('//bm:fault/bm:exceptionMessage');
+
+
+
+      if($err == 1) {
+       my $failedParts = $twig-&gt;get_xpath('//bm:fault/bm:exceptionMessage', 0)-&gt;text;
+       my @failedPartsArray = split(/\./, $failedParts);
+    
+       print &quot;&lt;p&gt;Upload failed for group $partToUploadGroup. One or more items are no longer valid; please export a current product list and try again.&lt;/p&gt;&quot;;
+       foreach (@failedPartsArray){
+        print $_;
+        print &quot;.&lt;br/&gt;&quot;;
+        }           
+        $partialFailed = 1;         
+        }
+</code></pre>
+<p>I'm at a lost on why this is not working, we have a current instance with the same scripts but running different perl (Active State) and it does work.. Problem with that is that we need to migrate to a windows server 2019 and we are not allow to install active state, we need to use strawberry perl 5.32.1</p>
+<p>any help will be appreciate it</p>
+
+               </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card perl-questions-on-stackoverflow" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://stackoverflow.com/questions/76065371/passing-arguments-from-perl-to-windows-command-prompt">Passing arguments from Perl to Windows Command Prompt</a></h2>
+<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
+
+              <p class="text-right"><small>Published by drmathprog
+ on Thursday 20 April 2023 14:49</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+            <p>I'm trying to execute an .exe file in Windows Command Prompt from Perl.
+I'm using something like</p>
+<pre><code>system($Execute_Program)  
+</code></pre>
+<p><code>$Execute_Program</code> looks like: <code>&quot;Executable Program C:Path\foo1  --output_file c:\Path\foo2&quot;</code></p>
+<p>The &quot;--output_file foo2&quot; format is required by the Windows executable file.
+I get <code>&quot;Error parsing options: Option 'output_file' does not exist&quot;</code>, which I assume is coming from the Windows &quot;shell-like&quot; thing.</p>
+<p>The command line sent from Perl to the Windows Command Prompt is constructed in Perl, not passed to Perl.
+Perl itself is called with no
+How do I get around this?
+Thanks in advance.</p>
+<p>Various versions of building a long string holding the entire Command Prompt and sending it via the System() command.</p>
+
+               </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card perl-questions-on-stackoverflow" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://stackoverflow.com/questions/76052075/difference-between-calling-named-anonymous-function-and-regular-subroutine">Difference between calling named anonymous function and regular subroutine</a></h2>
+<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
+
+              <p class="text-right"><small>Published by Dima
+ on Thursday 20 April 2023 13:05</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text">
+            <p>I'm experimenting with anonymous functions in Perl, and I began to wonder what the difference between calling these two is:</p>
+<pre><code>my $read_file = sub {
+    my ($filename) = @_;
+    my @lines;
+    
+    open my $fh, '&lt;:raw', $filename or die &quot;Can't open file $filename: $!&quot;;
+    while (my $line = &lt;$fh&gt;) {
+        chomp $line;
+        push @lines, $line;
+    }
+    close $fh;
+    return @lines;
+};
+</code></pre>
+<p>And this:</p>
+<pre><code>sub read_file {
+    my ($filename) = @_;
+    my @lines;
+    
+    open my $fh, '&lt;:raw', $filename or die &quot;Can't open file $filename: $!&quot;;
+    while (my $line = &lt;$fh&gt;) {
+        chomp $line;
+        push @lines, $line;
+    }
+    close $fh;
+    return @lines;
+}
+</code></pre>
+
+               </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card perl-questions-on-stackoverflow" id="card_4">
+            <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76060678/perl-unexpected-behavior-iterating-thru-an-array-foreach-r-a-if-iterato">Perl - Unexpected behavior: Iterating thru an array &quot;foreach $r (@a)&quot; if iterator $r is changed via regex - the array elements themselves are changed</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
 
@@ -220,7 +628,7 @@ Use of uninitialized value $V in addition (+) at /media/pk/u2win/dev/pkp.db/pkp.
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_2">
+          <div class="card perl-questions-on-stackoverflow" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76060951/read-file-to-array-with-without-adding-newline-to-last-line">Read file to array with &lt;&gt; without adding newline to last line</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -265,7 +673,7 @@ return @ary;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_3">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/04/20/pwc213-fun-sort/">PWC213 - Fun Sort</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -367,31 +775,7 @@ once. This approach preserves the ordering or odd items, so we’re done.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_4">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://stackoverflow.com/questions/76060054/replace-string-in-perl-script">Replace string in perl script</a></h2>
-<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
-
-              <p class="text-right"><small>Published by Mạch Điện Tử
- on Thursday 20 April 2023 02:20</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-            <p>I have a code:</p>
-<pre><code>my $orgstr = &quot;\$map_remain{3}{1}=\&quot;\${prefix}_123456\&quot;;&quot;;
-my $cell   = &quot;\${prefix}_123456&quot;;
-$orgstr =~ s/$cell/abc/;
-print &quot;new str: $orgstr\n&quot;;
-</code></pre>
-<p>i want to replace <strong>${prefix}_123456</strong> to <strong>abc</strong> but this</p>
-<pre><code>$orgstr =~ s/$cell/abc/;
-</code></pre>
-<p>does not do , i dont know why, pleae anyone can help this ?</p>
-
-               </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card r-perl" id="card_5">
+          <div class="card r-perl" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/12scttm/tprc_early_bird_ends_soon/">TPRC Early Bird Ends Soon!</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -403,7 +787,7 @@ print &quot;new str: $orgstr\n&quot;;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_6">
+          <div class="card dev-to-perl" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/jdanproject/open-source-development-course-for-perl-developers-202301-39i9">Open Source Development Course for Perl developers - 2023.01</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -417,7 +801,7 @@ print &quot;new str: $orgstr\n&quot;;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_7">
+          <div class="card perl-commits-on-github" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/2e25d914d700bde5be0d7f5ac4edafdc98532942">
         perldelta - Update modules
@@ -433,7 +817,7 @@ print &quot;new str: $orgstr\n&quot;;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_8">
+          <div class="card perl-commits-on-github" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/11225b5ebdb89beb67bde84ce987cdef63759819">
         perldelta - Remove boilerplate
@@ -449,7 +833,7 @@ print &quot;new str: $orgstr\n&quot;;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_9">
+          <div class="card perl-commits-on-github" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/70d1c248700fa6762ba1084bc0c6e09f7322a831">
         Update perldelta
@@ -465,7 +849,7 @@ print &quot;new str: $orgstr\n&quot;;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_10">
+          <div class="card perl-commits-on-github" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/f4aba3e94259ff47e3ef6daf95b0dec0fe885923">
         Porting/Maintainers.pl - Tidy up CUSTOMIZED files
@@ -478,127 +862,6 @@ print &quot;new str: $orgstr\n&quot;;
      <div class="card-body">       <div class="card-text">
       <pre style='white-space:pre-wrap;width:81ex'>Porting/Maintainers.pl - Tidy up CUSTOMIZED files</pre>
            </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_11">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://stackoverflow.com/questions/75974097/merge-two-regexes-with-variable-number-of-capture-groups">Merge two regexes with variable number of capture groups</a></h2>
-<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
-
-              <p class="text-right"><small>Published by Erik Bennett
- on Wednesday 19 April 2023 19:03</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-            <p>I'm trying to match either</p>
-<pre><code>(\S+)(=)([fisuo])
-</code></pre>
-<p>or</p>
-<pre><code>(\S+)(!)
-</code></pre>
-<p>And then have the results placed in a list (capture groups).  All of my attempts result in extra, unwanted captures.</p>
-<p>Here's some code:</p>
-<pre><code>#!/usr/bin/perl
-#-*- cperl -*-
-# $Id: test7,v 1.1 2023/04/10 02:57:12 bennett Exp bennett $
-#
-
-use strict;
-use warnings;
-use Data::Dumper;
-
-foreach my $k ('debugFlags=s', 'verbose!') {
-    my @v;
-
-    # Below is the offensive looking code.  I was hoping for a regex
-    # which would behave like this:
-
-    if(@v = $k =~ m/^(\S+)(=)([fisuo])$/) {
-      printf STDERR (&quot;clownMatch = '$k' =&gt; %s\n\n&quot;, Dumper(\@v));
-    } elsif(@v = $k =~ m/^(\S+)(!)$/) {
-      printf STDERR (&quot;clownMatch = '$k' =&gt; %s\n\n&quot;, Dumper(\@v));
-    }
-
-    @v = ();
-
-    # This is one of my failed, aspirational matches.  I think I know
-    # WHY it fails, but I don't know how to fix it.
-    
-    if(@v = $k =~ m/^(?:(\S+)(=)([fisuo]))|(?:(\S+)(!))$/) {
-      printf STDERR (&quot;hopefulMatch = '$k' =&gt; %s\n\n&quot;, Dumper(\@v));
-    }
-    printf STDERR &quot;===\n&quot;;
-}
-
-exit(0);
-__END__
-</code></pre>
-<p>Output:</p>
-<pre><code>clownMatch = 'debugFlags=s' =&gt; $VAR1 = [
-          'debugFlags',
-          '=',
-          's'
-        ];
-
-
-hopefulMatch = 'debugFlags=s' =&gt; $VAR1 = [
-          'debugFlags',
-          '=',
-          's',
-          undef,
-          undef
-        ];
-
-
-===
-clownMatch = 'verbose!' =&gt; $VAR1 = [
-          'verbose',
-          '!'
-        ];
-
-
-hopefulMatch = 'verbose!' =&gt; $VAR1 = [
-          undef,
-          undef,
-          undef,
-          'verbose',
-          '!'
-        ];
-
-
-===
-</code></pre>
-<p>There are more details in the code comments.  The output is at the bottom of the code section.  And the '!' character is just that.  I'm not confusing it with some other not.</p>
-<p><strong>Update Mon Apr 10 23:15:40 PDT 2023:</strong></p>
-<p>With the wise input of several readers, it seems that this question decomposes into a few smaller questions.</p>
-<p><strong>Can a regex return a variable number of capture groups?</strong></p>
-<p>I haven't heard one way or the other.</p>
-<p><strong>Should one use a regex in this way, if it could?</strong></p>
-<p>Not without a compelling reason.</p>
-<p><strong>For my purposes, should I use a regex to create what is really a lexical-analyzer/parser?</strong></p>
-<p>No.  I was using a regex for syntax checking and got carried away.</p>
-<p>I learned a good deal, though.  I hope moderators see fit to keep this post as a cautionary tale.</p>
-<p>Everyone deserves points on this one, and can claim that they were robbed, citing this paragraph.  @Schwern gets the points for being first.  Thanks.</p>
-
-               </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_12">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://stackoverflow.com/questions/75976252/run-system-command-in-same-context-of-the-script-itself">Run system command in same context of the script itself</a></h2>
-<a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
-
-              <p class="text-right"><small>Published by IGOR LEVKOVSKY
- on Wednesday 19 April 2023 18:29</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text">
-            <p>I have a script that runs a set of commands and it needs some env variable to be set before running one of the commands. The problem is that system command launches as a separate process, and any env variables that i set there, are not visible for the context that the script runs in. How can I overcome this?</p>
-<pre><code>system(&quot;set WALLET=NO&quot;);
-do some perl commands; #this command needs env variable WALLET=NO to be set
-</code></pre>
-
-               </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3612,7 +3875,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 20 April 2023 12:46 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 20 April 2023 16:40 UTC</address>
             </div>
           </div>
         </div><!-- container -->
