@@ -7,9 +7,369 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-04-25T16:40:34Z</updated>
+  <updated>2023-04-25T20:39:17Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title>Assert Your Environment</title>
+    <link rel="alternate" href="https://blogs.perl.org/users/mikko_koivunalho/2023/04/assert-your-environment.html"/>
+    <id>tag:blogs.perl.org,2023:/users/mikko_koivunalho//2432.11082</id>
+    <published>2023-04-25T23:55:01Z</published>
+    <updated>2023-04-26T00:02:03Z</updated>
+    <author>
+        <name>Mikko Koivunalho</name>
+        <uri>https://metacpan.org/author/MIKKOI</uri>
+    </author>
+    <category term="Introduce-Package" scheme="http://www.sixapart.com/ns/types#category"/>
+    <category term="environment_checking" label="environment_checking" scheme="http://www.sixapart.com/ns/types#tag"/>
+    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/mikko_koivunalho/">
+        <![CDATA[<h1>Env::Dot</h1>
+
+<p>In the category of &#8220;scratching my itch&#8221;.</p>
+
+<h2>Background</h2>
+
+<blockquote>
+  <p>An app’s config is everything that is likely to vary between deploys (staging, production, developer environments, etc).
+<a href="https://12factor.net/config">The Twelve-Factor App</a></p>
+</blockquote>
+
+<p>Storing the often changing parts of configuration in environment variables is
+one of the principles of <a href="https://12factor.net/config">The Twelve-Factor App</a>.</p>
+
+<p>From this principle follows the need to store those environment variables and their values
+in an easily accessible way. Hence, every developer maintains his or her own
+project specific <code>.env</code> files next to the project files in the same directory
+where they are used, for instance, when running locally or testing locally.</p>
+
+<h2>Yet Another Dotenv Solution</h2>
+
+<p>As if we didn&#8217;t have these enough already&#8230;</p>
+
+<p>What is different with this one, except the name <a href="https://metacpan.org/pod/Env::Dot">Env::Dot</a>?</p>
+
+<h3>Flexibility in input</h3>
+
+<ul>
+<li><code>.env</code> files come in two formats: <em>Shell compatible</em> and
+<em>Docker combatible</em>. <code>Env::Dot</code> supports both.</li>
+<li>If no <code>.env</code> file is present, then do nothing.</li>
+<li>If your <code>.env</code> file is located in another path,
+not the current working directory,
+you can use the environment variable
+<code>DOTENV_FILEPATHS</code> to tell where your dotenv file is located.
+You can specify several file paths; just separate
+them by <code>:</code>. <code>Dot::Env</code> will load all the files in the order
+you specify them.</li>
+</ul>
+
+<h3>Flexibility in output</h3>
+
+<ul>
+<li>Just use <code>Env::Dot</code> in your program and your <code>%ENV</code> will grow
+with the variables defined in <code>.env</code> file.</li>
+<li>There is also a command line executable, <code>envdot</code>,
+to read the <code>.env</code> file and write out commands to create
+the environment variables.</li>
+<li>Command <code>envdot</code> can write the env vars in <code>sh</code> (sh/Bash/Zsh),
+<code>csh</code> (C shell/tcsh) and <code>fish</code> (Fish) shell formats.</li>
+<li>Command <code>envdot</code> will by default also export variables but you can prevent this if you don&#8217;t
+want the variables to be present in subshells and programs. This would
+make the variables only local to your current shell.</li>
+</ul>
+
+<h3>Existing Environment Takes Precedence</h3>
+
+<p>Existing environment variables always take precedence to dotenv variables!</p>
+
+<p>A dotenv variable (variable from a file) does not overwrite
+an existing environment variable. This is by design because
+a dotenv file is to augment the environment, not to replace it.</p>
+
+<p>This means that you can override a variable in <code>.env</code> file by creating
+its counterpart in the environment. For instance:</p>
+
+<pre><code>unset VAR
+echo "VAR='Good value'" &gt;&gt; .env
+perl -e 'use Env::Dot; print "VAR:$ENV{VAR}\n";'
+# VAR:Good value
+VAR='Better value'; export VAR
+perl -e 'use Env::Dot; print "VAR:$ENV{VAR}\n";'
+# VAR:Better value
+</code></pre>
+
+<h3>DotEnv File Meta Commands</h3>
+
+<p>The <code>file:</code> commands affect all rows following its use.</p>
+
+<p>The <code>var:</code> commands affect only the subsequent variable definition.
+If there is another <strong>envdot</strong> command, the second overwrites the first
+and default values are applied again.</p>
+
+<h4><code>file:type</code></h4>
+
+<p>Changes how <code>Env::Dot</code> reads lines below from this commands. Default is:</p>
+
+<pre><code># envdot (file:type=shell)
+VAR="value"
+</code></pre>
+
+<p>Other possible value of <code>file:type</code> is <code>plain</code>.
+Docker is using these kinds of <code>.env</code> files.
+Variable name is followed by <code>=</code> and value is the rest
+of the row before linefeed.</p>
+
+<pre><code># envdot (file:type=plain)
+VAR=My var value
+</code></pre>
+
+<h4><code>var:allow_interpolate</code></h4>
+
+<p>By default, when writing variable definitions for the shell,
+every variable is treated as static and surrounded with
+single quotation marks (&#8216;) in Unix shell which means
+shell will read the variable content as is.
+By setting this to <code>1</code> or <code>true</code>, you allow shell
+to interpolate.
+<strong>This meta command is only useful when running <code>envdot</code> command
+to create variable definitions for <code>eval</code> command to read.</strong></p>
+
+<pre><code># envdot (var:allow_interpolate)
+DYNAMIC_VAR="$(pwd)/${ANOTHER_VAR}"
+</code></pre>
+
+<h3>Usage</h3>
+
+<pre><code>use Env::Dot;
+print $ENV{'VAR_DEFINED_IN_DOTENV_FILE'};
+</code></pre>
+
+<h2>Installation</h2>
+
+<p>If you need to use the <code>envdot</code> command in a restricted environment,
+such as a docker image build,
+there is a <a href="https://metacpan.org/pod/fatpack">FatPacked</a> executable ready.
+Usable when using <a href="https://metacpan.org/pod/Env::Dot">CPAN</a> is overkill.</p>
+
+<pre><code>curl -LSs -o envdot https://raw.githubusercontent.com/mikkoi/env-dot/master/envdot.self-contained
+chmod +x ./envdot
+</code></pre>
+
+<p>Or you can do this in a <code>Dockerfile</code>:</p>
+
+<pre><code>RUN curl -LSs -o /usr/local/bin/envdot \
+    https://raw.githubusercontent.com/mikkoi/env-dot/master/envdot.self-contained
+RUN chmod +x /usr/local/bin/envdot
+</code></pre>
+
+<p>There is no extra dependencies outside Perl&#8217;s standard distribution, so <code>envdot</code>
+is as lean as it can be. And Perl, of course, is present in every more or less standard
+Linux distribution.</p>
+]]>
+        
+
+    </content>
+</entry>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/76092519</id>
+        <re:rank scheme="https://stackoverflow.com">2</re:rank>
+        <title type="text">Suppress / catch / trap error message on failed fork open() in Perl</title>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+        <author>
+            <name>DevSolar</name>
+            <uri>https://stackoverflow.com/users/60281</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/76092519/suppress-catch-trap-error-message-on-failed-fork-open-in-perl"/>
+        <published>2023-04-24T13:38:48Z</published>
+        <updated>2023-04-25T20:16:46Z</updated>
+        <summary type="html">
+            &lt;p&gt;Consider:&lt;/p&gt;
+&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+my $command = &amp;quot;nosuchcommand&amp;quot;
+
+my $rc = open( my $fh, &amp;quot;-|&amp;quot;, &amp;quot;$command&amp;quot; );
+
+if ( ! defined( $rc ) )
+{
+    print &amp;quot;My own error message\n&amp;quot;;
+}
+else
+{
+    system( &amp;quot;ps -p $rc&amp;quot; );
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Expected output:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;My own error message
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Observed output:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;Can't exec &amp;quot;nosuchcommand&amp;quot;: No such file or directory at ./mcre line 8.
+My own error message
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;&lt;strong&gt;How can I catch / trap / suppress the error message generated by Perl on a failing open-pipe&lt;/strong&gt; (in favor of my own error handling)?&lt;/p&gt;
+&lt;p&gt;Further observations:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;If I &lt;code&gt;open( my $fh, &amp;quot;-|&amp;quot;, &amp;quot;$command 2&amp;gt;&amp;amp;1&amp;quot; );&lt;/code&gt;, I get the expected output. But in case of &lt;strong&gt;success&lt;/strong&gt; of &lt;code&gt;$command&lt;/code&gt;, I would get the &lt;code&gt;STDERR&lt;/code&gt; of &lt;code&gt;$command&lt;/code&gt; mixed into &lt;code&gt;STDOUT&lt;/code&gt;, and I don't want that.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;If I &lt;code&gt;open( my $fh, &amp;quot;-|&amp;quot;, &amp;quot;$command 2&amp;gt;/dev/null&amp;quot; );&lt;/code&gt;, I get this:&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;pre&gt;&lt;code&gt;    PID TTY          TIME CMD
+  15143 pts/0    00:00:00 sh &amp;lt;defunct&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;So the &lt;em&gt;specific&lt;/em&gt; redirecion of &lt;code&gt;2&amp;gt;/dev/null&lt;/code&gt; (instead of &lt;code&gt;2&amp;gt;&amp;amp;1&lt;/code&gt;) changed the return value of &lt;code&gt;open&lt;/code&gt;... this was somewhat surprising, but is not the core of my question.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;On IPC::Run&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;This has been suggested in two answers by now. I understand that it might be the &amp;quot;correct&amp;quot; answer in the general case, but would &lt;em&gt;really&lt;/em&gt; prefer not to (as &lt;code&gt;IPC::Run&lt;/code&gt; is not an option for me on one very significant target platform that comes without it and does not offer an easy way to install it).&lt;/p&gt;
+
+        </summary>
+    </entry>
+  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
+        <id>https://stackoverflow.com/q/75983186</id>
+        <re:rank scheme="https://stackoverflow.com">3</re:rank>
+        <title type="text">Install &amp; update a Perl module as "universal" (x86_64, arm64)?</title>
+            <category scheme="https://stackoverflow.com/tags" term="macos"/>
+            <category scheme="https://stackoverflow.com/tags" term="perl"/>
+            <category scheme="https://stackoverflow.com/tags" term="x86-64"/>
+            <category scheme="https://stackoverflow.com/tags" term="cpan"/>
+            <category scheme="https://stackoverflow.com/tags" term="apple-silicon"/>
+        <author>
+            <name>l --marc l</name>
+            <uri>https://stackoverflow.com/users/3103448</uri>
+        </author>
+        <link rel="alternate" href="https://stackoverflow.com/questions/75983186/install-update-a-perl-module-as-universal-x86-64-arm64"/>
+        <published>2023-04-11T06:59:38Z</published>
+        <updated>2023-04-25T19:58:06Z</updated>
+        <summary type="html">
+            &lt;p&gt;Is is possible to install and update Perl (CPAN) modules with universal (x86_64, arm64) architecture support? If yes, then how?&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;background&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;On an arm-based macOS computer, a Perl CPAN module can be installed for exactly one designated architecture as follows:&lt;/p&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;sudo cpan -i Encode
+### equivalent since `-arm64` is the native processor in this situation:
+sudo arch -arm64 cpan -i Encode
+
+file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
+#     Mach-O 64-bit bundle arm64
+
+sudo arch -x86_64 cpan -i Encode
+
+file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
+#     Mach-O 64-bit bundle x86_64
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Notice, however,  &lt;code&gt;perl&lt;/code&gt; itself is a &amp;quot;universal binary&amp;quot;:&lt;/p&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;file /usr/bin/perl
+
+# /usr/bin/perl: Mach-O universal binary with 2 architectures: 
+#    [x86_64:Mach-O 64-bit executable x86_64] 
+#    [arm64e:Mach-O 64-bit executable arm64e]
+# /usr/bin/perl (for architecture x86_64):  
+#     Mach-O 64-bit executable x86_64
+# /usr/bin/perl (for architecture arm64e):  
+#     Mach-O 64-bit executable arm64e
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;The XOR of either one architecture or the other presents a conflict when native and non-native applications share the same Perl dependency.&lt;/em&gt; For example, &lt;a href="https://wiki.gnucash.org/wiki/Online_Quotes#Installing_Finance::Quote_on_macOS" rel="nofollow noreferrer"&gt;GnuCash Finance::Quote&lt;/a&gt; &lt;em&gt;does not&lt;/em&gt; run on natively on Arm while &lt;a href="https://www.tug.org/mactex/" rel="nofollow noreferrer"&gt;MacTeX LaTeX Live Update&lt;/a&gt; can run natively on either Intel or Arm processors. Both applications use the &lt;a href="https://metacpan.org/pod/Encode" rel="nofollow noreferrer"&gt;Pearl Encode module&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;The application log error message will be one of the following if the required architecture version is not found:&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;'/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;blockquote&gt;
+&lt;p&gt;'/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle' (mach-o file, but is an incompatible architecture (have 'x86_64', need 'arm64'))&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr /&gt;
+&lt;p&gt;Note: A workaround for running the applications is to install the common Perl module dependancy for the &lt;code&gt;x86_64&lt;/code&gt; architecture, and then run the universal capable application in Rosetta2 (x86_64) mode.&lt;/p&gt;
+&lt;hr /&gt;
+&lt;h4&gt;Additional Findings&lt;/h4&gt;
+&lt;p&gt;&lt;strong&gt;cc option '-bundle'&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;cc -bundle&lt;/code&gt; was found in the saved install log.&lt;/p&gt;
+&lt;pre class="lang-text prettyprint-override"&gt;&lt;code&gt;rm -f blib/arch/auto/Encode/Encode.bundle
+cc  -bundle -undefined dynamic_lookup  Encode.o def_t.o encengine.o  -o blib/arch/auto/Encode/Encode.bundle 
+chmod 755 blib/arch/auto/Encode/Encode.bundle
+…
+Manifying 18 pod documents
+Files found in blib/arch: installing files in blib/lib into architecture dependent library tree
+Installing /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;However, &lt;code&gt;man cc&lt;/code&gt; and &lt;code&gt;cc --help&lt;/code&gt; do not provide any developer information about a &lt;code&gt;-bundle&lt;/code&gt; option for the cc clang LLVM compiler. So, it's not clear what &lt;code&gt;-bundle&lt;/code&gt; is actually doing, or how a Perl novice might use this piece of information.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;lipo&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;It would appear that the &amp;quot;safest way to build Universal binaries is to compile the modules separately and then use &lt;code&gt;lipo&lt;/code&gt; to merge the resulting &lt;code&gt;.bundle&lt;/code&gt; files.&amp;quot; See: &lt;a href="https://metacpan.org/dist/ExtUtils-FakeConfig/source/lib/Config_u.pm" rel="nofollow noreferrer"&gt;meta::cpan Config_u.pm&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;The Apple article &lt;a href="https://developer.apple.com/documentation/apple-silicon/building-a-universal-macos-binary" rel="nofollow noreferrer"&gt;&amp;quot;Building a Universal macOS Binary&amp;quot;&lt;/a&gt; provides a such multi-step example:&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;The following example shows a makefile that compiles a single-source file twice—once for each architecture. It then creates a universal binary by merging the resulting executable files together with the &lt;code&gt;lipo&lt;/code&gt; tool.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;pre class="lang-makefile prettyprint-override"&gt;&lt;code&gt;x86_app: main.c
+    $(CC) main.c -o x86_app -target x86_64-apple-macos10.12
+arm_app: main.c
+    $(CC) main.c -o arm_app -target arm64-apple-macos11
+universal_app: x86_app arm_app
+    lipo -create -output universal_app x86_app arm_app
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;&lt;code&gt;lipo&lt;/code&gt; requires the individual architecture files as inputs to &lt;code&gt;-create&lt;/code&gt; the universal file.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;file Encode.bundle&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;A search and review for all &lt;code&gt;Encode.bundle&lt;/code&gt; files found a mixture of universal and non-universal binaries.&lt;/p&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;find / -name &amp;quot;Encode.bundle&amp;quot;
+
+file /Applications/FreeCAD_0.20.app/Contents/Resources/lib/perl5/5.32/core_perl/auto/Encode/Encode.bundle
+file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+file /System/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+file /System/Library/Perl/5.34/darwin-thread-multi-2level/auto/Encode/Encode.bundle
+file /Users/USERNAME/.cpan/build/Encode-3.19-0/blib/arch/auto/Encode/Encode.bundle
+
+# /Applications/FreeCAD_0.20.app/…/core_perl/auto/Encode/Encode.bundle: 
+#     Mach-O 64-bit bundle x86_64
+
+# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle: 
+#     Mach-O 64-bit bundle x86_64
+
+# /System/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle: 
+#     Mach-O universal binary with 2 architectures: 
+#         [x86_64:Mach-O 64-bit bundle x86_64] 
+#         [arm64e:Mach-O 64-bit bundle arm64e]
+
+# /System/Library/Perl/5.34/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
+#     Mach-O universal binary with 2 architectures: 
+#         [x86_64:Mach-O 64-bit bundle x86_64]
+#         [arm64e:Mach-O 64-bit bundle arm64e]
+
+# /Users/USERNAME/.cpan/build/Encode-3.19-0/blib/arch/auto/Encode/Encode.bundle: 
+#     Mach-O 64-bit bundle x86_64
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;&lt;em&gt;observations:&lt;/em&gt;&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;file /System/Library/Perl/…Encode.bundle&lt;/code&gt; shows that universal binary use does indeed exist for Pearl.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;file /Library/Perl/…Encode.bundle&lt;/code&gt; indicate that a user install and/or update may be masking the universal &lt;code&gt;/System/Library/Perl/…Encode.bundle&lt;/code&gt; from shared application use.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;strong&gt;objectives&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;Ideally, an overall solution would:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;be generally enough to not require modification of each individual module which gets added.&lt;/li&gt;
+&lt;li&gt;work for both an initial module installation and any subsequent updates.&lt;/li&gt;
+&lt;li&gt;does not create dependency conflicts with in the Perl installation.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;strong&gt;possible approaches&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;Whether implicitly or expressly invoked, &lt;code&gt;lipo&lt;/code&gt; appear to be needed to create the univeral binary.&lt;/p&gt;
+&lt;p&gt;Just thinking out-loud about some approach directions:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;modify the Perl make file? (how would one safely do this? is this a practical approach?)&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;create an updated version of &lt;a href="https://metacpan.org/pod/Config_u" rel="nofollow noreferrer"&gt;Config_u&lt;/a&gt;?&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;perl -MConfig_u Makefile.PL
+&lt;/code&gt;&lt;/pre&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;have parallel &lt;code&gt;/Perl/arm64/…&lt;/code&gt; and &lt;code&gt;/Perl/x86_64/…&lt;/code&gt; trees which are then &lt;code&gt;lipo&lt;/code&gt; merged into some &lt;code&gt;/Perl/some_universal_version/…&lt;/code&gt; via a script.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;p&gt;Could this be a easy as &lt;code&gt;sudo arch -x86_64 -arm64 -arm64e cpan -i Encode&lt;/code&gt;?&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+
+        </summary>
+    </entry>
   <entry xmlns:re="http://purl.org/atompub/rank/1.0">
         <id>https://stackoverflow.com/q/76055472</id>
         <re:rank scheme="https://stackoverflow.com">-1</re:rank>
@@ -144,63 +504,47 @@ $ cat -v newname2.csv
     <published>2023-04-25T13:12:27+00:00</published>
     <title>New in Venus 2.50</title>
   </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/76092519</id>
-        <re:rank scheme="https://stackoverflow.com">2</re:rank>
-        <title type="text">Suppress / catch / trap error message on failed fork open() in Perl</title>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-        <author>
-            <name>DevSolar</name>
-            <uri>https://stackoverflow.com/users/60281</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/76092519/suppress-catch-trap-error-message-on-failed-fork-open-in-perl"/>
-        <published>2023-04-24T13:38:48Z</published>
-        <updated>2023-04-25T07:33:43Z</updated>
-        <summary type="html">
-            &lt;p&gt;Consider:&lt;/p&gt;
-&lt;pre class="lang-perl prettyprint-override"&gt;&lt;code&gt;#!/usr/bin/perl
+  <entry>
+    <title>I'll probably resume LaTeX</title>
+    <link rel="alternate" href="https://github.polettix.it/ETOOBUSY/2023/04/25/will-probably-resume-latex/" type="text/html"/>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml"><p><strong>TL;DR</strong></p>
 
-use strict;
-use warnings;
+<blockquote>
+  <p>I’ll probably take a look at <a href="https://www.latex-project.org/">LaTeX</a> after some years.</p>
+</blockquote>
 
-my $command = &amp;quot;nosuchcommand&amp;quot;
+<p>I’m pretty happy with how <a href="https://metacpan.org/pod/PDF::Collage">PDF::Collage</a> is behaving where I’m using it,
+although I sometimes need to tweak the text in the basic templates a bit.</p>
 
-my $rc = open( my $fh, &amp;quot;-|&amp;quot;, &amp;quot;$command&amp;quot; );
+<p>At this point, I have to go back to the document preparation system that I
+used to generate the PDF templates in the first place (it’s a popular and
+closed source document editor), do the tweaking and so forth, just to end up
+thinking that I could have just as well produced the final PDF directly from
+there. I mean, the final result I was aiming to.</p>
 
-if ( ! defined( $rc ) )
-{
-    print &amp;quot;My own error message\n&amp;quot;;
-}
-else
-{
-    system( &amp;quot;ps -p $rc&amp;quot; );
-}
+<p>So, of course, my brain went into yet-another-loop where I think that it
+should be different, probably SVG would work better, what do I really know,
+how can it be that I can’t just use HTML with some specific CSS aimed at
+printing, etc. etc. only to find out that I don’t know <em>anything</em> about the
+topic and I will probably not know about it for the rest of my life.</p>
 
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Expected output:&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;My own error message
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Observed output:&lt;/p&gt;
-&lt;pre&gt;&lt;code&gt;Can't exec &amp;quot;nosuchcommand&amp;quot;: No such file or directory at ./mcre line 8.
-My own error message
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;&lt;strong&gt;How can I catch / trap / suppress the error message generated by Perl on a failing open-pipe&lt;/strong&gt; (in favor of my own error handling)?&lt;/p&gt;
-&lt;p&gt;Further observations:&lt;/p&gt;
-&lt;ul&gt;
-&lt;li&gt;&lt;p&gt;If I &lt;code&gt;open( my $fh, &amp;quot;-|&amp;quot;, &amp;quot;$command 2&amp;gt;&amp;amp;1&amp;quot; );&lt;/code&gt;, I get the expected output. But in case of &lt;strong&gt;success&lt;/strong&gt; of &lt;code&gt;$command&lt;/code&gt;, I would get the &lt;code&gt;STDERR&lt;/code&gt; of &lt;code&gt;$command&lt;/code&gt; mixed into &lt;code&gt;STDOUT&lt;/code&gt;, and I don't want that.&lt;/p&gt;
-&lt;/li&gt;
-&lt;li&gt;&lt;p&gt;If I &lt;code&gt;open( my $fh, &amp;quot;-|&amp;quot;, &amp;quot;$command 2&amp;gt;/dev/null&amp;quot; );&lt;/code&gt;, I get this:&lt;/p&gt;
-&lt;/li&gt;
-&lt;/ul&gt;
-&lt;pre&gt;&lt;code&gt;    PID TTY          TIME CMD
-  15143 pts/0    00:00:00 sh &amp;lt;defunct&amp;gt;
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;So the &lt;em&gt;specific&lt;/em&gt; redirecion of &lt;code&gt;2&amp;gt;/dev/null&lt;/code&gt; (instead of &lt;code&gt;2&amp;gt;&amp;amp;1&lt;/code&gt;) changed the return value of &lt;code&gt;open&lt;/code&gt;... this was somewhat surprising, but is not the core of my question.&lt;/p&gt;
-&lt;p&gt;&lt;strong&gt;On IPC::Run&lt;/strong&gt;&lt;/p&gt;
-&lt;p&gt;This has been suggested in two answers by now. I understand that it might be the &amp;quot;correct&amp;quot; answer in the general case, but would &lt;em&gt;really&lt;/em&gt; prefer not to (as &lt;code&gt;IPC::Run&lt;/code&gt; is not an option for me on one very significant target platform that comes without it and does not offer an easy way to install it).&lt;/p&gt;
+<p>When these loops go full circle, I usually also think about <a href="https://www.latex-project.org/">LaTeX</a>, of
+course. I’m probably <em>just</em> scared about the amount of time that would take
+me to arrive to the <em>almost perfect</em> template, but at that point my worries
+would probably be solved. And I would have something very easy to tweak from
+my beloved command line.</p>
 
-        </summary>
-    </entry>
+<p>Cheers!</p>
+
+</div>
+    </content>
+    <id>https://github.polettix.it/ETOOBUSY/2023/04/25/will-probably-resume-latex/</id>
+    <published>2023-04-25T06:00:00+02:00</published>
+    <updated>2023-04-25T06:00:00+02:00</updated>
+    <category term="latex"/>
+    <category term="pdf"/>
+  </entry>
   <entry xmlns:re="http://purl.org/atompub/rank/1.0">
         <id>https://stackoverflow.com/q/76048997</id>
         <re:rank scheme="https://stackoverflow.com">2</re:rank>
@@ -242,149 +586,6 @@ $scrptlines =~ s/opts\@MainTitle  =.*/opts\@MainTitle  = &amp;quot;MCIN: NODA~C~
 $scrptlines =~/opts@FieldTitle = &amp;quot;mcape&amp;quot;/{n;s\/opts\@MainTitle  =.*/opts@MainTitle  = &amp;quot;MCIN: NODA~C~Valid:&amp;quot; + dystr(it) + &amp;quot;\/&amp;quot; + mnstr(it) + &amp;quot;\/&amp;quot; + yrstr(it) + &amp;quot;Issued:&amp;quot; + dystr(0) + &amp;quot;\/&amp;quot; + mnstr(0) + &amp;quot;\/&amp;quot; + yrstr(0)/};
 &lt;/code&gt;&lt;/pre&gt;
 &lt;p&gt;Both don't work, plus other tries I made.&lt;/p&gt;
-
-        </summary>
-    </entry>
-  <entry xmlns:re="http://purl.org/atompub/rank/1.0">
-        <id>https://stackoverflow.com/q/75983186</id>
-        <re:rank scheme="https://stackoverflow.com">3</re:rank>
-        <title type="text">Install &amp; update a Perl module as "universal" (x86_64, arm64)?</title>
-            <category scheme="https://stackoverflow.com/tags" term="macos"/>
-            <category scheme="https://stackoverflow.com/tags" term="perl"/>
-            <category scheme="https://stackoverflow.com/tags" term="x86-64"/>
-            <category scheme="https://stackoverflow.com/tags" term="cpan"/>
-            <category scheme="https://stackoverflow.com/tags" term="apple-silicon"/>
-        <author>
-            <name>l --marc l</name>
-            <uri>https://stackoverflow.com/users/3103448</uri>
-        </author>
-        <link rel="alternate" href="https://stackoverflow.com/questions/75983186/install-update-a-perl-module-as-universal-x86-64-arm64"/>
-        <published>2023-04-11T06:59:38Z</published>
-        <updated>2023-04-24T18:19:42Z</updated>
-        <summary type="html">
-            &lt;p&gt;Is is possible to install and update Perl (CPAN) modules with universal (x86_64, arm64) architecture support? If yes, then how?&lt;/p&gt;
-&lt;p&gt;&lt;em&gt;background&lt;/em&gt;&lt;/p&gt;
-&lt;p&gt;On an arm-based macOS computer, a Perl CPAN module can be installed for exactly one designated architecture as follows:&lt;/p&gt;
-&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;sudo cpan -i Encode
-### equivalent since `-arm64` is the native processor in this situation:
-sudo arch -arm64 cpan -i Encode
-
-file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
-# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
-#     Mach-O 64-bit bundle arm64
-
-sudo arch -x86_64 cpan -i Encode
-
-file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
-# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
-#     Mach-O 64-bit bundle x86_64
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Notice, however,  &lt;code&gt;perl&lt;/code&gt; itself is a &amp;quot;universal binary&amp;quot;:&lt;/p&gt;
-&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;file /usr/bin/perl
-
-# /usr/bin/perl: Mach-O universal binary with 2 architectures: 
-#    [x86_64:Mach-O 64-bit executable x86_64] 
-#    [arm64e:Mach-O 64-bit executable arm64e]
-# /usr/bin/perl (for architecture x86_64):  
-#     Mach-O 64-bit executable x86_64
-# /usr/bin/perl (for architecture arm64e):  
-#     Mach-O 64-bit executable arm64e
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;&lt;em&gt;The XOR of either one architecture or the other presents a conflict when native and non-native applications share the same Perl dependency.&lt;/em&gt; For example, &lt;a href="https://wiki.gnucash.org/wiki/Online_Quotes#Installing_Finance::Quote_on_macOS" rel="nofollow noreferrer"&gt;GnuCash Finance::Quote&lt;/a&gt; &lt;em&gt;does not&lt;/em&gt; run on natively on Arm while &lt;a href="https://www.tug.org/mactex/" rel="nofollow noreferrer"&gt;MacTeX LaTeX Live Update&lt;/a&gt; can run natively on either Intel or Arm processors. Both applications use the &lt;a href="https://metacpan.org/pod/Encode" rel="nofollow noreferrer"&gt;Pearl Encode module&lt;/a&gt;.&lt;/p&gt;
-&lt;p&gt;The application log error message will be one of the following if the required architecture version is not found:&lt;/p&gt;
-&lt;blockquote&gt;
-&lt;p&gt;'/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle' (mach-o file, but is an incompatible architecture (have 'arm64', need 'x86_64'))&lt;/p&gt;
-&lt;/blockquote&gt;
-&lt;blockquote&gt;
-&lt;p&gt;'/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle' (mach-o file, but is an incompatible architecture (have 'x86_64', need 'arm64'))&lt;/p&gt;
-&lt;/blockquote&gt;
-&lt;hr /&gt;
-&lt;p&gt;Note: A workaround for running the applications is to install the common Perl module dependancy for the &lt;code&gt;x86_64&lt;/code&gt; architecture, and then run the universal capable application in Rosetta2 (x86_64) mode.&lt;/p&gt;
-&lt;hr /&gt;
-&lt;h4&gt;Additional Findings&lt;/h4&gt;
-&lt;p&gt;&lt;strong&gt;cc option '-bundle'&lt;/strong&gt;&lt;/p&gt;
-&lt;p&gt;&lt;code&gt;cc -bundle&lt;/code&gt; was found in the saved install log.&lt;/p&gt;
-&lt;pre class="lang-text prettyprint-override"&gt;&lt;code&gt;rm -f blib/arch/auto/Encode/Encode.bundle
-cc  -bundle -undefined dynamic_lookup  Encode.o def_t.o encengine.o  -o blib/arch/auto/Encode/Encode.bundle 
-chmod 755 blib/arch/auto/Encode/Encode.bundle
-…
-Manifying 18 pod documents
-Files found in blib/arch: installing files in blib/lib into architecture dependent library tree
-Installing /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;However, &lt;code&gt;man cc&lt;/code&gt; and &lt;code&gt;cc --help&lt;/code&gt; do not provide any developer information about a &lt;code&gt;-bundle&lt;/code&gt; option for the cc clang LLVM compiler. So, it's not clear what &lt;code&gt;-bundle&lt;/code&gt; is actually doing, or how a Perl novice might use this piece of information.&lt;/p&gt;
-&lt;p&gt;&lt;strong&gt;lipo&lt;/strong&gt;&lt;/p&gt;
-&lt;p&gt;It would appear that the &amp;quot;safest way to build Universal binaries is to compile the modules separately and then use &lt;code&gt;lipo&lt;/code&gt; to merge the resulting &lt;code&gt;.bundle&lt;/code&gt; files.&amp;quot; See: &lt;a href="https://metacpan.org/dist/ExtUtils-FakeConfig/source/lib/Config_u.pm" rel="nofollow noreferrer"&gt;meta::cpan Config_u.pm&lt;/a&gt;&lt;/p&gt;
-&lt;p&gt;The Apple article &lt;a href="https://developer.apple.com/documentation/apple-silicon/building-a-universal-macos-binary" rel="nofollow noreferrer"&gt;&amp;quot;Building a Universal macOS Binary&amp;quot;&lt;/a&gt; provides a such multi-step example:&lt;/p&gt;
-&lt;blockquote&gt;
-&lt;p&gt;The following example shows a makefile that compiles a single-source file twice—once for each architecture. It then creates a universal binary by merging the resulting executable files together with the &lt;code&gt;lipo&lt;/code&gt; tool.&lt;/p&gt;
-&lt;/blockquote&gt;
-&lt;pre class="lang-makefile prettyprint-override"&gt;&lt;code&gt;x86_app: main.c
-    $(CC) main.c -o x86_app -target x86_64-apple-macos10.12
-arm_app: main.c
-    $(CC) main.c -o arm_app -target arm64-apple-macos11
-universal_app: x86_app arm_app
-    lipo -create -output universal_app x86_app arm_app
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;&lt;code&gt;lipo&lt;/code&gt; requires the individual architecture files as inputs to &lt;code&gt;-create&lt;/code&gt; the universal file.&lt;/p&gt;
-&lt;p&gt;&lt;strong&gt;file Encode.bundle&lt;/strong&gt;&lt;/p&gt;
-&lt;p&gt;A search and review for all &lt;code&gt;Encode.bundle&lt;/code&gt; files found a mixture of universal and non-universal binaries.&lt;/p&gt;
-&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;find / -name &amp;quot;Encode.bundle&amp;quot;
-
-file /Applications/FreeCAD_0.20.app/Contents/Resources/lib/perl5/5.32/core_perl/auto/Encode/Encode.bundle
-file /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
-file /System/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle
-file /System/Library/Perl/5.34/darwin-thread-multi-2level/auto/Encode/Encode.bundle
-file /Users/USERNAME/.cpan/build/Encode-3.19-0/blib/arch/auto/Encode/Encode.bundle
-
-# /Applications/FreeCAD_0.20.app/…/core_perl/auto/Encode/Encode.bundle: 
-#     Mach-O 64-bit bundle x86_64
-
-# /Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle: 
-#     Mach-O 64-bit bundle x86_64
-
-# /System/Library/Perl/5.30/darwin-thread-multi-2level/auto/Encode/Encode.bundle: 
-#     Mach-O universal binary with 2 architectures: 
-#         [x86_64:Mach-O 64-bit bundle x86_64] 
-#         [arm64e:Mach-O 64-bit bundle arm64e]
-
-# /System/Library/Perl/5.34/darwin-thread-multi-2level/auto/Encode/Encode.bundle:
-#     Mach-O universal binary with 2 architectures: 
-#         [x86_64:Mach-O 64-bit bundle x86_64]
-#         [arm64e:Mach-O 64-bit bundle arm64e]
-
-# /Users/USERNAME/.cpan/build/Encode-3.19-0/blib/arch/auto/Encode/Encode.bundle: 
-#     Mach-O 64-bit bundle x86_64
-&lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;&lt;em&gt;observations:&lt;/em&gt;&lt;/p&gt;
-&lt;ol&gt;
-&lt;li&gt;&lt;code&gt;file /System/Library/Perl/…Encode.bundle&lt;/code&gt; shows that universal binary use does indeed exist for Pearl.&lt;/li&gt;
-&lt;li&gt;&lt;code&gt;file /Library/Perl/…Encode.bundle&lt;/code&gt; indicate that a user install and/or update may be masking the universal &lt;code&gt;/System/Library/Perl/…Encode.bundle&lt;/code&gt; from shared application use.&lt;/li&gt;
-&lt;/ol&gt;
-&lt;p&gt;&lt;strong&gt;objectives&lt;/strong&gt;&lt;/p&gt;
-&lt;p&gt;Ideally, an overall solution would:&lt;/p&gt;
-&lt;ol&gt;
-&lt;li&gt;be generally enough to not require modification of each individual module which gets added.&lt;/li&gt;
-&lt;li&gt;work for both an initial module installation and any subsequent updates.&lt;/li&gt;
-&lt;li&gt;does not create dependency conflicts with in the Perl installation.&lt;/li&gt;
-&lt;/ol&gt;
-&lt;p&gt;&lt;strong&gt;possible approaches&lt;/strong&gt;&lt;/p&gt;
-&lt;p&gt;Whether implicitly or expressly invoked, &lt;code&gt;lipo&lt;/code&gt; appear to be needed to create the univeral binary.&lt;/p&gt;
-&lt;p&gt;Just thinking out-loud about some approach directions:&lt;/p&gt;
-&lt;ul&gt;
-&lt;li&gt;&lt;p&gt;modify the Perl make file? (how would one safely do this? is this a practical approach?)&lt;/p&gt;
-&lt;/li&gt;
-&lt;li&gt;&lt;p&gt;create an updated version of &lt;a href="https://metacpan.org/pod/Config_u" rel="nofollow noreferrer"&gt;Config_u&lt;/a&gt;?&lt;/p&gt;
-&lt;/li&gt;
-&lt;/ul&gt;
-&lt;pre class="lang-sh prettyprint-override"&gt;&lt;code&gt;perl -MConfig_u Makefile.PL
-&lt;/code&gt;&lt;/pre&gt;
-&lt;ul&gt;
-&lt;li&gt;&lt;p&gt;have parallel &lt;code&gt;/Perl/arm64/…&lt;/code&gt; and &lt;code&gt;/Perl/x86_64/…&lt;/code&gt; trees which are then &lt;code&gt;lipo&lt;/code&gt; merged into some &lt;code&gt;/Perl/some_universal_version/…&lt;/code&gt; via a script.&lt;/p&gt;
-&lt;/li&gt;
-&lt;li&gt;&lt;p&gt;Could this be a easy as &lt;code&gt;sudo arch -x86_64 -arm64 -arm64e cpan -i Encode&lt;/code&gt;?&lt;/p&gt;
-&lt;/li&gt;
-&lt;/ul&gt;
 
         </summary>
     </entry>
@@ -2334,109 +2535,6 @@ class PriorityQueue {
     <category term="RakuLang"/>
   </entry>
   <entry>
-    <title>PWC213 - Fun Sort</title>
-    <link rel="alternate" href="https://github.polettix.it/ETOOBUSY/2023/04/20/pwc213-fun-sort/" type="text/html"/>
-    <content type="xhtml">
-      <div xmlns="http://www.w3.org/1999/xhtml"><p><strong>TL;DR</strong></p>
-
-<blockquote>
-  <p>Here we are with <a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-213/#TASK1">TASK #1</a> from <a href="https://theweeklychallenge.org/">The Weekly Challenge</a>
-<a href="https://theweeklychallenge.org/blog/perl-weekly-challenge-213/">#213</a>. Enjoy!</p>
-</blockquote>
-
-<h1 id="the-challenge">The challenge</h1>
-
-<blockquote>
-  <p>You are given a list of positive integers.</p>
-
-  <p>Write a script to sort the all even integers first then all odds in
-ascending order.</p>
-
-  <p><strong>Example 1</strong></p>
-
-  <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Input: @list = (1,2,3,4,5,6)
-Output: (2,4,6,1,3,5)
-</code></pre></div>  </div>
-
-  <p><strong>Example 2</strong></p>
-
-  <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Input: @list = (1,2)
-Output: (2,1)
-</code></pre></div>  </div>
-
-  <p><strong>Example 3</strong></p>
-
-  <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Input: @list = (1)
-Output: (1)
-</code></pre></div>  </div>
-</blockquote>
-
-<h1 id="the-questions">The questions</h1>
-
-<p>I guess the output should be a single list with the described order, so it
-will be what I’ll assume.</p>
-
-<h1 id="the-solution">The solution</h1>
-
-<p>For the <a href="https://raku.org/">Raku</a> solution, I opted for splitting the input list first, then
-sorting the two lists separately:</p>
-
-<pre><code class="language-raku">#!/usr/bin/env raku
-use v6;
-sub MAIN (*@args) { say fun-sort(@args ?? @args !! [1 .. 6]) }
-
-sub fun-sort (@input) {
-   my (@even, @odd);
-   for @input -&gt; $v {
-      if $v %% 2 { @even.push: $v.Int }
-      else       { @odd.push: $v.Int  }
-   }
-   return (@even.sort, @odd.sort).flat;
-}
-</code></pre>
-
-<p>In the <a href="https://www.perl.org/">Perl</a> variant, though, I decided to sort first, then sweep through
-the array from begin to end, moving odd elements to the end. At each
-iteration, either we move one position ahead, or we move the last position
-to consider one step behind, so we will anyway only consider each element
-once. This approach preserves the ordering or odd items, so we’re done.</p>
-
-<div class="language-perl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">#!/usr/bin/env perl</span>
-<span class="k">use</span> <span class="nv">v5</span><span class="mf">.24</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">warnings</span><span class="p">;</span>
-<span class="k">use</span> <span class="nv">experimental</span> <span class="p">'</span><span class="s1">signatures</span><span class="p">';</span>
-
-<span class="nv">say</span> <span class="p">'</span><span class="s1">(</span><span class="p">',</span> <span class="nb">join</span><span class="p">('</span><span class="s1">,</span><span class="p">',</span> <span class="nv">fun_sort</span><span class="p">(</span><span class="nv">@ARGV</span> <span class="p">?</span> <span class="nv">@ARGV</span> <span class="p">:</span> <span class="p">(</span><span class="mi">1</span> <span class="o">..</span> <span class="mi">6</span><span class="p">))),</span> <span class="p">'</span><span class="s1">)</span><span class="p">';</span>
-
-<span class="k">sub </span><span class="nf">fun_sort</span> <span class="p">(@input) {</span>
-   <span class="nv">@input</span> <span class="o">=</span> <span class="nb">sort</span> <span class="p">{</span> <span class="nv">$a</span> <span class="o">&lt;=&gt;</span> <span class="nv">$b</span> <span class="p">}</span> <span class="nv">@input</span><span class="p">;</span>
-   <span class="k">my</span> <span class="nv">$start</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-   <span class="k">my</span> <span class="nv">$stop</span> <span class="o">=</span> <span class="nv">$#input</span><span class="p">;</span>
-   <span class="k">while</span> <span class="p">(</span><span class="nv">$start</span> <span class="o">&lt;=</span> <span class="nv">$stop</span><span class="p">)</span> <span class="p">{</span>
-      <span class="k">if</span> <span class="p">(</span><span class="nv">$input</span><span class="p">[</span><span class="nv">$start</span><span class="p">]</span> <span class="o">%</span> <span class="mi">2</span><span class="p">)</span> <span class="p">{</span> <span class="c1"># move odds at the end</span>
-         <span class="nb">push</span> <span class="nv">@input</span><span class="p">,</span> <span class="nb">splice</span> <span class="nv">@input</span><span class="p">,</span> <span class="nv">$start</span><span class="p">,</span> <span class="mi">1</span><span class="p">;</span>
-         <span class="o">--</span><span class="nv">$stop</span><span class="p">;</span>
-      <span class="p">}</span>
-      <span class="k">else</span> <span class="p">{</span>
-         <span class="o">++</span><span class="nv">$start</span><span class="p">;</span>
-      <span class="p">}</span>
-   <span class="p">}</span>
-   <span class="k">return</span> <span class="nv">@input</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre></div></div>
-
-<p>Stay safe and have fun… sorting!</p>
-
-</div>
-    </content>
-    <id>https://github.polettix.it/ETOOBUSY/2023/04/20/pwc213-fun-sort/</id>
-    <published>2023-04-20T06:00:00+02:00</published>
-    <updated>2023-04-20T06:00:00+02:00</updated>
-    <category term="the weekly challenge"/>
-    <category term="Perl"/>
-    <category term="RakuLang"/>
-  </entry>
-  <entry>
     <title>Open Source Development Course for Perl developers - 2023.01</title>
     <link rel="alternate" href="https://dev.to/jdanproject/open-source-development-course-for-perl-developers-202301-39i9" type="text/html"/>
     <content type="xhtml">
@@ -2975,206 +3073,6 @@ Output: -1
 <p>Second, even though I started working on this second task (and think I probably have a working solution in Raku), I have no time today to complete this task, and probably won&#8217;t have time for several days. I still wanted to make my solutions to task 1 available today. I&#8217;ll hopefully write a new blog post or update this one later on.</p>
 
 <p><em>Update:</em> I have now written a <a href="https://blogs.perl.org/users/laurent_r/2023/04/perl-weekly-challenge-212-rearrange-groups.html">second blog post</a> dated April 13, 2023, providing solutions to this task 2 of the challenge.</p>
-
-<h2>Wrapping up</h2>
-
-<p>The next week Perl Weekly Challenge will start soon. If you want to participate in this challenge, please check https://perlweeklychallenge.org/ and make sure you answer the challenge before 23:59 BST (British summer time) on April 23, 2023. And, please, also spread the word about the Perl Weekly Challenge if you can.</p>
-]]>
-        
-
-    </content>
-</entry>
-  <entry>
-    <title>Perl Weekly Challenge 212: Rearrange Groups</title>
-    <link rel="alternate" href="https://blogs.perl.org/users/laurent_r/2023/04/perl-weekly-challenge-212-rearrange-groups.html"/>
-    <id>tag:blogs.perl.org,2023:/users/laurent_r//3226.11076</id>
-    <published>2023-04-14T00:02:28Z</published>
-    <updated>2023-04-14T00:07:23Z</updated>
-    <author>
-        <name>laurent_r</name>
-        <uri>https://laurent-rosenfeld.developpez.com/</uri>
-    </author>
-    <content type="html" xml:lang="en" xml:base="https://blogs.perl.org/users/laurent_r/">
-        <![CDATA[<p>These are some answers to the Week 212 of the <a href="https://perlweeklychallenge.org/blog/perl-weekly-challenge-212/">Perl Weekly Challenge</a> organized by <a href="https://blogs.perl.org/users/mohammad_s_anwar/">Mohammad S. Anwar</a>.</p>
-
-<p><em>Spoiler Alert:</em> This weekly challenge deadline is due in a few days from now (on April 16, 2023 at 23:59). This blog post offers some solutions to this challenge. Please don’t read on if you intend to complete the challenge on your own.</p>
-
-<h2>Task 1: Jumping Letters</h2>
-
-<p><em>You are given a word having alphabetic characters only, and a list of positive integers of the same length.</em></p>
-
-<p><em>Write a script to print the new word generated after jumping forward each letter in the given word by the integer in the list. The given list would have exactly the number as the total alphabets in the given word.</em></p>
-
-<p><em>Example 1</em></p>
-
-<pre><code>Input: $word = 'Perl' and @jump = (2,22,19,9)
-Output: Raku
-
-'P' jumps 2 place forward and becomes 'R'.
-'e' jumps 22 place forward and becomes 'a'. (jump is cyclic i.e. after 'z' you go back to 'a')
-'r' jumps 19 place forward and becomes 'k'.
-'l' jumps 9 place forward and becomes 'u'.
-</code></pre>
-
-<p><em>Example 2</em></p>
-
-<pre><code>Input: $word = 'Raku' and @jump = (24,4,7,17)
-Output: 'Perl'
-</code></pre>
-
-<p>This task was the subject of <a href="https://blogs.perl.org/users/laurent_r/2023/04/perl-weekly-challenge-212-jumping-letters.html">this post</a> published on April 10, 2023.</p>
-
-<h2>Task 2: Rearrange Groups</h2>
-
-<p><em>You are given a list of integers and group size greater than zero.</em></p>
-
-<p><em>Write a script to split the list into equal groups of the given size where integers are in sequential order. If it can’t be done then print -1.</em></p>
-
-<p><em>Example 1:</em></p>
-
-<pre><code>Input: @list = (1,2,3,5,1,2,7,6,3) and $size = 3
-Output: (1,2,3), (1,2,3), (5,6,7)
-</code></pre>
-
-<p><em>Example 2:</em></p>
-
-<pre><code>Input: @list = (1,2,3) and $size = 2
-Output: -1
-</code></pre>
-
-<p><em>Example 3:</em></p>
-
-<pre><code>Input: @list = (1,2,4,3,5,3) and $size = 3
-Output: (1,2,3), (3,4,5)
-</code></pre>
-
-<p><em>Example 4:</em></p>
-
-<pre><code>Input: @list = (1,5,2,6,4,7) and $size = 3
-Output: -1
-</code></pre>
-
-<p>First, there was initially an error in Example 3 above of the task specification (<code>$size</code> was 2 instead of 3, and that did not fit with the suggested output), but this has been fixed now.</p>
-
-<p>Next, I first thought of sorting the input list of integers and, assuming for example a group size of 3, to try sequences of 3 successive integers in the list. But then I thought that it would be easier to store the input in a Raku <a href="https://docs.raku.org/type/Bag.html">Bag</a> and to remove items used to construct groups as we go. As this turned out to be quite simple, I decided, as you will see, to use the same method in Perl, simulating bags with hashes.</p>
-
-<h3>Rearrange Groups in Raku</h3>
-
-<p>First, note that <code>bags</code> are immutable in Raku. This means that you cannot change the inner items of the bag (or add or remove items), but this does not preclude you from <em>re-assigning</em> bags, as we do in the last statement of the <code>while</code> loop in the code below.</p>
-
-<p>Using bags means that we can use operators with set theory semantics, such as the infix <code>(&lt;=)</code> or infix <code>⊆</code> <a href="https://docs.raku.org/language/operators.html#infix_(&lt;=">is a subset of or equal to</a>,<em>infix</em>⊆), or the infix <code>(-)</code>, infix <code>∖</code> <a href="https://docs.raku.org/language/operators.html#infix_(-">set difference</a>,<em>infix</em>%E2%88%96), operators.</p>
-
-<p>In the <code>rearrange</code> subroutine, the <code>while</code> loop runs as long as there are some items left in the bag. The loop looks for the smallest item in the bag, construct a sequence (<code>$list</code>) of <code>$size</code> successive items. If <code>$list</code> is a subset of (or equal to) the bag, we store the <code>$list</code> into the <code>@result</code> and remove the items of the <code>$list</code> from the bag. If <code>$list</code> is not part of the bag, then we failed and return -1. If we get normally out of the loop (because the bag is now empty), then we succeeded to build equal groups of items and can return the <code>@result</code>.</p>
-
-<pre><code>sub rearrange (@in, $size) {
-    my @result;
-    return -1 unless @in.elems %% $size; 
-    my $bag  = @in.Bag;
-    while ($bag) {
-        my $min = $bag.min.key;
-        my @list = $min..^($min + $size);
-        return -1 unless @list ⊆ $bag;
-        push @result, @list;
-        $bag = $bag (-) @list;  # set difference
-    }
-    return @result;
-}
-
-for ((1,2,3,5,1,2,7,6,3), 3), ((1,2,3), 2), ((1,2,3), 3),
-    ((1,2,4,3,5,3), 3), ((1,5,2,6,4,7), 3),
-    ((1,5,2,6,4,7), 2) -&gt; @test {
-    say @test;
-    say rearrange(|@test), "\n"; 
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ raku ./rearrange-groups.raku
-((1 2 3 5 1 2 7 6 3) 3)
-[[1 2 3] [1 2 3] [5 6 7]]
-
-((1 2 3) 2)
--1
-
-((1 2 3) 3)
-[[1 2 3]]
-
-((1 2 4 3 5 3) 3)
-[[1 2 3] [3 4 5]]
-
-((1 5 2 6 4 7) 3)
--1
-
-((1 5 2 6 4 7) 2)
-[[1 2] [4 5] [6 7]]
-</code></pre>
-
-<h3>Rearrange Groups in Perl</h3>
-
-<p>I initially thought of using a different technique for solving the task in Perl, since there is no built-in <code>bag</code> data structure in Perl, but then I found that it was quite easy to simulate a <code>bag</code> with a hash containing an histogram of the input values. So this program essentially works the same as the Raku implementation (read the previous section if you need explanations). The <code>for</code> loop checks that all the values of <code>$list</code> exist in the bag and remove these items from the bag.</p>
-
-<pre><code>use warnings;
-use feature "say";
-
-sub rearrange {
-    my @in = @{$_[0]};
-    my $size = $_[1];
-    my @result;
-    return "-1" if @in % $size; 
-    my %bag;
-    $bag{$_}++ for @in;
-    while (%bag) {
-        my $min = (sort { $a &lt;=&gt; $b } keys %bag)[0];
-        my @list = $min..($min + $size -1);
-        for my $item (@list) {
-            return "-1" unless exists $bag{$item};
-            $bag{$item}--;
-            delete $bag{$item} if $bag{$item} == 0;
-        }
-        push @result, \@list;
-    }
-    return @result;
-}
-
-for my $test( [[1,2,3,5,1,2,7,6,3], 3],
-              [[1,2,3], 2], [[1,2,3], 3],
-              [[1,2,4,3,5,3], 3],
-              [[1,5,2,6,4,7], 3],
-              [[1,5,2,6,4,7], 2] )
-              {
-    say "(@{$test-&gt;[0]})", " ", "($test-&gt;[1])";
-    my @result = rearrange(@$test);
-    if ($result[0] == "-1") {
-        say -1;
-    } else {
-        say map { "[@$_] " } @result;
-    }
-    say " ";
-}
-</code></pre>
-
-<p>This script displays the following output:</p>
-
-<pre><code>$ perl ./rearrange-groups.pl
-(1 2 3 5 1 2 7 6 3) (3)
-[1 2 3] [1 2 3] [5 6 7]
-
-(1 2 3) (2)
--1
-
-(1 2 3) (3)
-[1 2 3]
-
-(1 2 4 3 5 3) (3)
-[1 2 3] [3 4 5]
-
-(1 5 2 6 4 7) (3)
--1
-
-(1 5 2 6 4 7) (2)
-[1 2] [4 5] [6 7]
-</code></pre>
 
 <h2>Wrapping up</h2>
 
