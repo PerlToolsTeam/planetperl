@@ -147,68 +147,259 @@
         <div class="col-md-8">
           <div class="card perl-questions-on-stackoverflow" id="card_1">
             <div class="card-header">
-              <h2 class="card-title"><a href="https://stackoverflow.com/questions/76167726/how-do-i-get-sed-to-match-a-pattern-with-multiple-exceptions">How do I get sed to match a pattern with multiple exceptions?</a></h2>
+              <h2 class="card-title"><a href="https://stackoverflow.com/questions/75999522/perl-mojolicious-whats-the-correct-way-to-render-a-response-from-a-promise">Perl Mojolicious, what's the correct way to render a response from a Promise?</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
 
-              <p class="text-right"><small>Published by Gregg H
- on Thursday 04 May 2023 07:39</small></p>
+              <p class="text-right"><small>Published by h q
+ on Thursday 04 May 2023 12:11</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
-            <p>Consider the following config file</p>
-<pre><code>; My Config
-;
-
-[CITY]
-URL='my.city.com'
-ID='1234'
-PID='1'
-
-[SITE]
-URL='my.site.com'
-ID='2345'
-PID='2'
-
-[UNIT]
-URL='my.unit.com'
-ID='3456'
-PID='3'
-
-[BOB]
-URL='my.bob.com'
-ID='123456'
-PID='15'
-
-. . .
+            <p>In Mojolicious, what's the correct way to render a response from a Promise? In my code below, I get:</p>
+<pre><code>[2023-04-12] [trace] Template &quot;example/search.html.ep&quot; not found
+[2023-04-12] [trace] Nothing has been rendered, expecting delayed response
 </code></pre>
-<p>My goal is to strip all the fields past the first three.  The first three have fixed names, the others are variable.  I came close with:</p>
-<pre><code>sed -e '/.*\[[^DUC].*\]/Q' test.conf
+<ol>
+<li>Why is it looking for <code>example/search.html.ep</code>? I didn't ask for it.</li>
+<li>I am rendering content... Mojo couldn't wait?</li>
+</ol>
+<p>My sample app has 3 files:</p>
+<h3>1. <code>script/my_app</code></h3>
+<pre class="lang-perl prettyprint-override"><code>#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Mojo::File qw(curfile);
+use lib curfile-&gt;dirname-&gt;sibling('lib')-&gt;to_string;
+use Mojolicious::Commands;
+
+Mojolicious::Commands-&gt;start_app('MyApp');
 </code></pre>
-<p>Which gave me what I wanted:</p>
-<pre><code>; My Config
-;
+<h3>2. <code>lib/MyApp.pm</code></h3>
+<pre class="lang-perl prettyprint-override"><code>package MyApp;
+use Mojo::Base 'Mojolicious', -signatures;
 
-[CITY]
-URL='my.city.com'
-ID='1234'
-PID='1'
+sub startup ($self) {
+    $self-&gt;secrets('s3cret');
+    my $r = $self-&gt;routes;
+    $r-&gt;get('/')-&gt;to('Example#index');
+    $r-&gt;post('/')-&gt;to('Example#search');
+}
 
-[SITE]
-URL='my.site.com'
-ID='2345'
-PID='2'
-
-[UNIT]
-URL='my.unit.com'
-ID='3456'
-PID='3'
+1;
 </code></pre>
-<p>But it fails if the first name past these three starts with 'C', 'S' or 'U'.  What I'm really looking for is a way to do a negative comparison against the three strings &quot;CITY&quot;, &quot;SITE&quot; and &quot;UNIT&quot;.  Is there a way to do that with sed, or am I barking up the wrong tree?</p>
+<h3>3. <code>lib/MyApp/Controller/Example.pm</code></h3>
+<pre class="lang-perl prettyprint-override"><code>package MyApp::Controller::Example;
+use Mojo::Base 'Mojolicious::Controller', -signatures;
+
+sub index ($self)
+{
+    return $self-&gt;render(inline =&gt; '&lt;html&gt;&lt;body&gt;&lt;form method=&quot;post&quot;&gt;&lt;textarea name=&quot;numbers&quot; maxlength=&quot;11&quot;&gt;123&lt;/textarea&gt;&lt;button type=&quot;submit&quot;&gt;Go&lt;/button&gt;&lt;/form&gt;&lt;/body&gt;&lt;/html&gt;');
+}
+
+sub search ($self)
+{
+    my $v = $self-&gt;validation;
+    $v-&gt;required(&quot;numbers&quot;);
+    return $self-&gt;render(text=&gt;&quot;Validation Error&quot;) if $v-&gt;has_error;
+    my $numbers = $v-&gt;param(&quot;numbers&quot;);
+    my @numbers = split(/\r?\n/, $numbers);
+
+    Mojo::Promise
+    -&gt;map(
+    {concurrency =&gt; 2},
+    sub {
+        $self-&gt;ua-&gt;get_p(&quot;https://httpbin.org/delay/1?q=$_&quot; =&gt; {'api-key'=&gt;'shhh'});
+    }, @numbers)
+    -&gt;then(
+    sub{
+        my @results = @_;
+        my @json = map { $_-&gt;[0]-&gt;res-&gt;json } @results;
+        return $self-&gt;render(json =&gt; \@json);
+    })
+    -&gt;catch(
+    sub {
+        my $err = shift;
+        return $self-&gt;render(text =&gt; $err);
+    })
+    -&gt;wait;
+    #return $self-&gt;render(text =&gt; &quot;This shall result is 'Unhandled rejected promise: A response has already been rendered'&quot;);
+}
+
+1;
+</code></pre>
+<p>To run the app, I do:</p>
+<pre class="lang-bash prettyprint-override"><code>morbo script/my_app
+</code></pre>
+<p>then navigate to <a href="http://localhost:3000" rel="nofollow noreferrer"><code>http://localhost:3000</code></a> and post the form. Multiple lines will result in concurrent calls.</p>
 
                </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_2">
+          <div class="card rjbs-forgot-what-he-was-saying" id="card_2">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://rjbs.cloud/blog/2023/05/pts-2023-lyon-amendment-2-5/">PTS 2023: The Lyon Amendment (minimum perl) (2/5)</a></h2>
+<a href="https://rjbs.cloud/" class="badge rounded-pill bg-primary" style="float: right">rjbs forgot what he was saying</a> 
+
+              <p class="text-right"><small>Published by Ricardo Signes
+ on Thursday 04 May 2023 12:09</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h2 id="minimum-toolchain-perl">Minimum Toolchain Perl</h2>
+
+<p>Ten years ago, the “toolchain gang” who manage the libraries most central to
+deploying and testing CPAN libraries came to <a href="https://github.com/Perl-Toolchain-Gang/toolchain-site/blob/master/lancaster-consensus.md">an
+agreement</a>
+on the minimum supported version of perl.  Nobody needed to keep maintaining
+v5.6, and everyone who hadn’t already, moved to v5.8.  That was ten years ago,
+but the toolchain was still pinned to v5.8.  I am not enthusiastic about
+targeting v5.8, and have <a href="/blog/2023/01/leaving-perl-v5.8-behind/">written about this before</a>.  I bumped some modules to v5.12,
+earlier this year.  I got some feedback, both positive and negative, but I felt
+good about it.</p>
+
+<p>This year, a number of people wanted to talk about bumping that number.  To me,
+the interesting question wasn’t about the toolchain per se, but about what
+version of perl people feel they can rely upon in CPAN without being a pain to
+others.  I didn’t have strong feelings, coming into this conversation, but I
+thought it would be nice if the version number moved.</p>
+
+<p>There were a few positions voiced in these conversations:</p>
+
+<ol>
+  <li>Supporting v5.8 should continue, in part because any change in required
+version may inconvenience people, and in part because it makes bisecting
+changes in how code behaves more difficult (you can’t, for example, test a
+library on v5.8 if it <code class="language-plaintext highlighter-rouge">configure_requires</code> v5.22).</li>
+  <li>We should provide an alternative CPAN index or repository that will only
+index code known to work with older versions of Perl.  If you use that
+version of CPAN, you won’t ever get the newer Test-Deep, but you can get the
+last one that worked on v5.8.</li>
+  <li>We should agree to a newer minimum, both for the convenience of the
+toolchain authors in coding, but also in debugging: it takes real time to
+work around issues in perl that were fixed 12 years ago.</li>
+  <li>The new version shouldn’t be a one-time bump, but a policy about what
+version we support over time.</li>
+</ol>
+
+<p>The short version here is that the last two positions won out, and many people
+were interested in the “alternative index” idea.  For my part, I saw many
+complications in making something reliable and long-lived, so my goal was to
+<em>not</em> couple the idea of a new version to the existence of this system.  As for
+the first position, basically it was outvoted.  I do like that Perl has a long
+tradition of backward compatibility, but for me, it can only go so far.  All
+the way back to 2003 is too far.</p>
+
+<p>In the end, we wrote an <a href="https://github.com/Perl-Toolchain-Gang/toolchain-site/blob/master/lyon-amendment.md">amendment to the Lancaster
+consensus</a>,
+stating that the toolchain would track the perl of 10 years ago.  That would
+mean that this year we’d target v5.18 — but we also said we’d let Red Hat v7
+reach end of maintenance support before moving past its version of perl, v5.16.</p>
+
+<p>That means v5.16 this year, v5.20 next, then v5.22.  To my mind, this is huge
+progress.  I’m not in a rush to go change everything, but I will definitely
+freely update my code when I touch it.  CPAN::Meta::Requirements is likely to
+get an update soon, requiring at least v5.10, maybe v5.12.  Test::Deep may
+follow on toward newer versions over time.</p>
+
+<p>If you want to see older versions of perl continue to have <code class="language-plaintext highlighter-rouge">cpan Some::Library</code>
+work (by finding an older version of that library), keep an eye out for news
+about projects to make that possible.  I don’t really plan to follow that work.</p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card rjbs-forgot-what-he-was-saying" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://rjbs.cloud/blog/2023/05/pts-2023-lyon-1-5/">PTS 2023: Lyon and changing plans (1/5)</a></h2>
+<a href="https://rjbs.cloud/" class="badge rounded-pill bg-primary" style="float: right">rjbs forgot what he was saying</a> 
+
+              <p class="text-right"><small>Published by Ricardo Signes
+ on Thursday 04 May 2023 11:41</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><p>It’s been three years since <a href="/blog/2019/04/pts-2019-marlow-1-5/">the last Perl Toolchain Summit</a>.  In 2019, I wasn’t sure whether I would go.
+This time, I was sure that I would.  It had been too long since I saw everyone,
+and there were some useful discussions to be had.  I think that overall the
+summit was a success, and I’m happy with the outcomes.  We left with a few
+loose threads, but I’m feeling hopeful that they can, mostly, get tied up.</p>
+
+<p>I’ll be posting updates over the next week or two, I suspect, because I’m not
+sure I can get everything down on paper right away.  As I do, I’ll update this
+post with links into those.  In the meantime, here is a brief overview of the
+event, my agenda, and what happened.</p>
+
+<p>This was the third Perl Toolchain Summit held in Lyon.  I was there for the
+first, but missed the second.  The event hotel was right across from the train
+station and we did our work in meeting rooms in the hotel.  The venue was
+great, and I have no complaints.</p>
+
+<center>
+<a data-flickr-embed="true" href="https://www.flickr.com/photos/rjbs/52868599556/in/album-72177720307993761/" title="Lyon skyline"><img src="https://live.staticflickr.com/65535/52868599556_9513582b93_z.jpg" width="640" height="480" alt="Lyon skyline" /></a><script async="" src="//embedr.flickr.com/assets/client-code.js" charset="utf-8"></script>
+</center>
+
+<p>I arrived the day before the conference, like most attendees, and my first
+order of business was getting a shower.  No, wait, it was getting a beer,
+<em>then</em> a shower.  In the evening, we went to dinner at a place that served
+tartines.  I was surprised, when we went in, that I remembered it.  We’d eaten
+there once before.  I suspect I may have had exactly the same seat as last
+time.  Different food, though.  Last time, I had something with soft cheese,
+honey, and walnuts.  This time, sardines and capers.  It was good!</p>
+
+<p>I didn’t really spend much time out in the city.  I wrote code and talked to my
+fellow summit attendees.  Once the event was over, I was right off to Germany
+for a few days visting family.  While it would’ve been nice to look around Lyon
+more, I have no regrets.  My family visit was great.</p>
+
+<h2 id="what-i-planned-to-do-making-pause-portable">What I planned to do: Making PAUSE Portable</h2>
+
+<p>My big goal on this trip was to make it possible to reinstall PAUSE from
+scratch for use in production.  I told Robert Spier, who provides hosting for
+PAUSE, that I planned to produce a setup program to do things.  He said,
+“That’s a start, by why not make it Docker or something?”  I said, “Mostly
+because I don’t know Docker very well yet.”</p>
+
+<p>It turns out that I didn’t need to worry.  Kenichi had gotten a test version of
+PAUSE working with <code class="language-plaintext highlighter-rouge">docker compose</code> just a bit before the event, and we used
+that as a starting point.  I did a very small amount of rejiggering to help me
+test and configure it, much of which was about tweaks to the email code.  The
+real work on this front was done by <a href="https://metacpan.org/author/WOLFSAGE">Matthew
+Horsfall</a>, who took the existing test
+configuration and parameterized it to work for testing a production
+environment.</p>
+
+<p>The work isn’t quite done, but I think that the main next steps are going to be
+related to the actual data transfer, setup, and cutover to a new PAUSE
+environment.  I’m excited for this for a number of reasons, mostly related to
+the testability, reliability, and maintainability of PAUSE — all of which are
+related, of course.</p>
+
+<h2 id="things-i-actually-did-at-the-summit">Things I <em>actually</em> did at the summit</h2>
+
+<blockquote>
+  <p>More posts will come here for a bit before I have finished…</p>
+</blockquote>
+
+<ul>
+  <li><a href="/blog/2023/05/pts-2023-lyon-amendment-2-5/">changing the version floor on the Perl toolchain</a></li>
+</ul>
+
+<h2 id="thanks-to-our-sponsors-and-organizers">Thanks to our sponsors and organizers</h2>
+
+<p>The Perl Toolchain Summit is one of the most important events in the year for
+Perl.  It’s how we make progress on a lot of our key software, either by
+finding time to code together or by getting into one place to make tough
+decisions.  Doing that means having a place to go and a means to get people
+there.  Our sponsors and organizers make that possible.  Our sponsors provide
+much-needed money to the organizers, and the organizers turn that money into
+concrete things like “meeting rooms” and “plane tickets”.</p>
+
+<p>I offer my sincere thanks to our organizers: Laurent Boivin and Philippe
+Bruhat; and to <a href="http://perltoolchainsummit.org/pts2023/sponsors.html">our
+sponsors</a>: Booking.com,
+Grant Street Group, Deriv, Fastmail, PerlCareers, cPanel, Perl Services,
+Oetiker+Partner, OpenCage.</p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card blogs-perl-org" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/oldtechaa/2023/05/perl-weekly-challenge-215---bad-words-and-looking-for-zeros.html">Perl Weekly Challenge #215 - Bad Words and Looking For Zeros</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -263,7 +454,7 @@ say ($count &gt; 0 ? '0' : '1');
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_3">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/04/pwc215-odd-one-out/">PWC215 - Odd One Out</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -395,7 +586,7 @@ things a bit differently because there’s no <code class="language-plaintext hi
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_4">
+          <div class="card perl-questions-on-stackoverflow" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76144496/perl-performance-on-windows-machine-suddenly-worse">perl performance on Windows machine suddenly worse [closed]</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -414,7 +605,7 @@ things a bit differently because there’s no <code class="language-plaintext hi
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_5">
+          <div class="card perl-questions-on-stackoverflow" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76168499/perl-hash-of-hashes-is-the-only-option-to-use-eval-to-access-variable-leng">Perl - Hash of hashes - is the only option to use &quot;eval&quot; to access variable length key-sequences? {k[0]}=&gt;{k[1]}=&gt;</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -440,7 +631,7 @@ I also have algorithms that give me a sequence of keys in @key
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_6">
+          <div class="card dev-to-perl" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/oldtechaa/perl-weekly-challenge-215-bad-words-and-looking-for-zeros-3ihg">Perl Weekly Challenge #215 - Bad Words and Looking For Zeros</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -506,7 +697,7 @@ say ($count &gt; 0 ? '0' : '1');
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_7">
+          <div class="card blogs-perl-org" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/laurent_r/2023/05/perl-weekly-challenge-215-odd-one-out-and-number-placement.html">Perl Weekly Challenge 215: Odd One Out and Number Placement</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -787,7 +978,7 @@ for my $test ([&lt;0 0 0 1&gt;], [&lt;0 0&gt;], [&lt;1 0 0 1&gt;], [&lt;1 0 0 0 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_8">
+          <div class="card perl-questions-on-stackoverflow" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76100953/handling-crlf-line-endings-in-substitution-and-split-in-perl">Handling `CRLF` line endings in substitution and `split` in Perl</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -879,7 +1070,7 @@ $ cat -v newname2.csv
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_9">
+          <div class="card perl-questions-on-stackoverflow" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76167803/how-to-pass-perl-dbh-objects-between-scripts">How to pass perl $dbh objects between scripts</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -897,7 +1088,7 @@ dbhGenerator script: run in a while loop, adding $dbh objects into a Queue</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_10">
+          <div class="card perl-commits-on-github" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/493e62880e0752dbcca1bed2e1db29bef29edc39">
         Remove duplicate &quot;the&quot; in comments
@@ -915,7 +1106,7 @@ Fix spelling on various files pertaining to core Perl.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_11">
+          <div class="card perl-commits-on-github" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/034a96a9c8546c2e080a802babba5ed9bc6c7798">
         Add MS Build Tools links
@@ -935,7 +1126,7 @@ MSBT provides CLI compiler and other related tools (without the overhead of the 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_12">
+          <div class="card r-perl" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/136th97/configure_windows_pc_for_optimal_perl_command/">configure Windows PC for optimal Perl command line performance</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -947,7 +1138,7 @@ MSBT provides CLI compiler and other related tools (without the overhead of the 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_13">
+          <div class="card perl-commits-on-github" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/4d9b15204f627d9337665bd88adc71cd3bd1ca55">
         perlapi: Fix strftime inaccuracies, clarify
@@ -966,7 +1157,7 @@ documentation did not get updated.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_14">
+          <div class="card dev-to-perl" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/boblied/pwc-215-odd-one-out-number-placement-2cc9">PWC 215 Odd One Out, Number Placement</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -1031,7 +1222,7 @@ The word 'tsu' is not sorted and hence can be removed.</em></p>
 
 <div class="highlight js-code-highlight">
 <pre class="highlight perl"><code><span class="k">my</span> <span class="nv">$inOrder</span> <span class="o">=</span> <span class="nb">join</span><span class="p">("",</span> <span class="nb">sort</span> <span class="nb">split</span><span class="p">(</span><span class="sr">//</span><span class="p">,</span> <span class="nb">lc</span><span class="p">(</span><span class="nv">$word</span><span class="p">)</span> <span class="p">);</span>
-<span class="k">if</span> <span class="p">(</span> <span class="nv">$word</span> <span class="ow">eq</span> <span class="nv">$inOrder</span> <span class="p">)</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span>
+<span class="k">if</span> <span class="p">(</span> <span class="nb">lc</span><span class="p">(</span><span class="nv">$word</span><span class="p">)</span> <span class="ow">eq</span> <span class="nv">$inOrder</span> <span class="p">)</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span>
 </code></pre>
 
 </div>
@@ -1138,8 +1329,7 @@ Print 1 if it is possible otherwise 0.
 <blockquote>
 <p>Input: @numbers = (1,0,0,0,0,0,0,0,1), $count = 3<br>
 Output: 1<br>
-<em>It is possible to place 3 ones into the sequence like this:<br>
-(1,0,1,0,1,0,1,0,1)</em></p>
+<em>It is possible to place 3 ones into the sequence like this: (1,0,<strong>1</strong>,0,<strong>1</strong>,0,<strong>1</strong>,0,1)</em></p>
 </blockquote>
 
 <p>Tackling this problem by brute force will bog down in testing for boundary conditions, but there's an insight that makes it almost trivial:  what if we had three consecutive values in hand? Then we could see if they are all zeroes and replace the middle one.</p>
@@ -1195,7 +1385,7 @@ Output: 1<br>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_15">
+          <div class="card perl-commits-on-github" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/05e20b67a8c9b144a80337d9478ec0cb9a5b2374">
         autodoc.pl: strftime format functions can use short names
@@ -1214,7 +1404,7 @@ true.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_16">
+          <div class="card r-perl" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/136gl8u/what_is_the_one_liner_for_returning_a_variable/">What is the one liner for returning a variable only if it was set by the calling function?</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -1226,7 +1416,7 @@ true.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_17">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/03/posterior-predictive/">Posterior Predictive</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -1292,7 +1482,7 @@ allows us to do the <em>transfer</em> from the former to the latter.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_18">
+          <div class="card r-perl" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/135tb3g/perl_toolchain_summit_the_lyon_amendment_to_the/">Perl Toolchain Summit: The Lyon Amendment to the Lancaster Consensus</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -1304,7 +1494,7 @@ allows us to do the <em>transfer</em> from the former to the latter.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_19">
+          <div class="card r-perl" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/135n1oc/how_to_resolve_cpanfile_dependency_constraints/">How to resolve cpanfile dependency constraints</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -1316,7 +1506,7 @@ allows us to do the <em>transfer</em> from the former to the latter.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_20">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/02/reinstalling-r/">Reinstalling R</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -1383,7 +1573,7 @@ but in the meantime… Now on with:</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_21">
+          <div class="card perl-commits-on-github" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/6bbe21a508a82ef4a3849bd69a435b3cf8d5bf40">
         Still cleaning up Y2K residue
@@ -1403,7 +1593,7 @@ Also, my correction ensures the man page will still be correct after the year 99
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_22">
+          <div class="card blogs-perl-org" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/paul_johnson/2023/04/the-perl-toolchain-summit-2023.html">The Perl Toolchain Summit 2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -1452,7 +1642,7 @@ Also, my correction ensures the man page will still be correct after the year 99
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_23">
+          <div class="card dev-to-perl" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/perl-weekly-614-why-not-perl-cng">Perl Weekly #614 - Why not Perl?</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -1788,7 +1978,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_24">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/01/romeo-interface-consistency/">Romeo - interface consistency</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -1849,7 +2039,7 @@ occurrences of <code class="language-plaintext highlighter-rouge">-i</code>/<cod
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_25">
+          <div class="card r-perl" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/13488kl/list_of_new_cpan_distributions_apr_2023/">List of new CPAN distributions – Apr 2023</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -1861,7 +2051,7 @@ occurrences of <code class="language-plaintext highlighter-rouge">-i</code>/<cod
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perlancar" id="card_26">
+          <div class="card perlancar" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2023/05/01/list-of-new-cpan-distributions-apr-2023/">List of new CPAN distributions – Apr 2023</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge rounded-pill bg-primary" style="float: right">Perlancar</a> 
@@ -2393,7 +2583,7 @@ occurrences of <code class="language-plaintext highlighter-rouge">-i</code>/<cod
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_27">
+          <div class="card blogs-perl-org" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/psc/2023/04/this-week-in-psc-105.html">This Week in PSC (105)</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -2420,7 +2610,7 @@ occurrences of <code class="language-plaintext highlighter-rouge">-i</code>/<cod
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_28">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/04/30/powerpoint-embed-fonts/">Embed Fonts in PowerPoint</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -2464,7 +2654,7 @@ so better safe than sorry.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_29">
+          <div class="card niceperl" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/cdxlii-21-great-cpan-modules-released.html">(cdxlii) 21 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -2646,7 +2836,7 @@ so better safe than sorry.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_30">
+          <div class="card niceperl" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/dliv-metacpan-weekly-report.html">(dliv) metacpan weekly report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -2762,7 +2952,7 @@ so better safe than sorry.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_31">
+          <div class="card dev-to-perl" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/boblied/pwc-214-1-rank-score-2-collect-points-3-4-profit-4adh">PWC 214 (1) Rank Score, (2) Collect Points, (3) ..., (4) Profit!</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -3059,7 +3249,7 @@ Then we can write a subroutine that gives us a list of such pairs for any array 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_32">
+          <div class="card blogs-perl-org" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/oldtechaa/2023/04/perl-weekly-challenge-214---rank-score.html">Perl Weekly Challenge #214 - Rank Score</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -3108,7 +3298,7 @@ say $hash{$_} for @ARGV;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_33">
+          <div class="card dev-to-perl" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/oldtechaa/perl-weekly-challenge-214-rank-score-3n2m">Perl Weekly Challenge #214 - Rank Score</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -3161,7 +3351,7 @@ say $hash{$_} for @ARGV;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-foundation-news" id="card_34">
+          <div class="card perl-foundation-news" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/perlgpt">Grant Application-PerlGPT</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge rounded-pill bg-primary" style="float: right">Perl Foundation News</a> 
@@ -3271,7 +3461,7 @@ John Napiorkowski &amp; Will Braswell </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-foundation-news" id="card_35">
+          <div class="card perl-foundation-news" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tree-sitter">Grant Application to Develop a Modern IDE for Perl 5  </a></h2>
 <a href="https://news.perlfoundation.org/" class="badge rounded-pill bg-primary" style="float: right">Perl Foundation News</a> 
@@ -3342,7 +3532,7 @@ Hi, let me introduce myself. I'm Ganesan Arjuna Maharaja. I'm a full time develo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_36">
+          <div class="card niceperl" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/cdxli-10-great-cpan-modules-released.html">(cdxli) 10 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3437,7 +3627,7 @@ Hi, let me introduce myself. I'm Ganesan Arjuna Maharaja. I'm a full time develo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_37">
+          <div class="card niceperl" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/dliii-metacpan-weekly-report.html">(dliii) metacpan weekly report - Getopt::Long &amp; Dash</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3529,7 +3719,7 @@ Hi, let me introduce myself. I'm Ganesan Arjuna Maharaja. I'm a full time develo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_38">
+          <div class="card niceperl" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/dlxxix-stackoverflow-perl-report.html">(dlxxix) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3550,7 +3740,7 @@ Build date: 2023-04-22 19:47:15 GMT</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-on-medium" id="card_39">
+          <div class="card perl-on-medium" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://medium.com/@jrballesteros/a-simple-guide-to-extract-gps-information-from-gopro-photos-and-videos-cf6edf6dc601?source=rss------perl-5">A Simple Guide to Extract GPS Information from GoPro Photos and Videos</a></h2>
 <a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
@@ -3562,7 +3752,7 @@ Build date: 2023-04-22 19:47:15 GMT</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-on-medium" id="card_40">
+          <div class="card perl-on-medium" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://medium.com/@gustavohigueram/technical-log-of-open-source-contribution-quine-in-perl-6d9b5c47bae1?source=rss------perl-5">Technical Log of Open Source Contribution: Quine in Perl</a></h2>
 <a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
@@ -3574,7 +3764,7 @@ Build date: 2023-04-22 19:47:15 GMT</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-on-medium" id="card_41">
+          <div class="card perl-on-medium" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://techtrendtracker.medium.com/the-top-3-worst-programming-languages-in-march-2023-7ce6936bea62?source=rss------perl-5">The Top 3 Worst Programming Languages in March 2023</a></h2>
 <a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
@@ -3606,7 +3796,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 04 May 2023 08:39 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Thursday 04 May 2023 12:45 UTC</address>
             </div>
           </div>
         </div><!-- container -->
