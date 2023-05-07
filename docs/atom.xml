@@ -7,9 +7,241 @@
     <name>Dave Cross</name>
     <email>dave@theplanetarium.org</email>
   </author>
-  <updated>2023-05-07T16:39:20Z</updated>
+  <updated>2023-05-07T20:39:14Z</updated>
   <link rel="self" href="https://perl.theplanetarium.org/" type="application/atom+xml"/>
   <id>https://perl.theplanetarium.org/</id>
+  <entry>
+    <title type="html">PTS 2023: the CPAN Meta Analyzer (5/5)</title>
+    <link href="https://rjbs.cloud/blog/2023/05/pts-2023-cpan-meta-analyzer-5-5/" rel="alternate" type="text/html" title="PTS 2023: the CPAN Meta Analyzer (5/5)"/>
+    <published>2023-05-07T16:07:01+00:00</published>
+    <updated>2023-05-07T16:07:01+00:00</updated>
+    <id>https://rjbs.cloud/blog/2023/05/pts-2023-cpan-meta-analyzer-5-5</id>
+    <content type="html" xml:base="https://rjbs.cloud/blog/2023/05/pts-2023-cpan-meta-analyzer-5-5/">&lt;h2 id="my-stupid-cpan-meta-analyzer-again"&gt;my stupid CPAN “meta analyzer” (again)&lt;/h2&gt;
+
+&lt;p&gt;I looked at whether I’d blogged about my CPAN distribution analyzer before, and
+I did.  I &lt;a href="/blog/2015/04/my-stupid-cpan-meta-analyzer/"&gt;wrote something eight years ago&lt;/a&gt; that began:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Just about exactly five years ago, I wrote a goofy little program that walked
+through all of the CPAN and produced a CSV file telling me what was used to
+produce most dists.  That is: it looked at the &lt;code class="language-plaintext highlighter-rouge"&gt;generated_by&lt;/code&gt; field in the
+META files and categorized them.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;So I guess it’s thirteen years old now!  Wow.&lt;/p&gt;
+
+&lt;p&gt;As an aside: the first run, thirteen years ago, showed that about 2% of indexed
+CPAN distributions used Dist::Zilla.  Five years later, it was 20%.  Today,
+it’s 28%.  With a few more, Dist::Zilla will top ExtUtils::MakeMaker.  I don’t
+know what I think about that, but there it is.&lt;/p&gt;
+
+&lt;p&gt;Anyway, what is this thing?&lt;/p&gt;
+
+&lt;p&gt;Right now, it’s still not on the CPAN, although I should really get around to
+making that happen.  It’s &lt;a href="https://github.com/rjbs/CPAN-Analyzer/"&gt;on GitHub&lt;/a&gt;,
+though, and you can clone and install it.  You can also see its output over the
+last 13 years (sampled very infrequently) on my possibly-moving-somday &lt;a href="https://semiotic.systems/cpandata/"&gt;CPAN
+data page&lt;/a&gt;.  The key bit is the program
+&lt;code class="language-plaintext highlighter-rouge"&gt;analyze-metacpan&lt;/code&gt;.  When run, it finds your minicpan clone (as long as it’s in
+&lt;code class="language-plaintext highlighter-rouge"&gt;~/minicpan&lt;/code&gt; where I would put it) and fires up a CPAN::Visitor.  That walks
+through the latest version of every distribution on the index.  It extracts
+them, looks at the files in them, gathers data, and moves on.  As it goes, it
+records one database row per distribution into an SQLite file.  Then, you can
+write queries against that SQLite file, like the one that shows what’s been
+generating META files:&lt;/p&gt;
+
+&lt;div class="language-plaintext highlighter-rouge"&gt;&lt;div class="highlight"&gt;&lt;pre class="highlight"&gt;&lt;code&gt;$ ./bin/top-meta-generators -f ./dist-2023-04-30.sqlite --min 300
+There are 11228 dists by 1135 unique cpan ids using Dist::Zilla.
+
+generator           | dists | authors | %
+ExtUtils::MakeMaker | 12900 | 3431    | 33.02%
+Dist::Zilla         | 11228 | 1135    | 28.74%
+                    |  4666 | 2255    | 11.94%
+Module::Build       |  4334 | 1007    | 11.09%
+Module::Install     |  3367 |  623    | 8.62%
+Minilla             |  1285 |  311    | 3.29%
+__OTHER__           |   823 |   98    | 2.11%
+Dist::Milla         |   470 |   99    | 1.20%
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here’s what the SQLite file looks like:&lt;/p&gt;
+
+&lt;div class="language-sql highlighter-rouge"&gt;&lt;div class="highlight"&gt;&lt;pre class="highlight"&gt;&lt;code&gt;&lt;span class="k"&gt;CREATE&lt;/span&gt; &lt;span class="k"&gt;TABLE&lt;/span&gt; &lt;span class="n"&gt;dists&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="n"&gt;distfile&lt;/span&gt; &lt;span class="k"&gt;PRIMARY&lt;/span&gt; &lt;span class="k"&gt;KEY&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;dist&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;dist_version&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;cpanid&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;mtime&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;mdatetime&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;is_tarbomb&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;file_count&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;has_meta_yml&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;has_meta_json&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_spec&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_dist_version&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_generator&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_gen_package&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_gen_version&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_gen_perl&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_license&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_yml_error&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_yml_backend&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_json_error&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_json_backend&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_struct_error&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;meta_provides_defined&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;has_makefile_pl&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;has_build_pl&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;has_dist_ini&lt;/span&gt; &lt;span class="nb"&gt;INTEGER&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="k"&gt;CREATE&lt;/span&gt; &lt;span class="k"&gt;TABLE&lt;/span&gt; &lt;span class="n"&gt;dist_prereqs&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="n"&gt;dist&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;phase&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="k"&gt;type&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;module&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;requirements&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;module_dist&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="k"&gt;CREATE&lt;/span&gt; &lt;span class="k"&gt;INDEX&lt;/span&gt; &lt;span class="n"&gt;dist_prereqs_by_dist&lt;/span&gt; &lt;span class="k"&gt;on&lt;/span&gt; &lt;span class="n"&gt;dist_prereqs&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;dist&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;phase&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="k"&gt;type&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="k"&gt;CREATE&lt;/span&gt; &lt;span class="k"&gt;INDEX&lt;/span&gt; &lt;span class="n"&gt;dist_prereqs_by_target&lt;/span&gt; &lt;span class="k"&gt;on&lt;/span&gt; &lt;span class="n"&gt;dist_prereqs&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;
+  &lt;span class="n"&gt;module_dist&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="n"&gt;phase&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+  &lt;span class="k"&gt;type&lt;/span&gt;
+&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;I use this for lots of little queries.  For example, does &lt;em&gt;anybody&lt;/em&gt; use the
+&lt;code class="language-plaintext highlighter-rouge"&gt;provides&lt;/code&gt; entry in META.json to tell PAUSE exactly how to index the dist?&lt;/p&gt;
+
+&lt;div class="language-plaintext highlighter-rouge"&gt;&lt;div class="highlight"&gt;&lt;pre class="highlight"&gt;&lt;code&gt;sqlite&amp;gt; SELECT meta_provides_defined, COUNT(*) FROM dists GROUP BY 1;
+
+meta_provides_defined  count(*)
+---------------------  --------
+0                      29170
+1                      9903
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Yes!  Wow, over a quarter of distributions have contents in their META provides
+field.  What’s &lt;em&gt;making&lt;/em&gt; those?&lt;/p&gt;
+
+&lt;div class="language-plaintext highlighter-rouge"&gt;&lt;div class="highlight"&gt;&lt;pre class="highlight"&gt;&lt;code&gt;sqlite&amp;gt; SELECT meta_gen_package, COUNT(*)
+        FROM dists
+        WHERE meta_provides_defined='1'
+        GROUP BY 1;
+
+meta_gen_package               count(*)
+-----------------------------  --------
+⦰                              253
+App::ModuleBuildTiny           75
+Dist::Banshee                  1
+Dist::Iller                    47
+Dist::Inkt::Profile::KJETILK   10
+Dist::Inkt::Profile::Simple    2
+Dist::Inkt::Profile::TOBYINK   217
+Dist::Milla                    73
+Dist::Zilla                    3454
+Dist::Zilla::Plugin::MetaJSON  1
+ExtUtils::MakeMaker            350
+Minilla                        1190
+Module::Build                  4143
+Module::Build::Bundle          1
+Module::Install                85
+docmaker                       1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;MakeMaker!  Module::Build!  What’s actually making these?  This query got me a
+list of dists to investigate:&lt;/p&gt;
+
+&lt;div class="language-sql highlighter-rouge"&gt;&lt;div class="highlight"&gt;&lt;pre class="highlight"&gt;&lt;code&gt;&lt;span class="k"&gt;SELECT&lt;/span&gt; &lt;span class="n"&gt;dist&lt;/span&gt;
+&lt;span class="k"&gt;FROM&lt;/span&gt; &lt;span class="n"&gt;dists&lt;/span&gt;
+&lt;span class="k"&gt;WHERE&lt;/span&gt; &lt;span class="n"&gt;meta_gen_package&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s1"&gt;'ExtUtils::MakeMaker'&lt;/span&gt;
+  &lt;span class="k"&gt;AND&lt;/span&gt; &lt;span class="n"&gt;meta_provides_defined&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;'1'&lt;/span&gt;
+&lt;span class="k"&gt;ORDER&lt;/span&gt; &lt;span class="k"&gt;BY&lt;/span&gt; &lt;span class="n"&gt;dist&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Looking at the SQL schema above, you might have noticed it also tracks prereqs.
+This is really useful!  For example, I wrote a program once to answer this
+question:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Which of my distributions declare a v5.8 prereq (or none), but depend on
+libraries that require something newer?&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;In those cases, I might feel more eager to bump the minimum version of my
+distribution.  Let’s say Karen Etheridge is about to do a hunk of code review
+and wonders which code she could convert to postfix deferencing while at it.&lt;/p&gt;
+
+&lt;div class="language-plaintext highlighter-rouge"&gt;&lt;div class="highlight"&gt;&lt;pre class="highlight"&gt;&lt;code&gt;$ ./bin/already-needs \
+    ./dist-2023-04-30.sqlite \  # Where's our SQLite db?
+    --minimum-target 5.20.0 \   # If we can't bump to v5.20 or better, skip it
+    --cpanid ETHER              # We're only considering one author
+
+D-Z-App-Command-weaverconf      (  v5.6.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Log-Dispatchouli
+D-Z-P-AuthorityFromModule       (  v5.8.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Log-Dispatchouli
+[ 50 D-Z plugins elided for this blog post!)
+D-Z-PB-Author-ETHER             ( v5.13.2) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Dist-Zilla-Plugin-CheckPrereqsIndexed plus 4 more
+D-Z-PB-FLORA                    (  v5.6.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Dist-Zilla-Plugin-PodWeaver plus 3 more
+D-Z-PB-Git-VersionManager       ( v5.10.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Log-Dispatchouli
+D-Z-R-FileWatcher               (  v5.6.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Log-Dispatchouli
+D-Z-R-ModuleMetadata            ( v5.10.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Log-Dispatchouli
+D-Z-R-RepoFileInjector          (  v5.6.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Log-Dispatchouli
+JSON-Schema-Draft201909         ( v5.16.0) -&amp;gt; ( v5.20.0) via JSON-Schema-Modern Test-JSON-Schema-Acceptance
+MooseX-App-Cmd                  (  v5.8.5) -&amp;gt; ( v5.20.0) via App-Cmd
+Pod-Weaver-Plugin-Encoding      (  v5.6.0) -&amp;gt; ( v5.20.0) via Log-Dispatchouli Pod-Weaver
+Pod-Weaver-PluginBundle-FLORA   (       ~) -&amp;gt; ( v5.20.0) via Log-Dispatchouli Pod-Weaver
+Task-Kensho-Email               (  v5.6.0) -&amp;gt; ( v5.20.0) via Email-MIME-Kit
+Task-Kensho-ModuleDev           (  v5.6.0) -&amp;gt; ( v5.20.0) via App-Cmd Dist-Zilla Log-Dispatchouli
+Task-Kensho-Toolchain           (  v5.6.0) -&amp;gt; ( v5.20.0) via App-Cmd
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The actual output is colorized for skimming.&lt;/p&gt;
+
+&lt;p&gt;There are tools for computing river scores and related data:&lt;/p&gt;
+
+&lt;div class="language-plaintext highlighter-rouge"&gt;&lt;div class="highlight"&gt;&lt;pre class="highlight"&gt;&lt;code&gt;$ ./bin/river-scores dist-2023-04-30.sqlite \
+    --format score --format minperl --format dist \ # what columns?
+    --min-score 3 \                                 # stop where in the river?
+    | head
+
+score minperl  dist
+5     5.006    ExtUtils-MakeMaker
+5     5.006002 Test-Simple
+5     ~        PathTools
+4     5.006    Scalar-List-Utils
+4     ~        Carp
+4     5.006    File-Temp
+4     ~        Exporter
+4     ~        Data-Dumper
+4     ~        Encode
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id="wait-what-does-this-have-to-do-with-the-pts-in-lyon"&gt;Wait, what does this have to do with the PTS in Lyon?&lt;/h2&gt;
+
+&lt;p&gt;Hey, great question.&lt;/p&gt;
+
+&lt;p&gt;The short version is:  I added a few fields, like the “does it use meta
+provides” and “is the archive a tarball?”.  I also added a YYYY-MM-DD style
+date field, where previously there had only been epoch seconds.  They’re both
+there now, because the epoch seconds is much easier to use in SQL queries.&lt;/p&gt;
+
+&lt;p&gt;I used these to help inform some conversations in deciding PAUSE policies.  How
+often does such and thing get used?  If never, it’s easier to say we’ll drop it
+from the code.  I use this code myself when thinking about what I might do when
+updating my own code.&lt;/p&gt;
+
+&lt;p&gt;I update this program once in a while, or just regenerate the analysis with
+today’s CPAN.&lt;/p&gt;</content>
+    <author>
+      <name>Ricardo Signes</name>
+    </author>
+    <category term="perl"/>
+    <category term="programming"/>
+    <summary type="html">my stupid CPAN “meta analyzer” (again)</summary>
+  </entry>
   <entry xmlns:media="http://search.yahoo.com/mrss/">
     <id>tag:github.com,2008:Grit::Commit/48e8a9d396af628cb5c6bd04c0bf8964271c9a52</id>
     <link type="text/html" rel="alternate" href="https://github.com/Perl/perl5/commit/48e8a9d396af628cb5c6bd04c0bf8964271c9a52"/>
@@ -108,7 +340,7 @@ So what's really going on there?i tried many times and the curl to the cpan sour
     </entry>
   <entry xmlns:re="http://purl.org/atompub/rank/1.0">
         <id>https://stackoverflow.com/q/76193687</id>
-        <re:rank scheme="https://stackoverflow.com">0</re:rank>
+        <re:rank scheme="https://stackoverflow.com">-1</re:rank>
         <title type="text">Install perlcritic on macOS Ventura</title>
             <category scheme="https://stackoverflow.com/tags" term="macos"/>
             <category scheme="https://stackoverflow.com/tags" term="perl"/>
@@ -690,10 +922,8 @@ EOF
 &lt;p&gt;No further error handling is needed there, because it throws an exception that
 gets caught upstream.&lt;/p&gt;
 
-&lt;p&gt;This work isn’t quite finished yet.  First, I did all the distribution errors.
-Those were pretty easy, but meant I had to build the context object and
-try/catch code.  Then I did the package errors, but they’re not entirely done.
-I’ll finish those in the next week, most likely.&lt;/p&gt;
+&lt;p&gt;This work is all &lt;a href="https://github.com/andk/pause/pull/405"&gt;ready and waiting to be reviewed and
+merged&lt;/a&gt;!&lt;/p&gt;
 
 &lt;p&gt;Unsurprisingly, doing this refactoring exposed a few bugs in PAUSE.  It has
 probably introduced some new ones, but hopefully they’ll be easy to fix when
@@ -1575,6 +1805,7 @@ related, of course.&lt;/p&gt;
   &lt;li&gt;&lt;a href="/blog/2023/05/pts-2023-lyon-amendment-2-5/"&gt;changing the version floor on the Perl toolchain&lt;/a&gt;&lt;/li&gt;
   &lt;li&gt;&lt;a href="/blog/2023/05/pts-2023-more-pause-work-3-5/"&gt;PAUSE improvements: this and that&lt;/a&gt;&lt;/li&gt;
   &lt;li&gt;&lt;a href="/blog/2023/05/pts-2023-pause-flowchart-4-5/"&gt;refactoring the PAUSE indexer flowchart&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href="/blog/2023/05/pts-2023-cpan-meta-analyzer-5-5/"&gt;the CPAN META Analyzer&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;
 
 &lt;h2 id="thanks-to-our-sponsors-and-organizers"&gt;Thanks to our sponsors and organizers&lt;/h2&gt;
