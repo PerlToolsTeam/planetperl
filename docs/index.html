@@ -151,7 +151,7 @@
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
 
               <p class="text-right"><small>Published by MrLungo
- on Saturday 06 May 2023 20:30</small></p>
+ on Saturday 06 May 2023 21:09</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text">
             <p>I've got a line with an identifier, then a pattern (in my case, a semicolon) and then a list of numbers :</p>
@@ -181,7 +181,176 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_3">
+          <div class="card rjbs-forgot-what-he-was-saying" id="card_3">
+            <div class="card-header">
+              <h2 class="card-title"><a href="https://rjbs.cloud/blog/2023/05/pts-2023-pause-flowchart-4-5/">PTS 2023: refactoring the PAUSE indexer flowchart (4/5)</a></h2>
+<a href="https://rjbs.cloud/" class="badge rounded-pill bg-primary" style="float: right">rjbs forgot what he was saying</a> 
+
+              <p class="text-right"><small>Published by Ricardo Signes
+ on Saturday 06 May 2023 16:07</small></p>
+            </div> <!-- card-header -->
+     <div class="card-body">       <div class="card-text"><h2 id="email-indexing-and-error-reporting">Email, indexing, and error reporting</h2>
+
+<p>Yesterday I said that in addition to a bunch of little work, I worked on one
+big change.  That was true!  It was still one thing all around email, indexing,
+and error reporting.  These three were closely related, because the code is so
+intertwined.  Here’s an example:</p>
+
+<p>In newer perls, you write a package statement in one of these two ways:</p>
+
+<div class="language-perl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">package</span> <span class="nn">Code::</span><span class="nv">Reusable</span> <span class="mf">1.234</span><span class="p">;</span>
+
+<span class="k">sub </span><span class="nf">something_in_package</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span>
+
+<span class="c1">##</span>
+<span class="c1">## …or…</span>
+<span class="c1">##</span>
+
+<span class="nb">package</span> <span class="nn">Reusable::</span><span class="nv">Code</span> <span class="mf">1.234</span> <span class="p">{</span>
+  <span class="k">sub </span><span class="nf">something_in_package</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here, the versions must be “strict”, meaning you can either write a simple
+rational decimal number or a v-string like <code class="language-plaintext highlighter-rouge">v1.2.3</code>.  There are a few more
+rules in practice, but those are the rules.  In very old perls (below the
+toolchain minimum version), you had to assign to the package variable
+<code class="language-plaintext highlighter-rouge">$VERSION</code> by hand, like this:</p>
+
+<div class="language-perl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">package</span> <span class="nn">Code::</span><span class="nv">Retired</span><span class="p">;</span>
+<span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="p">'</span><span class="s1">1.234</span><span class="p">';</span>
+</code></pre></div></div>
+
+<p>Notice that the rvalue above is a string literal?  You’re meant to set the
+version to a string, although really the whole thing is a muddle.  The muddle
+has consequences, though, because a simple Perl assignment means you could
+write this:</p>
+
+<div class="language-perl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">package</span> <span class="nn">Code::</span><span class="nv">Rebuffed</span><span class="p">;</span>
+<span class="k">our</span> <span class="nv">$VERSION</span> <span class="o">=</span> <span class="mf">1.234</span><span class="p">;</span>
+</code></pre></div></div>
+
+<p>Why should this matter?  Well, it shouldn’t, and it doesn’t, except what if you
+use a much smaller number, like <code class="language-plaintext highlighter-rouge">0.000001</code>?  <em>That</em> matters.  See, in
+processing version strings, PAUSE will <code class="language-plaintext highlighter-rouge">eval</code> them (safely) to convert them
+into strings.  The numeric literal <code class="language-plaintext highlighter-rouge">1.234</code>, evaluated, will later stringify to
+1.234.  Perfect!</p>
+
+<p>The numeric literal <code class="language-plaintext highlighter-rouge">0.000001</code> will, on the other hand, stringify to <code class="language-plaintext highlighter-rouge">1e-06</code>,
+which is not a valid version.  The indexer chokes and basically reports
+nothing.</p>
+
+<p>So, how do we fix this?  We could try to notice that the value was a numeric
+literal and enquote it, but this is no good, some version assignment
+expressions are too complicated.  (Would I like to stop indexing anything
+using old-style version assignment?  Yes, but I know it’s a total nonstarter.)</p>
+
+<p>Instead, we could make this a clear indexer error.  If we see that the version
+assignment’s rvalue won’t be a valid version, we could decline to index the
+package and report it to the user.  In fact, we <em>already do that</em>… for certain
+other kinds of bad version.  In the place we could detect this, though, it
+wasn’t trivial to say “this package failed, report this reason, and now proceed
+to the next package.”</p>
+
+<center>
+<a data-flickr-embed="true" href="https://www.flickr.com/photos/rjbs/52869038908/in/dateposted/" title="how the PAUSE indexer works"><img src="https://live.staticflickr.com/65535/52869038908_a2106ab1dd_z.jpg" width="640" height="480" alt="how the PAUSE indexer works" /></a><script async="" src="//embedr.flickr.com/assets/client-code.js" charset="utf-8"></script>
+</center>
+
+<p>I’ve encountered this problem a bunch of times when working on the indexer.
+Generally, my approach has been to figure out how to best cram something in
+place.  This time, I decided to finally enact my longstanding plan of making it
+easier to do exactly what I said: at any point during indexing, to be able to
+say:</p>
+
+<ul>
+  <li>mark the current part of the operation as failed</li>
+  <li>either proceed to the next part of the operation, or stop entirely</li>
+</ul>
+
+<p>I did this by introducing a new object, the context object, to the indexer.
+One is created whenever we index a new distribution (file), and it’s passed
+down the call stack to each part of indexing.  Really, the distribution object
+could’ve performed this job, but I was trying to tease things apart, and making
+a new object seemed like it would help keep the old and new code separate.</p>
+
+<p>The context object keeps track of what warnings or errors have occurred, and
+has methods to add new warnings or raise new errors.  As you might guess from
+the word “raise”, errors are generally treated like exceptions.  Indexing works
+something like this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>given a file:
+    if it doesn't look like a distribution: quietly give up
+
+    extract archive
+    check for acceptability of archive (extracts cleanly, no blib dir)
+    look for a META.json or META.yml file
+    check for acceptability of META file (not a dev release, etc.)
+
+    for each .pm file:
+        figure out its $VERSION
+        find all the packages in the file
+        check permissions
+        plan to index the package
+
+    send an email report
+</code></pre></div></div>
+
+<p>Only a few of these steps could effectively abort indexing, and only a few
+parts of the “for each .pm file” loop could skip the file early.  I wrapped the
+overall code in try/catch block, and the body of the foreach block in another.
+They catch exceptions of the type <code class="language-plaintext highlighter-rouge">Abort::Dist</code> and <code class="language-plaintext highlighter-rouge">Abort::Package</code>.  Then,
+all the code that indicated “skip when you can” or “this error might be useful
+to show later” got converted into exceptions.  In no case does this seem to
+have led to a reduction of quality of error messages, but I think it has made
+the code a lot cleaner.  I also think it means that adding new kinds of errors
+should now be much simpler.  Any piece of code can now throw the right kind of
+exception and it’ll end up usefully in the email.</p>
+
+<p>To keep providing helpful error messages, I named all the errors we throw.
+Previously, some (but not all) errors worked by setting a property on the
+distribution object to a named constant.  That constant was then associated
+with a header string, so <code class="language-plaintext highlighter-rouge">EBADVERSION</code> would lead to “The package version was
+malformed or invalid.”  I didn’t lead to further text, though, so at some
+places throughout PAUSE, a long-form description was inline with the error
+handling code.  For example, this error exists:</p>
+
+<div class="language-perl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">dist_error</span> <span class="s">multiroot</span> <span class="o">=&gt;</span> <span class="p">{</span>
+  <span class="s">header</span>  <span class="o">=&gt;</span> <span class="p">'</span><span class="s1">archive has multiple roots</span><span class="p">',</span>
+  <span class="s">body</span>    <span class="o">=&gt;</span> <span class="k">sub </span><span class="p">{</span>
+    <span class="k">my</span> <span class="p">(</span><span class="nv">$dist</span><span class="p">)</span> <span class="o">=</span> <span class="nv">@_</span><span class="p">;</span>
+    <span class="k">return</span> <span class="s">&lt;&lt;"EOF"
+The distribution does not unpack into a single directory and is therefore not
+being indexed. Hint: try 'make dist' or 'Build dist'. (The directory entries
+found were: @{$dist-&gt;{HAS_MULTIPLE_ROOT}})
+EOF
+</span>  <span class="p">},</span>
+<span class="p">};</span>
+</code></pre></div></div>
+
+<p>To throw that error, a bit of code calls this:</p>
+
+<div class="language-perl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">$ctx</span><span class="o">-&gt;</span><span class="nv">abort_indexing_dist</span><span class="p">(</span><span class="nv">DISTERROR</span><span class="p">('</span><span class="s1">multiroot</span><span class="p">'));</span>
+</code></pre></div></div>
+
+<p>No further error handling is needed there, because it throws an exception that
+gets caught upstream.</p>
+
+<p>This work isn’t quite finished yet.  First, I did all the distribution errors.
+Those were pretty easy, but meant I had to build the context object and
+try/catch code.  Then I did the package errors, but they’re not entirely done.
+I’ll finish those in the next week, most likely.</p>
+
+<p>Unsurprisingly, doing this refactoring exposed a few bugs in PAUSE.  It has
+probably introduced some new ones, but hopefully they’ll be easy to fix when
+found!</p>
+
+<p>I look forward to getting this finished and merged.  I have one last thing I’d
+like to do before I stop thinking about PAUSE for a while, and I would like to
+keep up a head of steam.</p>       </div><!-- card-text -->     </div>
+            <div class="card-footer">
+            </div><!-- card-footer -->
+          </div><!-- card -->
+          <div class="card blogs-perl-org" id="card_4">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/paul_johnson/2023/04/the-perl-toolchain-summit-2023.html">The Perl Toolchain Summit 2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -230,7 +399,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_4">
+          <div class="card r-perl" id="card_5">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/139sw4o/sbom/">SBOM</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -242,7 +411,7 @@
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_5">
+          <div class="card perl-questions-on-stackoverflow" id="card_6">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76168499/perl-hash-of-hashes-is-the-only-option-to-use-eval-to-access-variable-leng">Perl - Hash of hashes - is the only option to use &quot;eval&quot; to access variable length key-sequences? {k[0]}=&gt;{k[1]}=&gt;</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -268,7 +437,7 @@ I also have algorithms that give me a sequence of keys in @key
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_6">
+          <div class="card perl-commits-on-github" id="card_7">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/c92090f4ad8f5a531f27024c79db40d8be23bec3">
         INSTALL - document how to build a perl without taint support
@@ -289,7 +458,7 @@ its about time we documented it properly.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_7">
+          <div class="card perl-commits-on-github" id="card_8">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/691af18e2671d0d4ac2f0addae215921bfb5e1ca">
         configpm - Add comments prefixes to here docs
@@ -312,7 +481,7 @@ Fixes https://github.com/Perl/perl5/issues/21045</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_8">
+          <div class="card blogs-perl-org" id="card_9">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/psc/2023/05/this-week-in-psc-106.html">This week in PSC (106)</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -353,7 +522,7 @@ Fixes https://github.com/Perl/perl5/issues/21045</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_9">
+          <div class="card r-perl" id="card_10">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/139k23x/welcome_to_the_perl_toolchain_summit_2023/">Welcome to the Perl Toolchain Summit 2023</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -365,7 +534,7 @@ Fixes https://github.com/Perl/perl5/issues/21045</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_10">
+          <div class="card perl-questions-on-stackoverflow" id="card_11">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76188530/perl-fatal-ssl-error-hostname-verification-failed">Perl: fatal SSL error: hostname verification failed</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -444,7 +613,7 @@ DEBUG: .../IO/Socket/SSL.pm:853: fatal SSL error: hostname verification failed
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_11">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_12">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/06/font-in-pdf-builder/">Font selection in PDF::Builder</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -517,7 +686,7 @@ list as a base. So this would work too:</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_12">
+          <div class="card perl-questions-on-stackoverflow" id="card_13">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76183920/bash-perl-options-for-one-expression-others-for-another-in-the-same-command">bash perl options for one expression, others for another, in the same command</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -609,7 +778,7 @@ text3    #EOF file2.txt
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-questions-on-stackoverflow" id="card_13">
+          <div class="card perl-questions-on-stackoverflow" id="card_14">
             <div class="card-header">
               <h2 class="card-title"><a href="https://stackoverflow.com/questions/76185167/add-custom-function-to-tpage-templatetoolkit">Add custom function to Tpage (Template::Toolkit)</a></h2>
 <a href="https://stackoverflow.com/questions/tagged/perl" class="badge rounded-pill bg-primary" style="float: right">Perl questions on StackOverflow</a> 
@@ -647,7 +816,7 @@ More text
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_14">
+          <div class="card blogs-perl-org" id="card_15">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/book1/2023/05/welcome-to-the-perl-toolchain-summit-2023.html">Welcome to the Perl Toolchain Summit 2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -716,7 +885,7 @@ More text
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_15">
+          <div class="card r-perl" id="card_16">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/138uobm/module_index_search_cpan_meta_browser/">Module Index Search - CPAN Meta Browser</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -728,7 +897,7 @@ More text
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_16">
+          <div class="card blogs-perl-org" id="card_17">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/dean/2023/05/early-may-perl-software-releases-2023.html">Early May Perl Software Releases 2023</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -775,7 +944,7 @@ included with this release is <a href="https://github.com/bestpractical/rt/relea
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card rjbs-forgot-what-he-was-saying" id="card_17">
+          <div class="card rjbs-forgot-what-he-was-saying" id="card_18">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rjbs.cloud/blog/2023/05/pts-2023-more-pause-work-3-5/">PTS 2023: more PAUSE work (3/5)</a></h2>
 <a href="https://rjbs.cloud/" class="badge rounded-pill bg-primary" style="float: right">rjbs forgot what he was saying</a> 
@@ -927,7 +1096,7 @@ useful to have it coded, and I used it to simplify a lot of the code!</p>       
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_18">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_19">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/05/pwc215-number-placement/">PWC215 - Number Placement</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -1118,7 +1287,7 @@ sub zero-streaks-count (@numbers) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card r-perl" id="card_19">
+          <div class="card r-perl" id="card_20">
             <div class="card-header">
               <h2 class="card-title"><a href="https://www.reddit.com/r/perl/comments/137mox0/mojo_may_be_the_biggest_programming_language/">Mojo may be the biggest programming language advance in decades</a></h2>
 <a href="https://www.reddit.com/r/perl" class="badge rounded-pill bg-primary" style="float: right">r/perl</a> 
@@ -1130,7 +1299,7 @@ sub zero-streaks-count (@numbers) {
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card rjbs-forgot-what-he-was-saying" id="card_20">
+          <div class="card rjbs-forgot-what-he-was-saying" id="card_21">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rjbs.cloud/blog/2023/05/pts-2023-lyon-amendment-2-5/">PTS 2023: The Lyon Amendment (minimum perl) (2/5)</a></h2>
 <a href="https://rjbs.cloud/" class="badge rounded-pill bg-primary" style="float: right">rjbs forgot what he was saying</a> 
@@ -1199,7 +1368,7 @@ about projects to make that possible.  I don’t really plan to follow that work
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card rjbs-forgot-what-he-was-saying" id="card_21">
+          <div class="card rjbs-forgot-what-he-was-saying" id="card_22">
             <div class="card-header">
               <h2 class="card-title"><a href="https://rjbs.cloud/blog/2023/05/pts-2023-lyon-1-5/">PTS 2023: Lyon and changing plans (1/5)</a></h2>
 <a href="https://rjbs.cloud/" class="badge rounded-pill bg-primary" style="float: right">rjbs forgot what he was saying</a> 
@@ -1272,6 +1441,7 @@ related, of course.</p>
 <ul>
   <li><a href="/blog/2023/05/pts-2023-lyon-amendment-2-5/">changing the version floor on the Perl toolchain</a></li>
   <li><a href="/blog/2023/05/pts-2023-more-pause-work-3-5/">PAUSE improvements: this and that</a></li>
+  <li><a href="/blog/2023/05/pts-2023-pause-flowchart-4-5/">refactoring the PAUSE indexer flowchart</a></li>
 </ul>
 
 <h2 id="thanks-to-our-sponsors-and-organizers">Thanks to our sponsors and organizers</h2>
@@ -1299,7 +1469,7 @@ Services</a>,
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card blogs-perl-org" id="card_22">
+          <div class="card blogs-perl-org" id="card_23">
             <div class="card-header">
               <h2 class="card-title"><a href="https://blogs.perl.org/users/oldtechaa/2023/05/perl-weekly-challenge-215---bad-words-and-looking-for-zeros.html">Perl Weekly Challenge #215 - Bad Words and Looking For Zeros</a></h2>
 <a href="http://blogs.perl.org/" class="badge rounded-pill bg-primary" style="float: right">blogs.perl.org</a> 
@@ -1354,7 +1524,7 @@ say ($count &gt; 0 ? '0' : '1');
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_23">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_24">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/04/pwc215-odd-one-out/">PWC215 - Odd One Out</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -1486,7 +1656,7 @@ things a bit differently because there’s no <code class="language-plaintext hi
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_24">
+          <div class="card dev-to-perl" id="card_25">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/oldtechaa/perl-weekly-challenge-215-bad-words-and-looking-for-zeros-3ihg">Perl Weekly Challenge #215 - Bad Words and Looking For Zeros</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -1552,7 +1722,7 @@ say ($count &gt; 0 ? '0' : '1');
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_25">
+          <div class="card perl-commits-on-github" id="card_26">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/493e62880e0752dbcca1bed2e1db29bef29edc39">
         Remove duplicate &quot;the&quot; in comments
@@ -1570,7 +1740,7 @@ Fix spelling on various files pertaining to core Perl.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_26">
+          <div class="card perl-commits-on-github" id="card_27">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/034a96a9c8546c2e080a802babba5ed9bc6c7798">
         Add MS Build Tools links
@@ -1590,7 +1760,7 @@ MSBT provides CLI compiler and other related tools (without the overhead of the 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-commits-on-github" id="card_27">
+          <div class="card perl-commits-on-github" id="card_28">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.com/Perl/perl5/commit/4d9b15204f627d9337665bd88adc71cd3bd1ca55">
         perlapi: Fix strftime inaccuracies, clarify
@@ -1609,7 +1779,7 @@ documentation did not get updated.</pre>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_28">
+          <div class="card dev-to-perl" id="card_29">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/boblied/pwc-215-odd-one-out-number-placement-2cc9">PWC 215 Odd One Out, Number Placement</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -1837,7 +2007,7 @@ Output: 1<br>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_29">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_30">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/03/posterior-predictive/">Posterior Predictive</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -1903,7 +2073,7 @@ allows us to do the <em>transfer</em> from the former to the latter.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_30">
+          <div class="card personal-blog-of-flavio-poletti-perl-raku-" id="card_31">
             <div class="card-header">
               <h2 class="card-title"><a href="https://github.polettix.it/ETOOBUSY/2023/05/02/reinstalling-r/">Reinstalling R</a></h2>
 <a href="https://github.polettix.it/ETOOBUSY/" class="badge rounded-pill bg-primary" style="float: right">Personal blog of Flavio Poletti (Perl & Raku)</a> 
@@ -1970,7 +2140,7 @@ but in the meantime… Now on with:</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_31">
+          <div class="card dev-to-perl" id="card_32">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/szabgab/perl-weekly-614-why-not-perl-cng">Perl Weekly #614 - Why not Perl?</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -2306,7 +2476,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perlancar" id="card_32">
+          <div class="card perlancar" id="card_33">
             <div class="card-header">
               <h2 class="card-title"><a href="https://perlancar.wordpress.com/2023/05/01/list-of-new-cpan-distributions-apr-2023/">List of new CPAN distributions – Apr 2023</a></h2>
 <a href="https://perlancar.wordpress.com/" class="badge rounded-pill bg-primary" style="float: right">Perlancar</a> 
@@ -2838,7 +3008,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_33">
+          <div class="card niceperl" id="card_34">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/cdxlii-21-great-cpan-modules-released.html">(cdxlii) 21 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3020,7 +3190,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_34">
+          <div class="card niceperl" id="card_35">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/dliv-metacpan-weekly-report.html">(dliv) metacpan weekly report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3136,7 +3306,7 @@ The articles are copyright the respective authors.</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_35">
+          <div class="card dev-to-perl" id="card_36">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/boblied/pwc-214-1-rank-score-2-collect-points-3-4-profit-4adh">PWC 214 (1) Rank Score, (2) Collect Points, (3) ..., (4) Profit!</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -3433,7 +3603,7 @@ Then we can write a subroutine that gives us a list of such pairs for any array 
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card dev-to-perl" id="card_36">
+          <div class="card dev-to-perl" id="card_37">
             <div class="card-header">
               <h2 class="card-title"><a href="https://dev.to/oldtechaa/perl-weekly-challenge-214-rank-score-3n2m">Perl Weekly Challenge #214 - Rank Score</a></h2>
 <a href="https://dev.to/t/perl" class="badge rounded-pill bg-primary" style="float: right">dev.to #perl</a> 
@@ -3486,7 +3656,7 @@ say $hash{$_} for @ARGV;
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-foundation-news" id="card_37">
+          <div class="card perl-foundation-news" id="card_38">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/perlgpt">Grant Application-PerlGPT</a></h2>
 <a href="https://news.perlfoundation.org/" class="badge rounded-pill bg-primary" style="float: right">Perl Foundation News</a> 
@@ -3596,7 +3766,7 @@ John Napiorkowski &amp; Will Braswell </p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-foundation-news" id="card_38">
+          <div class="card perl-foundation-news" id="card_39">
             <div class="card-header">
               <h2 class="card-title"><a href="https://news.perlfoundation.org/post/tree-sitter">Grant Application to Develop a Modern IDE for Perl 5  </a></h2>
 <a href="https://news.perlfoundation.org/" class="badge rounded-pill bg-primary" style="float: right">Perl Foundation News</a> 
@@ -3667,7 +3837,7 @@ Hi, let me introduce myself. I'm Ganesan Arjuna Maharaja. I'm a full time develo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_39">
+          <div class="card niceperl" id="card_40">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/cdxli-10-great-cpan-modules-released.html">(cdxli) 10 great CPAN modules released last week</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3762,7 +3932,7 @@ Hi, let me introduce myself. I'm Ganesan Arjuna Maharaja. I'm a full time develo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_40">
+          <div class="card niceperl" id="card_41">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/dliii-metacpan-weekly-report.html">(dliii) metacpan weekly report - Getopt::Long &amp; Dash</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3854,7 +4024,7 @@ Hi, let me introduce myself. I'm Ganesan Arjuna Maharaja. I'm a full time develo
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card niceperl" id="card_41">
+          <div class="card niceperl" id="card_42">
             <div class="card-header">
               <h2 class="card-title"><a href="https://niceperl.blogspot.com/2023/04/dlxxix-stackoverflow-perl-report.html">(dlxxix) stackoverflow perl report</a></h2>
 <a href="https://niceperl.blogspot.com/" class="badge rounded-pill bg-primary" style="float: right">Niceperl</a> 
@@ -3875,7 +4045,7 @@ Build date: 2023-04-22 19:47:15 GMT</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-on-medium" id="card_42">
+          <div class="card perl-on-medium" id="card_43">
             <div class="card-header">
               <h2 class="card-title"><a href="https://medium.com/@jrballesteros/a-simple-guide-to-extract-gps-information-from-gopro-photos-and-videos-cf6edf6dc601?source=rss------perl-5">A Simple Guide to Extract GPS Information from GoPro Photos and Videos</a></h2>
 <a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
@@ -3887,7 +4057,7 @@ Build date: 2023-04-22 19:47:15 GMT</p>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
-          <div class="card perl-on-medium" id="card_43">
+          <div class="card perl-on-medium" id="card_44">
             <div class="card-header">
               <h2 class="card-title"><a href="https://medium.com/@gustavohigueram/technical-log-of-open-source-contribution-quine-in-perl-6d9b5c47bae1?source=rss------perl-5">Technical Log of Open Source Contribution: Quine in Perl</a></h2>
 <a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
@@ -3896,18 +4066,6 @@ Build date: 2023-04-22 19:47:15 GMT</p>
  on Wednesday 12 April 2023 05:20</small></p>
             </div> <!-- card-header -->
      <div class="card-body">       <div class="card-text"><div class="medium-feed-item"><p class="medium-feed-snippet">Overview:</p><p class="medium-feed-link"><a href="https://medium.com/@gustavohigueram/technical-log-of-open-source-contribution-quine-in-perl-6d9b5c47bae1?source=rss------perl-5">Continue reading on Medium »</a></p></div>       </div><!-- card-text -->     </div>
-            <div class="card-footer">
-            </div><!-- card-footer -->
-          </div><!-- card -->
-          <div class="card perl-on-medium" id="card_44">
-            <div class="card-header">
-              <h2 class="card-title"><a href="https://techtrendtracker.medium.com/the-top-3-worst-programming-languages-in-march-2023-7ce6936bea62?source=rss------perl-5">The Top 3 Worst Programming Languages in March 2023</a></h2>
-<a href="https://medium.com/tag/perl" class="badge rounded-pill bg-primary" style="float: right">Perl on Medium</a> 
-
-              <p class="text-right"><small>Published by TechTrendTracker
- on Thursday 06 April 2023 23:02</small></p>
-            </div> <!-- card-header -->
-     <div class="card-body">       <div class="card-text"><div class="medium-feed-item"><p class="medium-feed-image"><a href="https://techtrendtracker.medium.com/the-top-3-worst-programming-languages-in-march-2023-7ce6936bea62?source=rss------perl-5"><img src="https://cdn-images-1.medium.com/max/1384/1*H05geM04SX-7-TDYG2PKrQ.png" width="1384"></a></p><p class="medium-feed-snippet">Are you an outdated programming loser? If so&#x200A;&#x2014;&#x200A;this article is for you!</p><p class="medium-feed-link"><a href="https://techtrendtracker.medium.com/the-top-3-worst-programming-languages-in-march-2023-7ce6936bea62?source=rss------perl-5">Continue reading on Medium »</a></p></div>       </div><!-- card-text -->     </div>
             <div class="card-footer">
             </div><!-- card-footer -->
           </div><!-- card -->
@@ -3931,7 +4089,7 @@ src="https://pagead2.googlesyndication.com/pagead/show_ads.js">
         <div class="container-fluid">
           <div class="row>
             <div class="col-md-8">
-              <address><a href="https://twitter.com/@davorg">@davorg</a> / Saturday 06 May 2023 20:39 UTC</address>
+              <address><a href="https://twitter.com/@davorg">@davorg</a> / Sunday 07 May 2023 00:57 UTC</address>
             </div>
           </div>
         </div><!-- container -->
