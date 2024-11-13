@@ -84,6 +84,14 @@ $(document).ready(function() {
     }
   });
 
+  // Add event listener for "All Feeds" checkbox
+  $('#all-feeds').click(function() {
+    var isChecked = $(this).prop('checked');
+    $('.feed-checkbox').each(function() {
+      $(this).prop('checked', isChecked).trigger('click');
+    });
+  });
+
 });
 
 function get_curr_card() {
