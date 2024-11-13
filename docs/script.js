@@ -84,11 +84,19 @@ $(document).ready(function() {
     }
   });
 
+  // Set the "All Feeds" checkbox to checked when the page loads
+  $('#all-feeds').prop('checked', true);
+
   // Add event listener for "All Feeds" checkbox
   $('#all-feeds').click(function() {
     var isChecked = $(this).prop('checked');
     $('.feed-checkbox').each(function() {
-      $(this).prop('checked', isChecked).trigger('click');
+      $(this).prop('checked', isChecked);
+      if (isChecked) {
+        $('.' + $(this).attr('id')).show();
+      } else {
+        $('.' + $(this).attr('id')).hide();
+      }
     });
   });
 
@@ -157,4 +165,3 @@ function getCookie(cname) {
     }
     return "";
 }
-
