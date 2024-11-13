@@ -82,7 +82,20 @@ $(document).ready(function() {
     } else {
       $('.' + checkboxId).hide();
     }
+
+    updateAllFeedsCheckbox();
   });
+
+  // Add event listener for "All Feeds" checkbox
+  $('#all-feeds').click(function() {
+    var isChecked = $(this).prop('checked');
+    $('.feed-checkbox').each(function() {
+      $(this).prop('checked', isChecked).trigger('click');
+    });
+  });
+
+  // Update "All Feeds" checkbox on page load
+  updateAllFeedsCheckbox();
 
 });
 
@@ -150,3 +163,13 @@ function getCookie(cname) {
     return "";
 }
 
+function updateAllFeedsCheckbox() {
+  var allChecked = true;
+  $('.feed-checkbox').each(function() {
+    if (!$(this).prop('checked')) {
+      allChecked = false;
+      return false; // Exit loop early
+    }
+  });
+  $('#all-feeds').prop('checked', allChecked);
+}
