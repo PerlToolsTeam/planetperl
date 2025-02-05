@@ -45,13 +45,29 @@ $(document).ready(function() {
   // Get list of checkboxes by their class name
   var checkboxes = $('.feed-checkbox');
 
+  // Create a single object called 'planet_perl' to store all feed display statuses
+  var planetPerl = JSON.parse(localStorage.getItem('planet_perl')) || {};
+
+  // On page load, if there isn't a key called 'planet_perl', create one, copy the values from the existing keys, and delete those existing keys
+  if (!localStorage.getItem('planet_perl')) {
+    checkboxes.each(function() {
+      var checkboxId = $(this).attr('id');
+      var checkboxValue = localStorage.getItem(checkboxId);
+      if (checkboxValue !== null) {
+        planetPerl[checkboxId] = checkboxValue;
+        localStorage.removeItem(checkboxId);
+      } else {
+        planetPerl[checkboxId] = "true";
+      }
+    });
+    localStorage.setItem('planet_perl', JSON.stringify(planetPerl));
+  }
+
   // Loop through each checkbox and check localStorage for its value
   checkboxes.each(function() {
     var checkboxId = $(this).attr('id');
-  
-    // Check if checkbox id exists in localStorage and get its value
-    var checkboxValue = localStorage.getItem(checkboxId);
-  
+    var checkboxValue = planetPerl[checkboxId];
+
     // If the checkbox value exists and is true, check the checkbox
     if (checkboxValue === "true") {
       $(this).prop('checked', true);
@@ -64,18 +80,19 @@ $(document).ready(function() {
     } 
     // If the checkbox value doesn't exist, add it to localStorage and check the checkbox
     else {
-      localStorage.setItem(checkboxId, "true");
+      planetPerl[checkboxId] = "true";
       $(this).prop('checked', true);
       $('.' + checkboxId).show();
     }
   });
-  
-  // Update localStorage when a checkbox is clicked
+
+  // Update the 'planet_perl' object in local storage when a checkbox is clicked
   checkboxes.on('click', function() {
     var checkboxId = $(this).attr('id');
     var checkboxValue = $(this).prop('checked');
-  
-    localStorage.setItem(checkboxId, checkboxValue);
+
+    planetPerl[checkboxId] = checkboxValue.toString();
+    localStorage.setItem('planet_perl', JSON.stringify(planetPerl));
 
     if (checkboxValue === true) {
       $('.' + checkboxId).show();
