@@ -109,12 +109,14 @@ $(document).ready(function() {
     var isChecked = $(this).prop('checked');
     $('.feed-checkbox').each(function() {
       $(this).prop('checked', isChecked);
+      planetPerl[$(this).attr('id')] = isChecked.toString();
       if (isChecked) {
         $('.' + $(this).attr('id')).show();
       } else {
         $('.' + $(this).attr('id')).hide();
       }
     });
+    localStorage.setItem('planet_perl', JSON.stringify(planetPerl));
   });
 
 });
