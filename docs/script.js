@@ -101,12 +101,25 @@ $(document).ready(function() {
     }
   });
 
-  // Set the "All Feeds" checkbox to checked when the page loads
-  $('#all-feeds').prop('checked', true);
+  // Check localStorage for the "all-feeds" key value on page load
+  var allFeedsValue = localStorage.getItem('all-feeds');
+  if (allFeedsValue === "true") {
+    $('#all-feeds').prop('checked', true);
+  } else if (allFeedsValue === "false") {
+    $('#all-feeds').prop('checked', false);
+    checkboxes.each(function() {
+      $(this).prop('checked', false);
+      $('.' + $(this).attr('id')).hide();
+    });
+  } else {
+    localStorage.setItem('all-feeds', "true");
+    $('#all-feeds').prop('checked', true);
+  }
 
   // Add event listener for "All Feeds" checkbox
   $('#all-feeds').click(function() {
     var isChecked = $(this).prop('checked');
+    localStorage.setItem('all-feeds', isChecked);
     $('.feed-checkbox').each(function() {
       $(this).prop('checked', isChecked);
       planetPerl[$(this).attr('id')] = isChecked.toString();
