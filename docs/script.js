@@ -1,12 +1,6 @@
 $(document).ready(function() {
 
-  $('#show').click(function() {
-    set_article_visibility(true);
-  });
-
-  $('#hide').click(function() {
-    set_article_visibility(false);
-  });
+  $('#toggle-articles').click(toggle_article_visibility);
 
   $('#next').click(next_div);
   $('#prev').click(prev_div);
@@ -19,16 +13,14 @@ $(document).ready(function() {
 
     switch (e.key) {
       case 'h':
-        set_article_visibility(false);
+      case 's':
+        toggle_article_visibility();
         break;
       case 'n':
         next_div();
         break;
       case 'p':
         prev_div();
-        break;
-      case 's':
-        set_article_visibility(true);
         break;
       default:
         return;
@@ -117,10 +109,21 @@ $(document).ready(function() {
 
 });
 
+function toggle_article_visibility() {
+  set_article_visibility(document.documentElement.classList.contains('hide-articles'));
+}
+
 function set_article_visibility(show, remember) {
   document.documentElement.classList.toggle('hide-articles', !show);
-  $('#show').attr('aria-pressed', show.toString());
-  $('#hide').attr('aria-pressed', (!show).toString());
+  var label = show ? 'Hide articles' : 'Show articles';
+  var shortcut = show ? 'h' : 's';
+  $('#toggle-articles').attr({
+    'aria-expanded': show.toString(),
+    'aria-label': label,
+    'aria-keyshortcuts': shortcut
+  });
+  $('#toggle-articles .action-label').text(label);
+  $('#toggle-articles kbd').text(shortcut);
   if (remember !== false) {
     setCookie('showhide', show ? 'show' : 'hide', 1000);
   }

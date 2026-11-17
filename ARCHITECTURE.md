@@ -127,19 +127,23 @@ The template adds the CSS file's modification time to its URL for cache busting.
 - Persistent source choices in the `planet_perl` localStorage object, keyed by
   source slug, with string values `"true"` and `"false"`. An initial migration
   moves older per-source localStorage keys into this object.
-- Show and Hide buttons, plus `s` and `h` shortcuts, to control article bodies.
-  Both buttons and shortcuts save the choice in a `showhide` cookie for
+- A single article visibility button, plus `s` and `h` shortcuts, to control
+  article bodies. The button offers “Hide articles” when bodies are visible
+  and “Show articles” when hidden, and displays the matching keyboard shortcut.
+  Either `h` or `s` toggles visibility, regardless of the current state.
+  Both the button and shortcuts save the choice in a `showhide` cookie for
   1,000 days. An early script in `index.tt` restores the hidden state before
   article bodies appear, using the `hide-articles` class on the HTML element.
-  First-time visitors see full articles. The buttons expose the selected
-  state with `aria-pressed`.
+  First-time visitors see full articles. The button exposes the current
+  visibility with `aria-expanded`.
 - Next and Previous buttons, plus `n` and `p` shortcuts, to move between
   visible article cards, skipping sources the visitor has hidden and keeping
   headings below the fixed navigation bar. Shortcuts ignore form fields,
   editable content, and Ctrl/Alt/Meta combinations.
 
-All four buttons appear on mobile and desktop, with touch targets at least
-44 pixels tall and a layout that wraps on narrow screens.
+All three buttons appear on mobile and desktop, with touch targets at least
+44 pixels tall and a layout that wraps on narrow screens. Hover styling is
+limited to devices with a fine pointer that supports hovering.
 
 Preferences stay in the visitor's browser; there is no account or server-side
 preference store.
