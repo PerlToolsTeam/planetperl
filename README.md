@@ -4,6 +4,8 @@
 
 The site is built using [Perlanet](https://github.com/davorg/perlanet) (which is a Perl version of Python's [Planet](http://www.planetplanet.org/)).
 
+See [How Planet Perl works](ARCHITECTURE.md) for the repository structure, data flow, browser behavior, build and deployment process, and local development instructions.
+
 If you want to add a Perl blog to the site, then you'll want to send a PR to [perlanetrc](https://github.com/davorg/planetperl/blob/master/perlanetrc).
 
 If you want to make the site look nicer or work more how you'd like it to, then you'll probably want to send a PR to [index.tt](https://github.com/davorg/planetperl/blob/master/index.tt) (and you'll probably need to know a bit about Perl's [Template Toolkit](https://tt2.org/) and/or [jQuery](https://jquery.com/) - or perhaps even [Bootstrap](https://getbootstrap.com/)).
