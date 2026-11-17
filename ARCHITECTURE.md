@@ -127,9 +127,19 @@ The template adds the CSS file's modification time to its URL for cache busting.
 - Persistent source choices in the `planet_perl` localStorage object, keyed by
   source slug, with string values `"true"` and `"false"`. An initial migration
   moves older per-source localStorage keys into this object.
-- `h` and `s` shortcuts to hide or show article bodies, with the choice saved
-  in a `showhide` cookie for 1,000 days.
-- `n` and `p` shortcuts to move between adjacent article cards.
+- Show and Hide buttons, plus `s` and `h` shortcuts, to control article bodies.
+  Both buttons and shortcuts save the choice in a `showhide` cookie for
+  1,000 days. An early script in `index.tt` restores the hidden state before
+  article bodies appear, using the `hide-articles` class on the HTML element.
+  First-time visitors see full articles. The buttons expose the selected
+  state with `aria-pressed`.
+- Next and Previous buttons, plus `n` and `p` shortcuts, to move between
+  visible article cards, skipping sources the visitor has hidden and keeping
+  headings below the fixed navigation bar. Shortcuts ignore form fields,
+  editable content, and Ctrl/Alt/Meta combinations.
+
+All four buttons appear on mobile and desktop, with touch targets at least
+44 pixels tall and a layout that wraps on narrow screens.
 
 Preferences stay in the visitor's browser; there is no account or server-side
 preference store.
@@ -219,8 +229,6 @@ Several implementation details deserve attention when working in these areas:
   template handler sets individual checkbox states and then triggers clicks,
   while the script has its own bulk state update. It is also always marked
   checked at startup, even when saved source choices hide some feeds.
-- Keyboard navigation traverses adjacent cards without explicitly skipping
-  cards hidden by source selection.
 - The template includes malformed footer markup (`<div class="row>`).
 - Source HTML bodies are inserted without an HTML-escaping filter in the
   template. Any upstream sanitization depends on Perlanet and its dependencies.
